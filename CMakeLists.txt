@@ -30,6 +30,7 @@ elseif (${CMAKE_SYSTEM_NAME} MATCHES "Windows")
     set(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS ON)
 endif ()
 
+add_subdirectory(lib/stratum)
 add_subdirectory(orbit)
 #add_subdirectory(test EXCLUDE_FROM_ALL)
 

@@ -11,6 +11,12 @@ target_include_directories(Orbiter PUBLIC
         $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}>
         $<INSTALL_INTERFACE:include>)
 
+if(WIN32)
+    target_link_libraries(Orbiter PUBLIC Stratum synchronization ws2_32)
+else ()
+    target_link_libraries(Orbiter PUBLIC Stratum)
+endif()
+
 if (NOT MSVC)
     target_compile_options(Orbiter PRIVATE -fPIC)
 endif ()
