@@ -32,7 +32,7 @@ endif ()
 
 add_subdirectory(lib/stratum)
 add_subdirectory(orbit)
-#add_subdirectory(test EXCLUDE_FROM_ALL)
+add_subdirectory(test EXCLUDE_FROM_ALL)
 
 # *** Orbit main executable ***
 
