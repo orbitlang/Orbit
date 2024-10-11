@@ -20,7 +20,7 @@ Context *orbiter::ContextInit() {
 
 #define SETUP_TYPE(num, fn)                             \
     do {                                                \
-        if(fn(ctx, ctx->primitive[(int) num]))          \
+        if(!fn(ctx, ctx->primitive[(int) num]))         \
             goto ERROR;                                 \
     } while(0)
 
