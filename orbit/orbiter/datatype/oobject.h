@@ -10,6 +10,8 @@
 #include <orbit/orbiter/datatype/obase.h>
 
 namespace orbiter::datatype {
+    bool Equal(const OObject *left, const OObject *right);
+
     /**
      * @brief Add a property to a TypeInfo
      *
@@ -59,6 +61,8 @@ namespace orbiter::datatype {
      * @return true if initialization was successful, false otherwise
      */
     bool TIPropertiesInit(TypeInfo *type, U8 n);
+
+    MSize Hash(const OObject *obj);
 
     /**
      * @brief Release an OObject
@@ -227,6 +231,8 @@ namespace orbiter::datatype {
         T *operator->() const noexcept { return object; }
 
         T *get() const noexcept { return object; }
+
+        T *get_inc() const noexcept { return O_INCREF(object); }
 
         T *release() noexcept {
             auto *temp = object;

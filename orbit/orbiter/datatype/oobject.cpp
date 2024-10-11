@@ -9,23 +9,29 @@
 
 using namespace orbiter::datatype;
 
+bool orbiter::datatype::Equal(const OObject *left, const OObject *right) {
+    return false;
+}
+
 bool orbiter::datatype::TIPropertyAdd(const Context *ctx, TypeInfo *type, const char *name,
                                       OObject *value, PropertyDetail detail) {
     PropertyDescriptor tmp{};
     int i = 0;
 
     auto orname = ORStringIntern(ctx, name);
-    if (orname == nullptr)
+    if (!orname)
         return false;
+
+    auto r_orname = orname.get();
 
     for (; i < type->properties.count; i++) {
         auto *property = type->properties.p_array + i;
 
-        if (property->name == nullptr || ORStringCompare(orname, property->name) <= 0) {
+        if (property->name == nullptr || ORStringCompare(r_orname, property->name) <= 0) {
             if (property->name != nullptr)
                 tmp = *property;
 
-            property->name = orname;
+            property->name = orname.release();
 
             // TODO: offset + slot of super type
 
@@ -40,7 +46,7 @@ bool orbiter::datatype::TIPropertyAdd(const Context *ctx, TypeInfo *type, const 
     if (tmp.name != nullptr) {
         for (i += 1; i < type->properties.count; i++) {
             auto *property = type->properties.p_array + i;
-            auto cmp = ORStringCompare(orname, property->name);
+            auto cmp = ORStringCompare(r_orname, property->name);
 
             if (cmp < 0) {
                 auto swap = *property;
@@ -92,6 +98,11 @@ bool orbiter::datatype::TIPropertiesInit(TypeInfo *type, U8 n) {
     type->properties.count = n;
 
     return true;
+}
+
+MSize orbiter::datatype::Hash(const OObject *obj) {
+    // TODO: IMPL
+    return 0;
 }
 
 PropertyDescriptor *orbiter::datatype::TIFindLocalProperty(const TypeInfo *type, const char *name) {

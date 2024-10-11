@@ -10,27 +10,24 @@ using namespace orbiter::datatype;
 
 FuncShared *FunSharedNew(const orbiter::Context *ctx, const char *name, const char *doc,
                          U16 arity, FunctionPtr func, FunctionKind kind) {
-    auto *s_name = ORStringNew(ctx, name);
-    if (s_name == nullptr)
+    auto s_name = ORStringNew(ctx, name);
+    if (!s_name)
         return nullptr;
 
-    ORString *s_doc = nullptr;
+    Handle<ORString> s_doc;
 
     if (doc != nullptr) {
         s_doc = ORStringNew(ctx, doc);
-        if (s_doc == nullptr) {
-            Release(s_name);
-
+        if (!s_doc)
             return nullptr;
-        }
     }
 
     auto *shared = (FuncShared *) orbiter::memory::Alloc(sizeof(FuncShared));
     if (shared != nullptr) {
         shared->refs = 1;
 
-        shared->name = s_name;
-        shared->doc = s_doc;
+        shared->name = s_name.release();
+        shared->doc = s_doc.release();
 
         shared->func = func;
 

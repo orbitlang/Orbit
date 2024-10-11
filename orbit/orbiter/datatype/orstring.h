@@ -89,6 +89,10 @@ namespace orbiter::datatype {
         return ORStringCompare(left, right, strlen(right));
     }
 
+    inline bool ORStringEqual(const ORString *left, const ORString *right) {
+        return ORStringCompare(left, right) == 0;
+    }
+
     /**
      * @brief Creates an exact copy of a String object in the String pool and return it
      *
@@ -96,9 +100,9 @@ namespace orbiter::datatype {
      * @param string The C-string to convert to Orbit string
      * @param length The length of the C-string
      *
-     * @return A pointer to an Orbit string object, otherwise nullptr
+     * @return Handle to the interned string
      */
-    ORString *ORStringIntern(const Context *ctx, const unsigned char *string, MSize length);
+    Handle<ORString> ORStringIntern(const Context *ctx, const unsigned char *string, MSize length);
 
     /**
      * @brief Creates an exact copy of a String object in the String pool and return it
@@ -106,9 +110,9 @@ namespace orbiter::datatype {
      * @param ctx Pointer to the Context
      * @param string The C-string to convert to Orbit string
      *
-     * @return A pointer to an Orbit string object, otherwise nullptr
+     * @return Handle to the interned string
      */
-    inline ORString *ORStringIntern(const Context *ctx, const char *string) {
+    inline Handle<ORString> ORStringIntern(const Context *ctx, const char *string) {
         return ORStringIntern(ctx, (const unsigned char *) string, strlen(string));
     }
 
@@ -127,20 +131,21 @@ namespace orbiter::datatype {
      * @param cp_length Number of unicode code point in the buffer
      * @param kind StringKind
      *
-     * @return A pointer to an Orbit string object, otherwise nullptr
+     * @return Handle to ORString object
      */
-    ORString *ORStringNew(const Context *ctx, unsigned char *string, MSize length, MSize cp_length, StringKind kind);
+    Handle<ORString> ORStringNew(const Context *ctx, unsigned char *string, MSize length, MSize cp_length,
+                                 StringKind kind);
 
     /**
-     * @brief Create new string.
+     * @brief Create new string
      *
      * @param ctx Pointer to the Context
-     * @param string The unsigned C-string to convert to Orbit string.
-     * @param length The length of the C-string.
+     * @param string The unsigned C-string to convert to Orbit string
+     * @param length The length of the C-string
      *
-     * @return A pointer to an Orbit string object, otherwise nullptr.
+     * @return Handle to ORString object
      */
-    ORString *ORStringNew(const Context *ctx, const unsigned char *string, MSize length);
+    Handle<ORString> ORStringNew(const Context *ctx, const unsigned char *string, MSize length);
 
     /**
      * @brief Create new string
@@ -149,9 +154,9 @@ namespace orbiter::datatype {
      * @param string The C-string to convert to Orbit string
      * @param length The length of the unsigned C-string
      *
-     * @return A pointer to an Orbit string object, otherwise nullptr
+     * @return Handle to ORString object
      */
-    inline ORString *ORStringNew(const Context *ctx, const char *string, MSize length) {
+    inline Handle<ORString> ORStringNew(const Context *ctx, const char *string, MSize length) {
         return ORStringNew(ctx, (const unsigned char *) string, length);
     }
 
@@ -161,9 +166,9 @@ namespace orbiter::datatype {
      * @param ctx Pointer to the Context
      * @param string The C-string to convert to Orbit string
      *
-     * @return A pointer to an Orbit string object, otherwise nullptr
+     * @return Handle to ORString object
      */
-    inline ORString *ORStringNew(const Context *ctx, const char *string) {
+    inline Handle<ORString> ORStringNew(const Context *ctx, const char *string) {
         return ORStringNew(ctx, (unsigned char *) string, strlen(string));
     }
 
@@ -181,9 +186,11 @@ namespace orbiter::datatype {
      * (ownership of the buffer will be transferred to the created object).
      * @param length Length of the buffer.
      *
-     * @return A pointer to an Orbit string object, otherwise nullptr.
+     * @return Handle to ORString object
      */
-    ORString *ORStringNewHoldBuffer(const Context *ctx, unsigned char *buffer, MSize length);
+    Handle<ORString> ORStringNewHoldBuffer(const Context *ctx, unsigned char *buffer, MSize length);
+
+    MSize ORStringHash(ORString *string);
 
     /**
      * @brief Initialize and create the specified type

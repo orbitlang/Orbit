@@ -16,8 +16,10 @@
 
 // WORD SIZE
 #if defined _WIN64 || __WORDSIZE == 64
+#define _ORBIT_ENVIRON_64BIT_
 #define _ORBIT_ENVIRON 64
 #elif defined(_WIN32) || __WORDSIZE == 32
+#define _ORBIT_ENVIRON_32BIT
 #define _ORBIT_ENVIRON 32
 #endif
 
