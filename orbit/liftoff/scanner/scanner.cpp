@@ -2,10 +2,12 @@
 //
 // Licensed under the Apache License v2.0
 
+#include <cassert>
+#include <cctype>
+
 #include <orbit/orbiter/datatype/stringbuilder.h>
 
 #include <orbit/liftoff/scanner/scanner.h>
-#include <cassert>
 
 using namespace liftoff::scanner;
 
@@ -15,64 +17,64 @@ struct KwToken {
 };
 
 constexpr KwToken kw2tktype[] = {
-        {"bool",        TokenType::DT_BOOL},
-        {"byte",        TokenType::DT_BYTE},
+    {"bool", TokenType::DT_BOOL},
+    {"byte", TokenType::DT_BYTE},
 
-        {"i8",          TokenType::DT_I8},
-        {"i16",         TokenType::DT_I16},
-        {"i32",         TokenType::DT_I32},
-        {"i64",         TokenType::DT_I64},
-        {"iSize",       TokenType::DT_ISIZE},
+    {"i8", TokenType::DT_I8},
+    {"i16", TokenType::DT_I16},
+    {"i32", TokenType::DT_I32},
+    {"i64", TokenType::DT_I64},
+    {"iSize", TokenType::DT_ISIZE},
 
-        {"u8",          TokenType::DT_U8},
-        {"u16",         TokenType::DT_U16},
-        {"u32",         TokenType::DT_U32},
-        {"u64",         TokenType::DT_U64},
-        {"uSize",       TokenType::DT_USIZE},
+    {"u8", TokenType::DT_U8},
+    {"u16", TokenType::DT_U16},
+    {"u32", TokenType::DT_U32},
+    {"u64", TokenType::DT_U64},
+    {"uSize", TokenType::DT_USIZE},
 
-        {"f32",         TokenType::DT_F32},
-        {"f64",         TokenType::DT_F64},
+    {"f32", TokenType::DT_F32},
+    {"f64", TokenType::DT_F64},
 
-        {"as",          TokenType::KW_AS},
-        {"async",       TokenType::KW_ASYNC},
-        {"assert",      TokenType::KW_ASSERT},
-        {"await",       TokenType::KW_AWAIT},
-        {"break",       TokenType::KW_BREAK},
-        {"case",        TokenType::KW_CASE},
-        {"class",       TokenType::KW_CLASS},
-        {"continue",    TokenType::KW_CONTINUE},
-        {"default",     TokenType::KW_DEFAULT},
-        {"defer",       TokenType::KW_DEFER},
-        {"elif",        TokenType::KW_ELIF},
-        {"else",        TokenType::KW_ELSE},
-        {"fallthrough", TokenType::KW_FALLTHROUGH},
-        {"false",       TokenType::FALSE},
-        {"for",         TokenType::KW_FOR},
-        {"from",        TokenType::KW_FROM},
-        {"func",        TokenType::KW_FUNC},
-        {"if",          TokenType::KW_IF},
-        {"in",          TokenType::KW_IN},
-        {"impl",        TokenType::KW_IMPL},
-        {"import",      TokenType::KW_IMPORT},
-        {"let",         TokenType::KW_LET},
-        {"loop",        TokenType::KW_LOOP},
-        {"namespace",   TokenType::KW_NAMESPACE},
-        {"nil",         TokenType::NIL},
-        {"not in",      TokenType::KW_NOT},
-        {"of",          TokenType::KW_OF},
-        {"panic",       TokenType::KW_PANIC},
-        {"pub",         TokenType::KW_PUB},
-        {"return",      TokenType::KW_RETURN},
-        {"self",        TokenType::SELF},
-        {"spawn",       TokenType::KW_SPAWN},
-        {"switch",      TokenType::KW_SWITCH},
-        {"sync",        TokenType::KW_SYNC},
-        {"trait",       TokenType::KW_TRAIT},
-        {"trap",        TokenType::KW_TRAP},
-        {"true",        TokenType::TRUE},
-        {"var",         TokenType::KW_VAR},
-        {"yield",       TokenType::KW_YIELD},
-        {"weak",        TokenType::KW_WEAK}
+    {"as", TokenType::KW_AS},
+    {"async", TokenType::KW_ASYNC},
+    {"assert", TokenType::KW_ASSERT},
+    {"await", TokenType::KW_AWAIT},
+    {"break", TokenType::KW_BREAK},
+    {"case", TokenType::KW_CASE},
+    {"class", TokenType::KW_CLASS},
+    {"continue", TokenType::KW_CONTINUE},
+    {"default", TokenType::KW_DEFAULT},
+    {"defer", TokenType::KW_DEFER},
+    {"elif", TokenType::KW_ELIF},
+    {"else", TokenType::KW_ELSE},
+    {"fallthrough", TokenType::KW_FALLTHROUGH},
+    {"false", TokenType::FALSE},
+    {"for", TokenType::KW_FOR},
+    {"from", TokenType::KW_FROM},
+    {"func", TokenType::KW_FUNC},
+    {"if", TokenType::KW_IF},
+    {"in", TokenType::KW_IN},
+    {"impl", TokenType::KW_IMPL},
+    {"import", TokenType::KW_IMPORT},
+    {"let", TokenType::KW_LET},
+    {"loop", TokenType::KW_LOOP},
+    {"namespace", TokenType::KW_NAMESPACE},
+    {"nil", TokenType::NIL},
+    {"not in", TokenType::KW_NOT},
+    {"of", TokenType::KW_OF},
+    {"panic", TokenType::KW_PANIC},
+    {"pub", TokenType::KW_PUB},
+    {"return", TokenType::KW_RETURN},
+    {"self", TokenType::SELF},
+    {"spawn", TokenType::KW_SPAWN},
+    {"switch", TokenType::KW_SWITCH},
+    {"sync", TokenType::KW_SYNC},
+    {"trait", TokenType::KW_TRAIT},
+    {"trap", TokenType::KW_TRAP},
+    {"true", TokenType::TRUE},
+    {"var", TokenType::KW_VAR},
+    {"yield", TokenType::KW_YIELD},
+    {"weak", TokenType::KW_WEAK}
 };
 
 int DefaultPrompt(const char *prompt, FILE *fd, InputBuffer *ibuf) {
@@ -530,7 +532,7 @@ bool Scanner::TokenizeOctal(Token *out_token) {
     return true;
 }
 
-bool Scanner::TokenizeString(Token *out_token, bool byte_string) {
+bool Scanner::TokenizeString(Token *out_token, bool check_prefix, bool byte_string) {
     TokenType type = TokenType::STRING;
     int value;
     int hashes = 0;
@@ -541,7 +543,7 @@ bool Scanner::TokenizeString(Token *out_token, bool byte_string) {
     // Count beginning hashes
     for (; this->Peek() == '#'; this->Next(), hashes++);
 
-    if (this->Next() != '"') {
+    if (check_prefix && this->Next() != '"') {
         this->status_ = ScannerStatus::INVALID_RS_PROLOGUE;
         return false;
     }
@@ -615,10 +617,10 @@ bool Scanner::TokenizeWord(Token *out_token) {
     int value = this->Next();
 
     if (value == 'b' && (this->Peek() == '#' || this->Peek() == '"'))
-        return this->TokenizeString(out_token, true);
+        return this->TokenizeString(out_token, true, true);
 
     if (value == 'r' && (this->Peek() == '#' || this->Peek() == '"'))
-        return this->TokenizeString(out_token, false);
+        return this->TokenizeString(out_token, true, false);
 
     bool next = false;
     while (isalnum(value) || value == '_') {
@@ -722,7 +724,7 @@ bool Scanner::NextToken(Token *out_token) noexcept {
                 }
                 RETURN_TK(TokenType::EXCLAMATION);
             case '"':
-                return this->TokenizeString(out_token, false);
+                return this->TokenizeString(out_token, false, false);
             case '#':
                 return this->TokenizeComment(out_token, true);
             case '%':
@@ -767,6 +769,19 @@ bool Scanner::NextToken(Token *out_token) noexcept {
                 CHECK_AGAIN('=', TokenType::ASSIGN_SLASH)
                 if (this->Peek() == '*') {
                     this->Next();
+
+                    if (this->Peek() == '*') {
+                        this->Next();
+
+                        if (this->TokenizeComment(out_token, false)) {
+                            out_token->type = TokenType::COMMENT_DOC;
+
+                            return true;
+                        }
+
+                        return false;
+                    }
+
                     return this->TokenizeComment(out_token, false);
                 }
                 RETURN_TK(TokenType::SLASH);
@@ -898,33 +913,33 @@ int Scanner::UnderflowInteractive() {
 
 const char *Scanner::GetStatusMessage() const {
     static const char *messages[] = {
-            "empty '' not allowed",
-            "end of file reached",
-            "invalid digit in binary literal",
-            "byte string can only contain ASCII literal characters",
-            "can't decode bytes in unicode sequence, escape format must be: \\Uhhhhhhhh",
-            "can't decode bytes in unicode sequence, escape format must be: \\uhhhh",
-            "can't decode byte, hex escape must be: \\xhh",
-            "invalid hexadecimal literal",
-            "expected new-line after line continuation character",
-            "invalid digit in octal literal",
-            "unterminated string",
-            "invalid raw string prologue",
-            "expected '",
-            "unterminated string",
-            "invalid token",
-            "illegal Unicode character",
-            "invalid unsigned qualifier here",
-            "not enough memory",
-            "ok"
+        "empty '' not allowed",
+        "end of file reached",
+        "invalid digit in binary literal",
+        "byte string can only contain ASCII literal characters",
+        "can't decode bytes in unicode sequence, escape format must be: \\Uhhhhhhhh",
+        "can't decode bytes in unicode sequence, escape format must be: \\uhhhh",
+        "can't decode byte, hex escape must be: \\xhh",
+        "invalid hexadecimal literal",
+        "expected new-line after line continuation character",
+        "invalid digit in octal literal",
+        "unterminated string",
+        "invalid raw string prologue",
+        "expected '",
+        "unterminated string",
+        "invalid token",
+        "illegal Unicode character",
+        "invalid unsigned qualifier here",
+        "not enough memory",
+        "ok"
     };
 
     return messages[(int) this->status_];
 }
 
 Scanner::Scanner(FILE *fd, const char *ps1, const char *ps2, int buf_size) noexcept: prompt_(ps1),
-                                                                                     next_prompt_(ps2),
-                                                                                     fd_(fd) {
+    next_prompt_(ps2),
+    fd_(fd) {
     assert(buf_size > 0);
 
     this->ibuf_ = InputBuffer(buf_size);

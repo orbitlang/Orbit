@@ -82,7 +82,7 @@ namespace liftoff::scanner {
 
         bool TokenizeOctal(Token *out_token);
 
-        bool TokenizeString(Token *out_token, bool byte_string);
+        bool TokenizeString(Token *out_token, bool check_prefix, bool byte_string);
 
         bool TokenizeWord(Token *out_token);
 

@@ -125,6 +125,14 @@ TEST(scanner, LineContinuation) {
     ASSERT_TRUE(TkEqual(&token, TokenType::NUMBER, 7, 3, 2, 8, 4, 2));
 }
 
+TEST(scanner, LiteralString) {
+    Scanner scanner(R"("Hello!")");
+    Token token{};
+
+    ASSERT_TRUE(scanner.NextToken(&token));
+    ASSERT_TRUE(TkEqual(&token, TokenType::STRING, 0, 1, 1, 8, 9, 1));
+}
+
 TEST(scanner, LiteralByteString) {
     Scanner scanner(R"(b"ByteString" b"Ignore\u2342Unico\U00002312de" b"�")");
     Token token{};
