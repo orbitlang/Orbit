@@ -273,7 +273,7 @@ namespace orbiter::datatype {
         }
     };
 
-    using OHandle = Handle<OObject>;
+    using HOObject = Handle<OObject>;
 }
 
 #endif // !ORBIT_ORBITER_DATATYPE_OOBJECT_H_
