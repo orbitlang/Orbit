@@ -12,6 +12,12 @@
 #include <orbit/orbiter/memory/refcount.h>
 
 namespace orbiter::datatype {
+    constexpr auto kOddBallMask = memory::RCBitOffsets::InlineMask | memory::RCBitOffsets::StrongVFLAGMask;
+
+    constexpr auto kOddBallNIL = nullptr;
+    constexpr auto kOddBallFALSE = 0x08u | kOddBallMask;
+    constexpr auto kOddBallTRUE = 0x10u | kOddBallMask;
+
     using FunctionPtr = struct OObject *(*)(struct Function *, OObject **argv, OObject *kwargs, U16 argc);
 
     struct FunctionDef {
@@ -57,18 +63,20 @@ namespace orbiter::datatype {
 
         ATOM,
         BYTES,
+        DECIMAL,
         DICT,
-        DOUBLE,
         FUNCTION,
         LIST,
         MODULE,
         NAMESPACE,
+        NUMBER,
         OBJECT,
         SET,
         STRING,
         TUPLE
     };
-    constexpr const int kInstanceTypeCount = 13;
+
+    constexpr int kInstanceTypeCount = 14;
 
     struct TypeInfo {
         OROBJ_HEAD;
@@ -100,8 +108,16 @@ namespace orbiter::datatype {
 #define O_UNSAFE_GET_RC(object)            (*((MSize *) &O_GET_HEAD(object).ref_count_))
 #define O_GET_TYPE(object)                 (O_GET_HEAD(object).type_)
 
-#define O_INCREF(object)                    (O_GET_RC(object).IncStrong(), object)
-#define O_VFY_INCREF(object)                ((object != nullptr && !O_GET_RC(object).IncStrong()) ? nullptr : object)
+#define O_IS_SMI(object)                    ((MSize)object & 0x01u)
+#define O_IS_ODDBALL(object)                ((!O_IS_SMI(object)) && (((MSize)object & kOddBallMask) == kOddBallMask))
+#define O_IS_OBJECT(object)                 ((!O_IS_SMI(object)) && (((MSize)object & kOddBallMask) != kOddBallMask))
+
+#define O_IS_FALSE(object)                  (O_IS_ODDBALL(object) && ((object & kOddBallFALSE) == kOddBallFALSE))
+#define O_IS_TRUE(object)                   (O_IS_ODDBALL(object) && ((object & kOddBallTRUE) == kOddBallTRUE))
+#define O_IS_NIL(object)                    (object == kOddBallNIL)
+
+#define O_INCREF(object)                    (O_IS_OBJECT(object) && O_GET_RC(object).IncStrong(), object)
+#define O_VFY_INCREF(object)                ((object != nullptr && (O_IS_OBJECT(object) && O_GET_RC(object).IncStrong())) ? nullptr : object)
 
 #define O_GET_SLOT_COUNT(type)              (((type->i_size) - sizeof(OObject)) / sizeof(MSize))
 }
