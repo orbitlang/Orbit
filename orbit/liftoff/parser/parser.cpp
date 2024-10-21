@@ -62,65 +62,104 @@ int PeekPrecedence(TokenType token) {
             return -1;
 
         case TokenType::WALRUS:
-            return 10;
         case TokenType::EQUAL:
         case TokenType::ASSIGN_ADD:
         case TokenType::ASSIGN_SUB:
             return 20;
-        case TokenType::COMMA:
-            return 30;
-        case TokenType::ARROW_RIGHT:
-            return 40;
         case TokenType::ELVIS:
         case TokenType::QUESTION:
         case TokenType::NULL_COALESCING:
-            return 50;
+            return 30; // Conditional operators
         case TokenType::PIPELINE:
-            return 60;
+            return 40;
         case TokenType::OR:
-            return 70;
+            return 50;
         case TokenType::AND:
-            return 80;
+            return 60;
         case TokenType::PIPE:
-            return 90;
+            return 70;
         case TokenType::CARET:
-            return 100;
+            return 80;
         case TokenType::AMPERSAND:
-            return 110;
+            return 90;
         case TokenType::EQUAL_EQUAL:
         case TokenType::EQUAL_STRICT:
         case TokenType::KW_IN:
         case TokenType::KW_NOT:
         case TokenType::NOT_EQUAL:
         case TokenType::NOT_EQUAL_STRICT:
-            return 120;
+            return 100; // Equality and membership operators
         case TokenType::LESS:
         case TokenType::LESS_EQ:
         case TokenType::GREATER:
         case TokenType::GREATER_EQ:
-            return 130;
+            return 110; // Comparison operators
         case TokenType::ARROW_LEFT:
-            return 140;
+        case TokenType::ARROW_RIGHT:
+            return 120; // Channel operators
         case TokenType::SHL:
         case TokenType::SHR:
-            return 150;
+            return 130; // Bit shift operators
         case TokenType::PLUS:
         case TokenType::MINUS:
-            return 160;
+            return 140; // Additive operators
         case TokenType::ASTERISK:
         case TokenType::SLASH:
         case TokenType::SLASH_SLASH:
         case TokenType::PERCENT:
-            return 170;
+            return 150; // Multiplicative operators
+        case TokenType::COMMA:
+            return 160;
         case TokenType::DOT:
         case TokenType::QUESTION_DOT:
-            return 180;
+            return 170; // Member access
         case TokenType::PLUS_PLUS:
         case TokenType::MINUS_MINUS:
-            return 190;
+            return 180; // Postfix increment/decrement
         default:
-            return 1000;
+            return 1000; // Highest precedence for unknown tokens
     }
+}
+
+ASTHandle<ASTNode *> Parser::ParseAssignment(ASTHandle<ASTNode *> &left) {
+    const auto tk_type = TKCUR_TYPE;
+
+    this->Eat(true);
+
+    // TODO
+    if (left->node_type != NodeType::IDENTIFIER
+        // && left->node_type != NodeType::INDEX
+        // && left->node_type != NodeType::SLICE
+        && left->node_type != NodeType::TUPLE)
+        //&& left->node_type != NodeType::SELECTOR)
+        throw ParserException(1);
+
+    // Check for tuple content
+    if (left->node_type == NodeType::TUPLE) {
+        const auto tuple = (ListExpression *) left.get();
+
+        for (auto &cursor: tuple->elements) {
+            const auto *itm = cursor.get();
+
+            if (itm->node_type != NodeType::IDENTIFIER)
+                //&& itm->node_type != NodeType::INDEX
+                //&& left->node_type != NodeType::SLICE
+                //&& itm->node_type != NodeType::SELECTOR)
+                throw ParserException(1);
+        }
+    }
+
+    auto expr = this->ParseExpression(tk_type);
+
+    auto assign = MakeAssignment(TKCUR_LOC);
+
+    assign->name = left.release();
+    assign->value = expr.release();
+
+    assign->loc.start = assign->name->loc.start;
+    assign->loc.end = assign->value->loc.end;
+
+    return assign;
 }
 
 ASTHandle<ASTNode *> Parser::ParseExpression() {
@@ -185,6 +224,33 @@ ASTHandle<ASTNode *> Parser::ParseExpression(int precedence) {
 
 ASTHandle<ASTNode *> Parser::ParseExpression(TokenType precedence) {
     return this->ParseExpression(PeekPrecedence(precedence));
+}
+
+ASTHandle<ASTNode *> Parser::ParseExpressionList(ASTHandle<ASTNode *> &left) {
+    auto list = MakeListExpression(TKCUR_LOC, NodeType::TUPLE);
+
+    list->loc.start = left->loc.start;
+
+    this->Eat(false);
+
+    list->elements.emplace_back(left.release());
+
+    Position end{};
+    do {
+        this->EatNL();
+
+        auto expr = this->ParseExpression(TokenType::COMMA);
+
+        end = expr->loc.end;
+
+        list->elements.emplace_back(expr.release());
+
+        this->IgnoreNewLineIF(TokenType::COMMA);
+    } while (this->MatchEat(TokenType::COMMA, false));
+
+    list->loc.end = end;
+
+    return list;
 }
 
 ASTHandle<ASTNode *> Parser::ParseLiteral() {
@@ -275,6 +341,15 @@ Parser::LedMeth Parser::LookupLED(TokenType token) noexcept {
         return &Parser::ParseInfix;
 
     switch (token) {
+        // Assignment operators
+        case TokenType::EQUAL:
+        case TokenType::ASSIGN_ADD:
+        case TokenType::ASSIGN_SUB:
+        case TokenType::ASSIGN_MUL:
+        case TokenType::ASSIGN_SLASH:
+            return &Parser::ParseAssignment;
+        case TokenType::COMMA:
+            return &Parser::ParseExpressionList;
         default:
             return nullptr;
     }
@@ -345,6 +420,19 @@ void Parser::Eat(bool ignore_nl) {
 
 void Parser::EatNL() {
     if (this->tkcur_.type == TokenType::END_OF_LINE)
+        this->Eat(true);
+}
+
+void Parser::IgnoreNewLineIF(scanner::TokenType type) {
+    const scanner::Token *peek;
+
+    if (this->tkcur_.type != scanner::TokenType::END_OF_LINE)
+        return;
+
+    if (!this->scanner_.PeekToken(&peek))
+        throw ScannerException();
+
+    if (peek->type == type)
         this->Eat(true);
 }
 

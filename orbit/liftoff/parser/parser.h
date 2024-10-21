@@ -12,7 +12,8 @@
 
 namespace liftoff::parser {
     constexpr const char *kStandardError[] = {
-        "invalid syntax"
+        "invalid syntax",
+        "only identifiers are allowed before the '=' \"sign\""
     };
 
     class Context;
@@ -64,11 +65,15 @@ namespace liftoff::parser {
             return this->tkcur_.type > begin && this->tkcur_.type < end;
         }
 
+        [[nodiscard]] ASTHandle<ASTNode *> ParseAssignment(ASTHandle<ASTNode *> &left);
+
         [[nodiscard]] ASTHandle<ASTNode *> ParseExpression();
 
         [[nodiscard]] ASTHandle<ASTNode *> ParseExpression(int precedence);
 
         [[nodiscard]] ASTHandle<ASTNode *> ParseExpression(scanner::TokenType precedence);
+
+        [[nodiscard]] ASTHandle<ASTNode *> ParseExpressionList(ASTHandle<ASTNode *> &left);
 
         [[nodiscard]] ASTHandle<ASTNode *> ParseIdentifier();
 
@@ -87,6 +92,8 @@ namespace liftoff::parser {
         void Eat(bool ignore_nl);
 
         void EatNL();
+
+        void IgnoreNewLineIF(scanner::TokenType type);
 
         /**
          * @brief Report a parsing error.

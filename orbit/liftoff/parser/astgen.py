@@ -30,6 +30,13 @@ NODES = {
             "loc": "scanner::Loc"
         }
     },
+    "Assignment": {
+        "fields": {
+            "token_type": "scanner::TokenType",
+            "name": "ASTNode*",
+            "value": "ASTNode*"
+        }
+    },
     "Binary": {
         "fields": {
             "token_type": "scanner::TokenType",
@@ -41,6 +48,12 @@ NODES = {
         "fields": {
             "value": "orbiter::datatype::ORString*"
         }
+    },
+    "ListExpression": {
+        "fields": {
+            "elements": "std::vector<ASTHandle<ASTNode*>>"
+        },
+        "node_type": ["LIST", "TUPLE"]
     },
     "Literal": {
         "fields": {
@@ -69,36 +82,16 @@ def generate_custom_content():
     return """"""
 
 
-def generate_make_functions():
-    make_functions = []
+def generate_node_enum():
+    enum_values = []
     for node_name, node_info in NODES.items():
         if node_name == "ASTNode":
             continue
-
-        vector_initializations = []
-        for field_name, field_type in node_info['fields'].items():
-            if field_type.startswith("std::vector"):
-                vector_initializations.append(f"        new (&node->{field_name}) {field_type}();")
-
-        vector_init_code = "\n".join(vector_initializations)
-
-        make_functions.append(f"""
-inline ASTHandle<{node_name}*> Make{node_name}(const scanner::Loc &loc) {{
-    auto *node = ({node_name} *) orbiter::memory::Calloc(sizeof({node_name}));
-    if(node != nullptr) {{
-        node->node_type = NodeType::{node_name.upper()};
-        node->loc = loc;
-        
-{vector_init_code}
-    }}
-    return ASTHandle(node);
-}}
-""")
-    return "\n".join(make_functions)
-
-
-def generate_node_enum():
-    enum_values = [f"    {name.upper()}," for name in NODES.keys() if name != "ASTNode"]
+        if "node_type" in node_info:
+            for name in node_info["node_type"]:
+                enum_values.append(f"    {name},")
+        else:
+            enum_values.append(f"    {node_name.upper()},")
     return "enum class NodeType {\n" + "\n".join(enum_values) + "\n};\n\n"
 
 
@@ -139,9 +132,16 @@ def generate_cleanup_function():
         if name == "ASTNode":
             continue
         cleanup_body = generate_cleanup(fields['fields'])
-
         if cleanup_body:
-            cleanup_cases.append(f"""        case NodeType::{name.upper()}: {{
+            if 'node_type' in fields:
+                for node_type in fields['node_type']:
+                    cleanup_cases.append(f"""        case NodeType::{node_type}:""")
+                cleanup_cases.append(f"""        {{
+                auto* node = ({name}*)ast_node;{cleanup_body}
+                break;
+            }}""")
+            else:
+                cleanup_cases.append(f"""        case NodeType::{name.upper()}: {{
                 auto* node = ({name}*)ast_node;{cleanup_body}
                 break;
             }}""")
@@ -159,6 +159,55 @@ def generate_cleanup_function():
     orbiter::memory::Free(ast_node);
 }}
 """
+
+
+def generate_make_functions():
+    make_functions = []
+    for node_name, node_info in NODES.items():
+        if node_name == "ASTNode":
+            continue
+
+        vector_initializations = []
+        for field_name, field_type in node_info['fields'].items():
+            if field_type.startswith("std::vector"):
+                vector_initializations.append(f"        new (&node->{field_name}) {field_type}();")
+
+        vector_init_code = "\n".join(vector_initializations)
+
+        if 'node_type' in node_info:
+            node_types = node_info['node_type']
+            node_type_check = " || ".join(f"node_type == NodeType::{nt}" for nt in node_types)
+            make_functions.append(f"""
+inline ASTHandle<{node_name}*> Make{node_name}(const scanner::Loc &loc, NodeType node_type) {{
+    assert({node_type_check});
+    auto *node = ({node_name} *) orbiter::memory::Calloc(sizeof({node_name}));
+    if(node != nullptr) {{
+        node->node_type = node_type;
+        node->loc = loc;
+        
+{vector_init_code}
+    }}
+    return ASTHandle(node);
+}}
+""")
+        else:
+            make_functions.append(f"""
+inline ASTHandle<{node_name}*> Make{node_name}(const scanner::Loc &loc) {{
+    auto *node = ({node_name} *) orbiter::memory::Calloc(sizeof({node_name}));
+    if(node != nullptr) {{
+        node->node_type = NodeType::{node_name.upper()};
+        node->loc = loc;
+        
+{vector_init_code}
+    }}
+    return ASTHandle(node);
+}}
+""")
+    return "\n".join(make_functions)
+
+
+def generate_ast():
+    return "\n".join(generate_node(name, fields) for name, fields in NODES.items())
 
 
 def generate_ast_handle():
@@ -242,27 +291,37 @@ def generate_ast_handle():
 
 
 def generate_visitor_base():
-    visit_cases = "\n        ".join(
-        f"case NodeType::{name.upper()}: return static_cast<Derived*>(this)->visit{name}(({name} *) node);" for name in
-        NODES.keys() if name != "ASTNode")
-    visit_methods = "\n\n    ".join(f"ASTNode* visit{name}({name}* node) {{ return node; }}" for name in NODES.keys())
+    visit_cases = []
+    visit_methods = []
+
+    for name, node_info in NODES.items():
+        if name == "ASTNode":
+            continue
+
+        if 'node_type' in node_info:
+            for node_type in node_info['node_type']:
+                visit_cases.append(f"case NodeType::{node_type}:")
+            visit_cases.append(f"    return static_cast<Derived*>(this)->visit{name}(({name} *) node);")
+        else:
+            visit_cases.append(f"case NodeType::{name.upper()}: return static_cast<Derived*>(this)->visit{name}(({name} *) node);")
+
+        visit_methods.append(f"ASTNode* visit{name}({name}* node) {{ return node; }}")
+
+    visit_cases_str = "\n        ".join(visit_cases)
+    visit_methods_str = "\n\n    ".join(visit_methods)
 
     return f"""
 template <typename Derived>
 struct ASTVisitor {{
     ASTNode* visit(ASTNode* node) {{
         switch(node->node_type) {{
-        {visit_cases}
+        {visit_cases_str}
         default: assert(false); return nullptr;
         }}
     }}
     
-    {visit_methods}
+    {visit_methods_str}
 }};"""
-
-
-def generate_ast():
-    return "\n".join(generate_node(name, fields) for name, fields in NODES.items())
 
 
 def create_visitor(name):
