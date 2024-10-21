@@ -18,22 +18,24 @@
 #include <orbit/liftoff/symtable.h>
 
 namespace liftoff::parser {
-    enum class NodeType {
-        ASSIGNMENT,
-        BINARY,
-        ELVIS,
-        BRANCH,
-        IDENTIFIER,
-        LIST,
-        TUPLE,
-        LITERAL,
-        MODULE,
-        UNARY,
-        UPDATE,
-    };
+enum class NodeType {
+    ASSIGNMENT,
+    BINARY,
+    ELVIS,
+    BRANCH,
+    IDENTIFIER,
+    LIST,
+    TUPLE,
+    LITERAL,
+    MODULE,
+    INDEX,
+    SLICE,
+    UNARY,
+    UPDATE,
+};
 
 
-    template<typename T>
+template<typename T>
     class ASTHandle {
         static_assert(std::is_pointer_v<T>, "T must be a pointer type");
         static_assert(std::is_base_of_v<struct ASTNode, std::remove_pointer_t<T> >,
@@ -95,7 +97,7 @@ namespace liftoff::parser {
 
         T release() noexcept {
             T temp = this->node_;
-
+            
             this->node_ = nullptr;
 
             return temp;
@@ -104,256 +106,295 @@ namespace liftoff::parser {
         void reset() noexcept {
             if (this->node_ != nullptr) {
                 ASTNodeCleanup(this->node_);
-
+                
                 this->node_ = nullptr;
             }
         }
     };
 
-    struct ASTNode {
-        NodeType node_type;
-        scanner::Loc loc;
-    };
+struct ASTNode {
+    NodeType node_type;
+    scanner::Loc loc;
+};
 
-    struct Assignment : ASTNode {
-        scanner::TokenType token_type;
-        ASTNode *name;
-        ASTNode *value;
-    };
+struct Assignment: ASTNode {
+    scanner::TokenType token_type;
+    ASTNode* name;
+    ASTNode* value;
+};
 
-    struct Binary : ASTNode {
-        scanner::TokenType token_type;
-        ASTNode *left;
-        ASTNode *right;
-    };
+struct Binary: ASTNode {
+    scanner::TokenType token_type;
+    ASTNode* left;
+    ASTNode* right;
+};
 
-    struct Branch : ASTNode {
-        ASTNode *test;
-        ASTNode *body;
-        ASTNode *orelse;
-    };
+struct Branch: ASTNode {
+    ASTNode* test;
+    ASTNode* body;
+    ASTNode* orelse;
+};
 
-    struct Identifier : ASTNode {
-        orbiter::datatype::ORString *value;
-    };
+struct Identifier: ASTNode {
+    orbiter::datatype::ORString* value;
+};
 
-    struct ListExpression : ASTNode {
-        std::vector<ASTHandle<ASTNode *> > elements;
-    };
+struct ListExpression: ASTNode {
+    std::vector<ASTHandle<ASTNode*>> elements;
+};
 
-    struct Literal : ASTNode {
-        orbiter::datatype::OObject *literal;
-    };
+struct Literal: ASTNode {
+    orbiter::datatype::OObject* literal;
+};
 
-    struct Module : ASTNode {
-        orbiter::datatype::ORString *filename;
-        orbiter::datatype::ORString *filepath;
-        orbiter::datatype::ORString *docstring;
-        std::vector<ASTHandle<ASTNode *> > statements;
-        SymbolTable *sym_t;
-    };
+struct Module: ASTNode {
+    orbiter::datatype::ORString* filename;
+    orbiter::datatype::ORString* filepath;
+    orbiter::datatype::ORString* docstring;
+    std::vector<ASTHandle<ASTNode*>> statements;
+    SymbolTable* sym_t;
+};
 
-    struct Unary : ASTNode {
-        scanner::TokenType token_type;
-        ASTNode *value;
-    };
+struct Subscript: ASTNode {
+    ASTNode* expression;
+    ASTNode* start;
+    ASTNode* stop;
+    ASTNode* step;
+};
 
-    inline void ASTNodeCleanup(ASTNode *ast_node) {
-        if (ast_node == nullptr) return;
+struct Unary: ASTNode {
+    scanner::TokenType token_type;
+    ASTNode* value;
+};
 
-        switch (ast_node->node_type) {
-            case NodeType::ASSIGNMENT: {
-                auto *node = (Assignment *) ast_node;
-                if (node->name)
-                    ASTNodeCleanup(node->name);
-                if (node->value)
-                    ASTNodeCleanup(node->value);
+inline void ASTNodeCleanup(ASTNode* ast_node) {
+    if (ast_node == nullptr) return;
+    
+    switch (ast_node->node_type) {
+        case NodeType::ASSIGNMENT: {
+                auto* node = (Assignment*)ast_node;
+        if (node->name)
+            ASTNodeCleanup(node->name);
+        if (node->value)
+            ASTNodeCleanup(node->value);
+                break;
+            }         case NodeType::BINARY:         case NodeType::ELVIS:         {
+                auto* node = (Binary*)ast_node;
+        if (node->left)
+            ASTNodeCleanup(node->left);
+        if (node->right)
+            ASTNodeCleanup(node->right);
+                break;
+            }         case NodeType::BRANCH: {
+                auto* node = (Branch*)ast_node;
+        if (node->test)
+            ASTNodeCleanup(node->test);
+        if (node->body)
+            ASTNodeCleanup(node->body);
+        if (node->orelse)
+            ASTNodeCleanup(node->orelse);
+                break;
+            }         case NodeType::IDENTIFIER: {
+                auto* node = (Identifier*)ast_node;
+        Release(node->value);
+                break;
+            }         case NodeType::LIST:         case NodeType::TUPLE:         {
+                auto* node = (ListExpression*)ast_node;
+        node->elements.~vector();
+                break;
+            }         case NodeType::LITERAL: {
+                auto* node = (Literal*)ast_node;
+        Release(node->literal);
+                break;
+            }         case NodeType::MODULE: {
+                auto* node = (Module*)ast_node;
+        Release(node->filename);
+        Release(node->filepath);
+        Release(node->docstring);
+        node->statements.~vector();
+        SymbolTableDel(node->sym_t);
+                break;
+            }         case NodeType::INDEX:         case NodeType::SLICE:         {
+                auto* node = (Subscript*)ast_node;
+        if (node->expression)
+            ASTNodeCleanup(node->expression);
+        if (node->start)
+            ASTNodeCleanup(node->start);
+        if (node->stop)
+            ASTNodeCleanup(node->stop);
+        if (node->step)
+            ASTNodeCleanup(node->step);
+                break;
+            }         case NodeType::UNARY:         case NodeType::UPDATE:         {
+                auto* node = (Unary*)ast_node;
+        if (node->value)
+            ASTNodeCleanup(node->value);
                 break;
             }
-            case NodeType::BINARY:
-            case NodeType::ELVIS: {
-                auto *node = (Binary *) ast_node;
-                if (node->left)
-                    ASTNodeCleanup(node->left);
-                if (node->right)
-                    ASTNodeCleanup(node->right);
-                break;
-            }
-            case NodeType::BRANCH: {
-                auto *node = (Branch *) ast_node;
-                if (node->test)
-                    ASTNodeCleanup(node->test);
-                if (node->body)
-                    ASTNodeCleanup(node->body);
-                if (node->orelse)
-                    ASTNodeCleanup(node->orelse);
-                break;
-            }
-            case NodeType::IDENTIFIER: {
-                auto *node = (Identifier *) ast_node;
-                Release(node->value);
-                break;
-            }
-            case NodeType::LIST:
-            case NodeType::TUPLE: {
-                auto *node = (ListExpression *) ast_node;
-                node->elements.~vector();
-                break;
-            }
-            case NodeType::LITERAL: {
-                auto *node = (Literal *) ast_node;
-                Release(node->literal);
-                break;
-            }
-            case NodeType::MODULE: {
-                auto *node = (Module *) ast_node;
-                Release(node->filename);
-                Release(node->filepath);
-                Release(node->docstring);
-                node->statements.~vector();
-                SymbolTableDel(node->sym_t);
-                break;
-            }
-            case NodeType::UNARY:
-            case NodeType::UPDATE: {
-                auto *node = (Unary *) ast_node;
-                if (node->value)
-                    ASTNodeCleanup(node->value);
-                break;
-            }
-            default:
-                assert(false && "Unknown node type");
-                break;
-        }
-
-        orbiter::memory::Free(ast_node);
+        default:
+            assert(false && "Unknown node type");
+            break;
     }
+    
+    orbiter::memory::Free(ast_node);
+}
 
 
-    template<typename Derived>
-    struct ASTVisitor {
-        ASTNode *visit(ASTNode *node) {
-            switch (node->node_type) {
-                case NodeType::ASSIGNMENT: return static_cast<Derived *>(this)->visitAssignment((Assignment *) node);
-                case NodeType::BINARY:
-                case NodeType::ELVIS:
-                    return static_cast<Derived *>(this)->visitBinary((Binary *) node);
-                case NodeType::BRANCH: return static_cast<Derived *>(this)->visitBranch((Branch *) node);
-                case NodeType::IDENTIFIER: return static_cast<Derived *>(this)->visitIdentifier((Identifier *) node);
-                case NodeType::LIST:
-                case NodeType::TUPLE:
-                    return static_cast<Derived *>(this)->visitListExpression((ListExpression *) node);
-                case NodeType::LITERAL: return static_cast<Derived *>(this)->visitLiteral((Literal *) node);
-                case NodeType::MODULE: return static_cast<Derived *>(this)->visitModule((Module *) node);
-                case NodeType::UNARY:
-                case NodeType::UPDATE:
-                    return static_cast<Derived *>(this)->visitUnary((Unary *) node);
-                default: assert(false);
-                    return nullptr;
-            }
+template <typename Derived>
+struct ASTVisitor {
+    ASTNode* visit(ASTNode* node) {
+        switch(node->node_type) {
+        case NodeType::ASSIGNMENT: return static_cast<Derived*>(this)->visitAssignment((Assignment *) node);
+        case NodeType::BINARY:
+        case NodeType::ELVIS:
+            return static_cast<Derived*>(this)->visitBinary((Binary *) node);
+        case NodeType::BRANCH: return static_cast<Derived*>(this)->visitBranch((Branch *) node);
+        case NodeType::IDENTIFIER: return static_cast<Derived*>(this)->visitIdentifier((Identifier *) node);
+        case NodeType::LIST:
+        case NodeType::TUPLE:
+            return static_cast<Derived*>(this)->visitListExpression((ListExpression *) node);
+        case NodeType::LITERAL: return static_cast<Derived*>(this)->visitLiteral((Literal *) node);
+        case NodeType::MODULE: return static_cast<Derived*>(this)->visitModule((Module *) node);
+        case NodeType::INDEX:
+        case NodeType::SLICE:
+            return static_cast<Derived*>(this)->visitSubscript((Subscript *) node);
+        case NodeType::UNARY:
+        case NodeType::UPDATE:
+            return static_cast<Derived*>(this)->visitUnary((Unary *) node);
+        default: assert(false); return nullptr;
         }
-
-        ASTNode *visitAssignment(Assignment *node) { return node; }
-
-        ASTNode *visitBinary(Binary *node) { return node; }
-
-        ASTNode *visitBranch(Branch *node) { return node; }
-
-        ASTNode *visitIdentifier(Identifier *node) { return node; }
-
-        ASTNode *visitListExpression(ListExpression *node) { return node; }
-
-        ASTNode *visitLiteral(Literal *node) { return node; }
-
-        ASTNode *visitModule(Module *node) { return node; }
-
-        ASTNode *visitUnary(Unary *node) { return node; }
-    };
-
-    inline ASTHandle<Assignment *> MakeAssignment(const scanner::Loc &loc) {
-        auto *node = (Assignment *) orbiter::memory::Calloc(sizeof(Assignment));
-        if (node != nullptr) {
-            node->node_type = NodeType::ASSIGNMENT;
-            node->loc = loc;
-        }
-        return ASTHandle(node);
     }
+    
+    ASTNode* visitAssignment(Assignment* node) { return node; }
 
+    ASTNode* visitBinary(Binary* node) { return node; }
 
-    inline ASTHandle<Binary *> MakeBinary(const scanner::Loc &loc, NodeType node_type) {
-        assert(node_type == NodeType::BINARY || node_type == NodeType::ELVIS);
-        auto *node = (Binary *) orbiter::memory::Calloc(sizeof(Binary));
-        if (node != nullptr) {
-            node->node_type = node_type;
-            node->loc = loc;
-        }
-        return ASTHandle(node);
+    ASTNode* visitBranch(Branch* node) { return node; }
+
+    ASTNode* visitIdentifier(Identifier* node) { return node; }
+
+    ASTNode* visitListExpression(ListExpression* node) { return node; }
+
+    ASTNode* visitLiteral(Literal* node) { return node; }
+
+    ASTNode* visitModule(Module* node) { return node; }
+
+    ASTNode* visitSubscript(Subscript* node) { return node; }
+
+    ASTNode* visitUnary(Unary* node) { return node; }
+};
+
+inline ASTHandle<Assignment*> MakeAssignment(const scanner::Loc &loc) {
+    auto *node = (Assignment *) orbiter::memory::Calloc(sizeof(Assignment));
+    if(node != nullptr) {
+        node->node_type = NodeType::ASSIGNMENT;
+        node->loc = loc;
+        
+
     }
+    return ASTHandle(node);
+}
 
 
-    inline ASTHandle<Branch *> MakeBranch(const scanner::Loc &loc) {
-        auto *node = (Branch *) orbiter::memory::Calloc(sizeof(Branch));
-        if (node != nullptr) {
-            node->node_type = NodeType::BRANCH;
-            node->loc = loc;
-        }
-        return ASTHandle(node);
+inline ASTHandle<Binary*> MakeBinary(const scanner::Loc &loc, NodeType node_type) {
+    assert(node_type == NodeType::BINARY || node_type == NodeType::ELVIS);
+    auto *node = (Binary *) orbiter::memory::Calloc(sizeof(Binary));
+    if(node != nullptr) {
+        node->node_type = node_type;
+        node->loc = loc;
+        
+
     }
+    return ASTHandle(node);
+}
 
 
-    inline ASTHandle<Identifier *> MakeIdentifier(const scanner::Loc &loc) {
-        auto *node = (Identifier *) orbiter::memory::Calloc(sizeof(Identifier));
-        if (node != nullptr) {
-            node->node_type = NodeType::IDENTIFIER;
-            node->loc = loc;
-        }
-        return ASTHandle(node);
+inline ASTHandle<Branch*> MakeBranch(const scanner::Loc &loc) {
+    auto *node = (Branch *) orbiter::memory::Calloc(sizeof(Branch));
+    if(node != nullptr) {
+        node->node_type = NodeType::BRANCH;
+        node->loc = loc;
+        
+
     }
+    return ASTHandle(node);
+}
 
 
-    inline ASTHandle<ListExpression *> MakeListExpression(const scanner::Loc &loc, NodeType node_type) {
-        assert(node_type == NodeType::LIST || node_type == NodeType::TUPLE);
-        auto *node = (ListExpression *) orbiter::memory::Calloc(sizeof(ListExpression));
-        if (node != nullptr) {
-            node->node_type = node_type;
-            node->loc = loc;
+inline ASTHandle<Identifier*> MakeIdentifier(const scanner::Loc &loc) {
+    auto *node = (Identifier *) orbiter::memory::Calloc(sizeof(Identifier));
+    if(node != nullptr) {
+        node->node_type = NodeType::IDENTIFIER;
+        node->loc = loc;
+        
 
-            new(&node->elements) std::vector<ASTHandle<ASTNode *> >();
-        }
-        return ASTHandle(node);
     }
+    return ASTHandle(node);
+}
 
 
-    inline ASTHandle<Literal *> MakeLiteral(const scanner::Loc &loc) {
-        auto *node = (Literal *) orbiter::memory::Calloc(sizeof(Literal));
-        if (node != nullptr) {
-            node->node_type = NodeType::LITERAL;
-            node->loc = loc;
-        }
-        return ASTHandle(node);
+inline ASTHandle<ListExpression*> MakeListExpression(const scanner::Loc &loc, NodeType node_type) {
+    assert(node_type == NodeType::LIST || node_type == NodeType::TUPLE);
+    auto *node = (ListExpression *) orbiter::memory::Calloc(sizeof(ListExpression));
+    if(node != nullptr) {
+        node->node_type = node_type;
+        node->loc = loc;
+        
+        new (&node->elements) std::vector<ASTHandle<ASTNode*>>();
     }
+    return ASTHandle(node);
+}
 
 
-    inline ASTHandle<Module *> MakeModule(const scanner::Loc &loc) {
-        auto *node = (Module *) orbiter::memory::Calloc(sizeof(Module));
-        if (node != nullptr) {
-            node->node_type = NodeType::MODULE;
-            node->loc = loc;
+inline ASTHandle<Literal*> MakeLiteral(const scanner::Loc &loc) {
+    auto *node = (Literal *) orbiter::memory::Calloc(sizeof(Literal));
+    if(node != nullptr) {
+        node->node_type = NodeType::LITERAL;
+        node->loc = loc;
+        
 
-            new(&node->statements) std::vector<ASTHandle<ASTNode *> >();
-        }
-        return ASTHandle(node);
     }
+    return ASTHandle(node);
+}
 
 
-    inline ASTHandle<Unary *> MakeUnary(const scanner::Loc &loc, NodeType node_type) {
-        assert(node_type == NodeType::UNARY || node_type == NodeType::UPDATE);
-        auto *node = (Unary *) orbiter::memory::Calloc(sizeof(Unary));
-        if (node != nullptr) {
-            node->node_type = node_type;
-            node->loc = loc;
-        }
-        return ASTHandle(node);
+inline ASTHandle<Module*> MakeModule(const scanner::Loc &loc) {
+    auto *node = (Module *) orbiter::memory::Calloc(sizeof(Module));
+    if(node != nullptr) {
+        node->node_type = NodeType::MODULE;
+        node->loc = loc;
+        
+        new (&node->statements) std::vector<ASTHandle<ASTNode*>>();
     }
+    return ASTHandle(node);
+}
+
+
+inline ASTHandle<Subscript*> MakeSubscript(const scanner::Loc &loc, NodeType node_type) {
+    assert(node_type == NodeType::INDEX || node_type == NodeType::SLICE);
+    auto *node = (Subscript *) orbiter::memory::Calloc(sizeof(Subscript));
+    if(node != nullptr) {
+        node->node_type = node_type;
+        node->loc = loc;
+        
+
+    }
+    return ASTHandle(node);
+}
+
+
+inline ASTHandle<Unary*> MakeUnary(const scanner::Loc &loc, NodeType node_type) {
+    assert(node_type == NodeType::UNARY || node_type == NodeType::UPDATE);
+    auto *node = (Unary *) orbiter::memory::Calloc(sizeof(Unary));
+    if(node != nullptr) {
+        node->node_type = node_type;
+        node->loc = loc;
+        
+
+    }
+    return ASTHandle(node);
+}
+
+
 } // namespace liftoff::parser
 #endif // !ORBIT_LIFTOFF_PARSER_AST_H_

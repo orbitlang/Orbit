@@ -77,6 +77,15 @@ NODES = {
             "sym_t": "SymbolTable*"
         }
     },
+    "Subscript": {
+        "fields": {
+            "expression": "ASTNode*",
+            "start": "ASTNode*",
+            "stop": "ASTNode*",
+            "step": "ASTNode*"
+        },
+        "node_type": ["INDEX", "SLICE"]
+    },
     "Unary": {
         "fields": {
             "token_type": "scanner::TokenType",

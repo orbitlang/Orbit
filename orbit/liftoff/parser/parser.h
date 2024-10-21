@@ -14,7 +14,9 @@ namespace liftoff::parser {
     constexpr const char *kStandardError[] = {
         "invalid syntax",
         "only identifiers are allowed before the '=' sign",
-        "unexpected update operator"
+        "unexpected update operator",
+        "subscript definition (index | slice) cannot be empty",
+        "expected ']' after (index | slice) definition"
     };
 
     class Context;
@@ -81,6 +83,8 @@ namespace liftoff::parser {
         [[nodiscard]] ASTHandle<ASTNode *> ParseIdentifier();
 
         [[nodiscard]] ASTHandle<ASTNode *> ParseInfix(ASTHandle<ASTNode *> &left);
+
+        [[nodiscard]] ASTHandle<ASTNode *> ParseIndexing(ASTHandle<ASTNode *> &left);
 
         [[nodiscard]] ASTHandle<ASTNode *> ParseLiteral();
 

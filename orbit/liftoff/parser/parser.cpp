@@ -217,6 +217,43 @@ ASTHandle<ASTNode *> Parser::ParseInfix(ASTHandle<ASTNode *> &left) {
     return infix;
 }
 
+ASTHandle<ASTNode *> Parser::ParseIndexing(ASTHandle<ASTNode *> &left) {
+    auto subscript = MakeSubscript(TKCUR_LOC, NodeType::INDEX);
+
+    subscript->expression = left.release();
+
+    this->Eat(true);
+
+    if (this->Match(TokenType::RIGHT_SQUARE))
+        throw ParserException(3);
+
+    if (!this->Match(TokenType::COLON))
+        subscript->start = this->ParseExpression().release();
+
+    if (this->MatchEat(TokenType::COLON, true)) {
+        subscript->node_type = NodeType::SLICE;
+
+        if (!this->Match(TokenType::COLON, TokenType::RIGHT_SQUARE))
+            subscript->stop = this->ParseExpression().release();
+
+        if (this->MatchEat(TokenType::COLON, true)) {
+            if (!this->Match(TokenType::RIGHT_SQUARE))
+                subscript->step = this->ParseExpression().release();
+        }
+    }
+
+    this->EatNL();
+
+    subscript->loc.end = TKCUR_LOC.end;
+
+    if (!this->Match(TokenType::RIGHT_SQUARE))
+        throw ParserException(4);
+
+    subscript->loc.start = subscript->expression->loc.start;
+
+    return subscript;
+}
+
 ASTHandle<ASTNode *> Parser::ParseExpression(int precedence) {
     ASTHandle<ASTNode *> left;
 
@@ -405,7 +442,6 @@ Parser::LedMeth Parser::LookupLED(TokenType token) noexcept {
         return &Parser::ParseInfix;
 
     switch (token) {
-        // Assignment operators
         case TokenType::EQUAL:
         case TokenType::ASSIGN_ADD:
         case TokenType::ASSIGN_SUB:
@@ -416,6 +452,8 @@ Parser::LedMeth Parser::LookupLED(TokenType token) noexcept {
             return &Parser::ParseExpressionList;
         case TokenType::ELVIS:
             return &Parser::ParseElvis;
+        case TokenType::LEFT_SQUARE:
+            return &Parser::ParseIndexing;
         case TokenType::MINUS_MINUS:
         case TokenType::PLUS_PLUS:
             return &Parser::ParsePostInc;
