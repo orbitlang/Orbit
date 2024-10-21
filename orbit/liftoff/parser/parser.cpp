@@ -56,7 +56,71 @@ void Parser::ParseDoc() {
 */
 
 int PeekPrecedence(TokenType token) {
-    return 0;
+    switch (token) {
+        case TokenType::END_OF_LINE:
+        case TokenType::END_OF_FILE:
+            return -1;
+
+        case TokenType::WALRUS:
+            return 10;
+        case TokenType::EQUAL:
+        case TokenType::ASSIGN_ADD:
+        case TokenType::ASSIGN_SUB:
+            return 20;
+        case TokenType::COMMA:
+            return 30;
+        case TokenType::ARROW_RIGHT:
+            return 40;
+        case TokenType::ELVIS:
+        case TokenType::QUESTION:
+        case TokenType::NULL_COALESCING:
+            return 50;
+        case TokenType::PIPELINE:
+            return 60;
+        case TokenType::OR:
+            return 70;
+        case TokenType::AND:
+            return 80;
+        case TokenType::PIPE:
+            return 90;
+        case TokenType::CARET:
+            return 100;
+        case TokenType::AMPERSAND:
+            return 110;
+        case TokenType::EQUAL_EQUAL:
+        case TokenType::EQUAL_STRICT:
+        case TokenType::KW_IN:
+        case TokenType::KW_NOT:
+        case TokenType::NOT_EQUAL:
+        case TokenType::NOT_EQUAL_STRICT:
+            return 120;
+        case TokenType::LESS:
+        case TokenType::LESS_EQ:
+        case TokenType::GREATER:
+        case TokenType::GREATER_EQ:
+            return 130;
+        case TokenType::ARROW_LEFT:
+            return 140;
+        case TokenType::SHL:
+        case TokenType::SHR:
+            return 150;
+        case TokenType::PLUS:
+        case TokenType::MINUS:
+            return 160;
+        case TokenType::ASTERISK:
+        case TokenType::SLASH:
+        case TokenType::SLASH_SLASH:
+        case TokenType::PERCENT:
+            return 170;
+        case TokenType::DOT:
+        case TokenType::QUESTION_DOT:
+            return 180;
+        case TokenType::PLUS_PLUS:
+        case TokenType::MINUS_MINUS:
+            return 190;
+        default:
+            return 1000;
+    }
 }
 
 ASTHandle<ASTNode *> Parser::ParseExpression() {
@@ -77,19 +141,46 @@ ASTHandle<ASTNode *> Parser::ParseIdentifier() {
     return id;
 }
 
+ASTHandle<ASTNode *> Parser::ParseInfix(ASTHandle<ASTNode *> &left) {
+    const auto tk_type = TKCUR_TYPE;
+
+    this->Eat(true);
+
+    auto right = this->ParseExpression(tk_type);
+
+    auto infix = MakeBinary(TKCUR_LOC);
+
+    infix->token_type = tk_type;
+
+    infix->loc.start = left->loc.start;
+    infix->loc.end = right->loc.end;
+
+    infix->left = left.release();
+    infix->right = right.release();
+
+    return infix;
+}
+
 ASTHandle<ASTNode *> Parser::ParseExpression(int precedence) {
     ASTHandle<ASTNode *> left;
 
     LedMeth led;
     NudMeth nud;
 
-    if ((nud = Parser::LookupNUD(TKCUR_TYPE)) == nullptr) {
+    if ((nud = LookupNUD(TKCUR_TYPE)) == nullptr) {
         assert(false);
     }
 
     left = (this->*nud)();
 
-    assert(left);
+    while (precedence < PeekPrecedence(TKCUR_TYPE)) {
+        if ((led = LookupLED(TKCUR_TYPE)) == nullptr)
+            break;
+
+        left = (this->*led)(left);
+    }
+
+    return left;
 }
 
 ASTHandle<ASTNode *> Parser::ParseExpression(TokenType precedence) {
@@ -179,6 +270,16 @@ ASTHandle<ASTNode *> Parser::ParseStatement() {
     return {};
 }
 
+Parser::LedMeth Parser::LookupLED(TokenType token) noexcept {
+    if (token > TokenType::INFIX_BEGIN && token < TokenType::INFIX_END)
+        return &Parser::ParseInfix;
+
+    switch (token) {
+        default:
+            return nullptr;
+    }
+}
+
 Parser::NudMeth Parser::LookupNUD(TokenType token) noexcept {
     if (token > TokenType::LITERAL_BEGIN && token < TokenType::LITERAL_END)
         return &Parser::ParseLiteral;
@@ -211,7 +312,15 @@ ASTHandle<ASTNode *> Parser::ParsePrefix() {
     this->Eat(true);
 
     prefix->token_type = tk_type;
-    prefix->value = this->ParseExpression(tk_type).release();
+
+    // NOTE: We use the highest precedence among infix operators (ASTERISK in this case)
+    // as the minimum precedence for parsing the prefix expression's value.
+    // This ensures that we don't accidentally parse too little of the subsequent expression.
+    // For example, in "-a * b", we want to parse "a" as the operand, not "a * b".
+    // Using a high precedence guarantees that we'll stop at the first infix operator
+    // we encounter, correctly parsing unary expressions.
+    prefix->value = this->ParseExpression(TokenType::ASTERISK).release();
+
     prefix->value->loc.end = prefix->value->loc.end;
 
     return prefix;

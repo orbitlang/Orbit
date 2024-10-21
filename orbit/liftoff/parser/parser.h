@@ -18,7 +18,7 @@ namespace liftoff::parser {
     class Context;
 
     class Parser {
-        using LedMeth = ASTHandle<ASTNode *> (Parser::*)(ASTNode *);
+        using LedMeth = ASTHandle<ASTNode *> (Parser::*)(ASTHandle<ASTNode *> &);
         using NudMeth = ASTHandle<ASTNode *> (Parser::*)();
 
         friend Context;
@@ -72,11 +72,15 @@ namespace liftoff::parser {
 
         [[nodiscard]] ASTHandle<ASTNode *> ParseIdentifier();
 
+        [[nodiscard]] ASTHandle<ASTNode *> ParseInfix(ASTHandle<ASTNode *> &left);
+
         [[nodiscard]] ASTHandle<ASTNode *> ParseLiteral();
 
         [[nodiscard]] ASTHandle<ASTNode *> ParseStatement();
 
         [[nodiscard]] ASTHandle<ASTNode *> ParsePrefix();
+
+        static LedMeth LookupLED(scanner::TokenType token) noexcept;
 
         static NudMeth LookupNUD(scanner::TokenType token) noexcept;
 
