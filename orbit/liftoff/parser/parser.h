@@ -13,7 +13,8 @@
 namespace liftoff::parser {
     constexpr const char *kStandardError[] = {
         "invalid syntax",
-        "only identifiers are allowed before the '=' \"sign\""
+        "only identifiers are allowed before the '=' sign",
+        "unexpected update operator"
     };
 
     class Context;
@@ -67,6 +68,8 @@ namespace liftoff::parser {
 
         [[nodiscard]] ASTHandle<ASTNode *> ParseAssignment(ASTHandle<ASTNode *> &left);
 
+        [[nodiscard]] ASTHandle<ASTNode *> ParseElvis(ASTHandle<ASTNode *> &left);
+
         [[nodiscard]] ASTHandle<ASTNode *> ParseExpression();
 
         [[nodiscard]] ASTHandle<ASTNode *> ParseExpression(int precedence);
@@ -81,9 +84,13 @@ namespace liftoff::parser {
 
         [[nodiscard]] ASTHandle<ASTNode *> ParseLiteral();
 
+        [[nodiscard]] ASTHandle<ASTNode *> ParsePrefix();
+
+        [[nodiscard]] ASTHandle<ASTNode *> ParsePostInc(ASTHandle<ASTNode *> &left);
+
         [[nodiscard]] ASTHandle<ASTNode *> ParseStatement();
 
-        [[nodiscard]] ASTHandle<ASTNode *> ParsePrefix();
+        [[nodiscard]] ASTHandle<ASTNode *> ParseTernary(ASTHandle<ASTNode *> &left);
 
         static LedMeth LookupLED(scanner::TokenType token) noexcept;
 

@@ -42,6 +42,14 @@ NODES = {
             "token_type": "scanner::TokenType",
             "left": "ASTNode*",
             "right": "ASTNode*"
+        },
+        "node_type": ["BINARY", "ELVIS"]
+    },
+    "Branch": {
+        "fields": {
+            "test": "ASTNode*",
+            "body": "ASTNode*",
+            "orelse": "ASTNode*"
         }
     },
     "Identifier": {
@@ -73,7 +81,8 @@ NODES = {
         "fields": {
             "token_type": "scanner::TokenType",
             "value": "ASTNode*"
-        }
+        },
+        "node_type": ["UNARY", "UPDATE"]
     }
 }
 
@@ -303,7 +312,8 @@ def generate_visitor_base():
                 visit_cases.append(f"case NodeType::{node_type}:")
             visit_cases.append(f"    return static_cast<Derived*>(this)->visit{name}(({name} *) node);")
         else:
-            visit_cases.append(f"case NodeType::{name.upper()}: return static_cast<Derived*>(this)->visit{name}(({name} *) node);")
+            visit_cases.append(
+                f"case NodeType::{name.upper()}: return static_cast<Derived*>(this)->visit{name}(({name} *) node);")
 
         visit_methods.append(f"ASTNode* visit{name}({name}* node) {{ return node; }}")
 

@@ -66,6 +66,8 @@ int PeekPrecedence(TokenType token) {
         case TokenType::ASSIGN_ADD:
         case TokenType::ASSIGN_SUB:
             return 20;
+        case TokenType::COMMA:
+            return 25;
         case TokenType::ELVIS:
         case TokenType::QUESTION:
         case TokenType::NULL_COALESCING:
@@ -108,8 +110,7 @@ int PeekPrecedence(TokenType token) {
         case TokenType::SLASH_SLASH:
         case TokenType::PERCENT:
             return 150; // Multiplicative operators
-        case TokenType::COMMA:
-            return 160;
+
         case TokenType::DOT:
         case TokenType::QUESTION_DOT:
             return 170; // Member access
@@ -162,6 +163,22 @@ ASTHandle<ASTNode *> Parser::ParseAssignment(ASTHandle<ASTNode *> &left) {
     return assign;
 }
 
+ASTHandle<ASTNode *> Parser::ParseElvis(ASTHandle<ASTNode *> &left) {
+    this->Eat(true);
+
+    auto expr = this->ParseExpression(TokenType::COMMA);
+
+    auto elvis = MakeBinary(TKCUR_LOC, NodeType::ELVIS);
+
+    elvis->left = left.release();
+    elvis->right = expr.release();
+
+    elvis->loc.start = elvis->left->loc.start;
+    elvis->loc.end = elvis->right->loc.end;
+
+    return elvis;
+}
+
 ASTHandle<ASTNode *> Parser::ParseExpression() {
     return this->ParseExpression(0);
 }
@@ -187,7 +204,7 @@ ASTHandle<ASTNode *> Parser::ParseInfix(ASTHandle<ASTNode *> &left) {
 
     auto right = this->ParseExpression(tk_type);
 
-    auto infix = MakeBinary(TKCUR_LOC);
+    auto infix = MakeBinary(TKCUR_LOC, NodeType::BINARY);
 
     infix->token_type = tk_type;
 
@@ -320,6 +337,26 @@ ASTHandle<ASTNode *> Parser::ParseLiteral() {
     return literal;
 }
 
+ASTHandle<ASTNode *> Parser::ParsePostInc(ASTHandle<ASTNode *> &left) {
+    // TODO: post_inc
+    if (left->node_type != NodeType::IDENTIFIER)
+        //&& left->node_type != NodeType::INDEX
+        //&& left->node_type != NodeType::SELECTOR)
+        throw ParserException(2);
+
+    auto update = MakeUnary(TKCUR_LOC, NodeType::UPDATE);
+
+    update->token_type = TKCUR_TYPE;
+
+    update->loc.start = left->loc.start;
+
+    update->value = left.release();
+
+    this->Eat(false);
+
+    return update;
+}
+
 ASTHandle<ASTNode *> Parser::ParseStatement() {
     auto start = TKCUR_START;
 
@@ -336,6 +373,33 @@ ASTHandle<ASTNode *> Parser::ParseStatement() {
     return {};
 }
 
+ASTHandle<ASTNode *> Parser::ParseTernary(ASTHandle<ASTNode *> &left) {
+    auto branch = MakeBranch(TKCUR_LOC);
+
+    branch->test = left.release();
+
+    branch->loc.start = left->loc.start;
+
+    this->Eat(true);
+
+    branch->body = this->ParseExpression(TokenType::COMMA).release();
+
+    branch->loc.end = branch->body->loc.end;
+
+    this->IgnoreNewLineIF(TokenType::COLON);
+
+    if (this->MatchEat(TokenType::COLON, false)) {
+        this->EatNL();
+
+        branch->orelse = this->ParseExpression(TokenType::COMMA).release();
+
+        branch->loc.end = branch->orelse->loc.end;
+    }
+
+    return branch;
+}
+
+
 Parser::LedMeth Parser::LookupLED(TokenType token) noexcept {
     if (token > TokenType::INFIX_BEGIN && token < TokenType::INFIX_END)
         return &Parser::ParseInfix;
@@ -350,6 +414,13 @@ Parser::LedMeth Parser::LookupLED(TokenType token) noexcept {
             return &Parser::ParseAssignment;
         case TokenType::COMMA:
             return &Parser::ParseExpressionList;
+        case TokenType::ELVIS:
+            return &Parser::ParseElvis;
+        case TokenType::MINUS_MINUS:
+        case TokenType::PLUS_PLUS:
+            return &Parser::ParsePostInc;
+        case TokenType::QUESTION:
+            return &Parser::ParseTernary;
         default:
             return nullptr;
     }
@@ -382,7 +453,7 @@ Parser::NudMeth Parser::LookupNUD(TokenType token) noexcept {
 ASTHandle<ASTNode *> Parser::ParsePrefix() {
     const auto tk_type = TKCUR_TYPE;
 
-    auto prefix = MakeUnary(TKCUR_LOC);
+    auto prefix = MakeUnary(TKCUR_LOC, NodeType::UNARY);
 
     this->Eat(true);
 
