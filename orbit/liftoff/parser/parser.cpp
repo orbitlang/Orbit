@@ -265,7 +265,7 @@ ASTHandle<ASTNode *> Parser::ParseInNotIn(ASTHandle<ASTNode *> &left) {
         this->Eat(true);
     }
 
-    if(!this->MatchEat(TokenType::KW_IN, true))
+    if (!this->MatchEat(TokenType::KW_IN, true))
         throw ParserException(0);
 
     auto binary = MakeBinary(TKCUR_LOC, node_type);
@@ -277,6 +277,27 @@ ASTHandle<ASTNode *> Parser::ParseInNotIn(ASTHandle<ASTNode *> &left) {
     binary->loc.end = binary->right->loc.end;
 
     return binary;
+}
+
+ASTHandle<ASTNode *> Parser::ParseList() {
+    auto list = MakeListExpression(TKCUR_LOC, NodeType::LIST);
+
+    this->Eat(true);
+
+    if (!this->Match(TokenType::RIGHT_SQUARE)) {
+        do {
+            this->EatNL();
+
+            list->elements.push_back(this->ParseExpression(TokenType::COMMA));
+        } while (this->MatchEat(TokenType::COMMA, true));
+    }
+
+    list->loc.end = TKCUR_LOC.end;
+
+    if (!this->MatchEat(TokenType::RIGHT_SQUARE, false))
+        throw ParserException(5);
+
+    return list;
 }
 
 ASTHandle<ASTNode *> Parser::ParseExpression(int precedence) {
@@ -556,6 +577,10 @@ Parser::NudMeth Parser::LookupNUD(TokenType token) noexcept {
         case TokenType::IDENTIFIER:
         case TokenType::SELF:
             return &Parser::ParseIdentifier;
+
+        // Grouping and composite types
+        case TokenType::LEFT_SQUARE:
+            return &Parser::ParseList;
 
         // Unary prefix operators
         case TokenType::PLUS:

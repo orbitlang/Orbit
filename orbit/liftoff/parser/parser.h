@@ -16,7 +16,8 @@ namespace liftoff::parser {
         "only identifiers are allowed before the '=' sign",
         "unexpected update operator",
         "subscript definition (index | slice) cannot be empty",
-        "expected ']' after (index | slice) definition"
+        "expected ']' after (index | slice) definition",
+        "expected ']' after list definition"
     };
 
     class Context;
@@ -87,6 +88,8 @@ namespace liftoff::parser {
         [[nodiscard]] ASTHandle<ASTNode *> ParseInfix(ASTHandle<ASTNode *> &left);
 
         [[nodiscard]] ASTHandle<ASTNode *> ParseInNotIn(ASTHandle<ASTNode *> &left);
+
+        [[nodiscard]] ASTHandle<ASTNode *> ParseList();
 
         [[nodiscard]] ASTHandle<ASTNode *> ParseLiteral();
 
