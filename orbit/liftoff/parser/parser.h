@@ -82,9 +82,11 @@ namespace liftoff::parser {
 
         [[nodiscard]] ASTHandle<ASTNode *> ParseIdentifier();
 
+        [[nodiscard]] ASTHandle<ASTNode *> ParseIndexing(ASTHandle<ASTNode *> &left);
+
         [[nodiscard]] ASTHandle<ASTNode *> ParseInfix(ASTHandle<ASTNode *> &left);
 
-        [[nodiscard]] ASTHandle<ASTNode *> ParseIndexing(ASTHandle<ASTNode *> &left);
+        [[nodiscard]] ASTHandle<ASTNode *> ParseInNotIn(ASTHandle<ASTNode *> &left);
 
         [[nodiscard]] ASTHandle<ASTNode *> ParseLiteral();
 

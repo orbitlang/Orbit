@@ -197,26 +197,6 @@ ASTHandle<ASTNode *> Parser::ParseIdentifier() {
     return id;
 }
 
-ASTHandle<ASTNode *> Parser::ParseInfix(ASTHandle<ASTNode *> &left) {
-    const auto tk_type = TKCUR_TYPE;
-
-    this->Eat(true);
-
-    auto right = this->ParseExpression(tk_type);
-
-    auto infix = MakeBinary(TKCUR_LOC, NodeType::BINARY);
-
-    infix->token_type = tk_type;
-
-    infix->loc.start = left->loc.start;
-    infix->loc.end = right->loc.end;
-
-    infix->left = left.release();
-    infix->right = right.release();
-
-    return infix;
-}
-
 ASTHandle<ASTNode *> Parser::ParseIndexing(ASTHandle<ASTNode *> &left) {
     auto subscript = MakeSubscript(TKCUR_LOC, NodeType::INDEX);
 
@@ -254,6 +234,49 @@ ASTHandle<ASTNode *> Parser::ParseIndexing(ASTHandle<ASTNode *> &left) {
     subscript->loc.start = subscript->expression->loc.start;
 
     return subscript;
+}
+
+ASTHandle<ASTNode *> Parser::ParseInfix(ASTHandle<ASTNode *> &left) {
+    const auto tk_type = TKCUR_TYPE;
+
+    this->Eat(true);
+
+    auto right = this->ParseExpression(tk_type);
+
+    auto infix = MakeBinary(TKCUR_LOC, NodeType::BINARY);
+
+    infix->token_type = tk_type;
+
+    infix->loc.start = left->loc.start;
+    infix->loc.end = right->loc.end;
+
+    infix->left = left.release();
+    infix->right = right.release();
+
+    return infix;
+}
+
+ASTHandle<ASTNode *> Parser::ParseInNotIn(ASTHandle<ASTNode *> &left) {
+    auto node_type = NodeType::IN;
+
+    if (TKCUR_TYPE == TokenType::KW_NOT) {
+        node_type = NodeType::NOT_IN;
+
+        this->Eat(true);
+    }
+
+    if(!this->MatchEat(TokenType::KW_IN, true))
+        throw ParserException(0);
+
+    auto binary = MakeBinary(TKCUR_LOC, node_type);
+
+    binary->left = left.release();
+    binary->right = this->ParseExpression(TokenType::KW_IN).release();
+
+    binary->loc.start = binary->left->loc.start;
+    binary->loc.end = binary->right->loc.end;
+
+    return binary;
 }
 
 ASTHandle<ASTNode *> Parser::ParseExpression(int precedence) {
@@ -504,6 +527,9 @@ Parser::LedMeth Parser::LookupLED(TokenType token) noexcept {
             return &Parser::ParseMemberAccess;
         case TokenType::ELVIS:
             return &Parser::ParseElvis;
+        case TokenType::KW_IN:
+        case TokenType::KW_NOT:
+            return &Parser::ParseInNotIn;
         case TokenType::LEFT_SQUARE:
             return &Parser::ParseIndexing;
         case TokenType::MINUS_MINUS:

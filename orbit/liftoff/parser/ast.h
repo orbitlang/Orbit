@@ -22,6 +22,8 @@ enum class NodeType {
     ASSIGNMENT,
     BINARY,
     ELVIS,
+    IN,
+    NOT_IN,
     NULL_COALESCING,
     SELECTOR,
     BRANCH,
@@ -32,9 +34,9 @@ enum class NodeType {
     MODULE,
     INDEX,
     SLICE,
+    NIL_SAFE,
     UNARY,
     UPDATE,
-    NIL_SAFE,
 };
 
 
@@ -181,7 +183,7 @@ inline void ASTNodeCleanup(ASTNode* ast_node) {
         if (node->value)
             ASTNodeCleanup(node->value);
                 break;
-            }         case NodeType::BINARY:         case NodeType::ELVIS:         case NodeType::NULL_COALESCING:         case NodeType::SELECTOR:         {
+            }         case NodeType::BINARY:         case NodeType::ELVIS:         case NodeType::IN:         case NodeType::NOT_IN:         case NodeType::NULL_COALESCING:         case NodeType::SELECTOR:         {
                 auto* node = (Binary*)ast_node;
         if (node->left)
             ASTNodeCleanup(node->left);
@@ -228,7 +230,7 @@ inline void ASTNodeCleanup(ASTNode* ast_node) {
         if (node->step)
             ASTNodeCleanup(node->step);
                 break;
-            }         case NodeType::UNARY:         case NodeType::UPDATE:         case NodeType::NIL_SAFE:         {
+            }         case NodeType::NIL_SAFE:         case NodeType::UNARY:         case NodeType::UPDATE:         {
                 auto* node = (Unary*)ast_node;
         if (node->value)
             ASTNodeCleanup(node->value);
@@ -250,6 +252,8 @@ struct ASTVisitor {
         case NodeType::ASSIGNMENT: return static_cast<Derived*>(this)->visitAssignment((Assignment *) node);
         case NodeType::BINARY:
         case NodeType::ELVIS:
+        case NodeType::IN:
+        case NodeType::NOT_IN:
         case NodeType::NULL_COALESCING:
         case NodeType::SELECTOR:
             return static_cast<Derived*>(this)->visitBinary((Binary *) node);
@@ -263,9 +267,9 @@ struct ASTVisitor {
         case NodeType::INDEX:
         case NodeType::SLICE:
             return static_cast<Derived*>(this)->visitSubscript((Subscript *) node);
+        case NodeType::NIL_SAFE:
         case NodeType::UNARY:
         case NodeType::UPDATE:
-        case NodeType::NIL_SAFE:
             return static_cast<Derived*>(this)->visitUnary((Unary *) node);
         default: assert(false); return nullptr;
         }
@@ -303,7 +307,7 @@ inline ASTHandle<Assignment*> MakeAssignment(const scanner::Loc &loc) {
 
 
 inline ASTHandle<Binary*> MakeBinary(const scanner::Loc &loc, NodeType node_type) {
-    assert(node_type == NodeType::BINARY || node_type == NodeType::ELVIS || node_type == NodeType::NULL_COALESCING || node_type == NodeType::SELECTOR);
+    assert(node_type == NodeType::BINARY || node_type == NodeType::ELVIS || node_type == NodeType::IN || node_type == NodeType::NOT_IN || node_type == NodeType::NULL_COALESCING || node_type == NodeType::SELECTOR);
     auto *node = (Binary *) orbiter::memory::Calloc(sizeof(Binary));
     if(node != nullptr) {
         node->node_type = node_type;
@@ -390,7 +394,7 @@ inline ASTHandle<Subscript*> MakeSubscript(const scanner::Loc &loc, NodeType nod
 
 
 inline ASTHandle<Unary*> MakeUnary(const scanner::Loc &loc, NodeType node_type) {
-    assert(node_type == NodeType::UNARY || node_type == NodeType::UPDATE || node_type == NodeType::NIL_SAFE);
+    assert(node_type == NodeType::NIL_SAFE || node_type == NodeType::UNARY || node_type == NodeType::UPDATE);
     auto *node = (Unary *) orbiter::memory::Calloc(sizeof(Unary));
     if(node != nullptr) {
         node->node_type = node_type;
