@@ -60,7 +60,7 @@ constexpr KwToken kw2tktype[] = {
     {"loop", TokenType::KW_LOOP},
     {"namespace", TokenType::KW_NAMESPACE},
     {"nil", TokenType::NIL},
-    {"not in", TokenType::KW_NOT},
+    {"not", TokenType::KW_NOT},
     {"of", TokenType::KW_OF},
     {"panic", TokenType::KW_PANIC},
     {"pub", TokenType::KW_PUB},
