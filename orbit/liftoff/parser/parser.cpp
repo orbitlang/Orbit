@@ -419,6 +419,30 @@ ASTHandle<ASTNode *> Parser::ParseExpressionList(ASTHandle<ASTNode *> &left) {
     return list;
 }
 
+ASTHandle<ASTNode *> Parser::ParseExprOrTuple() {
+    auto tuple = MakeListExpression(TKCUR_LOC, NodeType::LIST);
+
+    this->Eat(true);
+
+    if (!this->Match(TokenType::RIGHT_ROUND)) {
+        do {
+            this->EatNL();
+
+            tuple->elements.push_back(this->ParseExpression(TokenType::COMMA));
+        } while (this->MatchEat(TokenType::COMMA, true));
+    }
+
+    tuple->loc.end = TKCUR_LOC.end;
+
+    if (!this->MatchEat(TokenType::RIGHT_ROUND, false))
+        throw ParserException(10);
+
+    if (tuple->elements.size() == 1)
+        return std::move(tuple->elements.back());
+
+    return tuple;
+}
+
 ASTHandle<ASTNode *> Parser::ParseLiteral() {
     HOObject handle;
 
@@ -634,6 +658,8 @@ Parser::NudMeth Parser::LookupNUD(TokenType token) noexcept {
         // Grouping and composite types
         case TokenType::LEFT_BRACES:
             return &Parser::ParseDictSet;
+        case TokenType::LEFT_ROUND:
+            return &Parser::ParseExprOrTuple;
         case TokenType::LEFT_SQUARE:
             return &Parser::ParseList;
 

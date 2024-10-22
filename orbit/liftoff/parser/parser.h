@@ -22,6 +22,7 @@ namespace liftoff::parser {
         "you started defining a set, not a dict",
         "expected '}' after dict definition",
         "expected '}' after set definition",
+        "expected ')' after tuple definition"
     };
 
     class Context;
@@ -86,6 +87,8 @@ namespace liftoff::parser {
         [[nodiscard]] ASTHandle<ASTNode *> ParseExpression(scanner::TokenType precedence);
 
         [[nodiscard]] ASTHandle<ASTNode *> ParseExpressionList(ASTHandle<ASTNode *> &left);
+
+        [[nodiscard]] ASTHandle<ASTNode *> ParseExprOrTuple();
 
         [[nodiscard]] ASTHandle<ASTNode *> ParseIdentifier();
 
