@@ -163,6 +163,63 @@ ASTHandle<ASTNode *> Parser::ParseAssignment(ASTHandle<ASTNode *> &left) {
     return assign;
 }
 
+ASTHandle<ASTNode *> Parser::ParseAPST() {
+    const auto start_pos = TKCUR_LOC.start;
+    const auto tk_type = TKCUR_TYPE;
+
+    auto node_type = NodeType::ASSIGNMENT;
+    switch (tk_type) {
+        case TokenType::KW_AWAIT:
+            node_type = NodeType::AWAIT;
+        break;
+        case TokenType::KW_PANIC:
+            node_type = NodeType::PANIC;
+        break;
+        case TokenType::KW_SPAWN:
+            node_type = NodeType::SPAWN;
+        break;
+        case TokenType::KW_TRAP:
+            node_type = NodeType::TRAP;
+        break;
+        default:
+            assert(false);
+    }
+
+    this->Eat(true);
+
+    auto right = this->ParseExpression(TokenType::COMMA);
+
+    if (right->node_type == node_type)
+        return right;
+
+    auto &unary = (ASTHandle<Unary *> &) right;
+    if (unary->node_type == NodeType::NIL_SAFE && unary->value->node_type == node_type) {
+        unary->loc.start = start_pos;
+
+        return right;
+    }
+
+    auto ret = MakeUnary(TKCUR_LOC, node_type);
+
+    ret->loc.start = start_pos;
+    ret->loc.end = right->loc.end;
+
+    if (right->node_type == NodeType::NIL_SAFE) {
+        auto &unary = (ASTHandle<Unary *> &) right;
+
+        ret->value = unary->value;
+
+        unary->loc.start = start_pos;
+        unary->value = ret.release();
+
+        return right;
+    }
+
+    ret->value = right.release();
+
+    return ret;
+}
+
 ASTHandle<ASTNode *> Parser::ParseDictSet() {
     std::vector<ASTHandle<ASTNode *> > elements;
 
@@ -671,6 +728,13 @@ Parser::NudMeth Parser::LookupNUD(TokenType token) noexcept {
         case TokenType::ASTERISK:
         case TokenType::AMPERSAND:
             return &Parser::ParsePrefix;
+
+        // Keywords that can start expressions
+        case TokenType::KW_AWAIT:
+        case TokenType::KW_PANIC:
+        case TokenType::KW_SPAWN:
+        case TokenType::KW_TRAP:
+            return &Parser::ParseAPST;
 
         default:
             assert(false);

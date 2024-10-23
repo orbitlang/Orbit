@@ -91,7 +91,7 @@ NODES = {
             "token_type": "scanner::TokenType",
             "value": "ASTNode*"
         },
-        "node_type": ["NIL_SAFE", "UNARY", "UPDATE", ]
+        "node_type": ["AWAIT", "NIL_SAFE", "PANIC", "SPAWN", "TRAP", "UNARY", "UPDATE"]
     }
 }
 

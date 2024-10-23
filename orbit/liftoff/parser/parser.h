@@ -76,6 +76,8 @@ namespace liftoff::parser {
 
         [[nodiscard]] ASTHandle<ASTNode *> ParseAssignment(ASTHandle<ASTNode *> &left);
 
+        [[nodiscard]] ASTHandle<ASTNode *> ParseAPST();
+
         [[nodiscard]] ASTHandle<ASTNode *> ParseDictSet();
 
         [[nodiscard]] ASTHandle<ASTNode *> ParseElvis(ASTHandle<ASTNode *> &left);
