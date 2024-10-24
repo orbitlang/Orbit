@@ -91,6 +91,7 @@ namespace liftoff::scanner {
         KW_BREAK,
         KW_CASE,
         KW_CLASS,
+        KW_CONST,
         KW_CONTINUE,
         KW_DEFAULT,
         KW_DEFER,

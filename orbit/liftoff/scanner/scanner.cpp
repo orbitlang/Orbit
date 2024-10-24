@@ -42,6 +42,7 @@ constexpr KwToken kw2tktype[] = {
     {"break", TokenType::KW_BREAK},
     {"case", TokenType::KW_CASE},
     {"class", TokenType::KW_CLASS},
+    {"const", TokenType::KW_CONST},
     {"continue", TokenType::KW_CONTINUE},
     {"default", TokenType::KW_DEFAULT},
     {"defer", TokenType::KW_DEFER},
