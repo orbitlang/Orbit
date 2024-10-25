@@ -298,6 +298,9 @@ ASTHandle<ASTNode *> Parser::ParseIdentifier() {
     if (!id_name)
         throw DatatypeException();
 
+    if (!this->sym_t_->LookupInsert(id_name.get(),TKCUR_START.offset))
+        throw SymbolTableException();
+
     auto id = MakeIdentifier(TKCUR_LOC);
 
     id->value = id_name.release();
@@ -581,9 +584,20 @@ ASTHandle<ASTNode *> Parser::ParseMemberAccess(ASTHandle<ASTNode *> &left) {
 
     this->Eat(true);
 
-    selector->right = this->ParseIdentifier().release();
-    if (selector->right == nullptr)
+    if (!this->Match(TokenType::IDENTIFIER))
         throw ParserException(0);
+
+    auto id_name = ORStringNew(this->ctx_, this->tkcur_.buffer, this->tkcur_.length);
+    if (!id_name)
+        throw DatatypeException();
+
+    auto id = MakeIdentifier(TKCUR_LOC);
+
+    id->value = id_name.release();
+
+    this->Eat(false);
+
+    selector->right = id.release();
 
     selector->loc.end = selector->right->loc.end;
 
@@ -730,6 +744,9 @@ ASTHandle<Parameter *> Parser::ParseParameter(const Position &start, NodeType ty
     if (!id_name)
         throw DatatypeException();
 
+    if(!this->sym_t_->Declare(id_name.get(),SymbolType::VARIABLE, TKCUR_START.offset))
+        throw SymbolTableException();
+
     auto param = MakeParameter(TKCUR_LOC, NodeType::KW_PARAM);
 
     this->Eat(false);
@@ -761,7 +778,6 @@ HORString Parser::GetDocString() {
 
     return str;
 }
-
 
 std::vector<ASTHandle<ASTNode *> > Parser::ParseBlock(Position &end, bool nested) {
     std::vector<ASTHandle<ASTNode *> > statements;
