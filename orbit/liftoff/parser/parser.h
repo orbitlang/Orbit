@@ -22,7 +22,16 @@ namespace liftoff::parser {
         "you started defining a set, not a dict",
         "expected '}' after dict definition",
         "expected '}' after set definition",
-        "expected ')' after tuple definition"
+        "expected ')' after tuple definition",
+        "expected '(' to start function parameters definition",
+        "expected ')' after function params",
+        "unexpected named/positional parameter",
+        "unexpected named parameter",
+        "only one rest-param is allowed per function declaration",
+        "expected identifier",
+        "const is unexpected outside a class/trait",
+        "expected '{' to start a code block",
+        "expected '}' to end a code block"
     };
 
     class Context;
@@ -92,6 +101,8 @@ namespace liftoff::parser {
 
         [[nodiscard]] ASTHandle<ASTNode *> ParseExprOrTuple();
 
+        [[nodiscard]] ASTHandle<ASTNode *> ParseFunc();
+
         [[nodiscard]] ASTHandle<ASTNode *> ParseIdentifier();
 
         [[nodiscard]] ASTHandle<ASTNode *> ParseIndexing(ASTHandle<ASTNode *> &left);
@@ -116,9 +127,19 @@ namespace liftoff::parser {
 
         [[nodiscard]] ASTHandle<ASTNode *> ParseTernary(ASTHandle<ASTNode *> &left);
 
+        [[nodiscard]] ASTHandle<Function *> ParseFunction(bool inl);
+
+        [[nodiscard]] ASTHandle<Parameter *> ParseParameter(const scanner::Position &start, NodeType type);
+
+        [[nodiscard]] std::vector<ASTHandle<ASTNode *> > ParseBlock(scanner::Position &end, bool nested);
+
+        [[nodiscard]] std::vector<ASTHandle<ASTNode *> > ParseFuncParams();
+
         static LedMeth LookupLED(scanner::TokenType token) noexcept;
 
         static NudMeth LookupNUD(scanner::TokenType token) noexcept;
+
+        [[nodiscard]] orbiter::datatype::HORString MakeFuncName() const;
 
         void Eat(bool ignore_nl);
 
@@ -154,7 +175,10 @@ namespace liftoff::parser {
     };
 
     enum class ContextType {
-        MODULE
+        CLASS,
+        FUNC,
+        MODULE,
+        TRAIT
     };
 
     class Context {
@@ -164,6 +188,25 @@ namespace liftoff::parser {
         ContextType type_;
 
     public:
+        int anon_count = 0;
+
+        [[nodiscard]] bool Check(ContextType type) const noexcept {
+            return this->type_ == type;
+        }
+
+        [[nodiscard]] bool CheckExt(ContextType type) const noexcept {
+            auto cursor = this->back_;
+
+            while (cursor != nullptr) {
+                if (cursor->type_ == type)
+                    return true;
+
+                cursor = cursor->back_;
+            }
+
+            return false;
+        }
+
         explicit Context(Parser *parser, ContextType type) : back_(parser->context_), parser_(parser), type_(type) {
             parser->context_ = this;
         }

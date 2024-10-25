@@ -52,6 +52,19 @@ NODES = {
             "orelse": "ASTNode*"
         }
     },
+    "Function": {
+        "fields": {
+            "name": "orbiter::datatype::ORString*",
+            "doc": "orbiter::datatype::ORString*",
+            "params": "std::vector<ASTHandle<ASTNode*>>",
+            "body": "std::vector<ASTHandle<ASTNode*>>",
+            "ret_type": "ASTNode*",
+            "async": "bool",
+            "anon": "bool",
+            "constant": "bool",
+            "pub": "bool"
+        }
+    },
     "Identifier": {
         "fields": {
             "value": "orbiter::datatype::ORString*"
@@ -76,6 +89,13 @@ NODES = {
             "statements": "std::vector<ASTHandle<ASTNode*>>",
             "sym_t": "SymbolTable*"
         }
+    },
+    "Parameter": {
+        "fields": {
+            "id": "orbiter::datatype::ORString*",
+            "value": "ASTNode*"
+        },
+        "node_type": ["DEF_PARAM", "KW_PARAM", "PARAM", "REST_PARAM"]
     },
     "Subscript": {
         "fields": {

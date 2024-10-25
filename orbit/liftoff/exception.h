@@ -21,6 +21,9 @@ namespace liftoff {
 
     class ScannerException final : public std::exception {
     };
+
+    class SymbolTableException final : public std::exception {
+    };
 }
 
 #endif // !ORBIT_LIFTOFF_EXCEPTION_H_

@@ -171,16 +171,16 @@ ASTHandle<ASTNode *> Parser::ParseAPST() {
     switch (tk_type) {
         case TokenType::KW_AWAIT:
             node_type = NodeType::AWAIT;
-        break;
+            break;
         case TokenType::KW_PANIC:
             node_type = NodeType::PANIC;
-        break;
+            break;
         case TokenType::KW_SPAWN:
             node_type = NodeType::SPAWN;
-        break;
+            break;
         case TokenType::KW_TRAP:
             node_type = NodeType::TRAP;
-        break;
+            break;
         default:
             assert(false);
     }
@@ -229,7 +229,7 @@ ASTHandle<ASTNode *> Parser::ParseDictSet() {
     this->Eat(true);
 
     if (this->Match(TokenType::RIGHT_BRACES)) {
-        auto ret = MakeUnary(TKCUR_LOC, NodeType::DICT);
+        auto ret = MakeListExpression(TKCUR_LOC, NodeType::DICT);
 
         ret->loc.start = loc.start;
         ret->loc.end = TKCUR_LOC.end;
@@ -500,6 +500,10 @@ ASTHandle<ASTNode *> Parser::ParseExprOrTuple() {
     return tuple;
 }
 
+ASTHandle<ASTNode *> Parser::ParseFunc() {
+    return this->ParseFunction(true);
+}
+
 ASTHandle<ASTNode *> Parser::ParseLiteral() {
     HOObject handle;
 
@@ -664,6 +668,168 @@ ASTHandle<ASTNode *> Parser::ParseTernary(ASTHandle<ASTNode *> &left) {
     return branch;
 }
 
+ASTHandle<liftoff::parser::Function *> Parser::ParseFunction(bool inl) {
+    Context ctx(this, ContextType::FUNC);
+
+    auto func = MakeFunction(TKCUR_LOC);
+
+    this->Eat(true);
+
+    if (!inl) {
+        if (!this->Match(TokenType::IDENTIFIER))
+            throw ParserException(16);
+
+        auto id_name = ORStringNew(this->ctx_, this->tkcur_.buffer, this->tkcur_.length);
+        if (!id_name)
+            throw DatatypeException();
+
+        func->name = id_name.release();
+    } else {
+        func->name = this->MakeFuncName().release();
+        func->anon = true;
+    }
+
+    if (this->sym_t_->DeclareSymbolScope(func->name, SymbolType::FUNC, TKCUR_START.offset, TKCUR_START.line) == nullptr)
+        throw SymbolTableException();
+
+    func->params = this->ParseFuncParams();
+
+    if (this->Match(TokenType::COLON)) {
+        // TODO: parse ret_type
+        this->Eat(true);
+        assert(false);
+    }
+
+    while (TKCUR_TYPE > TokenType::KEYWORD_BEGIN && TKCUR_TYPE < TokenType::KEYWORD_END) {
+        if (this->MatchEat(TokenType::KW_ASYNC, true))
+            func->async = true;
+        else if (this->MatchEat(TokenType::KW_CONST, true)) {
+            if (!this->context_->CheckExt(ContextType::CLASS) && !this->context_->CheckExt(ContextType::TRAIT))
+                throw ParserException(17);
+
+            func->constant = true;
+        } else
+            throw ParserException(0);
+    }
+
+    func->body = this->ParseBlock(func->loc.end, false);
+
+    this->sym_t_->scope->line_end = func->loc.end.line;
+    this->sym_t_->LeaveScope();
+
+    return func;
+}
+
+ASTHandle<Parameter *> Parser::ParseParameter(const Position &start, NodeType type) {
+    if (!this->Match(TokenType::IDENTIFIER))
+        throw ParserException(0); // TODO: error
+
+    auto id_name = ORStringNew(this->ctx_, this->tkcur_.buffer, this->tkcur_.length);
+    if (!id_name)
+        throw DatatypeException();
+
+    auto param = MakeParameter(TKCUR_LOC, NodeType::KW_PARAM);
+
+    this->Eat(false);
+
+    param->id = id_name.release();
+    param->loc.start = start;
+
+    if (type == NodeType::PARAM && this->MatchEat(TokenType::EQUAL, true)) {
+        param->node_type = NodeType::DEF_PARAM;
+
+        if (!this->Match(TokenType::COMMA, TokenType::RIGHT_ROUND)) {
+            param->value = this->ParseExpression(TokenType::COMMA).release();
+            param->loc.end = param->value->loc.end;
+        }
+    }
+
+    return param;
+}
+
+std::vector<ASTHandle<ASTNode *> > Parser::ParseBlock(Position &end, bool nested) {
+    std::vector<ASTHandle<ASTNode *> > statements;
+
+    if (!this->MatchEat(TokenType::LEFT_BRACES, true))
+        throw ParserException(18);
+
+    if (nested)
+        this->sym_t_->EnterNestedScope();
+
+    while (!this->Match(TokenType::RIGHT_BRACES)) {
+        statements.push_back(this->ParseStatement());
+
+        if (!this->Match(TokenType::END_OF_LINE, TokenType::SEMICOLON, TokenType::RIGHT_BRACES))
+            throw ParserException(0);
+
+        while (this->MatchEat(TokenType::SEMICOLON, true));
+    }
+
+    if (!this->MatchEat(TokenType::RIGHT_BRACES, true))
+        throw ParserException(19);
+
+    if (nested)
+        this->sym_t_->LeaveNestedScope();
+
+    end = TKCUR_END;
+
+    this->Eat(false);
+
+    return statements;
+}
+
+std::vector<ASTHandle<ASTNode *> > Parser::ParseFuncParams() {
+    std::vector<ASTHandle<ASTNode *> > params;
+    int mode = 0;
+
+    if (!this->Match(TokenType::LEFT_ROUND))
+        throw ParserException(11);
+
+    this->Eat(true);
+
+    do {
+        auto start = TKCUR_LOC.start;
+
+        if (this->Match(TokenType::RIGHT_ROUND))
+            break;
+
+        if (this->Match(TokenType::ASTERISK)) {
+            this->Eat(false);
+
+            params.emplace_back(this->ParseParameter(start, NodeType::KW_PARAM));
+
+            break;
+        }
+
+        if (this->Match(TokenType::ELLIPSIS)) {
+            if (mode > 1)
+                throw ParserException(15);
+
+            mode = 2;
+
+            this->Eat(false);
+
+            params.emplace_back(this->ParseParameter(start, NodeType::REST_PARAM));
+        } else {
+            if (mode > 1)
+                throw ParserException(13);
+
+            auto param = this->ParseParameter(start, NodeType::PARAM);
+            if (param->node_type == NodeType::DEF_PARAM)
+                mode = 1;
+            else if (mode > 0)
+                throw ParserException(14);
+
+            params.emplace_back(param.release());
+        }
+    } while (this->MatchEat(TokenType::COMMA, true));
+
+    if (!this->MatchEat(TokenType::RIGHT_ROUND, true))
+        throw ParserException(12);
+
+    return std::move(params);
+}
+
 Parser::LedMeth Parser::LookupLED(TokenType token) noexcept {
     if (token > TokenType::INFIX_BEGIN && token < TokenType::INFIX_END)
         return &Parser::ParseInfix;
@@ -736,8 +902,11 @@ Parser::NudMeth Parser::LookupNUD(TokenType token) noexcept {
         case TokenType::KW_TRAP:
             return &Parser::ParseAPST;
 
+        case TokenType::KW_FUNC:
+            return &Parser::ParseFunc;
+
         default:
-            assert(false);
+            return nullptr;
     }
 }
 
@@ -761,6 +930,14 @@ ASTHandle<ASTNode *> Parser::ParsePrefix() {
     prefix->value->loc.end = prefix->value->loc.end;
 
     return prefix;
+}
+
+HORString Parser::MakeFuncName() const {
+    char buffer[50];
+
+    snprintf(buffer, 49, "func$%d", this->context_->anon_count++);
+
+    return ORStringNew(this->ctx_, buffer);
 }
 
 void Parser::Eat(bool ignore_nl) {
