@@ -673,6 +673,8 @@ ASTHandle<liftoff::parser::Function *> Parser::ParseFunction(bool inl) {
 
     auto func = MakeFunction(TKCUR_LOC);
 
+    func->doc = this->GetDocString().release();
+
     this->Eat(true);
 
     if (!inl) {
@@ -746,6 +748,20 @@ ASTHandle<Parameter *> Parser::ParseParameter(const Position &start, NodeType ty
 
     return param;
 }
+
+HORString Parser::GetDocString() {
+    if (this->doc_.type != TokenType::COMMENT_DOC)
+        return {};
+
+    auto str = ORStringNewHoldBuffer(this->ctx_, this->doc_.buffer, this->doc_.length);
+    if (!str)
+        throw DatatypeException();
+
+    this->doc_.buffer = nullptr;
+
+    return str;
+}
+
 
 std::vector<ASTHandle<ASTNode *> > Parser::ParseBlock(Position &end, bool nested) {
     std::vector<ASTHandle<ASTNode *> > statements;
@@ -954,7 +970,17 @@ void Parser::Eat(bool ignore_nl) {
                     throw ScannerException();
             }
         }
-    } while (this->TokenInRange(scanner::TokenType::COMMENT_BEGIN, scanner::TokenType::COMMENT_END));
+
+        if (this->Match(TokenType::COMMENT_DOC)) {
+            if (this->doc_.type == TokenType::COMMENT_DOC)
+                this->doc_.~Token();
+
+            this->doc_ = std::move(this->tkcur_);
+        } else if (this->doc_.type == TokenType::COMMENT_DOC
+                   && !this->Match(TokenType::KW_CLASS, TokenType::KW_TRAIT, TokenType::KW_FUNC,
+                                   TokenType::SEMICOLON, TokenType::END_OF_LINE))
+            this->doc_.~Token();
+    } while (this->TokenInRange(TokenType::COMMENT_BEGIN, TokenType::COMMENT_END));
 }
 
 void Parser::EatNL() {
