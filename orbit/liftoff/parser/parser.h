@@ -31,7 +31,10 @@ namespace liftoff::parser {
         "expected identifier",
         "const is unexpected outside a class/trait",
         "expected '{' to start a code block",
-        "expected '}' to end a code block"
+        "expected '}' to end a code block",
+        "only identifiers are allowed before the '=' sign",
+        "function parameters must be passed in the order: [positional][, named param][, spread][, kwargs]",
+        "expected ')' after arguments in function call"
     };
 
     class Context;
@@ -105,6 +108,8 @@ namespace liftoff::parser {
 
         [[nodiscard]] ASTHandle<ASTNode *> ParseFunc();
 
+        [[nodiscard]] ASTHandle<ASTNode *> ParseFuncCall(ASTHandle<ASTNode *> &left);
+
         [[nodiscard]] ASTHandle<ASTNode *> ParseIdentifier();
 
         [[nodiscard]] ASTHandle<ASTNode *> ParseIndexing(ASTHandle<ASTNode *> &left);
@@ -121,9 +126,11 @@ namespace liftoff::parser {
 
         [[nodiscard]] ASTHandle<ASTNode *> ParseNullCoalescing(ASTHandle<ASTNode *> &left);
 
-        [[nodiscard]] ASTHandle<ASTNode *> ParsePrefix();
+        [[nodiscard]] ASTHandle<ASTNode *> ParsePipeline(ASTHandle<ASTNode *> &left);
 
         [[nodiscard]] ASTHandle<ASTNode *> ParsePostInc(ASTHandle<ASTNode *> &left);
+
+        [[nodiscard]] ASTHandle<ASTNode *> ParsePrefix();
 
         [[nodiscard]] ASTHandle<ASTNode *> ParseStatement();
 

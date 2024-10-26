@@ -507,6 +507,98 @@ ASTHandle<ASTNode *> Parser::ParseFunc() {
     return this->ParseFunction(true);
 }
 
+ASTHandle<ASTNode *> Parser::ParseFuncCall(ASTHandle<ASTNode *> &left) {
+    auto call = MakeCall(TKCUR_LOC);
+
+    call->left = left.release();
+    call->loc.start = call->left->loc.start;
+
+    this->Eat(true);
+
+    if (!this->Match(TokenType::RIGHT_ROUND)) {
+        Position end{};
+        int mode = 0;
+
+        do {
+            if (this->Match(TokenType::ASTERISK)) {
+                auto unary = MakeUnary(TKCUR_LOC, NodeType::KW_ARG);
+
+                this->Eat(true);
+
+                unary->value = this->ParseExpression(TokenType::COMMA).release();
+                unary->loc.end = unary->value->loc.end;
+
+                end = unary->loc.end;
+                call->kwargs = unary.release();
+
+                break;
+            }
+
+            auto arg = this->ParseExpression(TokenType::COMMA);
+
+            this->EatNL();
+
+            if (this->Match(TokenType::ELLIPSIS)) {
+                if (mode > 1)
+                    throw ParserException(21);
+
+                auto unary = MakeUnary(TKCUR_LOC, NodeType::ELLIPSIS);
+
+                unary->loc.start = arg->loc.start;
+                unary->value = arg.release();
+
+                end = unary->loc.end;
+                call->args.emplace_back(std::move(unary));
+
+                mode = 2;
+
+                this->Eat(true);
+            } else if (this->Match(TokenType::EQUAL)) {
+                const auto &id = (ASTHandle<Identifier *> &) arg;
+
+                // Sanity check
+                if (arg->node_type != NodeType::IDENTIFIER)
+                    throw ParserException(20);
+
+                this->Eat(true);
+
+                auto binary = MakeParameter(TKCUR_LOC, NodeType::NAMED_ARG);
+
+                binary->id = id->value;
+
+                id->value = nullptr;
+
+                binary->loc.start = id->loc.start;
+
+                if (!this->Match(TokenType::COMMA, TokenType::RIGHT_ROUND)) {
+                    binary->value = this->ParseExpression(TokenType::COMMA).release();
+
+                    binary->loc.end = binary->value->loc.end;
+                }
+
+                mode = 1;
+
+                end = binary->loc.end;
+
+                call->args.emplace_back(std::move(binary));
+            } else {
+                if (mode > 0)
+                    throw ParserException(21);
+
+                end = arg->loc.end;
+                call->args.emplace_back(std::move(arg));
+            }
+        } while (this->MatchEat(TokenType::COMMA, true));
+
+        call->loc.end = end;
+    }
+
+    if (!this->MatchEat(TokenType::RIGHT_ROUND, false))
+        throw ParserException(22);
+
+    return call;
+}
+
 ASTHandle<ASTNode *> Parser::ParseLiteral() {
     HOObject handle;
 
@@ -618,6 +710,32 @@ ASTHandle<ASTNode *> Parser::ParseNullCoalescing(ASTHandle<ASTNode *> &left) {
     binary->right = expr.release();
 
     return binary;
+}
+
+ASTHandle<ASTNode *> Parser::ParsePipeline(ASTHandle<ASTNode *> &left) {
+    this->Eat(true);
+
+    auto right = this->ParseExpression(TokenType::PIPELINE);
+
+    if (right->node_type == NodeType::CALL) {
+        const auto &call = (ASTHandle<Call *> &) right;
+
+        right->loc.start = left->loc.start;
+
+        call->args.insert(call->args.begin(), std::move(left));
+
+        return right;
+    }
+
+    auto call = MakeCall(TKCUR_LOC);
+
+    call->loc.start = left->loc.start;
+    call->loc.end = right->loc.end;
+
+    call->left = left.release();
+    call->args.push_back(std::move(right));
+
+    return call;
 }
 
 ASTHandle<ASTNode *> Parser::ParsePostInc(ASTHandle<ASTNode *> &left) {
@@ -744,7 +862,7 @@ ASTHandle<Parameter *> Parser::ParseParameter(const Position &start, NodeType ty
     if (!id_name)
         throw DatatypeException();
 
-    if(!this->sym_t_->Declare(id_name.get(),SymbolType::VARIABLE, TKCUR_START.offset))
+    if (!this->sym_t_->Declare(id_name.get(), SymbolType::VARIABLE, TKCUR_START.offset))
         throw SymbolTableException();
 
     auto param = MakeParameter(TKCUR_LOC, NodeType::KW_PARAM);
@@ -755,7 +873,7 @@ ASTHandle<Parameter *> Parser::ParseParameter(const Position &start, NodeType ty
     param->loc.start = start;
 
     if (type == NodeType::PARAM && this->MatchEat(TokenType::EQUAL, true)) {
-        param->node_type = NodeType::DEF_PARAM;
+        param->node_type = NodeType::NAMED_PARAM;
 
         if (!this->Match(TokenType::COMMA, TokenType::RIGHT_ROUND)) {
             param->value = this->ParseExpression(TokenType::COMMA).release();
@@ -847,7 +965,7 @@ std::vector<ASTHandle<ASTNode *> > Parser::ParseFuncParams() {
                 throw ParserException(13);
 
             auto param = this->ParseParameter(start, NodeType::PARAM);
-            if (param->node_type == NodeType::DEF_PARAM)
+            if (param->node_type == NodeType::NAMED_PARAM)
                 mode = 1;
             else if (mode > 0)
                 throw ParserException(14);
@@ -883,6 +1001,8 @@ Parser::LedMeth Parser::LookupLED(TokenType token) noexcept {
         case TokenType::KW_IN:
         case TokenType::KW_NOT:
             return &Parser::ParseInNotIn;
+        case TokenType::LEFT_ROUND:
+            return &Parser::ParseFuncCall;
         case TokenType::LEFT_SQUARE:
             return &Parser::ParseIndexing;
         case TokenType::MINUS_MINUS:
@@ -890,6 +1010,8 @@ Parser::LedMeth Parser::LookupLED(TokenType token) noexcept {
             return &Parser::ParsePostInc;
         case TokenType::NULL_COALESCING:
             return &Parser::ParseNullCoalescing;
+        case TokenType::PIPELINE:
+            return &Parser::ParsePipeline;
         case TokenType::QUESTION:
             return &Parser::ParseTernary;
         case TokenType::WALRUS:
@@ -1004,7 +1126,7 @@ void Parser::EatNL() {
         this->Eat(true);
 }
 
-void Parser::IgnoreNewLineIF(scanner::TokenType type) {
+void Parser::IgnoreNewLineIF(TokenType type) {
     const scanner::Token *peek;
 
     if (this->tkcur_.type != scanner::TokenType::END_OF_LINE)

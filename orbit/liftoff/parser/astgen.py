@@ -52,6 +52,13 @@ NODES = {
             "orelse": "ASTNode*"
         }
     },
+    "Call": {
+        "fields": {
+            "left": "ASTNode*",
+            "args": "std::vector<ASTHandle<ASTNode*>>",
+            "kwargs": "ASTNode*"
+        }
+    },
     "Function": {
         "fields": {
             "name": "orbiter::datatype::ORString*",
@@ -95,7 +102,7 @@ NODES = {
             "id": "orbiter::datatype::ORString*",
             "value": "ASTNode*"
         },
-        "node_type": ["DEF_PARAM", "KW_PARAM", "PARAM", "REST_PARAM"]
+        "node_type": ["NAMED_ARG", "NAMED_PARAM", "KW_PARAM", "PARAM", "REST_PARAM"]
     },
     "Subscript": {
         "fields": {
@@ -111,7 +118,7 @@ NODES = {
             "token_type": "scanner::TokenType",
             "value": "ASTNode*"
         },
-        "node_type": ["AWAIT", "NIL_SAFE", "PANIC", "SPAWN", "TRAP", "UNARY", "UPDATE"]
+        "node_type": ["AWAIT", "ELLIPSIS", "KW_ARG", "NIL_SAFE", "PANIC", "SPAWN", "TRAP", "UNARY", "UPDATE"]
     }
 }
 
