@@ -48,6 +48,11 @@ NODES = {
         },
         "node_type": ["BINARY", "CHAN_SEND", "ELVIS", "IN", "NOT_IN", "NULL_COALESCING", "SELECTOR"]
     },
+    "Block": {
+        "fields": {
+            "statements": "std::vector<ASTHandle<ASTNode*>>",
+        }
+    },
     "Branch": {
         "fields": {
             "test": "ASTNode*",
@@ -67,7 +72,7 @@ NODES = {
             "name": "orbiter::datatype::ORString*",
             "doc": "orbiter::datatype::ORString*",
             "params": "std::vector<ASTHandle<ASTNode*>>",
-            "body": "std::vector<ASTHandle<ASTNode*>>",
+            "body": "ASTNode*",
             "ret_type": "ASTNode*",
             "async": "bool",
             "anon": "bool",

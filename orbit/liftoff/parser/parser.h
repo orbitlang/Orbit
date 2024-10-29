@@ -95,6 +95,8 @@ namespace liftoff::parser {
             return this->tkcur_.type > begin && this->tkcur_.type < end;
         }
 
+        [[nodiscard]] ASTHandle<ASTNode *> ParseIfStatement();
+
         [[nodiscard]] ASTHandle<ASTNode *> ParseVarDecl(const scanner::Position &start, bool pub, bool constant,
                                                         bool weak);
 
@@ -105,6 +107,8 @@ namespace liftoff::parser {
         [[nodiscard]] ASTHandle<ASTNode *> ParseAPST();
 
         [[nodiscard]] ASTHandle<ASTNode *> ParseAssignment(ASTHandle<ASTNode *> &left);
+
+        [[nodiscard]] ASTHandle<ASTNode *> ParseBlock(bool nested);
 
         [[nodiscard]] ASTHandle<ASTNode *> ParseDictSet();
 
@@ -157,8 +161,6 @@ namespace liftoff::parser {
         [[nodiscard]] ASTHandle<Parameter *> ParseParameter(const scanner::Position &start, NodeType type);
 
         [[nodiscard]] orbiter::datatype::HORString GetDocString();
-
-        [[nodiscard]] std::vector<ASTHandle<ASTNode *> > ParseBlock(scanner::Position &end, bool nested);
 
         [[nodiscard]] std::vector<ASTHandle<ASTNode *> > ParseFuncParams();
 

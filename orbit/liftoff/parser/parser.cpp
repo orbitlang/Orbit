@@ -86,6 +86,30 @@ int PeekPrecedence(TokenType token) {
     }
 }
 
+ASTHandle<ASTNode *> Parser::ParseIfStatement() {
+    auto branch = MakeBranch(TKCUR_LOC);
+
+    this->Eat(true);
+
+    branch->test = this->ParseExpression(TokenType::COMMA).release();
+
+    branch->body = this->ParseBlock(true).release();
+
+    auto end = branch->body->loc.end;
+
+    if (this->Match(TokenType::KW_ELIF)) {
+        branch->orelse = this->ParseIfStatement().release();
+        end = branch->orelse->loc.end;
+    } else if (this->MatchEat(TokenType::KW_ELSE, false)) {
+        branch->orelse = this->ParseBlock(true).release();
+        end = branch->orelse->loc.end;
+    }
+
+    branch->loc.end = end;
+
+    return branch;
+}
+
 ASTHandle<ASTNode *> Parser::ParseVarDecl(const Position &start, bool pub, bool constant, bool weak) {
     std::vector<ASTHandle<ASTNode *> > identifiers;
 
@@ -253,6 +277,35 @@ ASTHandle<ASTNode *> Parser::ParseAssignment(ASTHandle<ASTNode *> &left) {
     assign->loc.end = assign->value->loc.end;
 
     return assign;
+}
+
+ASTHandle<ASTNode *> Parser::ParseBlock(bool nested) {
+    auto block = MakeBlock(TKCUR_LOC);
+
+    if (!this->MatchEat(TokenType::LEFT_BRACES, true))
+        throw ParserException(18);
+
+    if (nested)
+        this->sym_t_->EnterNestedScope();
+
+    while (!this->Match(TokenType::RIGHT_BRACES)) {
+        block->statements.push_back(this->ParseStatement());
+
+        if (!this->Match(TokenType::END_OF_LINE, TokenType::SEMICOLON, TokenType::RIGHT_BRACES))
+            throw ParserException(0);
+
+        while (this->MatchEat(TokenType::SEMICOLON, true));
+    }
+
+    if (!this->MatchEat(TokenType::RIGHT_BRACES, true))
+        throw ParserException(19);
+
+    if (nested)
+        this->sym_t_->LeaveNestedScope();
+
+    block->loc.end = TKCUR_END;
+
+    return block;
 }
 
 ASTHandle<ASTNode *> Parser::ParseDictSet() {
@@ -851,6 +904,8 @@ ASTHandle<ASTNode *> Parser::ParseStatement() {
 
             return func;
         }
+        case TokenType::KW_IF:
+            return this->ParseIfStatement();
 
         default:
             return this->ParseExpression();
@@ -973,7 +1028,7 @@ ASTHandle<liftoff::parser::Function *> Parser::ParseFunction(bool inl) {
             throw ParserException(0);
     }
 
-    func->body = this->ParseBlock(func->loc.end, false);
+    func->body = this->ParseBlock(false).release();
 
     this->sym_t_->scope->line_end = func->loc.end.line;
     this->sym_t_->LeaveScope();
@@ -1022,35 +1077,6 @@ HORString Parser::GetDocString() {
     this->doc_.buffer = nullptr;
 
     return str;
-}
-
-std::vector<ASTHandle<ASTNode *> > Parser::ParseBlock(Position &end, bool nested) {
-    std::vector<ASTHandle<ASTNode *> > statements;
-
-    if (!this->MatchEat(TokenType::LEFT_BRACES, true))
-        throw ParserException(18);
-
-    if (nested)
-        this->sym_t_->EnterNestedScope();
-
-    while (!this->Match(TokenType::RIGHT_BRACES)) {
-        statements.push_back(this->ParseStatement());
-
-        if (!this->Match(TokenType::END_OF_LINE, TokenType::SEMICOLON, TokenType::RIGHT_BRACES))
-            throw ParserException(0);
-
-        while (this->MatchEat(TokenType::SEMICOLON, true));
-    }
-
-    if (!this->MatchEat(TokenType::RIGHT_BRACES, true))
-        throw ParserException(19);
-
-    if (nested)
-        this->sym_t_->LeaveNestedScope();
-
-    end = TKCUR_END;
-
-    return statements;
 }
 
 std::vector<ASTHandle<ASTNode *> > Parser::ParseFuncParams() {

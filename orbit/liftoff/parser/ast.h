@@ -30,6 +30,7 @@ enum class NodeType {
     NOT_IN,
     NULL_COALESCING,
     SELECTOR,
+    BLOCK,
     BRANCH,
     CALL,
     FUNCTION,
@@ -156,6 +157,10 @@ struct Binary: ASTNode {
     ASTNode* right;
 };
 
+struct Block: ASTNode {
+    std::vector<ASTHandle<ASTNode*>> statements;
+};
+
 struct Branch: ASTNode {
     ASTNode* test;
     ASTNode* body;
@@ -172,7 +177,7 @@ struct Function: ASTNode {
     orbiter::datatype::ORString* name;
     orbiter::datatype::ORString* doc;
     std::vector<ASTHandle<ASTNode*>> params;
-    std::vector<ASTHandle<ASTNode*>> body;
+    ASTNode* body;
     ASTNode* ret_type;
     bool async;
     bool anon;
@@ -237,6 +242,10 @@ inline void ASTNodeCleanup(ASTNode* ast_node) {
         if (node->right)
             ASTNodeCleanup(node->right);
                 break;
+            }         case NodeType::BLOCK: {
+                auto* node = (Block*)ast_node;
+        node->statements.~vector();
+                break;
             }         case NodeType::BRANCH: {
                 auto* node = (Branch*)ast_node;
         if (node->test)
@@ -259,7 +268,8 @@ inline void ASTNodeCleanup(ASTNode* ast_node) {
         Release(node->name);
         Release(node->doc);
         node->params.~vector();
-        node->body.~vector();
+        if (node->body)
+            ASTNodeCleanup(node->body);
         if (node->ret_type)
             ASTNodeCleanup(node->ret_type);
                 break;
@@ -334,6 +344,7 @@ struct ASTVisitor {
         case NodeType::NULL_COALESCING:
         case NodeType::SELECTOR:
             return static_cast<Derived*>(this)->visitBinary((Binary *) node);
+        case NodeType::BLOCK: return static_cast<Derived*>(this)->visitBlock((Block *) node);
         case NodeType::BRANCH: return static_cast<Derived*>(this)->visitBranch((Branch *) node);
         case NodeType::CALL: return static_cast<Derived*>(this)->visitCall((Call *) node);
         case NodeType::FUNCTION: return static_cast<Derived*>(this)->visitFunction((Function *) node);
@@ -372,6 +383,8 @@ struct ASTVisitor {
     ASTNode* visitAssignment(Assignment* node) { return node; }
 
     ASTNode* visitBinary(Binary* node) { return node; }
+
+    ASTNode* visitBlock(Block* node) { return node; }
 
     ASTNode* visitBranch(Branch* node) { return node; }
 
@@ -420,6 +433,18 @@ inline ASTHandle<Binary*> MakeBinary(const scanner::Loc &loc, NodeType node_type
 }
 
 
+inline ASTHandle<Block*> MakeBlock(const scanner::Loc &loc) {
+    auto *node = (Block *) orbiter::memory::Calloc(sizeof(Block));
+    if(node != nullptr) {
+        node->node_type = NodeType::BLOCK;
+        node->loc = loc;
+        
+        new (&node->statements) std::vector<ASTHandle<ASTNode*>>();
+    }
+    return ASTHandle(node);
+}
+
+
 inline ASTHandle<Branch*> MakeBranch(const scanner::Loc &loc) {
     auto *node = (Branch *) orbiter::memory::Calloc(sizeof(Branch));
     if(node != nullptr) {
@@ -451,7 +476,6 @@ inline ASTHandle<Function*> MakeFunction(const scanner::Loc &loc) {
         node->loc = loc;
         
         new (&node->params) std::vector<ASTHandle<ASTNode*>>();
-        new (&node->body) std::vector<ASTHandle<ASTNode*>>();
     }
     return ASTHandle(node);
 }
