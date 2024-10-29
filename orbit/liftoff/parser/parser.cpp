@@ -110,6 +110,19 @@ ASTHandle<ASTNode *> Parser::ParseIfStatement() {
     return branch;
 }
 
+ASTHandle<ASTNode *> Parser::ParseSyncStatement() {
+    auto sync = MakeBinary(TKCUR_LOC, NodeType::SYNC_BLOCK);
+
+    this->Eat(true);
+
+    sync->left = this->ParseExpression(TokenType::COMMA).release();
+    sync->right = this->ParseBlock(true).release();
+
+    sync->loc.end = sync->right->loc.end;
+
+    return sync;
+}
+
 ASTHandle<ASTNode *> Parser::ParseVarDecl(const Position &start, bool pub, bool constant, bool weak) {
     std::vector<ASTHandle<ASTNode *> > identifiers;
 
@@ -889,10 +902,6 @@ ASTHandle<ASTNode *> Parser::ParseStatement() {
     this->EatNL();
 
     switch (TKCUR_TYPE) {
-        case TokenType::KW_LET:
-            return this->ParseVarDecl(start, pub, true, false);
-        case TokenType::KW_VAR:
-            return this->ParseVarDecl(start, pub, false, weak);
         case TokenType::KW_FUNC: {
             auto func = this->ParseFunction(false);
 
@@ -906,7 +915,12 @@ ASTHandle<ASTNode *> Parser::ParseStatement() {
         }
         case TokenType::KW_IF:
             return this->ParseIfStatement();
-
+        case TokenType::KW_LET:
+            return this->ParseVarDecl(start, pub, true, false);
+        case TokenType::KW_SYNC:
+            return this->ParseSyncStatement();
+        case TokenType::KW_VAR:
+            return this->ParseVarDecl(start, pub, false, weak);
         default:
             return this->ParseExpression();
     }

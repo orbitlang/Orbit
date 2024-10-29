@@ -30,6 +30,7 @@ enum class NodeType {
     NOT_IN,
     NULL_COALESCING,
     SELECTOR,
+    SYNC_BLOCK,
     BLOCK,
     BRANCH,
     CALL,
@@ -235,7 +236,7 @@ inline void ASTNodeCleanup(ASTNode* ast_node) {
         if (node->value)
             ASTNodeCleanup(node->value);
                 break;
-            }         case NodeType::BINARY:         case NodeType::CHAN_SEND:         case NodeType::ELVIS:         case NodeType::IN:         case NodeType::NOT_IN:         case NodeType::NULL_COALESCING:         case NodeType::SELECTOR:         {
+            }         case NodeType::BINARY:         case NodeType::CHAN_SEND:         case NodeType::ELVIS:         case NodeType::IN:         case NodeType::NOT_IN:         case NodeType::NULL_COALESCING:         case NodeType::SELECTOR:         case NodeType::SYNC_BLOCK:         {
                 auto* node = (Binary*)ast_node;
         if (node->left)
             ASTNodeCleanup(node->left);
@@ -343,6 +344,7 @@ struct ASTVisitor {
         case NodeType::NOT_IN:
         case NodeType::NULL_COALESCING:
         case NodeType::SELECTOR:
+        case NodeType::SYNC_BLOCK:
             return static_cast<Derived*>(this)->visitBinary((Binary *) node);
         case NodeType::BLOCK: return static_cast<Derived*>(this)->visitBlock((Block *) node);
         case NodeType::BRANCH: return static_cast<Derived*>(this)->visitBranch((Branch *) node);
@@ -421,7 +423,7 @@ inline ASTHandle<Assignment*> MakeAssignment(const scanner::Loc &loc, NodeType n
 
 
 inline ASTHandle<Binary*> MakeBinary(const scanner::Loc &loc, NodeType node_type) {
-    assert(node_type == NodeType::BINARY || node_type == NodeType::CHAN_SEND || node_type == NodeType::ELVIS || node_type == NodeType::IN || node_type == NodeType::NOT_IN || node_type == NodeType::NULL_COALESCING || node_type == NodeType::SELECTOR);
+    assert(node_type == NodeType::BINARY || node_type == NodeType::CHAN_SEND || node_type == NodeType::ELVIS || node_type == NodeType::IN || node_type == NodeType::NOT_IN || node_type == NodeType::NULL_COALESCING || node_type == NodeType::SELECTOR || node_type == NodeType::SYNC_BLOCK);
     auto *node = (Binary *) orbiter::memory::Calloc(sizeof(Binary));
     if(node != nullptr) {
         node->node_type = node_type;

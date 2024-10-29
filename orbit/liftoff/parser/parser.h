@@ -97,6 +97,8 @@ namespace liftoff::parser {
 
         [[nodiscard]] ASTHandle<ASTNode *> ParseIfStatement();
 
+        [[nodiscard]] ASTHandle<ASTNode *> ParseSyncStatement();
+
         [[nodiscard]] ASTHandle<ASTNode *> ParseVarDecl(const scanner::Position &start, bool pub, bool constant,
                                                         bool weak);
 
