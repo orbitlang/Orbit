@@ -863,6 +863,8 @@ ASTHandle<liftoff::parser::Function *> Parser::ParseFunction(bool inl) {
             throw DatatypeException();
 
         func->name = id_name.release();
+
+        this->Eat(true);
     } else {
         func->name = this->MakeFuncName().release();
         func->anon = true;
@@ -967,8 +969,6 @@ std::vector<ASTHandle<ASTNode *> > Parser::ParseBlock(Position &end, bool nested
         this->sym_t_->LeaveNestedScope();
 
     end = TKCUR_END;
-
-    this->Eat(false);
 
     return statements;
 }
