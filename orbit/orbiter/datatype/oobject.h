@@ -201,7 +201,9 @@ namespace orbiter::datatype {
             other.object_ = nullptr;
         }
 
-        Handle(const Handle &) = delete;
+        Handle(const Handle &other) : object_(O_INCREF(other.object_)) {
+
+        }
 
         ~Handle() noexcept {
             this->reset();
