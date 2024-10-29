@@ -122,50 +122,6 @@ int PeekPrecedence(TokenType token) {
     }
 }
 
-ASTHandle<ASTNode *> Parser::ParseAssignment(ASTHandle<ASTNode *> &left) {
-    auto node_type = NodeType::ASSIGNMENT;
-
-    const auto tk_type = TKCUR_TYPE;
-
-    this->Eat(true);
-
-    if (left->node_type != NodeType::IDENTIFIER
-        && left->node_type != NodeType::INDEX
-        && left->node_type != NodeType::SLICE
-        && left->node_type != NodeType::TUPLE
-        && left->node_type != NodeType::SELECTOR)
-        throw ParserException(1);
-
-    // Check for tuple content
-    if (left->node_type == NodeType::TUPLE) {
-        const auto tuple = (ListExpression *) left.get();
-
-        for (auto &cursor: tuple->elements) {
-            const auto *itm = cursor.get();
-
-            if (itm->node_type != NodeType::IDENTIFIER
-                && itm->node_type != NodeType::INDEX
-                && left->node_type != NodeType::SLICE
-                && itm->node_type != NodeType::SELECTOR)
-                throw ParserException(1);
-        }
-
-        node_type = NodeType::ASSIGNMENTS;
-    }
-
-    auto expr = this->ParseExpression(tk_type);
-
-    auto assign = MakeAssignment(TKCUR_LOC, node_type);
-
-    assign->name = left.release();
-    assign->value = expr.release();
-
-    assign->loc.start = assign->name->loc.start;
-    assign->loc.end = assign->value->loc.end;
-
-    return assign;
-}
-
 ASTHandle<ASTNode *> Parser::ParseAPST() {
     const auto start_pos = TKCUR_LOC.start;
     const auto tk_type = TKCUR_TYPE;
@@ -221,6 +177,50 @@ ASTHandle<ASTNode *> Parser::ParseAPST() {
     ret->value = right.release();
 
     return ret;
+}
+
+ASTHandle<ASTNode *> Parser::ParseAssignment(ASTHandle<ASTNode *> &left) {
+    auto node_type = NodeType::ASSIGNMENT;
+
+    const auto tk_type = TKCUR_TYPE;
+
+    this->Eat(true);
+
+    if (left->node_type != NodeType::IDENTIFIER
+        && left->node_type != NodeType::INDEX
+        && left->node_type != NodeType::SLICE
+        && left->node_type != NodeType::TUPLE
+        && left->node_type != NodeType::SELECTOR)
+        throw ParserException(1);
+
+    // Check for tuple content
+    if (left->node_type == NodeType::TUPLE) {
+        const auto tuple = (ListExpression *) left.get();
+
+        for (auto &cursor: tuple->elements) {
+            const auto *itm = cursor.get();
+
+            if (itm->node_type != NodeType::IDENTIFIER
+                && itm->node_type != NodeType::INDEX
+                && left->node_type != NodeType::SLICE
+                && itm->node_type != NodeType::SELECTOR)
+                throw ParserException(1);
+        }
+
+        node_type = NodeType::ASSIGNMENTS;
+    }
+
+    auto expr = this->ParseExpression(tk_type);
+
+    auto assign = MakeAssignment(TKCUR_LOC, node_type);
+
+    assign->name = left.release();
+    assign->value = expr.release();
+
+    assign->loc.start = assign->name->loc.start;
+    assign->loc.end = assign->value->loc.end;
+
+    return assign;
 }
 
 ASTHandle<ASTNode *> Parser::ParseDictSet() {
@@ -294,126 +294,6 @@ ASTHandle<ASTNode *> Parser::ParseElvis(ASTHandle<ASTNode *> &left) {
 
 ASTHandle<ASTNode *> Parser::ParseExpression() {
     return this->ParseExpression(0);
-}
-
-ASTHandle<ASTNode *> Parser::ParseIdentifier() {
-    auto id_name = ORStringNew(this->ctx_, this->tkcur_.buffer, this->tkcur_.length);
-    if (!id_name)
-        throw DatatypeException();
-
-    if (!this->sym_t_->LookupInsert(id_name.get(),TKCUR_START.offset))
-        throw SymbolTableException();
-
-    auto id = MakeIdentifier(TKCUR_LOC);
-
-    id->value = id_name.release();
-
-    this->Eat(false);
-
-    return id;
-}
-
-ASTHandle<ASTNode *> Parser::ParseIndexing(ASTHandle<ASTNode *> &left) {
-    auto subscript = MakeSubscript(TKCUR_LOC, NodeType::INDEX);
-
-    subscript->expression = left.release();
-
-    this->Eat(true);
-
-    if (this->Match(TokenType::RIGHT_SQUARE))
-        throw ParserException(3);
-
-    if (!this->Match(TokenType::COLON))
-        subscript->start = this->ParseExpression().release();
-
-    if (this->MatchEat(TokenType::COLON, true)) {
-        subscript->node_type = NodeType::SLICE;
-
-        if (!this->Match(TokenType::COLON, TokenType::RIGHT_SQUARE))
-            subscript->stop = this->ParseExpression().release();
-
-        if (this->MatchEat(TokenType::COLON, true)) {
-            if (!this->Match(TokenType::RIGHT_SQUARE))
-                subscript->step = this->ParseExpression().release();
-        }
-    }
-
-    this->EatNL();
-
-    subscript->loc.end = TKCUR_LOC.end;
-
-    if (!this->Match(TokenType::RIGHT_SQUARE))
-        throw ParserException(4);
-
-    this->Eat(false);
-
-    subscript->loc.start = subscript->expression->loc.start;
-
-    return subscript;
-}
-
-ASTHandle<ASTNode *> Parser::ParseInfix(ASTHandle<ASTNode *> &left) {
-    const auto tk_type = TKCUR_TYPE;
-
-    this->Eat(true);
-
-    auto right = this->ParseExpression(tk_type);
-
-    auto infix = MakeBinary(TKCUR_LOC, tk_type == TokenType::ARROW_LEFT ? NodeType::CHAN_SEND : NodeType::BINARY);
-
-    infix->token_type = tk_type;
-
-    infix->loc.start = left->loc.start;
-    infix->loc.end = right->loc.end;
-
-    infix->left = left.release();
-    infix->right = right.release();
-
-    return infix;
-}
-
-ASTHandle<ASTNode *> Parser::ParseInNotIn(ASTHandle<ASTNode *> &left) {
-    auto node_type = NodeType::IN;
-
-    if (TKCUR_TYPE == TokenType::KW_NOT) {
-        node_type = NodeType::NOT_IN;
-
-        this->Eat(true);
-    }
-
-    if (!this->MatchEat(TokenType::KW_IN, true))
-        throw ParserException(0);
-
-    auto binary = MakeBinary(TKCUR_LOC, node_type);
-
-    binary->left = left.release();
-    binary->right = this->ParseExpression(TokenType::KW_IN).release();
-
-    binary->loc.start = binary->left->loc.start;
-    binary->loc.end = binary->right->loc.end;
-
-    return binary;
-}
-
-ASTHandle<ASTNode *> Parser::ParseList() {
-    auto list = MakeListExpression(TKCUR_LOC, NodeType::LIST);
-
-    this->Eat(true);
-
-    if (!this->Match(TokenType::RIGHT_SQUARE)) {
-        do {
-            this->EatNL();
-
-            list->elements.push_back(this->ParseExpression(TokenType::COMMA));
-        } while (this->MatchEat(TokenType::COMMA, true));
-    }
-
-    list->loc.end = TKCUR_LOC.end;
-
-    if (!this->MatchEat(TokenType::RIGHT_SQUARE, false))
-        throw ParserException(5);
-
-    return list;
 }
 
 ASTHandle<ASTNode *> Parser::ParseExpression(int precedence) {
@@ -600,6 +480,126 @@ ASTHandle<ASTNode *> Parser::ParseFuncCall(ASTHandle<ASTNode *> &left) {
     return call;
 }
 
+ASTHandle<ASTNode *> Parser::ParseIdentifier() {
+    auto id_name = ORStringNew(this->ctx_, this->tkcur_.buffer, this->tkcur_.length);
+    if (!id_name)
+        throw DatatypeException();
+
+    if (!this->sym_t_->LookupInsert(id_name.get(),TKCUR_START.offset))
+        throw SymbolTableException();
+
+    auto id = MakeIdentifier(TKCUR_LOC);
+
+    id->value = id_name.release();
+
+    this->Eat(false);
+
+    return id;
+}
+
+ASTHandle<ASTNode *> Parser::ParseIndexing(ASTHandle<ASTNode *> &left) {
+    auto subscript = MakeSubscript(TKCUR_LOC, NodeType::INDEX);
+
+    subscript->expression = left.release();
+
+    this->Eat(true);
+
+    if (this->Match(TokenType::RIGHT_SQUARE))
+        throw ParserException(3);
+
+    if (!this->Match(TokenType::COLON))
+        subscript->start = this->ParseExpression().release();
+
+    if (this->MatchEat(TokenType::COLON, true)) {
+        subscript->node_type = NodeType::SLICE;
+
+        if (!this->Match(TokenType::COLON, TokenType::RIGHT_SQUARE))
+            subscript->stop = this->ParseExpression().release();
+
+        if (this->MatchEat(TokenType::COLON, true)) {
+            if (!this->Match(TokenType::RIGHT_SQUARE))
+                subscript->step = this->ParseExpression().release();
+        }
+    }
+
+    this->EatNL();
+
+    subscript->loc.end = TKCUR_LOC.end;
+
+    if (!this->Match(TokenType::RIGHT_SQUARE))
+        throw ParserException(4);
+
+    this->Eat(false);
+
+    subscript->loc.start = subscript->expression->loc.start;
+
+    return subscript;
+}
+
+ASTHandle<ASTNode *> Parser::ParseInfix(ASTHandle<ASTNode *> &left) {
+    const auto tk_type = TKCUR_TYPE;
+
+    this->Eat(true);
+
+    auto right = this->ParseExpression(tk_type);
+
+    auto infix = MakeBinary(TKCUR_LOC, tk_type == TokenType::ARROW_LEFT ? NodeType::CHAN_SEND : NodeType::BINARY);
+
+    infix->token_type = tk_type;
+
+    infix->loc.start = left->loc.start;
+    infix->loc.end = right->loc.end;
+
+    infix->left = left.release();
+    infix->right = right.release();
+
+    return infix;
+}
+
+ASTHandle<ASTNode *> Parser::ParseInNotIn(ASTHandle<ASTNode *> &left) {
+    auto node_type = NodeType::IN;
+
+    if (TKCUR_TYPE == TokenType::KW_NOT) {
+        node_type = NodeType::NOT_IN;
+
+        this->Eat(true);
+    }
+
+    if (!this->MatchEat(TokenType::KW_IN, true))
+        throw ParserException(0);
+
+    auto binary = MakeBinary(TKCUR_LOC, node_type);
+
+    binary->left = left.release();
+    binary->right = this->ParseExpression(TokenType::KW_IN).release();
+
+    binary->loc.start = binary->left->loc.start;
+    binary->loc.end = binary->right->loc.end;
+
+    return binary;
+}
+
+ASTHandle<ASTNode *> Parser::ParseList() {
+    auto list = MakeListExpression(TKCUR_LOC, NodeType::LIST);
+
+    this->Eat(true);
+
+    if (!this->Match(TokenType::RIGHT_SQUARE)) {
+        do {
+            this->EatNL();
+
+            list->elements.push_back(this->ParseExpression(TokenType::COMMA));
+        } while (this->MatchEat(TokenType::COMMA, true));
+    }
+
+    list->loc.end = TKCUR_LOC.end;
+
+    if (!this->MatchEat(TokenType::RIGHT_SQUARE, false))
+        throw ParserException(5);
+
+    return list;
+}
+
 ASTHandle<ASTNode *> Parser::ParseLiteral() {
     HOObject handle;
 
@@ -757,6 +757,28 @@ ASTHandle<ASTNode *> Parser::ParsePostInc(ASTHandle<ASTNode *> &left) {
     this->Eat(false);
 
     return update;
+}
+
+ASTHandle<ASTNode *> Parser::ParsePrefix() {
+    const auto tk_type = TKCUR_TYPE;
+
+    auto prefix = MakeUnary(TKCUR_LOC, tk_type == TokenType::ARROW_LEFT ? NodeType::CHAN_RECV : NodeType::UNARY);
+
+    this->Eat(true);
+
+    prefix->token_type = tk_type;
+
+    // NOTE: We use the highest precedence among infix operators (ASTERISK in this case)
+    // as the minimum precedence for parsing the prefix expression's value.
+    // This ensures that we don't accidentally parse too little of the subsequent expression.
+    // For example, in "-a * b", we want to parse "a" as the operand, not "a * b".
+    // Using a high precedence guarantees that we'll stop at the first infix operator
+    // we encounter, correctly parsing unary expressions.
+    prefix->value = this->ParseExpression(TokenType::ASTERISK).release();
+
+    prefix->value->loc.end = prefix->value->loc.end;
+
+    return prefix;
 }
 
 ASTHandle<ASTNode *> Parser::ParseStatement() {
@@ -1105,28 +1127,6 @@ Parser::NudMeth Parser::LookupNUD(TokenType token) noexcept {
         default:
             return nullptr;
     }
-}
-
-ASTHandle<ASTNode *> Parser::ParsePrefix() {
-    const auto tk_type = TKCUR_TYPE;
-
-    auto prefix = MakeUnary(TKCUR_LOC, tk_type == TokenType::ARROW_LEFT ? NodeType::CHAN_RECV : NodeType::UNARY);
-
-    this->Eat(true);
-
-    prefix->token_type = tk_type;
-
-    // NOTE: We use the highest precedence among infix operators (ASTERISK in this case)
-    // as the minimum precedence for parsing the prefix expression's value.
-    // This ensures that we don't accidentally parse too little of the subsequent expression.
-    // For example, in "-a * b", we want to parse "a" as the operand, not "a * b".
-    // Using a high precedence guarantees that we'll stop at the first infix operator
-    // we encounter, correctly parsing unary expressions.
-    prefix->value = this->ParseExpression(TokenType::ASTERISK).release();
-
-    prefix->value->loc.end = prefix->value->loc.end;
-
-    return prefix;
 }
 
 HORString Parser::MakeFuncName() const {

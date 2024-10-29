@@ -89,9 +89,9 @@ namespace liftoff::parser {
             return this->tkcur_.type > begin && this->tkcur_.type < end;
         }
 
-        [[nodiscard]] ASTHandle<ASTNode *> ParseAssignment(ASTHandle<ASTNode *> &left);
-
         [[nodiscard]] ASTHandle<ASTNode *> ParseAPST();
+
+        [[nodiscard]] ASTHandle<ASTNode *> ParseAssignment(ASTHandle<ASTNode *> &left);
 
         [[nodiscard]] ASTHandle<ASTNode *> ParseDictSet();
 
