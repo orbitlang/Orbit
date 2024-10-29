@@ -19,42 +19,6 @@ using namespace liftoff::parser;
 #define TKCUR_START this->tkcur_.loc.start
 #define TKCUR_END   this->tkcur_.loc.end
 
-/*
-void Parser::ParseDoc() {
-    StringBuilder builder{};
-    StringKind kind;
-    MSize len;
-    MSize cp_len;
-
-    do {
-        if (!this->scanner_.NextToken(&this->tkcur_))
-            throw ScannerException();
-    } while (this->Match(TokenType::END_OF_LINE));
-
-    while (this->TokenInRange(TokenType::COMMENT_BEGIN, TokenType::COMMENT_END)) {
-        if (!builder.Write(this->tkcur_.buffer, this->tkcur_.length, 0))
-            throw DatatypeException();
-
-        do {
-            if (!this->scanner_.NextToken(&this->tkcur_))
-                throw ScannerException();
-        } while (this->Match(TokenType::END_OF_LINE));
-    }
-
-    auto *buffer = builder.BuildString(nullptr, &len, &cp_len, &kind);
-    if (buffer == nullptr && len != 0) {
-        assert(false);
-        // TODO: ERROR!
-    }
-
-    auto str = ORStringNew(this->ctx_, buffer, len, cp_len, kind);
-    if (str)
-        builder.Release();
-
-    return str;
-}
-*/
-
 int PeekPrecedence(TokenType token) {
     switch (token) {
         case TokenType::END_OF_LINE:
@@ -121,6 +85,75 @@ int PeekPrecedence(TokenType token) {
             return 1000; // Highest precedence for unknown tokens
     }
 }
+
+ASTHandle<ASTNode *> Parser::ParseVarDecl(const Position &start, bool pub, bool constant, bool weak) {
+    std::vector<ASTHandle<ASTNode *> > identifiers;
+
+    this->Eat(true);
+
+    do {
+        if (!this->Match(TokenType::IDENTIFIER))
+            throw ParserException(16);
+
+        auto id_str = ORStringNew(this->ctx_, this->tkcur_.buffer, this->tkcur_.length);
+        if (!id_str)
+            throw DatatypeException();
+
+        if (pub)
+            this->exports.push_back(id_str);
+
+        auto identifier = MakeIdentifier(TKCUR_LOC);
+        identifier->value = id_str.release();
+
+        identifiers.emplace_back(std::move(identifier));
+
+        this->Eat(false);
+    } while (this->MatchEat(TokenType::COMMA, true));
+
+    ASTHandle<ASTNode *> expr{};
+
+    auto decl = MakeAssignment(TKCUR_LOC, identifiers.size() > 1
+                                              ? NodeType::VAR_DECLARATIONS
+                                              : NodeType::VAR_DECLARATION);
+
+
+    decl->loc.start = start;
+
+    if (!this->Match(TokenType::END_OF_LINE, TokenType::END_OF_FILE, TokenType::SEMICOLON)) {
+        if (!this->MatchEat(TokenType::EQUAL, true))
+            throw ParserException(0);
+
+        expr = this->ParseExpression(TokenType::WALRUS);
+
+        decl->loc.end = expr->loc.end;
+    }
+    else if (constant)
+        throw ParserException(24);
+
+    if (identifiers.size() == 1)
+        decl->name = identifiers.front().release();
+    else {
+        auto tuple = MakeListExpression(TKCUR_LOC, NodeType::TUPLE);
+
+        tuple->loc.start = identifiers.front()->loc.start;
+        tuple->loc.end = identifiers.back()->loc.end;
+
+        tuple->elements = std::move(identifiers);
+
+        decl->name = tuple.release();
+    }
+
+    decl->value = expr.release();
+
+    decl->constant = constant;
+    decl->weak = weak;
+
+    return decl;
+}
+
+// *********************************************************************************************************************
+// EXPRESSIONS
+// *********************************************************************************************************************
 
 ASTHandle<ASTNode *> Parser::ParseAPST() {
     const auto start_pos = TKCUR_LOC.start;
@@ -783,13 +816,31 @@ ASTHandle<ASTNode *> Parser::ParsePrefix() {
 
 ASTHandle<ASTNode *> Parser::ParseStatement() {
     auto start = TKCUR_START;
+    bool pub = false;
+    bool weak = false;
+
+    while (this->Match(TokenType::KW_PUB, TokenType::KW_WEAK)) {
+        if (this->MatchEat(TokenType::KW_PUB, true)) {
+            pub = true;
+
+            continue;
+        }
+
+        if (this->MatchEat(TokenType::KW_WEAK, true)) {
+            if (!this->context_->Check(ContextType::CLASS))
+                throw ParserException(25);
+
+            weak = true;
+        }
+    }
 
     this->EatNL();
 
     switch (TKCUR_TYPE) {
         case TokenType::KW_LET:
+            return this->ParseVarDecl(start, pub, true, false);
         case TokenType::KW_VAR:
-            assert(false);
+            return this->ParseVarDecl(start, pub, false, weak);
         default:
             return this->ParseExpression();
     }
@@ -1204,7 +1255,7 @@ ASTHandle<Module *> Parser::Parse() noexcept {
         Loc loc{};
 
         // LOAD FIRST COMMENT
-        this->Eat(false);
+        this->Eat(true);
 
         loc.start = TKCUR_START;
 

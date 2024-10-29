@@ -35,7 +35,9 @@ namespace liftoff::parser {
         "only identifiers are allowed before the '=' sign",
         "function parameters must be passed in the order: [positional][, named param][, spread][, kwargs]",
         "expected ')' after arguments in function call",
-        "expected identifier(s) before warlus':=' operator"
+        "expected identifier(s) before warlus':=' operator",
+        "expected '=' after identifier(s) in let declaration",
+        "'weak' can only be used in the context of a class"
     };
 
     class Context;
@@ -51,6 +53,10 @@ namespace liftoff::parser {
         const char *filename_ = nullptr;
 
         Context *context_ = nullptr;
+
+        std::vector<orbiter::datatype::HORString> exports{};
+
+        std::vector<orbiter::datatype::HORString> imports{};
 
         SymbolTable *sym_t_ = nullptr;
 
@@ -88,6 +94,13 @@ namespace liftoff::parser {
         [[nodiscard]] bool TokenInRange(scanner::TokenType begin, scanner::TokenType end) const noexcept {
             return this->tkcur_.type > begin && this->tkcur_.type < end;
         }
+
+        [[nodiscard]] ASTHandle<ASTNode *> ParseVarDecl(const scanner::Position &start, bool pub, bool constant,
+                                                        bool weak);
+
+        // *************************************************************************************************************
+        // EXPRESSIONS
+        // *************************************************************************************************************
 
         [[nodiscard]] ASTHandle<ASTNode *> ParseAPST();
 

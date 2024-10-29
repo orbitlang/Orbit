@@ -34,7 +34,9 @@ NODES = {
         "fields": {
             "token_type": "scanner::TokenType",
             "name": "ASTNode*",
-            "value": "ASTNode*"
+            "value": "ASTNode*",
+            "constant": "bool",
+            "weak": "bool"
         },
         "node_type": ["ASSIGNMENT", "ASSIGNMENTS", "VAR_DECLARATION", "VAR_DECLARATIONS"]
     },
@@ -95,6 +97,8 @@ NODES = {
             "filepath": "orbiter::datatype::ORString*",
             "docstring": "orbiter::datatype::ORString*",
             "statements": "std::vector<ASTHandle<ASTNode*>>",
+            "exports": "std::vector<orbiter::datatype::HORString>",
+            "imports": "std::vector<orbiter::datatype::HORString>",
             "sym_t": "SymbolTable*"
         }
     },
