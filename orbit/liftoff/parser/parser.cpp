@@ -86,6 +86,20 @@ int PeekPrecedence(TokenType token) {
     }
 }
 
+ASTHandle<ASTNode *> Parser::ParseDeferStatement() {
+    auto defer = MakeUnary(TKCUR_LOC, NodeType::DEFER);
+
+    this->Eat(true);
+
+    defer->value = this->ParseExpression(TokenType::COMMA).release();
+    defer->loc.end = defer->value->loc.end;
+
+    if (defer->value->node_type != NodeType::CALL)
+        throw ParserException(26);
+
+    return defer;
+}
+
 ASTHandle<ASTNode *> Parser::ParseIfStatement() {
     auto branch = MakeBranch(TKCUR_LOC);
 
@@ -219,6 +233,9 @@ ASTHandle<ASTNode *> Parser::ParseAPST() {
 
     if (right->node_type == node_type)
         return right;
+
+    if (node_type == NodeType::SPAWN && right->node_type != NodeType::CALL)
+        throw ParserException(33);
 
     auto &unary = (ASTHandle<Unary *> &) right;
     if (unary->node_type == NodeType::NIL_SAFE && unary->value->node_type == node_type) {
@@ -902,6 +919,8 @@ ASTHandle<ASTNode *> Parser::ParseStatement() {
     this->EatNL();
 
     switch (TKCUR_TYPE) {
+        case TokenType::KW_DEFER:
+            return this->ParseDeferStatement();
         case TokenType::KW_FUNC: {
             auto func = this->ParseFunction(false);
 

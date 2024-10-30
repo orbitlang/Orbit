@@ -37,7 +37,8 @@ namespace liftoff::parser {
         "expected ')' after arguments in function call",
         "expected identifier(s) before warlus':=' operator",
         "expected '=' after identifier(s) in let declaration",
-        "'weak' can only be used in the context of a class"
+        "'weak' can only be used in the context of a class",
+        "defer expected call expression"
     };
 
     class Context;
@@ -94,6 +95,8 @@ namespace liftoff::parser {
         [[nodiscard]] bool TokenInRange(scanner::TokenType begin, scanner::TokenType end) const noexcept {
             return this->tkcur_.type > begin && this->tkcur_.type < end;
         }
+
+        [[nodiscard]] ASTHandle<ASTNode *> ParseDeferStatement();
 
         [[nodiscard]] ASTHandle<ASTNode *> ParseIfStatement();
 
