@@ -936,6 +936,18 @@ ASTHandle<ASTNode *> Parser::ParseStatement() {
             return this->ParseIfStatement();
         case TokenType::KW_LET:
             return this->ParseVarDecl(start, pub, true, false);
+        case TokenType::KW_RETURN: {
+            auto ret = MakeUnary(TKCUR_LOC, NodeType::RETURN);
+
+            this->Eat(false);
+
+            if (!this->Match(TokenType::END_OF_LINE, TokenType::END_OF_FILE, TokenType::SEMICOLON)) {
+                ret->value = this->ParseExpression(TokenType::WALRUS).release();
+                ret->loc.end = ret->value->loc.end;
+            }
+
+            return ret;
+        }
         case TokenType::KW_SYNC:
             return this->ParseSyncStatement();
         case TokenType::KW_VAR:
