@@ -100,6 +100,48 @@ ASTHandle<ASTNode *> Parser::ParseDeferStatement() {
     return defer;
 }
 
+ASTHandle<ASTNode *> Parser::ParseForInStatement() {
+    auto forIn = MakeLoop(TKCUR_LOC, NodeType::FOR_IN);
+
+    this->Eat(true);
+
+    this->sym_t_->EnterNestedScope();
+
+    if (this->Match(TokenType::KW_VAR)) {
+        constexpr Position end{};
+        forIn->init = this->ParseVarDecl(end, false, false, false, true).release();
+    } else {
+        std::vector<ASTHandle<ASTNode *> > ids;
+
+        do {
+            ids.emplace_back(this->ParseExpression(TokenType::KW_IN));
+        } while (this->MatchEat(TokenType::COMMA, true));
+
+        if (ids.size() > 1) {
+            auto tuple = MakeListExpression(TKCUR_LOC, NodeType::TUPLE);
+
+            tuple->loc.start = ids.front()->loc.start;
+            tuple->loc.end = ids.back()->loc.end;
+
+            tuple->elements = std::move(ids);
+
+            forIn->init = tuple.release();
+        } else
+            forIn->init = ids.front().release();
+    }
+
+    if (!this->MatchEat(TokenType::KW_IN, true))
+        throw ParserException(29);
+
+    forIn->test = this->ParseExpression(TokenType::COMMA).release();
+
+    forIn->body = this->ParseBlock(false).release();
+
+    this->sym_t_->LeaveNestedScope();
+
+    return forIn;
+}
+
 ASTHandle<ASTNode *> Parser::ParseIfStatement() {
     auto branch = MakeBranch(TKCUR_LOC);
 
@@ -170,7 +212,7 @@ ASTHandle<ASTNode *> Parser::ParseSyncStatement() {
     return sync;
 }
 
-ASTHandle<ASTNode *> Parser::ParseVarDecl(const Position &start, bool pub, bool constant, bool weak) {
+ASTHandle<ASTNode *> Parser::ParseVarDecl(const Position &start, bool pub, bool constant, bool weak, bool decl_only) {
     std::vector<ASTHandle<ASTNode *> > identifiers;
 
     this->Eat(true);
@@ -203,15 +245,17 @@ ASTHandle<ASTNode *> Parser::ParseVarDecl(const Position &start, bool pub, bool 
 
     decl->loc.start = start;
 
-    if (!this->Match(TokenType::END_OF_LINE, TokenType::END_OF_FILE, TokenType::SEMICOLON)) {
-        if (!this->MatchEat(TokenType::EQUAL, true))
-            throw ParserException(0);
+    if (!decl_only) {
+        if (!this->Match(TokenType::END_OF_LINE, TokenType::END_OF_FILE, TokenType::SEMICOLON)) {
+            if (!this->MatchEat(TokenType::EQUAL, true))
+                throw ParserException(0);
 
-        expr = this->ParseExpression(TokenType::WALRUS);
+            expr = this->ParseExpression(TokenType::WALRUS);
 
-        decl->loc.end = expr->loc.end;
-    } else if (constant)
-        throw ParserException(24);
+            decl->loc.end = expr->loc.end;
+        } else if (constant)
+            throw ParserException(24);
+    }
 
     if (identifiers.size() == 1)
         decl->name = identifiers.front().release();
@@ -954,6 +998,8 @@ ASTHandle<ASTNode *> Parser::ParseStatement() {
     switch (TKCUR_TYPE) {
         case TokenType::KW_DEFER:
             return this->ParseDeferStatement();
+        case TokenType::KW_FOR:
+            return this->ParseForInStatement();
         case TokenType::KW_FUNC: {
             auto func = this->ParseFunction(false);
 
@@ -968,7 +1014,7 @@ ASTHandle<ASTNode *> Parser::ParseStatement() {
         case TokenType::KW_IF:
             return this->ParseIfStatement();
         case TokenType::KW_LET:
-            return this->ParseVarDecl(start, pub, true, false);
+            return this->ParseVarDecl(start, pub, true, false, false);
         case TokenType::KW_LOOP:
             return this->ParseLoopStatement();
         case TokenType::KW_RETURN: {
@@ -986,7 +1032,7 @@ ASTHandle<ASTNode *> Parser::ParseStatement() {
         case TokenType::KW_SYNC:
             return this->ParseSyncStatement();
         case TokenType::KW_VAR:
-            return this->ParseVarDecl(start, pub, false, weak);
+            return this->ParseVarDecl(start, pub, false, weak, false);
         default:
             return this->ParseExpression();
     }

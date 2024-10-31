@@ -40,7 +40,8 @@ namespace liftoff::parser {
         "'weak' can only be used in the context of a class",
         "defer expected call expression",
         "spawn expected call expression",
-        "expected ';' after test"
+        "expected ';' after test",
+        "expected 'in' keyword in for-in loop"
     };
 
     class Context;
@@ -100,6 +101,8 @@ namespace liftoff::parser {
 
         [[nodiscard]] ASTHandle<ASTNode *> ParseDeferStatement();
 
+        [[nodiscard]] ASTHandle<ASTNode *> ParseForInStatement();
+
         [[nodiscard]] ASTHandle<ASTNode *> ParseIfStatement();
 
         [[nodiscard]] ASTHandle<ASTNode *> ParseLoopStatement();
@@ -107,7 +110,7 @@ namespace liftoff::parser {
         [[nodiscard]] ASTHandle<ASTNode *> ParseSyncStatement();
 
         [[nodiscard]] ASTHandle<ASTNode *> ParseVarDecl(const scanner::Position &start, bool pub, bool constant,
-                                                        bool weak);
+                                                        bool weak, bool decl_only);
 
         // *************************************************************************************************************
         // EXPRESSIONS
