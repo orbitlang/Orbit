@@ -138,7 +138,7 @@ NODES = {
             "value": "ASTNode*"
         },
         "node_type": ["AWAIT", "CHAN_RECV", "DEFER", "ELLIPSIS", "KW_ARG", "NIL_SAFE", "PANIC", "RETURN", "SPAWN",
-                      "TRAP", "UNARY", "UPDATE"]
+                      "TRAP", "UNARY", "UPDATE", "YIELD"]
     }
 }
 

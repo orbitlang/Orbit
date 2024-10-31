@@ -41,7 +41,9 @@ namespace liftoff::parser {
         "defer expected call expression",
         "spawn expected call expression",
         "expected ';' after test",
-        "expected 'in' keyword in for-in loop"
+        "expected 'in' keyword in for-in loop",
+        "expected expression after 'yield' keyword",
+        "'yield' cannot be used outside of a function"
     };
 
     class Context;

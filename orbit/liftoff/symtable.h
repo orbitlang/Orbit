@@ -49,6 +49,7 @@ namespace liftoff {
     enum class ScopeType {
         CLASS,
         FUNCTION,
+        GENERATOR,
         MODULE,
         TRAIT
     };

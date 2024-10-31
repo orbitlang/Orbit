@@ -1017,22 +1017,27 @@ ASTHandle<ASTNode *> Parser::ParseStatement() {
             return this->ParseVarDecl(start, pub, true, false, false);
         case TokenType::KW_LOOP:
             return this->ParseLoopStatement();
+        case TokenType::KW_SYNC:
+            return this->ParseSyncStatement();
+        case TokenType::KW_VAR:
+            return this->ParseVarDecl(start, pub, false, weak, false);
+        case TokenType::KW_YIELD:
+            if (!this->context_->Check(ContextType::FUNC))
+                throw ParserException(31);
+            this->sym_t_->scope->type = ScopeType::GENERATOR;
         case TokenType::KW_RETURN: {
-            auto ret = MakeUnary(TKCUR_LOC, NodeType::RETURN);
+            auto ret = MakeUnary(TKCUR_LOC, TKCUR_TYPE == TokenType::KW_RETURN ? NodeType::RETURN : NodeType::YIELD);
 
             this->Eat(false);
 
             if (!this->Match(TokenType::END_OF_LINE, TokenType::END_OF_FILE, TokenType::SEMICOLON)) {
                 ret->value = this->ParseExpression(TokenType::WALRUS).release();
                 ret->loc.end = ret->value->loc.end;
-            }
+            } else if (ret->node_type == NodeType::YIELD)
+                throw ParserException(30);
 
             return ret;
         }
-        case TokenType::KW_SYNC:
-            return this->ParseSyncStatement();
-        case TokenType::KW_VAR:
-            return this->ParseVarDecl(start, pub, false, weak, false);
         default:
             return this->ParseExpression();
     }
