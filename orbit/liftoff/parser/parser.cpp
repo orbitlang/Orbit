@@ -1011,6 +1011,9 @@ ASTHandle<ASTNode *> Parser::ParsePrefix() {
 }
 
 ASTHandle<ASTNode *> Parser::ParseStatement() {
+    ASTHandle<ASTNode *> stmt;
+    ASTHandle<ASTNode *> label;
+
     auto start = TKCUR_START;
     bool pub = false;
     bool weak = false;
@@ -1032,56 +1035,108 @@ ASTHandle<ASTNode *> Parser::ParseStatement() {
 
     this->EatNL();
 
-    switch (TKCUR_TYPE) {
-        case TokenType::KW_DEFER:
-            return this->ParseDeferStatement();
-        case TokenType::KW_FOR:
-            return this->ParseForInStatement();
-        case TokenType::KW_FUNC: {
-            auto func = this->ParseFunction(false);
+    do {
+        switch (TKCUR_TYPE) {
+            case TokenType::KW_DEFER:
+                stmt = this->ParseDeferStatement();
+                break;
+            case TokenType::KW_FOR:
+                stmt = this->ParseForInStatement();
+                break;
+            case TokenType::KW_FUNC: {
+                auto func = this->ParseFunction(false);
 
-            func->loc.start = start;
-            func->pub = pub;
+                func->loc.start = start;
+                func->pub = pub;
 
-            if (pub && !func->anon)
-                this->exports.emplace_back(func->name);
+                if (pub && !func->anon)
+                    this->exports.emplace_back(func->name);
 
-            return func;
+                stmt = std::move(func);
+                break;
+            }
+            case TokenType::KW_IF:
+                stmt = this->ParseIfStatement();
+                break;
+            case TokenType::KW_LET:
+                stmt = this->ParseVarDecl(start, pub, true, false, false);
+                break;
+            case TokenType::KW_LOOP:
+                stmt = this->ParseLoopStatement();
+                break;
+            case TokenType::KW_TRY:
+                stmt = this->ParseTryCatchFinally();
+                break;
+            case TokenType::KW_SYNC:
+                stmt = this->ParseSyncStatement();
+                break;
+            case TokenType::KW_VAR:
+                stmt = this->ParseVarDecl(start, pub, false, weak, false);
+                break;
+            case TokenType::KW_YIELD:
+                if (!this->context_->Check(ContextType::FUNC))
+                    throw ParserException(31);
+                this->sym_t_->scope->type = ScopeType::GENERATOR;
+            case TokenType::KW_RETURN: {
+                auto ret = MakeUnary(
+                    TKCUR_LOC, TKCUR_TYPE == TokenType::KW_RETURN ? NodeType::RETURN : NodeType::YIELD);
+
+                this->Eat(false);
+
+                if (!this->Match(TokenType::END_OF_LINE, TokenType::END_OF_FILE, TokenType::SEMICOLON)) {
+                    ret->value = this->ParseExpression(TokenType::WALRUS).release();
+                    ret->loc.end = ret->value->loc.end;
+                } else if (ret->node_type == NodeType::YIELD)
+                    throw ParserException(30);
+
+                stmt = std::move(ret);
+                break;
+            }
+            default:
+                stmt = this->ParseExpression();
         }
-        case TokenType::KW_IF:
-            return this->ParseIfStatement();
-        case TokenType::KW_LET:
-            return this->ParseVarDecl(start, pub, true, false, false);
-        case TokenType::KW_LOOP:
-            return this->ParseLoopStatement();
-        case TokenType::KW_TRY:
-            return this->ParseTryCatchFinally();
-        case TokenType::KW_SYNC:
-            return this->ParseSyncStatement();
-        case TokenType::KW_VAR:
-            return this->ParseVarDecl(start, pub, false, weak, false);
-        case TokenType::KW_YIELD:
-            if (!this->context_->Check(ContextType::FUNC))
-                throw ParserException(31);
-            this->sym_t_->scope->type = ScopeType::GENERATOR;
-        case TokenType::KW_RETURN: {
-            auto ret = MakeUnary(TKCUR_LOC, TKCUR_TYPE == TokenType::KW_RETURN ? NodeType::RETURN : NodeType::YIELD);
 
-            this->Eat(false);
+        this->IgnoreNewLineIF(TokenType::COLON);
 
-            if (!this->Match(TokenType::END_OF_LINE, TokenType::END_OF_FILE, TokenType::SEMICOLON)) {
-                ret->value = this->ParseExpression(TokenType::WALRUS).release();
-                ret->loc.end = ret->value->loc.end;
-            } else if (ret->node_type == NodeType::YIELD)
-                throw ParserException(30);
+        if (!this->MatchEat(TokenType::COLON, false))
+            break;
 
-            return ret;
-        }
-        default:
-            return this->ParseExpression();
+        this->EatNL();
+
+        if (stmt->node_type != NodeType::IDENTIFIER)
+            throw ParserException(33);
+
+        if (label)
+            throw ParserException(34);
+
+        label = std::move(stmt);
+    } while (true);
+
+    if (label) {
+        if (stmt->node_type != NodeType::FOR
+            && stmt->node_type != NodeType::FOR_IN
+            && stmt->node_type != NodeType::LOOP)
+            throw ParserException(35);
+
+        auto lbl = MakeLabel(TKCUR_LOC);
+
+        lbl->loc.start = label->loc.start;
+        lbl->loc.end = stmt->loc.end;
+
+        const auto &id = (ASTHandle<Identifier *> &) label;
+
+        lbl->label = id->value;
+
+        id->value = nullptr;
+
+        lbl->statement = stmt.release();
+
+        this->sym_t_->Lookup(lbl->label, lbl->loc.start.offset)->type = SymbolType::LABEL;
+
+        return lbl;
     }
 
-    return {};
+    return stmt;
 }
 
 ASTHandle<ASTNode *> Parser::ParseTernary(ASTHandle<ASTNode *> &left) {
@@ -1476,7 +1531,11 @@ ASTHandle<Module *> Parser::Parse() noexcept {
 
             while (this->MatchEat(TokenType::SEMICOLON, true));
         }
-    } catch (...) {
+    } catch (ParserException &e) {
+        printf("%s\n", kStandardError[e.err_idx]);
+        assert(false);
+    }
+    catch (...) {
         assert(false);
     }
 

@@ -45,7 +45,9 @@ namespace liftoff::parser {
         "Invalid yield statement: expected expression after 'yield'",
         "Invalid yield usage: 'yield' can only be used inside functions",
         "Invalid try block: must have at least one catch or finally clause",
-        "Invalid catch clause: expected @atom after catch"
+        "Invalid catch clause: expected @atom after catch",
+        "Invalid label placement: labels cannot be stacked. Each label must be followed by a valid loop statement",
+        "Invalid label usage: labels can only precede 'for', 'for-in', or 'loop' statements. Other statements cannot be labeled"
     };
 
     class Context;

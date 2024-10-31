@@ -91,6 +91,12 @@ NODES = {
             "value": "orbiter::datatype::ORString*"
         }
     },
+    "Label": {
+        "fields": {
+            "label": "orbiter::datatype::ORString*",
+            "statement": "ASTNode*"
+        }
+    },
     "ListExpression": {
         "fields": {
             "elements": "std::vector<ASTHandle<ASTNode*>>"

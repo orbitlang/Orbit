@@ -37,6 +37,7 @@ namespace liftoff::parser {
         CATCHBLOCK,
         FUNCTION,
         IDENTIFIER,
+        LABEL,
         DICT,
         LIST,
         SET,
@@ -203,6 +204,11 @@ namespace liftoff::parser {
         orbiter::datatype::ORString *value;
     };
 
+    struct Label : ASTNode {
+        orbiter::datatype::ORString *label;
+        ASTNode *statement;
+    };
+
     struct ListExpression : ASTNode {
         std::vector<ASTHandle<ASTNode *> > elements;
     };
@@ -328,6 +334,13 @@ namespace liftoff::parser {
                 Release(node->value);
                 break;
             }
+            case NodeType::LABEL: {
+                auto *node = (Label *) ast_node;
+                Release(node->label);
+                if (node->statement)
+                    ASTNodeCleanup(node->statement);
+                break;
+            }
             case NodeType::DICT:
             case NodeType::LIST:
             case NodeType::SET:
@@ -450,6 +463,7 @@ namespace liftoff::parser {
                 case NodeType::CATCHBLOCK: return static_cast<Derived *>(this)->visitCatchBlock((CatchBlock *) node);
                 case NodeType::FUNCTION: return static_cast<Derived *>(this)->visitFunction((Function *) node);
                 case NodeType::IDENTIFIER: return static_cast<Derived *>(this)->visitIdentifier((Identifier *) node);
+                case NodeType::LABEL: return static_cast<Derived *>(this)->visitLabel((Label *) node);
                 case NodeType::DICT:
                 case NodeType::LIST:
                 case NodeType::SET:
@@ -505,6 +519,8 @@ namespace liftoff::parser {
         ASTNode *visitFunction(Function *node) { return node; }
 
         ASTNode *visitIdentifier(Identifier *node) { return node; }
+
+        ASTNode *visitLabel(Label *node) { return node; }
 
         ASTNode *visitListExpression(ListExpression *node) { return node; }
 
@@ -612,6 +628,16 @@ namespace liftoff::parser {
         auto *node = (Identifier *) orbiter::memory::Calloc(sizeof(Identifier));
         if (node != nullptr) {
             node->node_type = NodeType::IDENTIFIER;
+            node->loc = loc;
+        }
+        return ASTHandle(node);
+    }
+
+
+    inline ASTHandle<Label *> MakeLabel(const scanner::Loc &loc) {
+        auto *node = (Label *) orbiter::memory::Calloc(sizeof(Label));
+        if (node != nullptr) {
+            node->node_type = NodeType::LABEL;
             node->loc = loc;
         }
         return ASTHandle(node);
