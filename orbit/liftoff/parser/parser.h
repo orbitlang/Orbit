@@ -12,38 +12,40 @@
 
 namespace liftoff::parser {
     constexpr const char *kStandardError[] = {
-        "invalid syntax",
-        "only identifier(s)/index/slice/access expression are allowed before the '=' sign",
-        "unexpected update operator",
-        "subscript definition (index | slice) cannot be empty",
-        "expected ']' after (index | slice) definition",
-        "expected ']' after list definition",
-        "you started defining a dict, not a set",
-        "you started defining a set, not a dict",
-        "expected '}' after dict definition",
-        "expected '}' after set definition",
-        "expected ')' after tuple definition",
-        "expected '(' to start function parameters definition",
-        "expected ')' after function params",
-        "unexpected named/positional parameter",
-        "unexpected named parameter",
-        "only one rest-param is allowed per function declaration",
-        "expected identifier",
-        "const is unexpected outside a class/trait",
-        "expected '{' to start a code block",
-        "expected '}' to end a code block",
-        "only identifiers are allowed before the '=' sign",
-        "function parameters must be passed in the order: [positional][, named param][, spread][, kwargs]",
-        "expected ')' after arguments in function call",
-        "expected identifier(s) before warlus':=' operator",
-        "expected '=' after identifier(s) in let declaration",
-        "'weak' can only be used in the context of a class",
-        "defer expected call expression",
-        "spawn expected call expression",
-        "expected ';' after test",
-        "expected 'in' keyword in for-in loop",
-        "expected expression after 'yield' keyword",
-        "'yield' cannot be used outside of a function"
+        "Invalid syntax: unexpected token or expression",
+        "Invalid assignment target: left side of '=' must be an identifier, index, slice, or member access",
+        "Invalid increment/decrement: operator can only be applied to variables or member access",
+        "Invalid subscript: index or slice definition cannot be empty",
+        "Missing closing bracket: expected ']' to close index or slice definition",
+        "Missing closing bracket: expected ']' to close list definition",
+        "Type mismatch: started with dictionary syntax but found set element",
+        "Type mismatch: started with set syntax but found key-value pair",
+        "Missing closing brace: expected '}' to close dictionary definition",
+        "Missing closing brace: expected '}' to close set definition",
+        "Missing closing parenthesis: expected ')' to close tuple definition",
+        "Invalid function declaration: expected '(' before parameter list",
+        "Missing closing parenthesis: expected ')' to close function parameters",
+        "Invalid parameter order: unexpected positional parameter after named parameter",
+        "Invalid parameter order: named parameter found after rest or kwargs parameter",
+        "Invalid function declaration: only one rest parameter (...args) allowed per function",
+        "Missing identifier: expected name or identifier",
+        "Invalid 'const' usage: can only be used within class or trait definitions",
+        "Missing opening brace: expected '{' to start code block",
+        "Missing closing brace: expected '}' to end code block",
+        "Invalid named argument: only identifiers allowed before '=' in named arguments",
+        "Invalid parameter order: must be [positional args][, named args][, spread args][, kwargs]",
+        "Missing closing parenthesis: expected ')' to close function call",
+        "Invalid walrus operator usage: expected identifier(s) before ':='",
+        "Invalid let declaration: expected '=' after identifier(s)",
+        "Invalid 'weak' usage: can only be used within class definitions",
+        "Invalid defer statement: expected function or method call",
+        "Invalid spawn statement: expected function or method call",
+        "Missing semicolon: expected ';' after test expression",
+        "Invalid for-in loop: expected 'in' keyword after loop variables",
+        "Invalid yield statement: expected expression after 'yield'",
+        "Invalid yield usage: 'yield' can only be used inside functions",
+        "Invalid try block: must have at least one catch or finally clause",
+        "Invalid catch clause: expected @atom after catch"
     };
 
     class Context;
@@ -110,6 +112,8 @@ namespace liftoff::parser {
         [[nodiscard]] ASTHandle<ASTNode *> ParseLoopStatement();
 
         [[nodiscard]] ASTHandle<ASTNode *> ParseSyncStatement();
+
+        [[nodiscard]] ASTHandle<ASTNode *> ParseTryCatchFinally();
 
         [[nodiscard]] ASTHandle<ASTNode *> ParseVarDecl(const scanner::Position &start, bool pub, bool constant,
                                                         bool weak, bool decl_only);

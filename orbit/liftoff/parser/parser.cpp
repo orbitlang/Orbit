@@ -212,6 +212,41 @@ ASTHandle<ASTNode *> Parser::ParseSyncStatement() {
     return sync;
 }
 
+ASTHandle<ASTNode *> Parser::ParseTryCatchFinally() {
+    auto tryb = MakeTryBlock(TKCUR_LOC);
+
+    this->Eat(true);
+
+    tryb->try_block = this->ParseBlock(true).release();
+
+    if (!this->Match(TokenType::KW_CATCH, TokenType::KW_FINALLY))
+        throw ParserException(32);
+
+    while (this->Match(TokenType::KW_CATCH)) {
+        auto cb = MakeCatchBlock(TKCUR_LOC);
+
+        this->Eat(true);
+
+        do {
+            if (!this->Match(TokenType::ATOM))
+                throw ParserException(33);
+
+            cb->catches.emplace_back(this->ParseLiteral()).release();
+        } while (this->MatchEat(TokenType::PIPE, true));
+
+        cb->body = this->ParseBlock(true).release();
+
+        tryb->catches.emplace_back(cb.release());
+    }
+
+    if (this->MatchEat(TokenType::KW_FINALLY, true)) {
+        tryb->finally = this->ParseBlock(true).release();
+        tryb->loc.end = tryb->finally->loc.end;
+    }
+
+    return tryb;
+}
+
 ASTHandle<ASTNode *> Parser::ParseVarDecl(const Position &start, bool pub, bool constant, bool weak, bool decl_only) {
     std::vector<ASTHandle<ASTNode *> > identifiers;
 
@@ -797,7 +832,9 @@ ASTHandle<ASTNode *> Parser::ParseLiteral() {
 
     switch (this->tkcur_.type) {
         case TokenType::ATOM:
-            assert(false);
+            //assert(false);
+            this->Eat(false);
+            return {};
         case TokenType::BYTE_STRING:
             // TODO: ByteString
             assert(false);
@@ -1017,6 +1054,8 @@ ASTHandle<ASTNode *> Parser::ParseStatement() {
             return this->ParseVarDecl(start, pub, true, false, false);
         case TokenType::KW_LOOP:
             return this->ParseLoopStatement();
+        case TokenType::KW_TRY:
+            return this->ParseTryCatchFinally();
         case TokenType::KW_SYNC:
             return this->ParseSyncStatement();
         case TokenType::KW_VAR:

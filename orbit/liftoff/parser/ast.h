@@ -34,6 +34,7 @@ namespace liftoff::parser {
         BLOCK,
         BRANCH,
         CALL,
+        CATCHBLOCK,
         FUNCTION,
         IDENTIFIER,
         DICT,
@@ -52,6 +53,7 @@ namespace liftoff::parser {
         REST_PARAM,
         INDEX,
         SLICE,
+        TRYBLOCK,
         AWAIT,
         CHAN_RECV,
         DEFER,
@@ -180,6 +182,11 @@ namespace liftoff::parser {
         ASTNode *kwargs;
     };
 
+    struct CatchBlock : ASTNode {
+        std::vector<ASTHandle<ASTNode *> > catches;
+        ASTNode *body;
+    };
+
     struct Function : ASTNode {
         orbiter::datatype::ORString *name;
         orbiter::datatype::ORString *doc;
@@ -231,6 +238,12 @@ namespace liftoff::parser {
         ASTNode *start;
         ASTNode *stop;
         ASTNode *step;
+    };
+
+    struct TryBlock : ASTNode {
+        ASTNode *try_block;
+        std::vector<ASTHandle<ASTNode *> > catches;
+        ASTNode *finally;
     };
 
     struct Unary : ASTNode {
@@ -290,6 +303,13 @@ namespace liftoff::parser {
                 node->args.~vector();
                 if (node->kwargs)
                     ASTNodeCleanup(node->kwargs);
+                break;
+            }
+            case NodeType::CATCHBLOCK: {
+                auto *node = (CatchBlock *) ast_node;
+                node->catches.~vector();
+                if (node->body)
+                    ASTNodeCleanup(node->body);
                 break;
             }
             case NodeType::FUNCTION: {
@@ -370,6 +390,15 @@ namespace liftoff::parser {
                     ASTNodeCleanup(node->step);
                 break;
             }
+            case NodeType::TRYBLOCK: {
+                auto *node = (TryBlock *) ast_node;
+                if (node->try_block)
+                    ASTNodeCleanup(node->try_block);
+                node->catches.~vector();
+                if (node->finally)
+                    ASTNodeCleanup(node->finally);
+                break;
+            }
             case NodeType::AWAIT:
             case NodeType::CHAN_RECV:
             case NodeType::DEFER:
@@ -418,6 +447,7 @@ namespace liftoff::parser {
                 case NodeType::BLOCK: return static_cast<Derived *>(this)->visitBlock((Block *) node);
                 case NodeType::BRANCH: return static_cast<Derived *>(this)->visitBranch((Branch *) node);
                 case NodeType::CALL: return static_cast<Derived *>(this)->visitCall((Call *) node);
+                case NodeType::CATCHBLOCK: return static_cast<Derived *>(this)->visitCatchBlock((CatchBlock *) node);
                 case NodeType::FUNCTION: return static_cast<Derived *>(this)->visitFunction((Function *) node);
                 case NodeType::IDENTIFIER: return static_cast<Derived *>(this)->visitIdentifier((Identifier *) node);
                 case NodeType::DICT:
@@ -440,6 +470,7 @@ namespace liftoff::parser {
                 case NodeType::INDEX:
                 case NodeType::SLICE:
                     return static_cast<Derived *>(this)->visitSubscript((Subscript *) node);
+                case NodeType::TRYBLOCK: return static_cast<Derived *>(this)->visitTryBlock((TryBlock *) node);
                 case NodeType::AWAIT:
                 case NodeType::CHAN_RECV:
                 case NodeType::DEFER:
@@ -469,6 +500,8 @@ namespace liftoff::parser {
 
         ASTNode *visitCall(Call *node) { return node; }
 
+        ASTNode *visitCatchBlock(CatchBlock *node) { return node; }
+
         ASTNode *visitFunction(Function *node) { return node; }
 
         ASTNode *visitIdentifier(Identifier *node) { return node; }
@@ -484,6 +517,8 @@ namespace liftoff::parser {
         ASTNode *visitParameter(Parameter *node) { return node; }
 
         ASTNode *visitSubscript(Subscript *node) { return node; }
+
+        ASTNode *visitTryBlock(TryBlock *node) { return node; }
 
         ASTNode *visitUnary(Unary *node) { return node; }
     };
@@ -544,6 +579,18 @@ namespace liftoff::parser {
             node->loc = loc;
 
             new(&node->args) std::vector<ASTHandle<ASTNode *> >();
+        }
+        return ASTHandle(node);
+    }
+
+
+    inline ASTHandle<CatchBlock *> MakeCatchBlock(const scanner::Loc &loc) {
+        auto *node = (CatchBlock *) orbiter::memory::Calloc(sizeof(CatchBlock));
+        if (node != nullptr) {
+            node->node_type = NodeType::CATCHBLOCK;
+            node->loc = loc;
+
+            new(&node->catches) std::vector<ASTHandle<ASTNode *> >();
         }
         return ASTHandle(node);
     }
@@ -640,6 +687,18 @@ namespace liftoff::parser {
         if (node != nullptr) {
             node->node_type = node_type;
             node->loc = loc;
+        }
+        return ASTHandle(node);
+    }
+
+
+    inline ASTHandle<TryBlock *> MakeTryBlock(const scanner::Loc &loc) {
+        auto *node = (TryBlock *) orbiter::memory::Calloc(sizeof(TryBlock));
+        if (node != nullptr) {
+            node->node_type = NodeType::TRYBLOCK;
+            node->loc = loc;
+
+            new(&node->catches) std::vector<ASTHandle<ASTNode *> >();
         }
         return ASTHandle(node);
     }

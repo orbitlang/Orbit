@@ -67,6 +67,12 @@ NODES = {
             "kwargs": "ASTNode*"
         }
     },
+    "CatchBlock": {
+        "fields": {
+            "catches": "std::vector<ASTHandle<ASTNode*>>",
+            "body": "ASTNode*"
+        }
+    },
     "Function": {
         "fields": {
             "name": "orbiter::datatype::ORString*",
@@ -131,6 +137,13 @@ NODES = {
             "step": "ASTNode*"
         },
         "node_type": ["INDEX", "SLICE"]
+    },
+    "TryBlock": {
+        "fields": {
+            "try_block": "ASTNode*",
+            "catches": "std::vector<ASTHandle<ASTNode*>>",
+            "finally": "ASTNode*",
+        }
     },
     "Unary": {
         "fields": {
