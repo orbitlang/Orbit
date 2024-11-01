@@ -36,6 +36,7 @@ NODES = {
             "name": "ASTNode*",
             "value": "ASTNode*",
             "constant": "bool",
+            "inl": "bool",
             "weak": "bool"
         },
         "node_type": ["ASSIGNMENT", "ASSIGNMENTS", "VAR_DECLARATION", "VAR_DECLARATIONS"]

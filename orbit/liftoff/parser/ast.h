@@ -158,6 +158,7 @@ namespace liftoff::parser {
         ASTNode *name;
         ASTNode *value;
         bool constant;
+        bool inl;
         bool weak;
     };
 

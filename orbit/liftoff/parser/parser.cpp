@@ -269,7 +269,9 @@ ASTHandle<ASTNode *> Parser::ParseVarDecl(const Position &start, bool pub, bool 
         identifiers.emplace_back(std::move(identifier));
 
         this->Eat(false);
-    } while (this->MatchEat(TokenType::COMMA, true));
+
+        this->IgnoreNewLineIF(TokenType::COMMA);
+    } while (this->MatchEat(TokenType::COMMA, false));
 
     ASTHandle<ASTNode *> expr{};
 
@@ -1136,14 +1138,8 @@ ASTHandle<ASTNode *> Parser::ParseStatement() {
         return lbl;
     }
 
-    if (stmt->node_type == NodeType::VAR_DECLARATION || stmt->node_type == NodeType::VAR_DECLARATIONS) {
-        const auto &decl = (ASTHandle<Assignment *> &) stmt;
-
-        if (pub) {
-            if (decl->node_type == NodeType::VAR_DECLARATION)
-                this->exports.emplace_back(O_INCREF(((Identifier *) decl->name)->value));
-        }
-    }
+    if (stmt->node_type == NodeType::VAR_DECLARATION || stmt->node_type == NodeType::VAR_DECLARATIONS)
+        this->AdjustInlineExport((Assignment *) stmt.get(), pub, weak);
 
     return stmt;
 }
@@ -1203,6 +1199,7 @@ ASTHandle<ASTNode *> Parser::ParseWalrus(ASTHandle<ASTNode *> &left) {
 
     decl->value = this->ParseExpression(TokenType::WALRUS).release();
     decl->loc.end = decl->value->loc.end;
+    decl->inl = true;
 
     if (node_type == NodeType::VAR_DECLARATION) {
         if (!this->sym_t_->Declare(((Identifier *) decl->name)->value,
@@ -1457,6 +1454,21 @@ HORString Parser::MakeFuncName() const {
     snprintf(buffer, 49, "func$%d", this->context_->anon_count++);
 
     return ORStringNew(this->ctx_, buffer);
+}
+
+void Parser::AdjustInlineExport(const Assignment *decl, bool pub, bool weak) {
+    if (!decl->inl)
+        return;
+
+    if (pub) {
+        if (decl->node_type == NodeType::VAR_DECLARATION)
+            this->exports.emplace_back(O_INCREF(((Identifier *) decl->name)->value));
+        else {
+            const auto &tuple = (ListExpression *) decl->name;
+            for (const auto &cursor: tuple->elements)
+                this->exports.emplace_back(O_INCREF(((Identifier *) cursor.get())->value));
+        }
+    }
 }
 
 void Parser::Eat(bool ignore_nl) {

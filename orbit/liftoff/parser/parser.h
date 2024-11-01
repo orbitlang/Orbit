@@ -190,6 +190,8 @@ namespace liftoff::parser {
 
         [[nodiscard]] orbiter::datatype::HORString MakeFuncName() const;
 
+        void AdjustInlineExport(const Assignment *decl, bool pub, bool weak);
+
         void Eat(bool ignore_nl);
 
         void EatNL();
