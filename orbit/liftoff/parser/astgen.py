@@ -109,6 +109,20 @@ NODES = {
             "value": "orbiter::datatype::ORString*"
         }
     },
+    "Import": {
+        "fields": {
+            "path": "orbiter::datatype::ORString*",
+            "alias": "orbiter::datatype::ORString*",
+            "names": "std::vector<ASTHandle<ASTNode*>>"
+        },
+        "node_type": ["IMPORT", "IMPORT_FROM"]
+    },
+    "ImportName": {
+        "fields": {
+            "name": "orbiter::datatype::ORString*",
+            "alias": "orbiter::datatype::ORString*"
+        }
+    },
     "Label": {
         "fields": {
             "label": "orbiter::datatype::ORString*",

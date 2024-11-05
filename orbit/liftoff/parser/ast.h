@@ -40,6 +40,9 @@ namespace liftoff::parser {
         DECORATOR,
         FUNCTION,
         IDENTIFIER,
+        IMPORT,
+        IMPORT_FROM,
+        IMPORTNAME,
         LABEL,
         DICT,
         LIST,
@@ -224,6 +227,17 @@ namespace liftoff::parser {
         orbiter::datatype::ORString *value;
     };
 
+    struct Import : ASTNode {
+        orbiter::datatype::ORString *path;
+        orbiter::datatype::ORString *alias;
+        std::vector<ASTHandle<ASTNode *> > names;
+    };
+
+    struct ImportName : ASTNode {
+        orbiter::datatype::ORString *name;
+        orbiter::datatype::ORString *alias;
+    };
+
     struct Label : ASTNode {
         orbiter::datatype::ORString *label;
         ASTNode *statement;
@@ -385,6 +399,20 @@ namespace liftoff::parser {
                 Release(node->value);
                 break;
             }
+            case NodeType::IMPORT:
+            case NodeType::IMPORT_FROM: {
+                auto *node = (Import *) ast_node;
+                Release(node->path);
+                Release(node->alias);
+                node->names.~vector();
+                break;
+            }
+            case NodeType::IMPORTNAME: {
+                auto *node = (ImportName *) ast_node;
+                Release(node->name);
+                Release(node->alias);
+                break;
+            }
             case NodeType::LABEL: {
                 auto *node = (Label *) ast_node;
                 Release(node->label);
@@ -532,6 +560,10 @@ namespace liftoff::parser {
                 case NodeType::DECORATOR: return static_cast<Derived *>(this)->visitDecorator((Decorator *) node);
                 case NodeType::FUNCTION: return static_cast<Derived *>(this)->visitFunction((Function *) node);
                 case NodeType::IDENTIFIER: return static_cast<Derived *>(this)->visitIdentifier((Identifier *) node);
+                case NodeType::IMPORT:
+                case NodeType::IMPORT_FROM:
+                    return static_cast<Derived *>(this)->visitImport((Import *) node);
+                case NodeType::IMPORTNAME: return static_cast<Derived *>(this)->visitImportName((ImportName *) node);
                 case NodeType::LABEL: return static_cast<Derived *>(this)->visitLabel((Label *) node);
                 case NodeType::DICT:
                 case NodeType::LIST:
@@ -594,6 +626,10 @@ namespace liftoff::parser {
         ASTNode *visitFunction(Function *node) { return node; }
 
         ASTNode *visitIdentifier(Identifier *node) { return node; }
+
+        ASTNode *visitImport(Import *node) { return node; }
+
+        ASTNode *visitImportName(ImportName *node) { return node; }
 
         ASTNode *visitLabel(Label *node) { return node; }
 
@@ -733,6 +769,29 @@ namespace liftoff::parser {
         auto *node = (Identifier *) orbiter::memory::Calloc(sizeof(Identifier));
         if (node != nullptr) {
             node->node_type = NodeType::IDENTIFIER;
+            node->loc = loc;
+        }
+        return ASTHandle(node);
+    }
+
+
+    inline ASTHandle<Import *> MakeImport(const scanner::Loc &loc, NodeType node_type) {
+        assert(node_type == NodeType::IMPORT || node_type == NodeType::IMPORT_FROM);
+        auto *node = (Import *) orbiter::memory::Calloc(sizeof(Import));
+        if (node != nullptr) {
+            node->node_type = node_type;
+            node->loc = loc;
+
+            new(&node->names) std::vector<ASTHandle<ASTNode *> >();
+        }
+        return ASTHandle(node);
+    }
+
+
+    inline ASTHandle<ImportName *> MakeImportName(const scanner::Loc &loc) {
+        auto *node = (ImportName *) orbiter::memory::Calloc(sizeof(ImportName));
+        if (node != nullptr) {
+            node->node_type = NodeType::IMPORTNAME;
             node->loc = loc;
         }
         return ASTHandle(node);

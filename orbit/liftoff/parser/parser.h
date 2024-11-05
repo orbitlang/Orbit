@@ -57,7 +57,11 @@ namespace liftoff::parser {
         "Invalid trait inheritance: traits cannot inherit from classes using ':'. Use 'impl TraitName' to extend other traits",
         "Invalid inheritance/implementation syntax: class extension and trait implementation can only use identifiers and member access (e.g., name or name.subname)",
         "Missing closing bracket: expected ']' to close decorator definition",
-        "Invalid decorator placement: decorators must be immediately followed by a function definition"
+        "Invalid decorator placement: decorators must be immediately followed by a function definition",
+        "Invalid import syntax: expected string literal or identifier after 'import' keyword",
+        "Invalid alias syntax: expected identifier after 'as' keyword",
+        "Invalid import syntax: expected 'from' keyword after import identifiers list",
+        "Invalid module path: expected string literal after 'from' keyword"
     };
 
     class Context;
@@ -126,6 +130,8 @@ namespace liftoff::parser {
         [[nodiscard]] ASTHandle<ASTNode *> ParseForInStatement();
 
         [[nodiscard]] ASTHandle<ASTNode *> ParseIfStatement();
+
+        [[nodiscard]] ASTHandle<ASTNode *> ParseImportStatement();
 
         [[nodiscard]] ASTHandle<ASTNode *> ParseLoopStatement();
 

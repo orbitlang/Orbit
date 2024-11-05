@@ -266,6 +266,85 @@ ASTHandle<ASTNode *> Parser::ParseIfStatement() {
     return branch;
 }
 
+ASTHandle<ASTNode *> Parser::ParseImportStatement() {
+    auto imp = MakeImport(TKCUR_LOC, NodeType::IMPORT);
+
+    this->Eat(true);
+
+    if (this->Match(TokenType::STRING)) {
+        auto mod_path = ORStringNew(this->ctx_, this->tkcur_.buffer, this->tkcur_.length);
+        if (!mod_path)
+            throw DatatypeException();
+
+        imp->path = mod_path.release();
+
+        imp->loc.end = TKCUR_LOC.end;
+
+        this->Eat(false);
+
+        this->IgnoreNewLineIF(TokenType::KW_AS);
+
+        if (this->MatchEat(TokenType::KW_AS, false)) {
+            this->EatNL();
+
+            if (!this->Match(TokenType::IDENTIFIER))
+                throw ParserException(47);
+
+            imp->alias = ORStringNew(this->ctx_, this->tkcur_.buffer, this->tkcur_.length).release();
+            if (imp->alias == nullptr)
+                throw DatatypeException();
+
+            imp->loc.end = TKCUR_LOC.end;
+
+            this->Eat(false);
+        }
+
+        return imp;
+    }
+
+    imp->node_type = NodeType::IMPORT_FROM;
+
+    do {
+        auto imp_name = MakeImportName(TKCUR_LOC);
+
+        if (!this->Match(TokenType::IDENTIFIER))
+            throw ParserException(46);
+
+        imp_name->name = ORStringNew(this->ctx_, this->tkcur_.buffer, this->tkcur_.length).release();
+        if (imp_name->name == nullptr)
+            throw DatatypeException();
+
+        this->Eat(true);
+
+        if (this->MatchEat(TokenType::KW_AS, true)) {
+            if (!this->Match(TokenType::IDENTIFIER))
+                throw ParserException(47);
+
+            imp_name->alias = ORStringNew(this->ctx_, this->tkcur_.buffer, this->tkcur_.length).release();
+            if (imp_name->alias == nullptr)
+                throw DatatypeException();
+
+            this->Eat(true);
+        }
+
+        imp->names.emplace_back(std::move(imp_name));
+    } while (this->MatchEat(TokenType::COMMA, true));
+
+    if (!this->MatchEat(TokenType::KW_FROM, true))
+        throw ParserException(48);
+
+    if (!this->Match(TokenType::STRING))
+        throw ParserException(49);
+
+    imp->path = ORStringNew(this->ctx_, this->tkcur_.buffer, this->tkcur_.length).release();
+
+    imp->loc.end = TKCUR_LOC.end;
+
+    this->Eat(false);
+
+    return imp;
+}
+
 ASTHandle<ASTNode *> Parser::ParseLoopStatement() {
     auto loop = MakeLoop(TKCUR_LOC, NodeType::LOOP);
 
@@ -1261,6 +1340,8 @@ ASTHandle<ASTNode *> Parser::ParseStatement() {
             }
             case TokenType::KW_IF:
                 return this->ParseIfStatement();
+            case TokenType::KW_IMPORT:
+                return this->ParseImportStatement();
             case TokenType::KW_LET:
                 return this->ParseVarDecl(start, pub, true, false, false);
             case TokenType::KW_LOOP:
