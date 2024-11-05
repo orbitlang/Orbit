@@ -35,6 +35,8 @@ namespace liftoff::parser {
         BRANCH,
         CALL,
         CATCHBLOCK,
+        CLASS,
+        TRAIT,
         FUNCTION,
         IDENTIFIER,
         LABEL,
@@ -191,6 +193,15 @@ namespace liftoff::parser {
         ASTNode *body;
     };
 
+    struct Construct : ASTNode {
+        orbiter::datatype::ORString *name;
+        orbiter::datatype::ORString *doc;
+        ASTNode *ext;
+        std::vector<ASTHandle<ASTNode *> > impl;
+        std::vector<orbiter::datatype::HORString> exports;
+        ASTNode *body;
+    };
+
     struct Function : ASTNode {
         orbiter::datatype::ORString *name;
         orbiter::datatype::ORString *doc;
@@ -328,6 +339,19 @@ namespace liftoff::parser {
             case NodeType::CATCHBLOCK: {
                 auto *node = (CatchBlock *) ast_node;
                 node->catches.~vector();
+                if (node->body)
+                    ASTNodeCleanup(node->body);
+                break;
+            }
+            case NodeType::CLASS:
+            case NodeType::TRAIT: {
+                auto *node = (Construct *) ast_node;
+                Release(node->name);
+                Release(node->doc);
+                if (node->ext)
+                    ASTNodeCleanup(node->ext);
+                node->impl.~vector();
+                node->exports.~vector();
                 if (node->body)
                     ASTNodeCleanup(node->body);
                 break;
@@ -489,6 +513,9 @@ namespace liftoff::parser {
                 case NodeType::BRANCH: return static_cast<Derived *>(this)->visitBranch((Branch *) node);
                 case NodeType::CALL: return static_cast<Derived *>(this)->visitCall((Call *) node);
                 case NodeType::CATCHBLOCK: return static_cast<Derived *>(this)->visitCatchBlock((CatchBlock *) node);
+                case NodeType::CLASS:
+                case NodeType::TRAIT:
+                    return static_cast<Derived *>(this)->visitConstruct((Construct *) node);
                 case NodeType::FUNCTION: return static_cast<Derived *>(this)->visitFunction((Function *) node);
                 case NodeType::IDENTIFIER: return static_cast<Derived *>(this)->visitIdentifier((Identifier *) node);
                 case NodeType::LABEL: return static_cast<Derived *>(this)->visitLabel((Label *) node);
@@ -545,6 +572,8 @@ namespace liftoff::parser {
         ASTNode *visitCall(Call *node) { return node; }
 
         ASTNode *visitCatchBlock(CatchBlock *node) { return node; }
+
+        ASTNode *visitConstruct(Construct *node) { return node; }
 
         ASTNode *visitFunction(Function *node) { return node; }
 
@@ -641,6 +670,20 @@ namespace liftoff::parser {
             node->loc = loc;
 
             new(&node->catches) std::vector<ASTHandle<ASTNode *> >();
+        }
+        return ASTHandle(node);
+    }
+
+
+    inline ASTHandle<Construct *> MakeConstruct(const scanner::Loc &loc, NodeType node_type) {
+        assert(node_type == NodeType::CLASS || node_type == NodeType::TRAIT);
+        auto *node = (Construct *) orbiter::memory::Calloc(sizeof(Construct));
+        if (node != nullptr) {
+            node->node_type = node_type;
+            node->loc = loc;
+
+            new(&node->impl) std::vector<ASTHandle<ASTNode *> >();
+            new(&node->exports) std::vector<orbiter::datatype::HORString>();
         }
         return ASTHandle(node);
     }

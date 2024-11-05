@@ -86,6 +86,79 @@ int PeekPrecedence(TokenType token) {
     }
 }
 
+ASTHandle<ASTNode *> Parser::ParseClassTrait() {
+    Context ctx(this, TKCUR_TYPE == TokenType::KW_CLASS ? ContextType::CLASS : ContextType::TRAIT);
+
+    auto ct = MakeConstruct(TKCUR_LOC, TKCUR_TYPE == TokenType::KW_CLASS ? NodeType::CLASS : NodeType::TRAIT);
+
+    ct->doc = this->GetDocString().release();
+
+    this->Eat(true);
+
+    ct->name = ORStringNew(this->ctx_, this->tkcur_.buffer, this->tkcur_.length).release();
+    if (ct->name == nullptr)
+        throw DatatypeException();
+
+    if (!this->sym_t_->DeclareSymbolScope(ct->name, SymbolType::TRAIT, TKCUR_LOC.start.offset, TKCUR_LOC.start.line))
+        throw SymbolTableException();
+
+    this->Eat(true);
+
+    if (this->MatchEat(TokenType::COLON, true)) {
+        if (!this->context_->Check(ContextType::CLASS))
+            throw ParserException(42);
+
+        ct->ext = this->ParseExtImpl().release();
+    }
+
+    if (this->MatchEat(TokenType::KW_IMPL, true)) {
+        do
+            ct->impl.push_back(this->ParseExtImpl());
+        while (this->MatchEat(TokenType::PLUS, true));
+    }
+
+    const auto old_pub = this->exports;
+
+    try {
+        this->exports = ct->exports;
+
+        ct->body = this->ParseBlock(false).release();
+    } catch (...) {
+        this->exports = old_pub;
+
+        this->sym_t_->LeaveScope();
+
+        throw;
+    }
+
+    this->exports = old_pub;
+
+    this->sym_t_->LeaveScope();
+
+    return ct;
+}
+
+ASTHandle<ASTNode *> Parser::ParseExtImpl() {
+    auto left = this->ParseExpression(TokenType::ASTERISK);
+
+    if (left->node_type != NodeType::IDENTIFIER && left->node_type != NodeType::SELECTOR)
+        throw ParserException(43);
+
+    if (left->node_type == NodeType::SELECTOR) {
+        auto ls = (Binary *) left.get();
+
+        while (ls->left->node_type == NodeType::SELECTOR)
+            ls = (Binary *) ls->left;
+
+        if (ls->node_type != NodeType::SELECTOR
+            || (ls->left->node_type != NodeType::IDENTIFIER
+                && ls->left->node_type != NodeType::SELECTOR))
+            throw ParserException(43);
+    }
+
+    return left;
+}
+
 ASTHandle<ASTNode *> Parser::ParseDeferStatement() {
     auto defer = MakeUnary(TKCUR_LOC, NodeType::DEFER);
 
@@ -355,6 +428,11 @@ ASTHandle<ASTNode *> Parser::ParseVarDecl(const Position &start, bool pub, bool 
         if (pub)
             this->exports.push_back(id_str);
 
+        if (!this->sym_t_->Declare(id_str.get(),
+                                   constant ? SymbolType::CONSTANT : SymbolType::VARIABLE,
+                                   TKCUR_LOC.start.offset))
+            throw SymbolTableException();
+
         auto identifier = MakeIdentifier(TKCUR_LOC);
         identifier->value = id_str.release();
 
@@ -533,7 +611,9 @@ ASTHandle<ASTNode *> Parser::ParseBlock(bool nested) {
         while (this->MatchEat(TokenType::SEMICOLON, true));
     }
 
-    if (!this->MatchEat(TokenType::RIGHT_BRACES, true))
+    this->EatNL();
+
+    if (!this->MatchEat(TokenType::RIGHT_BRACES, false))
         throw ParserException(19);
 
     if (nested)
@@ -1063,10 +1143,9 @@ ASTHandle<ASTNode *> Parser::ParsePipeline(ASTHandle<ASTNode *> &left) {
 }
 
 ASTHandle<ASTNode *> Parser::ParsePostInc(ASTHandle<ASTNode *> &left) {
-    // TODO: post_inc
-    if (left->node_type != NodeType::IDENTIFIER)
-        //&& left->node_type != NodeType::INDEX
-        //&& left->node_type != NodeType::SELECTOR)
+    if (left->node_type != NodeType::IDENTIFIER
+        && left->node_type != NodeType::INDEX
+        && left->node_type != NodeType::SELECTOR)
         throw ParserException(2);
 
     auto update = MakeUnary(TKCUR_LOC, NodeType::UPDATE);
@@ -1131,6 +1210,9 @@ ASTHandle<ASTNode *> Parser::ParseStatement() {
 
     do {
         switch (TKCUR_TYPE) {
+            case TokenType::KW_CLASS:
+            case TokenType::KW_TRAIT:
+                return this->ParseClassTrait();
             case TokenType::KW_DEFER:
                 return this->ParseDeferStatement();
             case TokenType::KW_FOR:

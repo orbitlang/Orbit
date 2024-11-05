@@ -74,6 +74,17 @@ NODES = {
             "body": "ASTNode*"
         }
     },
+    "Construct": {
+        "fields": {
+            "name": "orbiter::datatype::ORString*",
+            "doc": "orbiter::datatype::ORString*",
+            "ext": "ASTNode*",
+            "impl": "std::vector<ASTHandle<ASTNode*>>",
+            "exports": "std::vector<orbiter::datatype::HORString>",
+            "body": "ASTNode*"
+        },
+        "node_type": ["CLASS", "TRAIT"]
+    },
     "Function": {
         "fields": {
             "name": "orbiter::datatype::ORString*",

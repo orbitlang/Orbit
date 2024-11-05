@@ -53,7 +53,9 @@ namespace liftoff::parser {
         "Invalid 'fallthrough' placement: fallthrough statement must be the last statement in a case or default block",
         "Multiple default cases: switch statement can have at most one default case",
         "Invalid case syntax: multiple case expressions (case a;b;c:) are only allowed when switch has a value to match against.",
-        "Unclosed switch statement: expected '}' at the end of switch block"
+        "Unclosed switch statement: expected '}' at the end of switch block",
+        "Invalid trait inheritance: traits cannot inherit from classes using ':'. Use 'impl TraitName' to extend other traits",
+        "Invalid inheritance/implementation syntax: class extension and trait implementation can only use identifiers and member access (e.g., name or name.subname)"
     };
 
     class Context;
@@ -110,6 +112,10 @@ namespace liftoff::parser {
         [[nodiscard]] bool TokenInRange(scanner::TokenType begin, scanner::TokenType end) const noexcept {
             return this->tkcur_.type > begin && this->tkcur_.type < end;
         }
+
+        [[nodiscard]] ASTHandle<ASTNode *> ParseClassTrait();
+
+        [[nodiscard]] ASTHandle<ASTNode *> ParseExtImpl();
 
         [[nodiscard]] ASTHandle<ASTNode *> ParseDeferStatement();
 
