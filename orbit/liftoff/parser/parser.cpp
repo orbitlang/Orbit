@@ -379,25 +379,31 @@ ASTHandle<ASTNode *> Parser::ParseLoopStatement() {
 }
 
 ASTHandle<ASTNode *> Parser::ParseNativeStatement() {
+    auto doc = this->GetDocString();
     auto start = TKCUR_LOC.start;
 
     this->Eat(true);
 
-    if (this->MatchEat(TokenType::KW_FUNC, true))
-        return this->ParseNativeFuncStatement(start);
+    if (this->MatchEat(TokenType::KW_FUNC, true)) {
+        auto func = this->ParseNativeFuncStatement(start);
+
+        ((NativeFunc *) func.get())->doc = doc.release();
+
+        return func;
+    }
 
     auto variable = MakeNativeVariable(TKCUR_LOC, NodeType::NATIVE_VAR);
 
     variable->loc.start = start;
 
-    if(this->Match(TokenType::KW_VAR))
+    if (this->Match(TokenType::KW_VAR))
         this->Eat(true);
-    else if(this->MatchEat(TokenType::KW_LET, true))
+    else if (this->MatchEat(TokenType::KW_LET, true))
         variable->node_type = NodeType::NATIVE_CONSTANT;
     else
         throw ParserException(60);
 
-    if(!this->Match(TokenType::IDENTIFIER))
+    if (!this->Match(TokenType::IDENTIFIER))
         throw ParserException(61);
 
     variable->native_name = ORStringNew(this->ctx_, this->tkcur_.buffer, this->tkcur_.length).release();
@@ -1926,8 +1932,9 @@ void Parser::Eat(bool ignore_nl) {
 
             this->doc_ = std::move(this->tkcur_);
         } else if (this->doc_.type == TokenType::COMMENT_DOC
-                   && !this->Match(TokenType::DECORATOR, TokenType::KW_CLASS, TokenType::KW_TRAIT, TokenType::KW_FUNC,
-                                   TokenType::SEMICOLON, TokenType::END_OF_LINE))
+                   && !this->Match(TokenType::DECORATOR, TokenType::KW_CLASS, TokenType::KW_NATIVE,
+                                   TokenType::KW_TRAIT, TokenType::KW_FUNC, TokenType::SEMICOLON,
+                                   TokenType::END_OF_LINE))
             this->doc_.~Token();
     } while (this->TokenInRange(TokenType::COMMENT_BEGIN, TokenType::COMMENT_END));
 }

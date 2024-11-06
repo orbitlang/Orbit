@@ -276,6 +276,7 @@ namespace liftoff::parser {
         orbiter::datatype::ORString *alias;
         orbiter::datatype::ORString *native_name;
         orbiter::datatype::ORString *mod_name;
+        orbiter::datatype::ORString *doc;
         std::vector<ASTHandle<ASTNode *> > parameters;
         scanner::TokenType ret_type;
     };
@@ -487,6 +488,7 @@ namespace liftoff::parser {
                 Release(node->alias);
                 Release(node->native_name);
                 Release(node->mod_name);
+                Release(node->doc);
                 node->parameters.~vector();
                 break;
             }

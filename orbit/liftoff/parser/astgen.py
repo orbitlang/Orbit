@@ -165,6 +165,7 @@ NODES = {
             "alias": "orbiter::datatype::ORString*",
             "native_name": "orbiter::datatype::ORString*",
             "mod_name": "orbiter::datatype::ORString*",
+            "doc": "orbiter::datatype::ORString*",
             "parameters": "std::vector<ASTHandle<ASTNode*>>",
             "ret_type": "scanner::TokenType"
         }
