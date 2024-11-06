@@ -707,10 +707,12 @@ ASTHandle<ASTNode *> Parser::ParseVarDecl(const Position &start, bool pub, bool 
         if (pub)
             this->exports.push_back(id_str);
 
-        if (!this->sym_t_->Declare(id_str.get(),
-                                   constant ? SymbolType::CONSTANT : SymbolType::VARIABLE,
-                                   TKCUR_LOC.start.offset))
+        const auto sym = this->sym_t_->Declare(id_str.get(), constant ? SymbolType::CONSTANT : SymbolType::VARIABLE,
+                                               TKCUR_LOC.start.offset);
+        if (sym == nullptr)
             throw SymbolTableException();
+
+        sym->access = pub ? AccessModifier::PUBLIC : AccessModifier::PRIVATE;
 
         auto identifier = MakeIdentifier(TKCUR_LOC);
         identifier->value = id_str.release();
