@@ -160,6 +160,30 @@ NODES = {
             "sym_t": "SymbolTable*"
         }
     },
+    "NativeFunc": {
+        "fields": {
+            "alias": "orbiter::datatype::ORString*",
+            "native_name": "orbiter::datatype::ORString*",
+            "mod_name": "orbiter::datatype::ORString*",
+            "parameters": "std::vector<ASTHandle<ASTNode*>>",
+            "ret_type": "scanner::TokenType"
+        }
+    },
+    "NativeParameter": {
+        "fields": {
+            "name": "orbiter::datatype::ORString*",
+            "kind": "scanner::TokenType",
+        }
+    },
+    "NativeVariable": {
+        "fields": {
+            "alias": "orbiter::datatype::ORString*",
+            "native_name": "orbiter::datatype::ORString*",
+            "mod_name": "orbiter::datatype::ORString*",
+            "kind": "scanner::TokenType"
+        },
+        "node_type": ["NATIVE_CONSTANT", "NATIVE_VAR"]
+    },
     "Parameter": {
         "fields": {
             "id": "orbiter::datatype::ORString*",

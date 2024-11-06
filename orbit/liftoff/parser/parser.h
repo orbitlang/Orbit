@@ -61,7 +61,23 @@ namespace liftoff::parser {
         "Invalid import syntax: expected string literal or identifier after 'import' keyword",
         "Invalid alias syntax: expected identifier after 'as' keyword",
         "Invalid import syntax: expected 'from' keyword after import identifiers list",
-        "Invalid module path: expected string literal after 'from' keyword"
+        "Invalid module path: expected string literal after 'from' keyword",
+        "Invalid native function declaration: expected function name identifier after 'native func' (e.g., 'native func read')",
+        "Invalid native function syntax: expected opening parenthesis '(' after function name for parameter list",
+        "Invalid native parameter declaration: expected parameter name identifier (e.g., 'value: i32')",
+        "Invalid native parameter syntax: expected colon ':' after parameter name to specify type",
+        "Invalid native parameter type: expected a valid native type (e.g., 'i32', 'f64', 'bool', etc.)",
+        "Invalid native function syntax: expected closing parenthesis ')' to end parameter list",
+        "Invalid native function syntax: expected colon ':' after parameter list to specify return type",
+        "Invalid native return type: expected a valid native type (e.g., 'i32', 'f64', 'bool', etc.)",
+        "Invalid native function alias: expected identifier after 'as' keyword (e.g., 'as print')",
+        "Invalid native function import: expected string literal after 'from' keyword (e.g., 'from \"libc\"')",
+        "Invalid native declaration: 'native' must be followed by 'func', 'var', or 'let' (e.g., 'native var' or 'native let')",
+        "Invalid native variable declaration: expected variable name identifier after 'var' or 'let' (e.g., 'native var count')",
+        "Invalid native variable syntax: expected colon ':' after variable name to specify type",
+        "Invalid native variable type: expected a valid native type (e.g., 'i32', 'f64', 'bool', etc.)",
+        "Invalid native variable alias: expected identifier after 'as' keyword (e.g., 'as counter')",
+        "Invalid native variable import: expected string literal after 'from' keyword (e.g., 'from \"libc\"')"
     };
 
     class Context;
@@ -134,6 +150,10 @@ namespace liftoff::parser {
         [[nodiscard]] ASTHandle<ASTNode *> ParseImportStatement();
 
         [[nodiscard]] ASTHandle<ASTNode *> ParseLoopStatement();
+
+        [[nodiscard]] ASTHandle<ASTNode *> ParseNativeStatement();
+
+        [[nodiscard]] ASTHandle<ASTNode *> ParseNativeFuncStatement(scanner::Position start);
 
         [[nodiscard]] ASTHandle<ASTNode *> ParseSwitchCase(bool as_if);
 

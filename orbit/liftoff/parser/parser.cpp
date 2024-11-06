@@ -378,6 +378,159 @@ ASTHandle<ASTNode *> Parser::ParseLoopStatement() {
     return loop;
 }
 
+ASTHandle<ASTNode *> Parser::ParseNativeStatement() {
+    auto start = TKCUR_LOC.start;
+
+    this->Eat(true);
+
+    if (this->MatchEat(TokenType::KW_FUNC, true))
+        return this->ParseNativeFuncStatement(start);
+
+    auto variable = MakeNativeVariable(TKCUR_LOC, NodeType::NATIVE_VAR);
+
+    variable->loc.start = start;
+
+    if(this->Match(TokenType::KW_VAR))
+        this->Eat(true);
+    else if(this->MatchEat(TokenType::KW_LET, true))
+        variable->node_type = NodeType::NATIVE_CONSTANT;
+    else
+        throw ParserException(60);
+
+    if(!this->Match(TokenType::IDENTIFIER))
+        throw ParserException(61);
+
+    variable->native_name = ORStringNew(this->ctx_, this->tkcur_.buffer, this->tkcur_.length).release();
+
+    this->Eat(true);
+
+    if (!this->MatchEat(TokenType::COLON, true))
+        throw ParserException(62);
+
+    if (!this->TokenInRange(TokenType::DATATYPE_BEGIN, TokenType::DATATYPE_END))
+        throw ParserException(63);
+
+    variable->kind = TKCUR_TYPE;
+
+    this->Eat(false);
+
+    this->IgnoreNewLineIF(TokenType::KW_AS);
+
+    if (this->MatchEat(TokenType::KW_AS, false)) {
+        this->EatNL();
+
+        if (!this->Match(TokenType::IDENTIFIER))
+            throw ParserException(64);
+
+        variable->alias = ORStringNew(this->ctx_, this->tkcur_.buffer, this->tkcur_.length).release();
+
+        this->Eat(false);
+    }
+
+    this->IgnoreNewLineIF(TokenType::KW_FROM);
+
+    if (this->MatchEat(TokenType::KW_FROM, false)) {
+        this->EatNL();
+
+        if (!this->Match(TokenType::STRING))
+            throw ParserException(65);
+
+        variable->mod_name = ORStringNew(this->ctx_, this->tkcur_.buffer, this->tkcur_.length).release();
+
+        this->Eat(false);
+    }
+
+    return variable;
+}
+
+ASTHandle<ASTNode *> Parser::ParseNativeFuncStatement(Position start) {
+    auto func = MakeNativeFunc(TKCUR_LOC);
+
+    func->loc.start = start;
+
+    if (!this->Match(TokenType::IDENTIFIER))
+        throw ParserException(50);
+
+    func->native_name = ORStringNew(this->ctx_, this->tkcur_.buffer, this->tkcur_.length).release();
+
+    this->Eat(true);
+
+    if (!this->MatchEat(TokenType::LEFT_ROUND, true))
+        throw ParserException(51);
+
+    if (!this->Match(TokenType::RIGHT_ROUND)) {
+        do {
+            auto np = MakeNativeParameter(TKCUR_LOC);
+
+            if (!this->Match(TokenType::IDENTIFIER))
+                throw ParserException(52);
+
+            np->name = ORStringNew(this->ctx_, this->tkcur_.buffer, this->tkcur_.length).release();
+
+            this->Eat(true);
+
+            if (!this->MatchEat(TokenType::COLON, true))
+                throw ParserException(53);
+
+            if (!this->TokenInRange(TokenType::DATATYPE_BEGIN, TokenType::DATATYPE_END))
+                throw ParserException(54);
+
+            np->kind = TKCUR_TYPE;
+
+            this->Eat(true);
+
+            func->parameters.emplace_back(std::move(np));
+        } while (this->MatchEat(TokenType::COMMA, true));
+    }
+
+    if (!this->MatchEat(TokenType::RIGHT_ROUND, true))
+        throw ParserException(55);
+
+    if (!this->MatchEat(TokenType::COLON, true))
+        throw ParserException(56);
+
+    if (!this->TokenInRange(TokenType::DATATYPE_BEGIN, TokenType::DATATYPE_END))
+        throw ParserException(57);
+
+    func->ret_type = TKCUR_TYPE;
+
+    func->loc.end = TKCUR_LOC.end;
+
+    this->Eat(false);
+
+    this->IgnoreNewLineIF(TokenType::KW_AS);
+
+    if (this->MatchEat(TokenType::KW_AS, false)) {
+        this->EatNL();
+
+        if (!this->Match(TokenType::IDENTIFIER))
+            throw ParserException(58);
+
+        func->alias = ORStringNew(this->ctx_, this->tkcur_.buffer, this->tkcur_.length).release();
+
+        func->loc.end = TKCUR_LOC.end;
+
+        this->Eat(false);
+    }
+
+    this->IgnoreNewLineIF(TokenType::KW_FROM);
+
+    if (this->MatchEat(TokenType::KW_FROM, false)) {
+        this->EatNL();
+
+        if (!this->Match(TokenType::STRING))
+            throw ParserException(59);
+
+        func->mod_name = ORStringNew(this->ctx_, this->tkcur_.buffer, this->tkcur_.length).release();
+
+        func->loc.end = TKCUR_LOC.end;
+
+        this->Eat(false);
+    }
+
+    return func;
+}
+
 ASTHandle<ASTNode *> Parser::ParseSwitchCase(bool as_if) {
     auto sw_case = MakeSwitchCase(TKCUR_LOC);
     bool no_def = true;
@@ -1347,6 +1500,8 @@ ASTHandle<ASTNode *> Parser::ParseStatement() {
             case TokenType::KW_LOOP:
                 stmt = this->ParseLoopStatement();
                 break;
+            case TokenType::KW_NATIVE:
+                return this->ParseNativeStatement();
             case TokenType::KW_SWITCH:
                 return this->ParseSwitchStatement();
             case TokenType::KW_YIELD:

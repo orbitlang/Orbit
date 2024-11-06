@@ -37,6 +37,7 @@ namespace liftoff::scanner {
         DT_U32,
         DT_U64,
         DT_USIZE,
+        DT_OPAQUE,
 
         DT_F32,
         DT_F64,
@@ -110,6 +111,7 @@ namespace liftoff::scanner {
         KW_LET,
         KW_LOOP,
         KW_NAMESPACE,
+        KW_NATIVE,
         KW_NOT,
         KW_OF,
         KW_PANIC,

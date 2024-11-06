@@ -31,6 +31,7 @@ constexpr KwToken kw2tktype[] = {
     {"u32", TokenType::DT_U32},
     {"u64", TokenType::DT_U64},
     {"uSize", TokenType::DT_USIZE},
+    {"opaque", TokenType::DT_OPAQUE},
 
     {"f32", TokenType::DT_F32},
     {"f64", TokenType::DT_F64},
@@ -62,6 +63,7 @@ constexpr KwToken kw2tktype[] = {
     {"let", TokenType::KW_LET},
     {"loop", TokenType::KW_LOOP},
     {"namespace", TokenType::KW_NAMESPACE},
+    {"native", TokenType::KW_NATIVE},
     {"nil", TokenType::NIL},
     {"not", TokenType::KW_NOT},
     {"of", TokenType::KW_OF},
