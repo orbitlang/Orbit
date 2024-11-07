@@ -15,6 +15,7 @@ INCLUDES = """#include <cassert>
 #include <orbit/orbiter/datatype/orstring.h>
 #include <orbit/orbiter/memory/memory.h>
 
+#include <orbit/liftoff/exception.h>
 #include <orbit/liftoff/scanner/token.h>
 #include <orbit/liftoff/symtable.h>
 """
@@ -354,12 +355,14 @@ inline ASTHandle<{node_name}*> Make{node_name}(const scanner::Loc &loc, NodeType
             make_functions.append(f"""
 inline ASTHandle<{node_name}*> Make{node_name}(const scanner::Loc &loc) {{
     auto *node = ({node_name} *) orbiter::memory::Calloc(sizeof({node_name}));
-    if(node != nullptr) {{
-        node->node_type = NodeType::{node_name.upper()};
-        node->loc = loc;
+    if(node == nullptr)
+        throw DatatypeException();
+    
+    node->node_type = NodeType::{node_name.upper()};
+    node->loc = loc;
         
-{vector_init_code}
-    }}
+    {vector_init_code}
+    
     return ASTHandle(node);
 }}
 """)

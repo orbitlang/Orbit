@@ -14,6 +14,7 @@
 #include <orbit/orbiter/datatype/orstring.h>
 #include <orbit/orbiter/memory/memory.h>
 
+#include <orbit/liftoff/exception.h>
 #include <orbit/liftoff/scanner/token.h>
 #include <orbit/liftoff/symtable.h>
 
@@ -756,46 +757,55 @@ namespace liftoff::parser {
 
     inline ASTHandle<Block *> MakeBlock(const scanner::Loc &loc) {
         auto *node = (Block *) orbiter::memory::Calloc(sizeof(Block));
-        if (node != nullptr) {
-            node->node_type = NodeType::BLOCK;
-            node->loc = loc;
+        if (node == nullptr)
+            throw DatatypeException();
 
-            new(&node->statements) std::vector<ASTHandle<ASTNode *> >();
-        }
+        node->node_type = NodeType::BLOCK;
+        node->loc = loc;
+
+        new(&node->statements) std::vector<ASTHandle<ASTNode *> >();
+
         return ASTHandle(node);
     }
 
 
     inline ASTHandle<Branch *> MakeBranch(const scanner::Loc &loc) {
         auto *node = (Branch *) orbiter::memory::Calloc(sizeof(Branch));
-        if (node != nullptr) {
-            node->node_type = NodeType::BRANCH;
-            node->loc = loc;
-        }
+        if (node == nullptr)
+            throw DatatypeException();
+
+        node->node_type = NodeType::BRANCH;
+        node->loc = loc;
+
+
         return ASTHandle(node);
     }
 
 
     inline ASTHandle<Call *> MakeCall(const scanner::Loc &loc) {
         auto *node = (Call *) orbiter::memory::Calloc(sizeof(Call));
-        if (node != nullptr) {
-            node->node_type = NodeType::CALL;
-            node->loc = loc;
+        if (node == nullptr)
+            throw DatatypeException();
 
-            new(&node->args) std::vector<ASTHandle<ASTNode *> >();
-        }
+        node->node_type = NodeType::CALL;
+        node->loc = loc;
+
+        new(&node->args) std::vector<ASTHandle<ASTNode *> >();
+
         return ASTHandle(node);
     }
 
 
     inline ASTHandle<CatchBlock *> MakeCatchBlock(const scanner::Loc &loc) {
         auto *node = (CatchBlock *) orbiter::memory::Calloc(sizeof(CatchBlock));
-        if (node != nullptr) {
-            node->node_type = NodeType::CATCHBLOCK;
-            node->loc = loc;
+        if (node == nullptr)
+            throw DatatypeException();
 
-            new(&node->catches) std::vector<ASTHandle<ASTNode *> >();
-        }
+        node->node_type = NodeType::CATCHBLOCK;
+        node->loc = loc;
+
+        new(&node->catches) std::vector<ASTHandle<ASTNode *> >();
+
         return ASTHandle(node);
     }
 
@@ -816,34 +826,41 @@ namespace liftoff::parser {
 
     inline ASTHandle<Decorator *> MakeDecorator(const scanner::Loc &loc) {
         auto *node = (Decorator *) orbiter::memory::Calloc(sizeof(Decorator));
-        if (node != nullptr) {
-            node->node_type = NodeType::DECORATOR;
-            node->loc = loc;
+        if (node == nullptr)
+            throw DatatypeException();
 
-            new(&node->decorators) std::vector<ASTHandle<ASTNode *> >();
-        }
+        node->node_type = NodeType::DECORATOR;
+        node->loc = loc;
+
+        new(&node->decorators) std::vector<ASTHandle<ASTNode *> >();
+
         return ASTHandle(node);
     }
 
 
     inline ASTHandle<Function *> MakeFunction(const scanner::Loc &loc) {
         auto *node = (Function *) orbiter::memory::Calloc(sizeof(Function));
-        if (node != nullptr) {
-            node->node_type = NodeType::FUNCTION;
-            node->loc = loc;
+        if (node == nullptr)
+            throw DatatypeException();
 
-            new(&node->params) std::vector<ASTHandle<ASTNode *> >();
-        }
+        node->node_type = NodeType::FUNCTION;
+        node->loc = loc;
+
+        new(&node->params) std::vector<ASTHandle<ASTNode *> >();
+
         return ASTHandle(node);
     }
 
 
     inline ASTHandle<Identifier *> MakeIdentifier(const scanner::Loc &loc) {
         auto *node = (Identifier *) orbiter::memory::Calloc(sizeof(Identifier));
-        if (node != nullptr) {
-            node->node_type = NodeType::IDENTIFIER;
-            node->loc = loc;
-        }
+        if (node == nullptr)
+            throw DatatypeException();
+
+        node->node_type = NodeType::IDENTIFIER;
+        node->loc = loc;
+
+
         return ASTHandle(node);
     }
 
@@ -863,30 +880,39 @@ namespace liftoff::parser {
 
     inline ASTHandle<ImportName *> MakeImportName(const scanner::Loc &loc) {
         auto *node = (ImportName *) orbiter::memory::Calloc(sizeof(ImportName));
-        if (node != nullptr) {
-            node->node_type = NodeType::IMPORTNAME;
-            node->loc = loc;
-        }
+        if (node == nullptr)
+            throw DatatypeException();
+
+        node->node_type = NodeType::IMPORTNAME;
+        node->loc = loc;
+
+
         return ASTHandle(node);
     }
 
 
     inline ASTHandle<Jump *> MakeJump(const scanner::Loc &loc) {
         auto *node = (Jump *) orbiter::memory::Calloc(sizeof(Jump));
-        if (node != nullptr) {
-            node->node_type = NodeType::JUMP;
-            node->loc = loc;
-        }
+        if (node == nullptr)
+            throw DatatypeException();
+
+        node->node_type = NodeType::JUMP;
+        node->loc = loc;
+
+
         return ASTHandle(node);
     }
 
 
     inline ASTHandle<Label *> MakeLabel(const scanner::Loc &loc) {
         auto *node = (Label *) orbiter::memory::Calloc(sizeof(Label));
-        if (node != nullptr) {
-            node->node_type = NodeType::LABEL;
-            node->loc = loc;
-        }
+        if (node == nullptr)
+            throw DatatypeException();
+
+        node->node_type = NodeType::LABEL;
+        node->loc = loc;
+
+
         return ASTHandle(node);
     }
 
@@ -908,10 +934,13 @@ namespace liftoff::parser {
 
     inline ASTHandle<Literal *> MakeLiteral(const scanner::Loc &loc) {
         auto *node = (Literal *) orbiter::memory::Calloc(sizeof(Literal));
-        if (node != nullptr) {
-            node->node_type = NodeType::LITERAL;
-            node->loc = loc;
-        }
+        if (node == nullptr)
+            throw DatatypeException();
+
+        node->node_type = NodeType::LITERAL;
+        node->loc = loc;
+
+
         return ASTHandle(node);
     }
 
@@ -929,36 +958,43 @@ namespace liftoff::parser {
 
     inline ASTHandle<Module *> MakeModule(const scanner::Loc &loc) {
         auto *node = (Module *) orbiter::memory::Calloc(sizeof(Module));
-        if (node != nullptr) {
-            node->node_type = NodeType::MODULE;
-            node->loc = loc;
+        if (node == nullptr)
+            throw DatatypeException();
 
-            new(&node->statements) std::vector<ASTHandle<ASTNode *> >();
-            new(&node->exports) std::vector<orbiter::datatype::HORString>();
-            new(&node->imports) std::vector<orbiter::datatype::HORString>();
-        }
+        node->node_type = NodeType::MODULE;
+        node->loc = loc;
+
+        new(&node->statements) std::vector<ASTHandle<ASTNode *> >();
+        new(&node->exports) std::vector<orbiter::datatype::HORString>();
+        new(&node->imports) std::vector<orbiter::datatype::HORString>();
+
         return ASTHandle(node);
     }
 
 
     inline ASTHandle<NativeFunc *> MakeNativeFunc(const scanner::Loc &loc) {
         auto *node = (NativeFunc *) orbiter::memory::Calloc(sizeof(NativeFunc));
-        if (node != nullptr) {
-            node->node_type = NodeType::NATIVEFUNC;
-            node->loc = loc;
+        if (node == nullptr)
+            throw DatatypeException();
 
-            new(&node->parameters) std::vector<ASTHandle<ASTNode *> >();
-        }
+        node->node_type = NodeType::NATIVEFUNC;
+        node->loc = loc;
+
+        new(&node->parameters) std::vector<ASTHandle<ASTNode *> >();
+
         return ASTHandle(node);
     }
 
 
     inline ASTHandle<NativeParameter *> MakeNativeParameter(const scanner::Loc &loc) {
         auto *node = (NativeParameter *) orbiter::memory::Calloc(sizeof(NativeParameter));
-        if (node != nullptr) {
-            node->node_type = NodeType::NATIVEPARAMETER;
-            node->loc = loc;
-        }
+        if (node == nullptr)
+            throw DatatypeException();
+
+        node->node_type = NodeType::NATIVEPARAMETER;
+        node->loc = loc;
+
+
         return ASTHandle(node);
     }
 
@@ -1000,36 +1036,42 @@ namespace liftoff::parser {
 
     inline ASTHandle<SwitchCase *> MakeSwitchCase(const scanner::Loc &loc) {
         auto *node = (SwitchCase *) orbiter::memory::Calloc(sizeof(SwitchCase));
-        if (node != nullptr) {
-            node->node_type = NodeType::SWITCHCASE;
-            node->loc = loc;
+        if (node == nullptr)
+            throw DatatypeException();
 
-            new(&node->tests) std::vector<ASTHandle<ASTNode *> >();
-        }
+        node->node_type = NodeType::SWITCHCASE;
+        node->loc = loc;
+
+        new(&node->tests) std::vector<ASTHandle<ASTNode *> >();
+
         return ASTHandle(node);
     }
 
 
     inline ASTHandle<SwitchBlock *> MakeSwitchBlock(const scanner::Loc &loc) {
         auto *node = (SwitchBlock *) orbiter::memory::Calloc(sizeof(SwitchBlock));
-        if (node != nullptr) {
-            node->node_type = NodeType::SWITCHBLOCK;
-            node->loc = loc;
+        if (node == nullptr)
+            throw DatatypeException();
 
-            new(&node->cases) std::vector<ASTHandle<ASTNode *> >();
-        }
+        node->node_type = NodeType::SWITCHBLOCK;
+        node->loc = loc;
+
+        new(&node->cases) std::vector<ASTHandle<ASTNode *> >();
+
         return ASTHandle(node);
     }
 
 
     inline ASTHandle<TryBlock *> MakeTryBlock(const scanner::Loc &loc) {
         auto *node = (TryBlock *) orbiter::memory::Calloc(sizeof(TryBlock));
-        if (node != nullptr) {
-            node->node_type = NodeType::TRYBLOCK;
-            node->loc = loc;
+        if (node == nullptr)
+            throw DatatypeException();
 
-            new(&node->catches) std::vector<ASTHandle<ASTNode *> >();
-        }
+        node->node_type = NodeType::TRYBLOCK;
+        node->loc = loc;
+
+        new(&node->catches) std::vector<ASTHandle<ASTNode *> >();
+
         return ASTHandle(node);
     }
 
