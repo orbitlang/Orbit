@@ -2,6 +2,7 @@
 //
 // Licensed under the Apache License v2.0
 
+#include <orbit/orbiter/datatype/atom.h>
 #include <orbit/orbiter/datatype/decimal.h>
 #include <orbit/orbiter/datatype/function.h>
 #include <orbit/orbiter/datatype/orstring.h>
@@ -32,6 +33,7 @@ Context *orbiter::ContextInit() {
 
     INIT_TYPE(InstanceType::TYPE, TypeInit);
 
+    INIT_TYPE(InstanceType::ATOM, AtomTypeInit);
     INIT_TYPE(InstanceType::DECIMAL, DecimalTypeInit);
     INIT_TYPE(InstanceType::FUNCTION, FunctionTypeInit);
     INIT_TYPE(InstanceType::NUMBER, NumberTypeInit);
@@ -41,6 +43,7 @@ Context *orbiter::ContextInit() {
 
     SETUP_TYPE(InstanceType::TYPE, TypeSetup);
 
+    SETUP_TYPE(InstanceType::ATOM, AtomTypeSetup);
     SETUP_TYPE(InstanceType::DECIMAL, DecimalTypeSetup);
     SETUP_TYPE(InstanceType::FUNCTION, FunctionTypeSetup);
     SETUP_TYPE(InstanceType::NUMBER, NumberTypeSetup);

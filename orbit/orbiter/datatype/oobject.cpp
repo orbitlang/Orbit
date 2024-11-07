@@ -153,6 +153,9 @@ TypeInfo *orbiter::datatype::MakeType(TypeInfo *super, InstanceType type, U8 hea
 
     ti->headroom = headroom;
 
+    ti->aux.data = nullptr;
+    ti->aux.dtor = nullptr;
+
     if (!TIPropertiesInit(ti, props)) {
         memory::Free(ti);
 

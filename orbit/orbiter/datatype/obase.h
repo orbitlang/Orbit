@@ -78,6 +78,8 @@ namespace orbiter::datatype {
 
     constexpr int kInstanceTypeCount = 14;
 
+    using TypeInfoAUXDtor = bool (*)(struct TypeInfo *self);
+
     struct TypeInfo {
         OROBJ_HEAD;
 
@@ -89,6 +91,17 @@ namespace orbiter::datatype {
 
         /* Instance type (enum defining various object types in Orbit) */
         InstanceType i_type;
+
+        /* Auxiliary data storage for type-specific information */
+        struct {
+            /* Pointer to type-specific auxiliary data.
+             * The structure and content of this data depends on the specific type */
+            void *data;
+
+            /* Function pointer to auxiliary data destructor.
+             * Called when the type is destroyed to cleanup any auxiliary data */
+            TypeInfoAUXDtor dtor;
+        } aux;
 
         struct {
             /* Array of property descriptors for this type */
