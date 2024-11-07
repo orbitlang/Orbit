@@ -201,6 +201,8 @@ ASTHandle<ASTNode *> Parser::ParseDeferStatement() {
 }
 
 ASTHandle<ASTNode *> Parser::ParseForInStatement() {
+    Context context(this, ContextType::LOOP);
+
     auto forIn = MakeLoop(TKCUR_LOC, NodeType::FOR_IN);
 
     this->Eat(true);
@@ -346,6 +348,8 @@ ASTHandle<ASTNode *> Parser::ParseImportStatement() {
 }
 
 ASTHandle<ASTNode *> Parser::ParseLoopStatement() {
+    Context context(this, ContextType::LOOP);
+
     auto loop = MakeLoop(TKCUR_LOC, NodeType::LOOP);
 
     this->Eat(true);
@@ -607,6 +611,8 @@ ASTHandle<ASTNode *> Parser::ParseSwitchCase(bool as_if) {
 }
 
 ASTHandle<ASTNode *> Parser::ParseSwitchStatement() {
+    Context context(this, ContextType::SWITCH);
+
     auto sw = MakeSwitchBlock(TKCUR_LOC);
     bool def_case = false;
 
@@ -1491,6 +1497,33 @@ ASTHandle<ASTNode *> Parser::ParseStatement() {
 
     do {
         switch (TKCUR_TYPE) {
+            case TokenType::KW_CONTINUE:
+                if (!this->context_->CheckExt(ContextType::LOOP))
+                    throw ParserException(66);
+            case TokenType::KW_BREAK: {
+                if (!this->context_->Check(ContextType::LOOP) && !this->context_->Check(ContextType::SWITCH))
+                    throw ParserException(66);
+
+                auto bc = MakeJump(TKCUR_LOC);
+
+                bc->token_type = TKCUR_TYPE;
+
+                this->Eat(false);
+
+                if (this->Match(TokenType::IDENTIFIER)) {
+                    bc->label = ORStringNew(this->ctx_, this->tkcur_.buffer, this->tkcur_.length).release();
+                    if (bc->label == nullptr)
+                        throw DatatypeException();
+
+                    auto *sym = this->sym_t_->Lookup(bc->label, TKCUR_LOC.start.offset);
+                    if (sym == nullptr || sym->type != SymbolType::LABEL)
+                        throw ParserException(67);
+
+                    this->Eat(false);
+                }
+
+                return bc;
+            }
             case TokenType::DECORATOR:
                 return this->ParseDecorator();
             case TokenType::KW_CLASS:
@@ -1568,6 +1601,8 @@ ASTHandle<ASTNode *> Parser::ParseStatement() {
             throw ParserException(34);
 
         label = std::move(stmt);
+
+        this->sym_t_->Lookup(((Identifier *) label.get())->value, label->loc.start.offset)->type = SymbolType::LABEL;
     } while (true);
 
     if (label) {
@@ -1588,8 +1623,6 @@ ASTHandle<ASTNode *> Parser::ParseStatement() {
         id->value = nullptr;
 
         lbl->statement = stmt.release();
-
-        this->sym_t_->Lookup(lbl->label, lbl->loc.start.offset)->type = SymbolType::LABEL;
 
         return lbl;
     }

@@ -123,6 +123,12 @@ NODES = {
             "alias": "orbiter::datatype::ORString*"
         }
     },
+    "Jump": {
+        "fields": {
+            "label": "orbiter::datatype::ORString*",
+            "token_type": "scanner::TokenType"
+        }
+    },
     "Label": {
         "fields": {
             "label": "orbiter::datatype::ORString*",
