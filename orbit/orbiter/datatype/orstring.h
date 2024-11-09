@@ -7,7 +7,7 @@
 
 #include <cstring>
 
-#include <orbit/orbiter/context.h>
+#include <orbit/orbiter/isolate.h>
 
 #include <orbit/orbiter/datatype/oobject.h>
 
@@ -56,12 +56,12 @@ namespace orbiter::datatype {
      *
      * This function is called immediately after the type's Init function to complete its setup.
      *
-     * @param ctx Pointer to the Context in which the type is being set up
+     * @param isolate Pointer to the Isolate in which the type is being set up
      * @param self Pointer to TypeInfo created by %type%Init call
      *
      * @return true if setup was successful, false otherwise
      */
-    bool ORStringTypeSetup(const Context *ctx, TypeInfo *self);
+    bool ORStringTypeSetup(const Isolate *isolate, TypeInfo *self);
 
     /**
      * @brief Compares two strings lexicographically.
@@ -98,24 +98,24 @@ namespace orbiter::datatype {
     /**
      * @brief Creates an exact copy of a String object in the String pool and return it
      *
-     * @param ctx Pointer to the Context
+     * @param isolate Pointer to the Isolate
      * @param string The C-string to convert to Orbit string
      * @param length The length of the C-string
      *
      * @return Handle to the interned string
      */
-    HORString ORStringIntern(const Context *ctx, const unsigned char *string, MSize length);
+    HORString ORStringIntern(const Isolate *isolate, const unsigned char *string, MSize length);
 
     /**
      * @brief Creates an exact copy of a String object in the String pool and return it
      *
-     * @param ctx Pointer to the Context
+     * @param isolate Pointer to the Isolate
      * @param string The C-string to convert to Orbit string
      *
      * @return Handle to the interned string
      */
-    inline HORString ORStringIntern(const Context *ctx, const char *string) {
-        return ORStringIntern(ctx, (const unsigned char *) string, strlen(string));
+    inline HORString ORStringIntern(const Isolate *isolate, const char *string) {
+        return ORStringIntern(isolate, (const unsigned char *) string, strlen(string));
     }
 
     /**
@@ -127,7 +127,7 @@ namespace orbiter::datatype {
      * so the buffer must pass the following assertion: buffer[length] == '\0'.
      * Obviously the size of the allocated buffer must be sufficient to also contain the terminator character
      *
-     * @param ctx Pointer to the Context
+     * @param isolate Pointer to the Isolate
      * @param string Raw buffer containing the string (ownership of the buffer will be transferred to the created object)
      * @param length Length of the buffer
      * @param cp_length Number of unicode code point in the buffer
@@ -135,43 +135,43 @@ namespace orbiter::datatype {
      *
      * @return Handle to ORString object
      */
-    HORString ORStringNew(const Context *ctx, unsigned char *string, MSize length, MSize cp_length,
+    HORString ORStringNew(const Isolate *isolate, unsigned char *string, MSize length, MSize cp_length,
                                  StringKind kind);
 
     /**
      * @brief Create new string
      *
-     * @param ctx Pointer to the Context
+     * @param isolate Pointer to the Isolate
      * @param string The unsigned C-string to convert to Orbit string
      * @param length The length of the C-string
      *
      * @return Handle to ORString object
      */
-    HORString ORStringNew(const Context *ctx, const unsigned char *string, MSize length);
+    HORString ORStringNew(const Isolate *isolate, const unsigned char *string, MSize length);
 
     /**
      * @brief Create new string
      *
-     * @param ctx Pointer to the Context
+     * @param isolate Pointer to the Isolate
      * @param string The C-string to convert to Orbit string
      * @param length The length of the unsigned C-string
      *
      * @return Handle to ORString object
      */
-    inline HORString ORStringNew(const Context *ctx, const char *string, MSize length) {
-        return ORStringNew(ctx, (const unsigned char *) string, length);
+    inline HORString ORStringNew(const Isolate *isolate, const char *string, MSize length) {
+        return ORStringNew(isolate, (const unsigned char *) string, length);
     }
 
     /**
      * @brief Create new string
      *
-     * @param ctx Pointer to the Context
+     * @param isolate Pointer to the Isolate
      * @param string The C-string to convert to Orbit string
      *
      * @return Handle to ORString object
      */
-    inline HORString ORStringNew(const Context *ctx, const char *string) {
-        return ORStringNew(ctx, (unsigned char *) string, strlen(string));
+    inline HORString ORStringNew(const Isolate *isolate, const char *string) {
+        return ORStringNew(isolate, (unsigned char *) string, strlen(string));
     }
 
     /**
@@ -183,14 +183,14 @@ namespace orbiter::datatype {
      * so the buffer must pass the following assertion: buffer[length] == '\0'.
      * Obviously the size of the allocated buffer must be sufficient to also contain the terminator character
      *
-     * @param ctx Pointer to the Context
+     * @param isolate Pointer to the Isolate
      * @param buffer Raw buffer containing the string
      * (ownership of the buffer will be transferred to the created object).
      * @param length Length of the buffer.
      *
      * @return Handle to ORString object
      */
-    HORString ORStringNewHoldBuffer(const Context *ctx, unsigned char *buffer, MSize length);
+    HORString ORStringNewHoldBuffer(const Isolate *isolate, unsigned char *buffer, MSize length);
 
     MSize ORStringHash(ORString *string);
 
@@ -200,11 +200,11 @@ namespace orbiter::datatype {
      * This function creates a new TypeInfo object representing the specific type.
      * It sets up the basic structure and core properties of the type.
      *
-     * @param ctx Pointer to the Context in which the type is being created
+     * @param isolate Pointer to the Isolate in which the type is being created
      *
      * @return Pointer to the newly created TypeInfo for the type, or nullptr if creation failed
      */
-    TypeInfo *ORStringTypeInit(const Context *ctx);
+    TypeInfo *ORStringTypeInit(const Isolate *isolate);
 }
 
 #endif // !ORBIT_ORBITER_DATATYPE_OSTRING_H_

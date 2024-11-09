@@ -5,7 +5,7 @@
 #ifndef ORBIT_ORBITER_DATATYPE_OOBJECT_H_
 #define ORBIT_ORBITER_DATATYPE_OOBJECT_H_
 
-#include <orbit/orbiter/context.h>
+#include <orbit/orbiter/isolate.h>
 
 #include <orbit/orbiter/datatype/obase.h>
 
@@ -15,7 +15,7 @@ namespace orbiter::datatype {
     /**
      * @brief Add a property to a TypeInfo
      *
-     * @param ctx Pointer to the Context
+     * @param isolate Pointer to the Isolate
      * @param type Pointer to the TypeInfo
      * @param name Name of the property
      * @param value Pointer to the OObject representing the property's value
@@ -23,23 +23,23 @@ namespace orbiter::datatype {
      *
      * @return true if property was added successfully, false otherwise
      */
-    bool TIPropertyAdd(const Context *ctx, TypeInfo *type, const char *name, OObject *value, PropertyDetail detail);
+    bool TIPropertyAdd(const Isolate *isolate, TypeInfo *type, const char *name, OObject *value, PropertyDetail detail);
 
     /**
      * @brief Add multiple properties(functions/methods) to a TypeInfo from a bulk definition
      *
-     * @param ctx Pointer to the Context
+     * @param isolate Pointer to the Isolate
      * @param type Pointer to the TypeInfo
      * @param bulk Pointer to the FunctionDef array containing bulk property definitions
      *
      * @return true if properties were added successfully, false otherwise
      */
-    bool TIPropertyAdd(const Context *ctx, TypeInfo *type, const FunctionDef *bulk);
+    bool TIPropertyAdd(const Isolate *isolate, TypeInfo *type, const FunctionDef *bulk);
 
     /**
      * @brief Add an inline property to a TypeInfo using an offset
      *
-     * @param ctx Pointer to the Context
+     * @param isolate Pointer to the Isolate
      * @param type Pointer to the TypeInfo
      * @param name Name of the property
      * @param offset Offset of the property within the object
@@ -47,9 +47,9 @@ namespace orbiter::datatype {
      *
      * @return true if property was added successfully, false otherwise
      */
-    inline bool TIPropertyAddOffset(const Context *ctx, TypeInfo *type, const char *name,
+    inline bool TIPropertyAddOffset(const Isolate *isolate, TypeInfo *type, const char *name,
                                     U8 offset, PropertyDetail detail) {
-        return TIPropertyAdd(ctx, type, name, (OObject *) ((MSize) offset), detail | PropertyDetail::INLINE);
+        return TIPropertyAdd(isolate, type, name, (OObject *) ((MSize) offset), detail | PropertyDetail::INLINE);
     }
 
     /**
@@ -126,18 +126,18 @@ namespace orbiter::datatype {
     }
 
     /**
-     * @brief Create a new object of a specific type using the context's primitive type
+     * @brief Create a new object of a specific type using the isolate's primitive type
      *
      * @tparam T Type of the object to create
      *
-     * @param ctx Pointer to the Context
+     * @param isolate Pointer to the Isolate
      * @param type Instance type of the object to create
      *
      * @return Pointer to the newly created object, or nullptr if allocation failed
      */
     template<typename T>
-    T *MakeObject(const Context *ctx, InstanceType type) {
-        return MakeObject<T>(ctx->primitive[(int) type]);
+    T *MakeObject(const Isolate *isolate, InstanceType type) {
+        return MakeObject<T>(isolate->primitive[(int) type]);
     }
 
     /**
@@ -168,9 +168,9 @@ namespace orbiter::datatype {
     }
 
     /**
-     * @brief Create a new TypeInfo using the context's 'Type' type as superclass
+     * @brief Create a new TypeInfo using the isolate's 'Type' type as superclass
      *
-     * @param ctx Pointer to the Context
+     * @param isolate Pointer to the Isolate
      * @param type Instance type of the new TypeInfo
      * @param headroom Additional headroom space
      * @param props Number of properties
@@ -178,8 +178,8 @@ namespace orbiter::datatype {
      *
      * @return Pointer to the newly created TypeInfo
      */
-    inline TypeInfo *MakeType(const Context *ctx, InstanceType type, U8 headroom, U8 props, U8 slots) {
-        return MakeType(ctx->primitive[(int) InstanceType::TYPE], type, headroom, props, slots);
+    inline TypeInfo *MakeType(const Isolate *isolate, InstanceType type, U8 headroom, U8 props, U8 slots) {
+        return MakeType(isolate->primitive[(int) InstanceType::TYPE], type, headroom, props, slots);
     }
 
     // *****************************************************************************************************************

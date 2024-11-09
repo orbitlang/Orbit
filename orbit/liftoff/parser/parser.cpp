@@ -89,7 +89,7 @@ int PeekPrecedence(TokenType token) {
 }
 
 ASTHandle<ASTNode *> Parser::ParseClassTrait() {
-    Context ctx(this, TKCUR_TYPE == TokenType::KW_CLASS ? ContextType::CLASS : ContextType::TRAIT);
+    Context isolate(this, TKCUR_TYPE == TokenType::KW_CLASS ? ContextType::CLASS : ContextType::TRAIT);
 
     auto ct = MakeConstruct(TKCUR_LOC, TKCUR_TYPE == TokenType::KW_CLASS ? NodeType::CLASS : NodeType::TRAIT);
 
@@ -97,7 +97,7 @@ ASTHandle<ASTNode *> Parser::ParseClassTrait() {
 
     this->Eat(true);
 
-    ct->name = ORStringNew(this->ctx_, this->tkcur_.buffer, this->tkcur_.length).release();
+    ct->name = ORStringNew(this->isolate_, this->tkcur_.buffer, this->tkcur_.length).release();
     if (ct->name == nullptr)
         throw DatatypeException();
 
@@ -275,7 +275,7 @@ ASTHandle<ASTNode *> Parser::ParseImportStatement() {
     this->Eat(true);
 
     if (this->Match(TokenType::STRING)) {
-        auto mod_path = ORStringNew(this->ctx_, this->tkcur_.buffer, this->tkcur_.length);
+        auto mod_path = ORStringNew(this->isolate_, this->tkcur_.buffer, this->tkcur_.length);
         if (!mod_path)
             throw DatatypeException();
 
@@ -293,7 +293,7 @@ ASTHandle<ASTNode *> Parser::ParseImportStatement() {
             if (!this->Match(TokenType::IDENTIFIER))
                 throw ParserException(47);
 
-            imp->alias = ORStringNew(this->ctx_, this->tkcur_.buffer, this->tkcur_.length).release();
+            imp->alias = ORStringNew(this->isolate_, this->tkcur_.buffer, this->tkcur_.length).release();
             if (imp->alias == nullptr)
                 throw DatatypeException();
 
@@ -313,7 +313,7 @@ ASTHandle<ASTNode *> Parser::ParseImportStatement() {
         if (!this->Match(TokenType::IDENTIFIER))
             throw ParserException(46);
 
-        imp_name->name = ORStringNew(this->ctx_, this->tkcur_.buffer, this->tkcur_.length).release();
+        imp_name->name = ORStringNew(this->isolate_, this->tkcur_.buffer, this->tkcur_.length).release();
         if (imp_name->name == nullptr)
             throw DatatypeException();
 
@@ -323,7 +323,7 @@ ASTHandle<ASTNode *> Parser::ParseImportStatement() {
             if (!this->Match(TokenType::IDENTIFIER))
                 throw ParserException(47);
 
-            imp_name->alias = ORStringNew(this->ctx_, this->tkcur_.buffer, this->tkcur_.length).release();
+            imp_name->alias = ORStringNew(this->isolate_, this->tkcur_.buffer, this->tkcur_.length).release();
             if (imp_name->alias == nullptr)
                 throw DatatypeException();
 
@@ -339,7 +339,7 @@ ASTHandle<ASTNode *> Parser::ParseImportStatement() {
     if (!this->Match(TokenType::STRING))
         throw ParserException(49);
 
-    imp->path = ORStringNew(this->ctx_, this->tkcur_.buffer, this->tkcur_.length).release();
+    imp->path = ORStringNew(this->isolate_, this->tkcur_.buffer, this->tkcur_.length).release();
 
     imp->loc.end = TKCUR_LOC.end;
 
@@ -413,7 +413,7 @@ ASTHandle<ASTNode *> Parser::ParseNativeStatement() {
 
     start = TKCUR_LOC.start;
 
-    variable->native_name = ORStringNew(this->ctx_, this->tkcur_.buffer, this->tkcur_.length).release();
+    variable->native_name = ORStringNew(this->isolate_, this->tkcur_.buffer, this->tkcur_.length).release();
 
     this->Eat(true);
 
@@ -435,7 +435,7 @@ ASTHandle<ASTNode *> Parser::ParseNativeStatement() {
         if (!this->Match(TokenType::IDENTIFIER))
             throw ParserException(64);
 
-        variable->alias = ORStringNew(this->ctx_, this->tkcur_.buffer, this->tkcur_.length).release();
+        variable->alias = ORStringNew(this->isolate_, this->tkcur_.buffer, this->tkcur_.length).release();
 
         if (!this->sym_t_->Declare(variable->alias, SymbolType::NATIVE_VAR, TKCUR_LOC.start.offset))
             throw SymbolTableException();
@@ -454,7 +454,7 @@ ASTHandle<ASTNode *> Parser::ParseNativeStatement() {
         if (!this->Match(TokenType::STRING))
             throw ParserException(65);
 
-        variable->mod_name = ORStringNew(this->ctx_, this->tkcur_.buffer, this->tkcur_.length).release();
+        variable->mod_name = ORStringNew(this->isolate_, this->tkcur_.buffer, this->tkcur_.length).release();
 
         this->Eat(false);
     }
@@ -470,7 +470,7 @@ ASTHandle<ASTNode *> Parser::ParseNativeFuncStatement(Position start) {
     if (!this->Match(TokenType::IDENTIFIER))
         throw ParserException(50);
 
-    func->native_name = ORStringNew(this->ctx_, this->tkcur_.buffer, this->tkcur_.length).release();
+    func->native_name = ORStringNew(this->isolate_, this->tkcur_.buffer, this->tkcur_.length).release();
 
     this->Eat(true);
 
@@ -484,7 +484,7 @@ ASTHandle<ASTNode *> Parser::ParseNativeFuncStatement(Position start) {
             if (!this->Match(TokenType::IDENTIFIER))
                 throw ParserException(52);
 
-            np->name = ORStringNew(this->ctx_, this->tkcur_.buffer, this->tkcur_.length).release();
+            np->name = ORStringNew(this->isolate_, this->tkcur_.buffer, this->tkcur_.length).release();
 
             this->Eat(true);
 
@@ -525,7 +525,7 @@ ASTHandle<ASTNode *> Parser::ParseNativeFuncStatement(Position start) {
         if (!this->Match(TokenType::IDENTIFIER))
             throw ParserException(58);
 
-        func->alias = ORStringNew(this->ctx_, this->tkcur_.buffer, this->tkcur_.length).release();
+        func->alias = ORStringNew(this->isolate_, this->tkcur_.buffer, this->tkcur_.length).release();
 
         if (!this->sym_t_->Declare(func->alias, SymbolType::NATIVE_FUNC, TKCUR_LOC.start.offset))
             throw SymbolTableException();
@@ -546,7 +546,7 @@ ASTHandle<ASTNode *> Parser::ParseNativeFuncStatement(Position start) {
         if (!this->Match(TokenType::STRING))
             throw ParserException(59);
 
-        func->mod_name = ORStringNew(this->ctx_, this->tkcur_.buffer, this->tkcur_.length).release();
+        func->mod_name = ORStringNew(this->isolate_, this->tkcur_.buffer, this->tkcur_.length).release();
 
         func->loc.end = TKCUR_LOC.end;
 
@@ -707,7 +707,7 @@ ASTHandle<ASTNode *> Parser::ParseVarDecl(const Position &start, bool pub, bool 
         if (!this->Match(TokenType::IDENTIFIER))
             throw ParserException(16);
 
-        auto id_str = ORStringNew(this->ctx_, this->tkcur_.buffer, this->tkcur_.length);
+        auto id_str = ORStringNew(this->isolate_, this->tkcur_.buffer, this->tkcur_.length);
         if (!id_str)
             throw DatatypeException();
 
@@ -1170,7 +1170,7 @@ ASTHandle<ASTNode *> Parser::ParseFuncCall(ASTHandle<ASTNode *> &left) {
 }
 
 ASTHandle<ASTNode *> Parser::ParseIdentifier() {
-    auto id_name = ORStringNew(this->ctx_, this->tkcur_.buffer, this->tkcur_.length);
+    auto id_name = ORStringNew(this->isolate_, this->tkcur_.buffer, this->tkcur_.length);
     if (!id_name)
         throw DatatypeException();
 
@@ -1294,31 +1294,31 @@ ASTHandle<ASTNode *> Parser::ParseLiteral() {
 
     switch (this->tkcur_.type) {
         case TokenType::ATOM:
-            handle = AtomNew(this->ctx_,(const char *) this->tkcur_.buffer, this->tkcur_.length);
+            handle = AtomNew(this->isolate_,(const char *) this->tkcur_.buffer, this->tkcur_.length);
             break;
         case TokenType::BYTE_STRING:
             // TODO: ByteString
             assert(false);
         case TokenType::DECIMAL:
-            handle = DecimalNew(this->ctx_, (const char *) this->tkcur_.buffer);
+            handle = DecimalNew(this->isolate_, (const char *) this->tkcur_.buffer);
             break;
         case TokenType::NUMBER:
-            handle = IntNew(this->ctx_, (const char *) this->tkcur_.buffer, 10);
+            handle = IntNew(this->isolate_, (const char *) this->tkcur_.buffer, 10);
             break;
         case TokenType::NUMBER_BIN:
-            handle = IntNew(this->ctx_, (const char *) this->tkcur_.buffer, 2);
+            handle = IntNew(this->isolate_, (const char *) this->tkcur_.buffer, 2);
             break;
         case TokenType::NUMBER_CHR:
-            handle = UIntNew(this->ctx_, StringUTF8ToInt(this->tkcur_.buffer));
+            handle = UIntNew(this->isolate_, StringUTF8ToInt(this->tkcur_.buffer));
             break;
         case TokenType::NUMBER_HEX:
-            handle = IntNew(this->ctx_, (const char *) this->tkcur_.buffer, 16);
+            handle = IntNew(this->isolate_, (const char *) this->tkcur_.buffer, 16);
             break;
         case TokenType::NUMBER_OCT:
-            handle = IntNew(this->ctx_, (const char *) this->tkcur_.buffer, 8);
+            handle = IntNew(this->isolate_, (const char *) this->tkcur_.buffer, 8);
             break;
         case TokenType::STRING:
-            handle = ORStringNew(this->ctx_, this->tkcur_.buffer, this->tkcur_.length);
+            handle = ORStringNew(this->isolate_, this->tkcur_.buffer, this->tkcur_.length);
             break;
         case TokenType::FALSE:
             handle = HOObject((OObject *) kOddBallFALSE);
@@ -1327,16 +1327,16 @@ ASTHandle<ASTNode *> Parser::ParseLiteral() {
             handle = HOObject((OObject *) kOddBallTRUE);
             break;
         case TokenType::U_NUMBER:
-            handle = UIntNew(this->ctx_, (const char *) this->tkcur_.buffer, 10);
+            handle = UIntNew(this->isolate_, (const char *) this->tkcur_.buffer, 10);
             break;
         case TokenType::U_NUMBER_BIN:
-            handle = UIntNew(this->ctx_, (const char *) this->tkcur_.buffer, 2);
+            handle = UIntNew(this->isolate_, (const char *) this->tkcur_.buffer, 2);
             break;
         case TokenType::U_NUMBER_HEX:
-            handle = UIntNew(this->ctx_, (const char *) this->tkcur_.buffer, 16);
+            handle = UIntNew(this->isolate_, (const char *) this->tkcur_.buffer, 16);
             break;
         case TokenType::U_NUMBER_OCT:
-            handle = UIntNew(this->ctx_, (const char *) this->tkcur_.buffer, 8);
+            handle = UIntNew(this->isolate_, (const char *) this->tkcur_.buffer, 8);
             break;
         case TokenType::NIL:
             // Orbit NIL is nullptr ;)
@@ -1370,7 +1370,7 @@ ASTHandle<ASTNode *> Parser::ParseMemberAccess(ASTHandle<ASTNode *> &left) {
     if (!this->Match(TokenType::IDENTIFIER))
         throw ParserException(0);
 
-    auto id_name = ORStringNew(this->ctx_, this->tkcur_.buffer, this->tkcur_.length);
+    auto id_name = ORStringNew(this->isolate_, this->tkcur_.buffer, this->tkcur_.length);
     if (!id_name)
         throw DatatypeException();
 
@@ -1511,7 +1511,7 @@ ASTHandle<ASTNode *> Parser::ParseStatement() {
                 this->Eat(false);
 
                 if (this->Match(TokenType::IDENTIFIER)) {
-                    bc->label = ORStringNew(this->ctx_, this->tkcur_.buffer, this->tkcur_.length).release();
+                    bc->label = ORStringNew(this->isolate_, this->tkcur_.buffer, this->tkcur_.length).release();
                     if (bc->label == nullptr)
                         throw DatatypeException();
 
@@ -1701,7 +1701,7 @@ ASTHandle<ASTNode *> Parser::ParseWalrus(ASTHandle<ASTNode *> &left) {
 }
 
 ASTHandle<liftoff::parser::Function *> Parser::ParseFunction(bool inl) {
-    Context ctx(this, ContextType::FUNC);
+    Context isolate(this, ContextType::FUNC);
 
     auto func = MakeFunction(TKCUR_LOC);
 
@@ -1713,7 +1713,7 @@ ASTHandle<liftoff::parser::Function *> Parser::ParseFunction(bool inl) {
         if (!this->Match(TokenType::IDENTIFIER))
             throw ParserException(16);
 
-        auto id_name = ORStringNew(this->ctx_, this->tkcur_.buffer, this->tkcur_.length);
+        auto id_name = ORStringNew(this->isolate_, this->tkcur_.buffer, this->tkcur_.length);
         if (!id_name)
             throw DatatypeException();
 
@@ -1768,7 +1768,7 @@ ASTHandle<Parameter *> Parser::ParseParameter(const Position &start, NodeType ty
     if (!this->Match(TokenType::IDENTIFIER))
         throw ParserException(16);
 
-    auto id_name = ORStringNew(this->ctx_, this->tkcur_.buffer, this->tkcur_.length);
+    auto id_name = ORStringNew(this->isolate_, this->tkcur_.buffer, this->tkcur_.length);
     if (!id_name)
         throw DatatypeException();
 
@@ -1798,7 +1798,7 @@ HORString Parser::GetDocString() {
     if (this->doc_.type != TokenType::COMMENT_DOC)
         return {};
 
-    auto str = ORStringNewHoldBuffer(this->ctx_, this->doc_.buffer, this->doc_.length);
+    auto str = ORStringNewHoldBuffer(this->isolate_, this->doc_.buffer, this->doc_.length);
     if (!str)
         throw DatatypeException();
 
@@ -1950,7 +1950,7 @@ HORString Parser::MakeFuncName() const {
 
     snprintf(buffer, 49, "func$%d", this->context_->anon_count++);
 
-    return ORStringNew(this->ctx_, buffer);
+    return ORStringNew(this->isolate_, buffer);
 }
 
 void Parser::AdjustInlineExport(const Assignment *decl, bool pub, bool weak) {
@@ -2025,14 +2025,14 @@ ASTHandle<Module *> Parser::Parse() noexcept {
 
     const auto r_module = module.get();
 
-    if ((r_module->filename = ORStringNew(this->ctx_, this->filename_).release()) == nullptr)
+    if ((r_module->filename = ORStringNew(this->isolate_, this->filename_).release()) == nullptr)
         return {};
 
-    if ((this->sym_t_ = SymbolTableNew(this->ctx_)) == nullptr)
+    if ((this->sym_t_ = SymbolTableNew(this->isolate_)) == nullptr)
         return {};
 
     try {
-        Context ctx(this, ContextType::MODULE);
+        Context isolate(this, ContextType::MODULE);
         Loc loc{};
 
         // LOAD FIRST COMMENT

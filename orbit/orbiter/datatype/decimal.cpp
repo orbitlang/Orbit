@@ -6,27 +6,27 @@
 
 using namespace orbiter::datatype;
 
-bool orbiter::datatype::DecimalTypeSetup(Context *ctx, TypeInfo *self) {
+bool orbiter::datatype::DecimalTypeSetup(Isolate *isolate, TypeInfo *self) {
     return true;
 }
 
-HDecimal orbiter::datatype::DecimalNew(const Context *ctx, DecimalUnderlying number) {
-    auto *decimal = MakeObject<Decimal>(ctx, InstanceType::DECIMAL);
+HDecimal orbiter::datatype::DecimalNew(const Isolate *isolate, DecimalUnderlying number) {
+    auto *decimal = MakeObject<Decimal>(isolate, InstanceType::DECIMAL);
     if (decimal != nullptr)
         decimal->value = number;
 
     return HDecimal(decimal);
 }
 
-HDecimal orbiter::datatype::DecimalNew(const Context *ctx, const char *string) {
-    auto *decimal = MakeObject<Decimal>(ctx, InstanceType::DECIMAL);
+HDecimal orbiter::datatype::DecimalNew(const Isolate *isolate, const char *string) {
+    auto *decimal = MakeObject<Decimal>(isolate, InstanceType::DECIMAL);
     if (decimal != nullptr)
         decimal->value = std::strtold(string, nullptr);
 
     return HDecimal(decimal);
 }
 
-TypeInfo *orbiter::datatype::DecimalTypeInit(Context *ctx) {
+TypeInfo *orbiter::datatype::DecimalTypeInit(Isolate *isolate) {
     auto *decimal = MakeType(InstanceType::DECIMAL, 0, 0, 0);
     return decimal;
 }

@@ -7,7 +7,7 @@
 
 #include <orbit/util/hashmap.h>
 
-#include<orbit/orbiter/context.h>
+#include<orbit/orbiter/isolate.h>
 
 #include <orbit/orbiter/datatype/orstring.h>
 
@@ -99,7 +99,7 @@ namespace liftoff {
     };
 
     struct SymbolTable {
-        const orbiter::Context *ctx;
+        const orbiter::Isolate *isolate;
 
         Scope *scope;
 
@@ -219,12 +219,12 @@ namespace liftoff {
     };
 
     /**
-     * @brief Creates a new symbol table with the specified context.
+     * @brief Creates a new symbol table with the specified isolate.
      *
-     * @param ctx The context associated with the symbol table.
+     * @param isolate Isolate associated with the symbol table.
      * @return A pointer to the newly created symbol table.
      */
-    SymbolTable *SymbolTableNew(const orbiter::Context *ctx) noexcept;
+    SymbolTable *SymbolTableNew(const orbiter::Isolate *isolate) noexcept;
 
     /**
      * @brief Deletes the specified symbol table.

@@ -2,17 +2,17 @@
 //
 // Licensed under the Apache License v2.0
 
-#ifndef ORBIT_ORBITER_CONTEXT_H_
-#define ORBIT_ORBITER_CONTEXT_H_
+#ifndef ORBIT_ORBITER_ISOLATE_H_
+#define ORBIT_ORBITER_ISOLATE_H_
 
 #include <orbit/orbiter/datatype/obase.h>
 
 namespace orbiter {
-    struct Context {
+    struct Isolate {
         datatype::TypeInfo *primitive[datatype::kInstanceTypeCount];
     };
 
-    Context *ContextInit();
+    Isolate *IsolateInit();
 }
 
-#endif // !ORBIT_ORBITER_CONTEXT_H_
+#endif // !ORBIT_ORBITER_ISOLATE_H_

@@ -13,12 +13,12 @@ bool orbiter::datatype::Equal(const OObject *left, const OObject *right) {
     return false;
 }
 
-bool orbiter::datatype::TIPropertyAdd(const Context *ctx, TypeInfo *type, const char *name,
+bool orbiter::datatype::TIPropertyAdd(const Isolate *isolate, TypeInfo *type, const char *name,
                                       OObject *value, PropertyDetail detail) {
     PropertyDescriptor tmp{};
     int i = 0;
 
-    auto orname = ORStringIntern(ctx, name);
+    auto orname = ORStringIntern(isolate, name);
     if (!orname)
         return false;
 
@@ -64,13 +64,13 @@ bool orbiter::datatype::TIPropertyAdd(const Context *ctx, TypeInfo *type, const 
     return true;
 }
 
-bool orbiter::datatype::TIPropertyAdd(const Context *ctx, TypeInfo *type, const FunctionDef *bulk) {
+bool orbiter::datatype::TIPropertyAdd(const Isolate *isolate, TypeInfo *type, const FunctionDef *bulk) {
     for (auto *cursor = bulk; cursor->name != nullptr; cursor++) {
-        auto *fn = FunctionNew(ctx, cursor);
+        auto *fn = FunctionNew(isolate, cursor);
         if (fn == nullptr)
             return false;
 
-        if (!TIPropertyAdd(ctx, type, cursor->name, (OObject *) fn, {})) {
+        if (!TIPropertyAdd(isolate, type, cursor->name, (OObject *) fn, {})) {
             Release(fn);
 
             return false;
@@ -155,6 +155,9 @@ TypeInfo *orbiter::datatype::MakeType(TypeInfo *super, InstanceType type, U8 hea
 
     ti->aux.data = nullptr;
     ti->aux.dtor = nullptr;
+
+    ti->properties.count = 0;
+    ti->properties.p_array = nullptr;
 
     if (!TIPropertiesInit(ti, props)) {
         memory::Free(ti);

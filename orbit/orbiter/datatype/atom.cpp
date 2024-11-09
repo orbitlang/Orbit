@@ -34,7 +34,7 @@ bool AtomGATDtor(TypeInfo *self) {
     return true;
 }
 
-bool orbiter::datatype::AtomTypeSetup(Context *ctx, TypeInfo *self) {
+bool orbiter::datatype::AtomTypeSetup(Isolate *isolate, TypeInfo *self) {
     auto *map = (GATMap *) memory::Alloc((sizeof(GATMap)));
     if (map == nullptr)
         return false;
@@ -51,16 +51,16 @@ bool orbiter::datatype::AtomTypeSetup(Context *ctx, TypeInfo *self) {
     return true;
 }
 
-HAtom orbiter::datatype::AtomNew(const Context *ctx, const char *string, MSize length) {
-    const auto id = ORStringNew(ctx, string, length);
+HAtom orbiter::datatype::AtomNew(const Isolate *isolate, const char *string, MSize length) {
+    const auto id = ORStringNew(isolate, string, length);
     if (!id)
         return {};
 
-    return AtomNew(ctx, id.get());
+    return AtomNew(isolate, id.get());
 }
 
-HAtom orbiter::datatype::AtomNew(const Context *ctx, ORString *id) {
-    auto *gat = (GATMap *) ctx->primitive[(int) InstanceType::ATOM]->aux.data;
+HAtom orbiter::datatype::AtomNew(const Isolate *isolate, ORString *id) {
+    auto *gat = (GATMap *) isolate->primitive[(int) InstanceType::ATOM]->aux.data;
     GATEntry *entry;
 
     assert(gat != nullptr);
@@ -71,7 +71,7 @@ HAtom orbiter::datatype::AtomNew(const Context *ctx, ORString *id) {
     if ((entry = gat->AllocHEntry()) == nullptr)
         return {};
 
-    auto *atom = MakeObject<Atom>(ctx, InstanceType::ATOM);
+    auto *atom = MakeObject<Atom>(isolate, InstanceType::ATOM);
     if (atom == nullptr) {
         gat->FreeHEntry(entry);
 
@@ -97,7 +97,7 @@ HAtom orbiter::datatype::AtomNew(const Context *ctx, ORString *id) {
     return {};
 }
 
-TypeInfo *orbiter::datatype::AtomTypeInit(Context *ctx) {
-    auto *atom = MakeType(ctx, InstanceType::ATOM, 0, 0, 1);
+TypeInfo *orbiter::datatype::AtomTypeInit(Isolate *isolate) {
+    auto *atom = MakeType(isolate, InstanceType::ATOM, 0, 0, 1);
     return atom;
 }

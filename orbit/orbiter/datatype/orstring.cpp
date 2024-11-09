@@ -16,8 +16,8 @@ using namespace orbiter::datatype;
 #define STR_BUF(str) ((str)->buffer)
 #define STR_LEN(str) ((str)->length)
 
-ORString *MkStringContainer(const orbiter::Context *ctx, MSize len, bool mkbuf) {
-    auto str = MakeObject<ORString>(ctx, InstanceType::STRING);
+ORString *MkStringContainer(const orbiter::Isolate *isolate, MSize len, bool mkbuf) {
+    auto str = MakeObject<ORString>(isolate, InstanceType::STRING);
 
     if (str != nullptr) {
         str->buffer = nullptr;
@@ -67,7 +67,7 @@ bool StringInitKind(ORString *string) {
     return true;
 }
 
-bool orbiter::datatype::ORStringTypeSetup(const Context *ctx, TypeInfo *self) {
+bool orbiter::datatype::ORStringTypeSetup(const Isolate *isolate, TypeInfo *self) {
     return true;
 }
 
@@ -84,17 +84,17 @@ int orbiter::datatype::ORStringCompare(const ORString *left, const char *right, 
     return strncmp((const char *) STR_BUF(left), right, std::min(STR_LEN(left), length));
 }
 
-Handle<ORString> orbiter::datatype::ORStringIntern(const Context *ctx, const unsigned char *string, MSize length) {
+Handle<ORString> orbiter::datatype::ORStringIntern(const Isolate *isolate, const unsigned char *string, MSize length) {
     // TODO: IMPL THIS!
-    return ORStringNew(ctx, string, length);
+    return ORStringNew(isolate, string, length);
 }
 
-Handle<ORString> orbiter::datatype::ORStringNew(const Context *ctx, unsigned char *buffer, MSize length,
+Handle<ORString> orbiter::datatype::ORStringNew(const Isolate *isolate, unsigned char *buffer, MSize length,
                                                 MSize cp_length,
                                                 StringKind kind) {
     assert(buffer[length] == '\0');
 
-    auto *str = MkStringContainer(ctx, length, false);
+    auto *str = MkStringContainer(isolate, length, false);
     if (str != nullptr) {
         str->buffer = buffer;
         str->cp_length = cp_length;
@@ -104,7 +104,7 @@ Handle<ORString> orbiter::datatype::ORStringNew(const Context *ctx, unsigned cha
     return Handle(str);
 }
 
-Handle<ORString> orbiter::datatype::ORStringNew(const Context *ctx, const unsigned char *string, MSize length) {
+Handle<ORString> orbiter::datatype::ORStringNew(const Isolate *isolate, const unsigned char *string, MSize length) {
     StringBuilder builder{};
     StringKind kind;
     MSize len;
@@ -120,17 +120,17 @@ Handle<ORString> orbiter::datatype::ORStringNew(const Context *ctx, const unsign
 
     // TODO: do not release buffer of size zero!
 
-    auto str = ORStringNew(ctx, buffer, len, cp_len, kind);
+    auto str = ORStringNew(isolate, buffer, len, cp_len, kind);
     if (str)
         builder.Release();
 
     return str;
 }
 
-Handle<ORString> orbiter::datatype::ORStringNewHoldBuffer(const Context *ctx, unsigned char *string, MSize length) {
+Handle<ORString> orbiter::datatype::ORStringNewHoldBuffer(const Isolate *isolate, unsigned char *string, MSize length) {
     assert(string[length] == '\0');
 
-    auto *str = MkStringContainer(ctx, length, false);
+    auto *str = MkStringContainer(isolate, length, false);
     if (str != nullptr) {
         str->buffer = string;
 
@@ -159,7 +159,7 @@ MSize orbiter::datatype::ORStringHash(ORString *string) {
     return hash;
 }
 
-TypeInfo *orbiter::datatype::ORStringTypeInit(const Context *ctx) {
+TypeInfo *orbiter::datatype::ORStringTypeInit(const Isolate *isolate) {
     auto *string = MakeType(InstanceType::STRING, sizeof(ORString) - sizeof(OObject), 0, 0);
     return string;
 }

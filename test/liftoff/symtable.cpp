@@ -11,15 +11,15 @@ using namespace liftoff;
 class SymbolTableTest : public ::testing::Test {
 protected:
     void SetUp() override {
-        this->ctx = orbiter::ContextInit();
-        this->table = SymbolTableNew(ctx);
+        this->isolate = orbiter::IsolateInit();
+        this->table = SymbolTableNew(isolate);
     }
 
     void TearDown() override {
         SymbolTableDel(this->table);
     }
 
-    orbiter::Context *ctx = nullptr;
+    orbiter::Isolate *isolate = nullptr;
     SymbolTable *table = nullptr;
 };
 

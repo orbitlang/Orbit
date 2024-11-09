@@ -91,7 +91,7 @@ namespace liftoff::parser {
 
         friend Context;
 
-        const orbiter::Context *ctx_ = nullptr;
+        const orbiter::Isolate *isolate_ = nullptr;
 
         const char *filename_ = nullptr;
 
@@ -262,8 +262,8 @@ namespace liftoff::parser {
          * @param filename Source code name.
          * @param scanner Reference to Scanner.
          */
-        Parser(orbiter::Context *ctx, const char *filename,
-               scanner::Scanner &scanner) noexcept: ctx_(ctx), filename_(filename), scanner_(scanner) {
+        Parser(orbiter::Isolate *isolate, const char *filename,
+               scanner::Scanner &scanner) noexcept: isolate_(isolate), filename_(filename), scanner_(scanner) {
         }
 
         /**

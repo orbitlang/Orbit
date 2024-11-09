@@ -9,12 +9,12 @@
 #include <orbit/orbiter/datatype/number.h>
 #include <orbit/orbiter/datatype/type.h>
 
-#include <orbit/orbiter/context.h>
+#include <orbit/orbiter/isolate.h>
 
 using namespace orbiter;
 using namespace orbiter::datatype;
 
-Context *orbiter::ContextInit() {
+Isolate *orbiter::IsolateInit() {
 #define INIT_TYPE(num, fn)                                      \
     do {                                                        \
         if((ctx->primitive[(int) num] = fn(ctx)) == nullptr)    \
@@ -27,7 +27,7 @@ Context *orbiter::ContextInit() {
             goto ERROR;                                 \
     } while(0)
 
-    auto *ctx = (Context *) memory::Alloc(sizeof(Context));
+    auto *ctx = (Isolate *) memory::Alloc(sizeof(Isolate));
     if (ctx == nullptr)
         return nullptr;
 

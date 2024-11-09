@@ -141,7 +141,7 @@ Symbol *SymbolTable::Declare(ORString *name, SymbolType type, MSize offset) cons
 }
 
 Symbol *SymbolTable::Declare(const char *name, SymbolType type, MSize offset) const noexcept {
-    auto o_name = ORStringNew(this->ctx, name);
+    auto o_name = ORStringNew(this->isolate, name);
     if (!o_name) {
         this->last_error = SymbolTableError::MEMORY_ERROR;
         return nullptr;
@@ -196,7 +196,7 @@ Symbol *SymbolTable::DeclareSymbolScope(ORString *name, SymbolType type, MSize o
 }
 
 Symbol *SymbolTable::DeclareSymbolScope(const char *name, SymbolType type, MSize offset, MSize line_start) noexcept {
-    auto o_name = ORStringNew(this->ctx, name);
+    auto o_name = ORStringNew(this->isolate, name);
     if (!o_name) {
         this->last_error = SymbolTableError::MEMORY_ERROR;
         return nullptr;
@@ -227,7 +227,7 @@ Symbol *SymbolTable::Lookup(ORString *name, MSize offset) const noexcept {
 }
 
 Symbol *SymbolTable::Lookup(const char *name, MSize offset) const noexcept {
-    const auto o_name = ORStringNew(this->ctx, name);
+    const auto o_name = ORStringNew(this->isolate, name);
     if (!o_name) {
         this->last_error = SymbolTableError::MEMORY_ERROR;
         return nullptr;
@@ -260,7 +260,7 @@ Symbol *SymbolTable::LookupInsert(ORString *name, MSize offset) const noexcept {
 }
 
 Symbol *SymbolTable::LookupInsert(const char *name, MSize offset) const noexcept {
-    const auto o_name = ORStringNew(this->ctx, name);
+    const auto o_name = ORStringNew(this->isolate, name);
     if (!o_name) {
         this->last_error = SymbolTableError::MEMORY_ERROR;
         return nullptr;
@@ -292,7 +292,7 @@ bool SymbolTable::EnterScope(ORString *name) noexcept {
 }
 
 bool SymbolTable::EnterScope(const char *name) noexcept {
-    const auto o_name = ORStringNew(this->ctx, name);
+    const auto o_name = ORStringNew(this->isolate, name);
     if (!o_name) {
         this->last_error = SymbolTableError::MEMORY_ERROR;
         return false;
@@ -313,7 +313,7 @@ void SymbolTable::LeaveScope() noexcept {
         this->scope = c_scope->back;
 }
 
-SymbolTable *liftoff::SymbolTableNew(const orbiter::Context *ctx) noexcept {
+SymbolTable *liftoff::SymbolTableNew(const orbiter::Isolate *isolate) noexcept {
     auto *table = (SymbolTable *) orbiter::memory::Alloc(sizeof(SymbolTable));
     if (table != nullptr) {
         auto *scope = ScopeNew(0);
@@ -326,7 +326,7 @@ SymbolTable *liftoff::SymbolTableNew(const orbiter::Context *ctx) noexcept {
 
         table->scope = scope;
 
-        table->ctx = ctx;
+        table->isolate = isolate;
 
         table->last_error = SymbolTableError::OK;
     }

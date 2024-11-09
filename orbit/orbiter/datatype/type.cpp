@@ -45,13 +45,13 @@ const FunctionDef type_methods[] = {
         FUNCTIONDEF_SENTINEL
 };
 
-TypeInfo *orbiter::datatype::TypeInit(Context *ctx) {
+TypeInfo *orbiter::datatype::TypeInit(Isolate *isolate) {
     auto *type = MakeType(InstanceType::TYPE, 0, 4, 0);
     return type;
 }
 
-bool orbiter::datatype::TypeSetup(Context *ctx, TypeInfo *self) {
+bool orbiter::datatype::TypeSetup(Isolate *isolate, TypeInfo *self) {
     assert(self != nullptr);
 
-    return TIPropertyAdd(ctx, self, type_methods);
+    return TIPropertyAdd(isolate, self, type_methods);
 }

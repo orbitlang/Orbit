@@ -7,7 +7,7 @@
 
 #include <atomic>
 
-#include <orbit/orbiter/context.h>
+#include <orbit/orbiter/isolate.h>
 
 #include <orbit/orbiter/datatype/oobject.h>
 #include <orbit/orbiter/datatype/orstring.h>
@@ -81,31 +81,31 @@ namespace orbiter::datatype {
      *
      * This function is called immediately after the type's Init function to complete its setup.
      *
-     * @param ctx Pointer to the Context in which the type is being set up
+     * @param isolate Pointer to the Isolate in which the type is being set up
      * @param self Pointer to TypeInfo created by %type%Init call
      *
      * @return true if setup was successful, false otherwise
      */
-    bool FunctionTypeSetup(const Context *ctx, TypeInfo *self);
+    bool FunctionTypeSetup(const Isolate *isolate, TypeInfo *self);
 
     /**
      * @brief Create a new Function object
      *
-     * @param ctx Pointer to the Context
+     * @param isolate Pointer to the Isolate
      * @param def Pointer to the FunctionDef
      *
      * @return Pointer to the newly created Function
      */
-    Function *FunctionNew(const Context *ctx, const FunctionDef *def);
+    Function *FunctionNew(const Isolate *isolate, const FunctionDef *def);
 
     /**
      * @brief Initialize the Function type
      *
-     * @param ctx Pointer to the Context
+     * @param isolate Pointer to the Isolate
      *
      * @return Pointer to the TypeInfo for the Function type
      */
-    TypeInfo *FunctionTypeInit(const Context *ctx);
+    TypeInfo *FunctionTypeInit(const Isolate *isolate);
 }
 
 #define RUNTIME_FUNCTION(name, exported_name, doc, params)                                          \

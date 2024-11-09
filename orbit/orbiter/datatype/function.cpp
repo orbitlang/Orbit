@@ -8,16 +8,16 @@
 
 using namespace orbiter::datatype;
 
-FuncShared *FunSharedNew(const orbiter::Context *ctx, const char *name, const char *doc,
+FuncShared *FunSharedNew(const orbiter::Isolate *isolate, const char *name, const char *doc,
                          U16 arity, FunctionPtr func, FunctionKind kind) {
-    auto s_name = ORStringNew(ctx, name);
+    auto s_name = ORStringNew(isolate, name);
     if (!s_name)
         return nullptr;
 
     Handle<ORString> s_doc;
 
     if (doc != nullptr) {
-        s_doc = ORStringNew(ctx, doc);
+        s_doc = ORStringNew(isolate, doc);
         if (!s_doc)
             return nullptr;
     }
@@ -51,21 +51,21 @@ void FunSharedDel(FuncShared *shared) {
     orbiter::memory::Free(shared);
 }
 
-bool orbiter::datatype::FunctionTypeSetup(const Context *ctx, TypeInfo *self) {
+bool orbiter::datatype::FunctionTypeSetup(const Isolate *isolate, TypeInfo *self) {
     return true;
 }
 
-Function *orbiter::datatype::FunctionNew(const Context *ctx, const FunctionDef *def) {
+Function *orbiter::datatype::FunctionNew(const Isolate *isolate, const FunctionDef *def) {
     auto kind = FunctionKind::NATIVE;
 
     if (def->method)
         kind |= FunctionKind::METHOD;
 
-    auto *f_shared = FunSharedNew(ctx, def->name, def->doc, def->params, def->func, kind);
+    auto *f_shared = FunSharedNew(isolate, def->name, def->doc, def->params, def->func, kind);
     if (f_shared == nullptr)
         return nullptr;
 
-    auto *fn = MakeObject<Function>(ctx, InstanceType::FUNCTION);
+    auto *fn = MakeObject<Function>(isolate, InstanceType::FUNCTION);
 
     if (fn != nullptr) {
         fn->shared = f_shared;
@@ -78,7 +78,7 @@ Function *orbiter::datatype::FunctionNew(const Context *ctx, const FunctionDef *
     return nullptr;
 }
 
-TypeInfo *orbiter::datatype::FunctionTypeInit(const Context *ctx) {
-    auto *func = MakeType(ctx, InstanceType::FUNCTION, sizeof(Function) - sizeof(OObject), 0, 0);
+TypeInfo *orbiter::datatype::FunctionTypeInit(const Isolate *isolate) {
+    auto *func = MakeType(isolate, InstanceType::FUNCTION, sizeof(Function) - sizeof(OObject), 0, 0);
     return func;
 }
