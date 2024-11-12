@@ -2028,7 +2028,7 @@ ASTHandle<Module *> Parser::Parse() noexcept {
     if ((r_module->filename = ORStringNew(this->isolate_, this->filename_).release()) == nullptr)
         return {};
 
-    if ((this->sym_t_ = SymbolTableNew(this->isolate_)) == nullptr)
+    if ((this->sym_t_ = SymbolTable::New(this->isolate_)) == nullptr)
         return {};
 
     try {

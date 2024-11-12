@@ -96,12 +96,25 @@ namespace liftoff {
         unsigned short nesting;
     };
 
-    struct SymbolTable {
-        orbiter::Isolate *isolate;
+    class SymbolTable {
+        orbiter::Isolate *isolate = nullptr;
 
-        Scope *scope;
+        friend void SymbolTableDel(SymbolTable *) noexcept;
 
-        mutable SymbolTableError last_error;
+    public:
+        Scope *scope = nullptr;
+
+        mutable SymbolTableError last_error = SymbolTableError::OK;
+
+        SymbolTable() = delete;
+
+        /**
+         * @brief Creates a new symbol table with the specified isolate.
+         *
+         * @param isolate Isolate associated with the symbol table.
+         * @return A pointer to the newly created symbol table.
+         */
+        static SymbolTable *New(orbiter::Isolate *isolate) noexcept;
 
         /**
          * @brief Enters a new scope with the given name.
@@ -216,14 +229,6 @@ namespace liftoff {
          */
         void LeaveScope() noexcept;
     };
-
-    /**
-     * @brief Creates a new symbol table with the specified isolate.
-     *
-     * @param isolate Isolate associated with the symbol table.
-     * @return A pointer to the newly created symbol table.
-     */
-    SymbolTable *SymbolTableNew(orbiter::Isolate *isolate) noexcept;
 
     /**
      * @brief Deletes the specified symbol table.

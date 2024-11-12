@@ -314,7 +314,7 @@ void SymbolTable::LeaveScope() noexcept {
         this->scope = c_scope->back;
 }
 
-SymbolTable *liftoff::SymbolTableNew(orbiter::Isolate *isolate) noexcept {
+SymbolTable *SymbolTable::New(orbiter::Isolate *isolate) noexcept {
     orbiter::IsolateAllocator allocator(isolate);
 
     auto *table = allocator.alloc<SymbolTable>(sizeof(SymbolTable));
@@ -352,7 +352,7 @@ void liftoff::SymbolTableDel(SymbolTable *table) noexcept {
 
     base->symbols.Finalize(nullptr);
 
-    orbiter::IsolateAllocator allocator(table->isolate);
+    const orbiter::IsolateAllocator allocator(table->isolate);
     allocator.free(base);
     allocator.free(table);
 }

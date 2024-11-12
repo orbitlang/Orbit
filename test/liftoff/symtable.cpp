@@ -12,7 +12,7 @@ class SymbolTableTest : public ::testing::Test {
 protected:
     void SetUp() override {
         this->isolate = orbiter::Isolate::New();
-        this->table = SymbolTableNew(isolate);
+        this->table = SymbolTable::New(isolate);
     }
 
     void TearDown() override {
