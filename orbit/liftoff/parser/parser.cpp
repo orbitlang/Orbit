@@ -91,7 +91,8 @@ int PeekPrecedence(TokenType token) {
 ASTHandle<ASTNode *> Parser::ParseClassTrait() {
     Context isolate(this, TKCUR_TYPE == TokenType::KW_CLASS ? ContextType::CLASS : ContextType::TRAIT);
 
-    auto ct = MakeConstruct(TKCUR_LOC, TKCUR_TYPE == TokenType::KW_CLASS ? NodeType::CLASS : NodeType::TRAIT);
+    auto ct = MakeConstruct(this->isolate_, TKCUR_LOC,
+                            TKCUR_TYPE == TokenType::KW_CLASS ? NodeType::CLASS : NodeType::TRAIT);
 
     ct->doc = this->GetDocString().release();
 
@@ -143,7 +144,7 @@ ASTHandle<ASTNode *> Parser::ParseClassTrait() {
 ASTHandle<ASTNode *> Parser::ParseDecorator() {
     auto doc = this->GetDocString();
 
-    auto deco = MakeDecorator(TKCUR_LOC);
+    auto deco = MakeDecorator(this->isolate_, TKCUR_LOC);
 
     this->Eat(true);
 
@@ -188,7 +189,7 @@ ASTHandle<ASTNode *> Parser::ParseExtImpl() {
 }
 
 ASTHandle<ASTNode *> Parser::ParseDeferStatement() {
-    auto defer = MakeUnary(TKCUR_LOC, NodeType::DEFER);
+    auto defer = MakeUnary(this->isolate_, TKCUR_LOC, NodeType::DEFER);
 
     this->Eat(true);
 
@@ -204,7 +205,7 @@ ASTHandle<ASTNode *> Parser::ParseDeferStatement() {
 ASTHandle<ASTNode *> Parser::ParseForInStatement() {
     Context context(this, ContextType::LOOP);
 
-    auto forIn = MakeLoop(TKCUR_LOC, NodeType::FOR_IN);
+    auto forIn = MakeLoop(this->isolate_, TKCUR_LOC, NodeType::FOR_IN);
 
     this->Eat(true);
 
@@ -221,7 +222,7 @@ ASTHandle<ASTNode *> Parser::ParseForInStatement() {
         } while (this->MatchEat(TokenType::COMMA, true));
 
         if (ids.size() > 1) {
-            auto tuple = MakeListExpression(TKCUR_LOC, NodeType::TUPLE);
+            auto tuple = MakeListExpression(this->isolate_, TKCUR_LOC, NodeType::TUPLE);
 
             tuple->loc.start = ids.front()->loc.start;
             tuple->loc.end = ids.back()->loc.end;
@@ -246,7 +247,7 @@ ASTHandle<ASTNode *> Parser::ParseForInStatement() {
 }
 
 ASTHandle<ASTNode *> Parser::ParseIfStatement() {
-    auto branch = MakeBranch(TKCUR_LOC);
+    auto branch = MakeBranch(this->isolate_, TKCUR_LOC);
 
     this->Eat(true);
 
@@ -270,7 +271,7 @@ ASTHandle<ASTNode *> Parser::ParseIfStatement() {
 }
 
 ASTHandle<ASTNode *> Parser::ParseImportStatement() {
-    auto imp = MakeImport(TKCUR_LOC, NodeType::IMPORT);
+    auto imp = MakeImport(this->isolate_, TKCUR_LOC, NodeType::IMPORT);
 
     this->Eat(true);
 
@@ -308,7 +309,7 @@ ASTHandle<ASTNode *> Parser::ParseImportStatement() {
     imp->node_type = NodeType::IMPORT_FROM;
 
     do {
-        auto imp_name = MakeImportName(TKCUR_LOC);
+        auto imp_name = MakeImportName(this->isolate_, TKCUR_LOC);
 
         if (!this->Match(TokenType::IDENTIFIER))
             throw ParserException(46);
@@ -351,7 +352,7 @@ ASTHandle<ASTNode *> Parser::ParseImportStatement() {
 ASTHandle<ASTNode *> Parser::ParseLoopStatement() {
     Context context(this, ContextType::LOOP);
 
-    auto loop = MakeLoop(TKCUR_LOC, NodeType::LOOP);
+    auto loop = MakeLoop(this->isolate_, TKCUR_LOC, NodeType::LOOP);
 
     this->Eat(true);
 
@@ -397,7 +398,7 @@ ASTHandle<ASTNode *> Parser::ParseNativeStatement() {
         return func;
     }
 
-    auto variable = MakeNativeVariable(TKCUR_LOC, NodeType::NATIVE_VAR);
+    auto variable = MakeNativeVariable(this->isolate_, TKCUR_LOC, NodeType::NATIVE_VAR);
 
     variable->loc.start = start;
 
@@ -463,7 +464,7 @@ ASTHandle<ASTNode *> Parser::ParseNativeStatement() {
 }
 
 ASTHandle<ASTNode *> Parser::ParseNativeFuncStatement(Position start) {
-    auto func = MakeNativeFunc(TKCUR_LOC);
+    auto func = MakeNativeFunc(this->isolate_, TKCUR_LOC);
 
     func->loc.start = start;
 
@@ -479,7 +480,7 @@ ASTHandle<ASTNode *> Parser::ParseNativeFuncStatement(Position start) {
 
     if (!this->Match(TokenType::RIGHT_ROUND)) {
         do {
-            auto np = MakeNativeParameter(TKCUR_LOC);
+            auto np = MakeNativeParameter(this->isolate_, TKCUR_LOC);
 
             if (!this->Match(TokenType::IDENTIFIER))
                 throw ParserException(52);
@@ -557,7 +558,7 @@ ASTHandle<ASTNode *> Parser::ParseNativeFuncStatement(Position start) {
 }
 
 ASTHandle<ASTNode *> Parser::ParseSwitchCase(bool as_if) {
-    auto sw_case = MakeSwitchCase(TKCUR_LOC);
+    auto sw_case = MakeSwitchCase(this->isolate_, TKCUR_LOC);
     bool no_def = true;
     bool fallthrough = false;
 
@@ -581,7 +582,7 @@ ASTHandle<ASTNode *> Parser::ParseSwitchCase(bool as_if) {
     if (!this->MatchEat(TokenType::COLON, true))
         throw ParserException(37);
 
-    auto block = MakeBlock(TKCUR_LOC);
+    auto block = MakeBlock(this->isolate_, TKCUR_LOC);
 
     this->sym_t_->EnterNestedScope();
 
@@ -614,7 +615,7 @@ ASTHandle<ASTNode *> Parser::ParseSwitchCase(bool as_if) {
 ASTHandle<ASTNode *> Parser::ParseSwitchStatement() {
     Context context(this, ContextType::SWITCH);
 
-    auto sw = MakeSwitchBlock(TKCUR_LOC);
+    auto sw = MakeSwitchBlock(this->isolate_, TKCUR_LOC);
     bool def_case = false;
 
     this->Eat(true);
@@ -651,7 +652,7 @@ ASTHandle<ASTNode *> Parser::ParseSwitchStatement() {
 }
 
 ASTHandle<ASTNode *> Parser::ParseSyncStatement() {
-    auto sync = MakeBinary(TKCUR_LOC, NodeType::SYNC_BLOCK);
+    auto sync = MakeBinary(this->isolate_, TKCUR_LOC, NodeType::SYNC_BLOCK);
 
     this->Eat(true);
 
@@ -664,7 +665,7 @@ ASTHandle<ASTNode *> Parser::ParseSyncStatement() {
 }
 
 ASTHandle<ASTNode *> Parser::ParseTryCatchFinally() {
-    auto tryb = MakeTryBlock(TKCUR_LOC);
+    auto tryb = MakeTryBlock(this->isolate_, TKCUR_LOC);
 
     this->Eat(true);
 
@@ -674,7 +675,7 @@ ASTHandle<ASTNode *> Parser::ParseTryCatchFinally() {
         throw ParserException(32);
 
     while (this->Match(TokenType::KW_CATCH)) {
-        auto cb = MakeCatchBlock(TKCUR_LOC);
+        auto cb = MakeCatchBlock(this->isolate_, TKCUR_LOC);
 
         this->Eat(true);
 
@@ -721,7 +722,7 @@ ASTHandle<ASTNode *> Parser::ParseVarDecl(const Position &start, bool pub, bool 
 
         sym->access = pub ? AccessModifier::PUBLIC : AccessModifier::PRIVATE;
 
-        auto identifier = MakeIdentifier(TKCUR_LOC);
+        auto identifier = MakeIdentifier(this->isolate_, TKCUR_LOC);
         identifier->value = id_str.release();
 
         identifiers.emplace_back(std::move(identifier));
@@ -733,9 +734,10 @@ ASTHandle<ASTNode *> Parser::ParseVarDecl(const Position &start, bool pub, bool 
 
     ASTHandle<ASTNode *> expr{};
 
-    auto decl = MakeAssignment(TKCUR_LOC, identifiers.size() > 1
-                                              ? NodeType::VAR_DECLARATIONS
-                                              : NodeType::VAR_DECLARATION);
+    auto decl = MakeAssignment(
+        this->isolate_,
+        TKCUR_LOC,
+        identifiers.size() > 1 ? NodeType::VAR_DECLARATIONS : NodeType::VAR_DECLARATION);
 
 
     decl->loc.start = start;
@@ -755,7 +757,7 @@ ASTHandle<ASTNode *> Parser::ParseVarDecl(const Position &start, bool pub, bool 
     if (identifiers.size() == 1)
         decl->name = identifiers.front().release();
     else {
-        auto tuple = MakeListExpression(TKCUR_LOC, NodeType::TUPLE);
+        auto tuple = MakeListExpression(this->isolate_, TKCUR_LOC, NodeType::TUPLE);
 
         tuple->loc.start = identifiers.front()->loc.start;
         tuple->loc.end = identifiers.back()->loc.end;
@@ -816,7 +818,7 @@ ASTHandle<ASTNode *> Parser::ParseAPST() {
         return right;
     }
 
-    auto ret = MakeUnary(TKCUR_LOC, node_type);
+    auto ret = MakeUnary(this->isolate_, TKCUR_LOC, node_type);
 
     ret->loc.start = start_pos;
     ret->loc.end = right->loc.end;
@@ -870,7 +872,7 @@ ASTHandle<ASTNode *> Parser::ParseAssignment(ASTHandle<ASTNode *> &left) {
 
     auto expr = this->ParseExpression(tk_type);
 
-    auto assign = MakeAssignment(TKCUR_LOC, node_type);
+    auto assign = MakeAssignment(this->isolate_, TKCUR_LOC, node_type);
 
     assign->name = left.release();
     assign->value = expr.release();
@@ -882,7 +884,7 @@ ASTHandle<ASTNode *> Parser::ParseAssignment(ASTHandle<ASTNode *> &left) {
 }
 
 ASTHandle<ASTNode *> Parser::ParseBlock(bool nested) {
-    auto block = MakeBlock(TKCUR_LOC);
+    auto block = MakeBlock(this->isolate_, TKCUR_LOC);
 
     if (!this->MatchEat(TokenType::LEFT_BRACES, true))
         throw ParserException(18);
@@ -921,7 +923,7 @@ ASTHandle<ASTNode *> Parser::ParseDictSet() {
     this->Eat(true);
 
     if (this->Match(TokenType::RIGHT_BRACES)) {
-        auto ret = MakeListExpression(TKCUR_LOC, NodeType::DICT);
+        auto ret = MakeListExpression(this->isolate_, TKCUR_LOC, NodeType::DICT);
 
         ret->loc.start = loc.start;
         ret->loc.end = TKCUR_LOC.end;
@@ -953,7 +955,7 @@ ASTHandle<ASTNode *> Parser::ParseDictSet() {
         node_type = NodeType::SET;
     } while (this->MatchEat(TokenType::COMMA, true));
 
-    auto ret = MakeListExpression(TKCUR_LOC, node_type);
+    auto ret = MakeListExpression(this->isolate_, TKCUR_LOC, node_type);
 
     if (!this->MatchEat(TokenType::RIGHT_BRACES, false))
         throw ParserException(node_type == NodeType::DICT ? 8 : 9);
@@ -970,7 +972,7 @@ ASTHandle<ASTNode *> Parser::ParseElvis(ASTHandle<ASTNode *> &left) {
 
     auto expr = this->ParseExpression(TokenType::COMMA);
 
-    auto elvis = MakeBinary(TKCUR_LOC, NodeType::ELVIS);
+    auto elvis = MakeBinary(this->isolate_, TKCUR_LOC, NodeType::ELVIS);
 
     elvis->left = left.release();
     elvis->right = expr.release();
@@ -1007,7 +1009,7 @@ ASTHandle<ASTNode *> Parser::ParseExpression(int precedence) {
     }
 
     if (is_safe) {
-        auto safe = MakeUnary(TKCUR_LOC, NodeType::NIL_SAFE);
+        auto safe = MakeUnary(this->isolate_, TKCUR_LOC, NodeType::NIL_SAFE);
 
         safe->loc = left->loc;
         safe->value = left.release();
@@ -1023,7 +1025,7 @@ ASTHandle<ASTNode *> Parser::ParseExpression(TokenType precedence) {
 }
 
 ASTHandle<ASTNode *> Parser::ParseExpressionList(ASTHandle<ASTNode *> &left) {
-    auto list = MakeListExpression(TKCUR_LOC, NodeType::TUPLE);
+    auto list = MakeListExpression(this->isolate_, TKCUR_LOC, NodeType::TUPLE);
 
     list->loc.start = left->loc.start;
 
@@ -1050,7 +1052,7 @@ ASTHandle<ASTNode *> Parser::ParseExpressionList(ASTHandle<ASTNode *> &left) {
 }
 
 ASTHandle<ASTNode *> Parser::ParseExprOrTuple() {
-    auto tuple = MakeListExpression(TKCUR_LOC, NodeType::LIST);
+    auto tuple = MakeListExpression(this->isolate_, TKCUR_LOC, NodeType::LIST);
 
     this->Eat(true);
 
@@ -1078,7 +1080,7 @@ ASTHandle<ASTNode *> Parser::ParseFunc() {
 }
 
 ASTHandle<ASTNode *> Parser::ParseFuncCall(ASTHandle<ASTNode *> &left) {
-    auto call = MakeCall(TKCUR_LOC);
+    auto call = MakeCall(this->isolate_, TKCUR_LOC);
 
     call->left = left.release();
     call->loc.start = call->left->loc.start;
@@ -1091,7 +1093,7 @@ ASTHandle<ASTNode *> Parser::ParseFuncCall(ASTHandle<ASTNode *> &left) {
 
         do {
             if (this->Match(TokenType::ASTERISK)) {
-                auto unary = MakeUnary(TKCUR_LOC, NodeType::KW_ARG);
+                auto unary = MakeUnary(this->isolate_, TKCUR_LOC, NodeType::KW_ARG);
 
                 this->Eat(true);
 
@@ -1112,7 +1114,7 @@ ASTHandle<ASTNode *> Parser::ParseFuncCall(ASTHandle<ASTNode *> &left) {
                 if (mode > 1)
                     throw ParserException(21);
 
-                auto unary = MakeUnary(TKCUR_LOC, NodeType::ELLIPSIS);
+                auto unary = MakeUnary(this->isolate_, TKCUR_LOC, NodeType::ELLIPSIS);
 
                 unary->loc.start = arg->loc.start;
                 unary->value = arg.release();
@@ -1132,7 +1134,7 @@ ASTHandle<ASTNode *> Parser::ParseFuncCall(ASTHandle<ASTNode *> &left) {
 
                 this->Eat(true);
 
-                auto binary = MakeParameter(TKCUR_LOC, NodeType::NAMED_ARG);
+                auto binary = MakeParameter(this->isolate_, TKCUR_LOC, NodeType::NAMED_ARG);
 
                 binary->id = id->value;
 
@@ -1177,7 +1179,7 @@ ASTHandle<ASTNode *> Parser::ParseIdentifier() {
     if (!this->sym_t_->LookupInsert(id_name.get(),TKCUR_START.offset))
         throw SymbolTableException();
 
-    auto id = MakeIdentifier(TKCUR_LOC);
+    auto id = MakeIdentifier(this->isolate_, TKCUR_LOC);
 
     id->value = id_name.release();
 
@@ -1187,7 +1189,7 @@ ASTHandle<ASTNode *> Parser::ParseIdentifier() {
 }
 
 ASTHandle<ASTNode *> Parser::ParseIndexing(ASTHandle<ASTNode *> &left) {
-    auto subscript = MakeSubscript(TKCUR_LOC, NodeType::INDEX);
+    auto subscript = MakeSubscript(this->isolate_, TKCUR_LOC, NodeType::INDEX);
 
     subscript->expression = left.release();
 
@@ -1232,7 +1234,8 @@ ASTHandle<ASTNode *> Parser::ParseInfix(ASTHandle<ASTNode *> &left) {
 
     auto right = this->ParseExpression(tk_type);
 
-    auto infix = MakeBinary(TKCUR_LOC, tk_type == TokenType::ARROW_LEFT ? NodeType::CHAN_SEND : NodeType::BINARY);
+    auto infix = MakeBinary(this->isolate_, TKCUR_LOC,
+                            tk_type == TokenType::ARROW_LEFT ? NodeType::CHAN_SEND : NodeType::BINARY);
 
     infix->token_type = tk_type;
 
@@ -1257,7 +1260,7 @@ ASTHandle<ASTNode *> Parser::ParseInNotIn(ASTHandle<ASTNode *> &left) {
     if (!this->MatchEat(TokenType::KW_IN, true))
         throw ParserException(0);
 
-    auto binary = MakeBinary(TKCUR_LOC, node_type);
+    auto binary = MakeBinary(this->isolate_, TKCUR_LOC, node_type);
 
     binary->left = left.release();
     binary->right = this->ParseExpression(TokenType::KW_IN).release();
@@ -1269,7 +1272,7 @@ ASTHandle<ASTNode *> Parser::ParseInNotIn(ASTHandle<ASTNode *> &left) {
 }
 
 ASTHandle<ASTNode *> Parser::ParseList() {
-    auto list = MakeListExpression(TKCUR_LOC, NodeType::LIST);
+    auto list = MakeListExpression(this->isolate_, TKCUR_LOC, NodeType::LIST);
 
     this->Eat(true);
 
@@ -1348,7 +1351,7 @@ ASTHandle<ASTNode *> Parser::ParseLiteral() {
     if (!handle && TKCUR_TYPE != TokenType::NIL)
         throw DatatypeException();
 
-    auto literal = MakeLiteral(TKCUR_LOC);
+    auto literal = MakeLiteral(this->isolate_, TKCUR_LOC);
 
     literal->literal = handle.release();
 
@@ -1358,7 +1361,7 @@ ASTHandle<ASTNode *> Parser::ParseLiteral() {
 }
 
 ASTHandle<ASTNode *> Parser::ParseMemberAccess(ASTHandle<ASTNode *> &left) {
-    auto selector = MakeBinary(TKCUR_LOC, NodeType::SELECTOR);
+    auto selector = MakeBinary(this->isolate_, TKCUR_LOC, NodeType::SELECTOR);
 
     selector->token_type = TKCUR_TYPE;
     selector->loc.start = left->loc.start;
@@ -1374,7 +1377,7 @@ ASTHandle<ASTNode *> Parser::ParseMemberAccess(ASTHandle<ASTNode *> &left) {
     if (!id_name)
         throw DatatypeException();
 
-    auto id = MakeIdentifier(TKCUR_LOC);
+    auto id = MakeIdentifier(this->isolate_, TKCUR_LOC);
 
     id->value = id_name.release();
 
@@ -1392,7 +1395,7 @@ ASTHandle<ASTNode *> Parser::ParseNullCoalescing(ASTHandle<ASTNode *> &left) {
 
     auto expr = this->ParseExpression(TokenType::NULL_COALESCING);
 
-    auto binary = MakeBinary(TKCUR_LOC, NodeType::NULL_COALESCING);
+    auto binary = MakeBinary(this->isolate_, TKCUR_LOC, NodeType::NULL_COALESCING);
 
     binary->loc.start = left->loc.start;
     binary->loc.end = expr->loc.end;
@@ -1418,7 +1421,7 @@ ASTHandle<ASTNode *> Parser::ParsePipeline(ASTHandle<ASTNode *> &left) {
         return right;
     }
 
-    auto call = MakeCall(TKCUR_LOC);
+    auto call = MakeCall(this->isolate_, TKCUR_LOC);
 
     call->loc.start = left->loc.start;
     call->loc.end = right->loc.end;
@@ -1435,7 +1438,7 @@ ASTHandle<ASTNode *> Parser::ParsePostInc(ASTHandle<ASTNode *> &left) {
         && left->node_type != NodeType::SELECTOR)
         throw ParserException(2);
 
-    auto update = MakeUnary(TKCUR_LOC, NodeType::UPDATE);
+    auto update = MakeUnary(this->isolate_, TKCUR_LOC, NodeType::UPDATE);
 
     update->token_type = TKCUR_TYPE;
 
@@ -1451,7 +1454,8 @@ ASTHandle<ASTNode *> Parser::ParsePostInc(ASTHandle<ASTNode *> &left) {
 ASTHandle<ASTNode *> Parser::ParsePrefix() {
     const auto tk_type = TKCUR_TYPE;
 
-    auto prefix = MakeUnary(TKCUR_LOC, tk_type == TokenType::ARROW_LEFT ? NodeType::CHAN_RECV : NodeType::UNARY);
+    auto prefix = MakeUnary(this->isolate_, TKCUR_LOC,
+                            tk_type == TokenType::ARROW_LEFT ? NodeType::CHAN_RECV : NodeType::UNARY);
 
     this->Eat(true);
 
@@ -1504,7 +1508,7 @@ ASTHandle<ASTNode *> Parser::ParseStatement() {
                 if (!this->context_->Check(ContextType::LOOP) && !this->context_->Check(ContextType::SWITCH))
                     throw ParserException(66);
 
-                auto bc = MakeJump(TKCUR_LOC);
+                auto bc = MakeJump(this->isolate_, TKCUR_LOC);
 
                 bc->token_type = TKCUR_TYPE;
 
@@ -1565,7 +1569,9 @@ ASTHandle<ASTNode *> Parser::ParseStatement() {
                 this->sym_t_->scope->type = ScopeType::GENERATOR;
             case TokenType::KW_RETURN: {
                 auto ret = MakeUnary(
-                    TKCUR_LOC, TKCUR_TYPE == TokenType::KW_RETURN ? NodeType::RETURN : NodeType::YIELD);
+                    this->isolate_,
+                    TKCUR_LOC,
+                    TKCUR_TYPE == TokenType::KW_RETURN ? NodeType::RETURN : NodeType::YIELD);
 
                 this->Eat(false);
 
@@ -1611,7 +1617,7 @@ ASTHandle<ASTNode *> Parser::ParseStatement() {
             && stmt->node_type != NodeType::LOOP)
             throw ParserException(35);
 
-        auto lbl = MakeLabel(TKCUR_LOC);
+        auto lbl = MakeLabel(this->isolate_, TKCUR_LOC);
 
         lbl->loc.start = label->loc.start;
         lbl->loc.end = stmt->loc.end;
@@ -1634,7 +1640,7 @@ ASTHandle<ASTNode *> Parser::ParseStatement() {
 }
 
 ASTHandle<ASTNode *> Parser::ParseTernary(ASTHandle<ASTNode *> &left) {
-    auto branch = MakeBranch(TKCUR_LOC);
+    auto branch = MakeBranch(this->isolate_, TKCUR_LOC);
 
     branch->test = left.release();
 
@@ -1681,7 +1687,7 @@ ASTHandle<ASTNode *> Parser::ParseWalrus(ASTHandle<ASTNode *> &left) {
     } else if (left->node_type != NodeType::IDENTIFIER)
         throw ParserException(23);
 
-    auto decl = MakeAssignment(TKCUR_LOC, node_type);
+    auto decl = MakeAssignment(this->isolate_, TKCUR_LOC, node_type);
 
     decl->loc.start = left->loc.start;
     decl->name = left.release();
@@ -1703,7 +1709,7 @@ ASTHandle<ASTNode *> Parser::ParseWalrus(ASTHandle<ASTNode *> &left) {
 ASTHandle<liftoff::parser::Function *> Parser::ParseFunction(bool inl) {
     Context isolate(this, ContextType::FUNC);
 
-    auto func = MakeFunction(TKCUR_LOC);
+    auto func = MakeFunction(this->isolate_, TKCUR_LOC);
 
     func->doc = this->GetDocString().release();
 
@@ -1775,7 +1781,7 @@ ASTHandle<Parameter *> Parser::ParseParameter(const Position &start, NodeType ty
     if (!this->sym_t_->Declare(id_name.get(), SymbolType::VARIABLE, TKCUR_START.offset))
         throw SymbolTableException();
 
-    auto param = MakeParameter(TKCUR_LOC, NodeType::KW_PARAM);
+    auto param = MakeParameter(this->isolate_, TKCUR_LOC, NodeType::KW_PARAM);
 
     this->Eat(false);
 
@@ -2019,7 +2025,7 @@ void Parser::IgnoreNewLineIF(TokenType type) {
 // *********************************************************************************************************************
 
 ASTHandle<Module *> Parser::Parse() noexcept {
-    auto module = MakeModule(TKCUR_LOC);
+    auto module = MakeModule(this->isolate_, TKCUR_LOC);
     if (!module)
         return {};
 

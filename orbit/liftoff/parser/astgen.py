@@ -13,7 +13,6 @@ INCLUDES = """#include <cassert>
 #include <vector>
 
 #include <orbit/orbiter/datatype/orstring.h>
-#include <orbit/orbiter/memory/memory.h>
 
 #include <orbit/liftoff/exception.h>
 #include <orbit/liftoff/scanner/token.h>
@@ -27,6 +26,7 @@ BASE_CLASS = "ASTNode"
 NODES = {
     "ASTNode": {
         "fields": {
+            "isolate": "orbiter::Isolate*",
             "node_type": "NodeType",
             "loc": "scanner::Loc"
         }
@@ -317,7 +317,8 @@ def generate_cleanup_function():
             break;
     }}
     
-    orbiter::memory::Free(ast_node);
+    const orbiter::IsolateAllocator allocator(ast_node->isolate);
+    allocator.free(ast_node);
 }}
 """
 
@@ -339,25 +340,34 @@ def generate_make_functions():
             node_types = node_info['node_type']
             node_type_check = " || ".join(f"node_type == NodeType::{nt}" for nt in node_types)
             make_functions.append(f"""
-inline ASTHandle<{node_name}*> Make{node_name}(const scanner::Loc &loc, NodeType node_type) {{
+inline ASTHandle<{node_name}*> Make{node_name}(orbiter::Isolate *isolate, const scanner::Loc &loc, NodeType node_type) {{
+    orbiter::IsolateAllocator allocator(isolate);
+    
     assert({node_type_check});
-    auto *node = ({node_name} *) orbiter::memory::Calloc(sizeof({node_name}));
-    if(node != nullptr) {{
+    
+    auto *node = allocator.calloc<{node_name}>(sizeof({node_name}));
+    if(node == nullptr)
+        throw DatatypeException();
+
+        node->isolate = isolate;
         node->node_type = node_type;
         node->loc = loc;
         
-{vector_init_code}
-    }}
+    {vector_init_code}
+
     return ASTHandle(node);
 }}
 """)
         else:
             make_functions.append(f"""
-inline ASTHandle<{node_name}*> Make{node_name}(const scanner::Loc &loc) {{
-    auto *node = ({node_name} *) orbiter::memory::Calloc(sizeof({node_name}));
+inline ASTHandle<{node_name}*> Make{node_name}(orbiter::Isolate *isolate, const scanner::Loc &loc) {{
+    orbiter::IsolateAllocator allocator(isolate);
+    
+    auto *node = allocator.calloc<{node_name}>(sizeof({node_name}));
     if(node == nullptr)
         throw DatatypeException();
     
+    node->isolate = isolate;
     node->node_type = NodeType::{node_name.upper()};
     node->loc = loc;
         

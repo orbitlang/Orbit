@@ -6,13 +6,4 @@
 
 using namespace orbiter::memory;
 
-void *orbiter::memory::Calloc(MSize size) {
-    auto *mem = stratum::Calloc(size);
-    // TODO: Raise Orbit exception
-    return mem;
-}
-
-void orbiter::memory::Free(void *ptr) {
-    stratum::Free(ptr);
-}
 
