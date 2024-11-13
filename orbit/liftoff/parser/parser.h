@@ -247,7 +247,7 @@ namespace liftoff::parser {
 
         void IgnoreNewLineIF(scanner::TokenType type);
 
-        /**
+        /*
          * @brief Report a parsing error.
          *
          * @param message Error message.
@@ -258,7 +258,7 @@ namespace liftoff::parser {
     public:
         /**
          * @brief Initialize the parser with a filename and the scanner.
-         *
+         * @param isolate Pointer to isolate.
          * @param filename Source code name.
          * @param scanner Reference to Scanner.
          */
@@ -272,54 +272,6 @@ namespace liftoff::parser {
          * @return A ASTHandle to the root node of the AST or nullptr in case of unrecoverable error.
          */
         ASTHandle<Module *> Parse() noexcept;
-    };
-
-    enum class ContextType {
-        CLASS,
-        FUNC,
-        LOOP,
-        MODULE,
-        TRAIT,
-        SWITCH
-    };
-
-    class Context {
-        Context *back_;
-        Parser *parser_;
-
-        ContextType type_;
-
-    public:
-        int anon_count = 0;
-
-        [[nodiscard]] bool Check(ContextType type) const noexcept {
-            return this->type_ == type;
-        }
-
-        [[nodiscard]] bool CheckBack(ContextType type) const noexcept {
-            return this->back_ != nullptr && this->back_->type_ == type;
-        }
-
-        [[nodiscard]] bool CheckExt(ContextType type) const noexcept {
-            auto cursor = this->back_;
-
-            while (cursor != nullptr) {
-                if (cursor->type_ == type)
-                    return true;
-
-                cursor = cursor->back_;
-            }
-
-            return false;
-        }
-
-        explicit Context(Parser *parser, ContextType type) : back_(parser->context_), parser_(parser), type_(type) {
-            parser->context_ = this;
-        }
-
-        ~Context() {
-            this->parser_->context_ = this->back_;
-        }
     };
 }
 

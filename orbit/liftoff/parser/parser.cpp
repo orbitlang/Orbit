@@ -9,6 +9,7 @@
 
 #include <orbit/liftoff/exception.h>
 
+#include <orbit/liftoff/parser/context.h>
 #include <orbit/liftoff/parser/parser.h>
 
 using namespace orbiter::datatype;
