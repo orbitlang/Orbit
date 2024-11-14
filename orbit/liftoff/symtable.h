@@ -94,17 +94,24 @@ namespace liftoff {
         unsigned short offset;
 
         unsigned short nesting;
+
+        struct {
+            unsigned int start;
+            unsigned int end;
+        } liveness;
     };
 
     class SymbolTable {
         orbiter::Isolate *isolate = nullptr;
+
+        unsigned int liveness_offset = 0;
 
         friend void SymbolTableDel(SymbolTable *) noexcept;
 
     public:
         Scope *scope = nullptr;
 
-        mutable SymbolTableError last_error = SymbolTableError::OK;
+        SymbolTableError last_error = SymbolTableError::OK;
 
         SymbolTable() = delete;
 
@@ -139,7 +146,7 @@ namespace liftoff {
          * @param offset The offset of the symbol in source code.
          * @return A pointer to the newly declared symbol.
          */
-        Symbol *Declare(orbiter::datatype::ORString *name, SymbolType type, MSize offset) const noexcept;
+        Symbol *Declare(orbiter::datatype::ORString *name, SymbolType type, MSize offset) noexcept;
 
         /**
          * @brief Declares a new symbol with the specified name, type, and offset.
@@ -149,7 +156,7 @@ namespace liftoff {
          * @param offset The offset of the symbol in source code.
          * @return A pointer to the newly declared symbol.
          */
-        Symbol *Declare(const char *name, SymbolType type, MSize offset) const noexcept;
+        Symbol *Declare(const char *name, SymbolType type, MSize offset) noexcept;
 
         /**
          * @brief Declares a new symbol scope with the specified details.
@@ -181,7 +188,7 @@ namespace liftoff {
          * @param offset The offset of the symbol in source code.
          * @return A pointer to the found symbol or nullptr if not found.
          */
-        Symbol *Lookup(orbiter::datatype::ORString *name, MSize offset) const noexcept;
+        Symbol *Lookup(orbiter::datatype::ORString *name, MSize offset) noexcept;
 
         /**
          * @brief Looks up a symbol with the specified name and offset.
@@ -190,7 +197,7 @@ namespace liftoff {
          * @param offset The offset of the symbol in source code.
          * @return A pointer to the found symbol or nullptr if not found.
          */
-        Symbol *Lookup(const char *name, MSize offset) const noexcept;
+        Symbol *Lookup(const char *name, MSize offset) noexcept;
 
         /**
          * @brief Looks up a symbol with the specified name and offset, inserting it if not found.
@@ -199,7 +206,7 @@ namespace liftoff {
          * @param offset The offset of the symbol in source code.
          * @return A pointer to the found or newly inserted symbol.
          */
-        Symbol *LookupInsert(orbiter::datatype::ORString *name, MSize offset) const noexcept;
+        Symbol *LookupInsert(orbiter::datatype::ORString *name, MSize offset) noexcept;
 
         /**
          * @brief Looks up a symbol with the specified name and offset, inserting it if not found.
@@ -208,7 +215,7 @@ namespace liftoff {
          * @param offset The offset of the symbol in source code.
          * @return A pointer to the found or newly inserted symbol.
          */
-        Symbol *LookupInsert(const char *name, MSize offset) const noexcept;
+        Symbol *LookupInsert(const char *name, MSize offset) noexcept;
 
         /**
          * Enters a nested scope, incrementing the current nesting level.

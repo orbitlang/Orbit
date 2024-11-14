@@ -84,7 +84,7 @@ void SymbolDel(orbiter::Isolate *isolate, Symbol *symbol) {
     allocator.free(symbol);
 }
 
-Symbol *SymbolTable::Declare(ORString *name, SymbolType type, MSize offset) const noexcept {
+Symbol *SymbolTable::Declare(ORString *name, SymbolType type, MSize offset) noexcept {
     STHEntry *entry;
 
     if (this->scope->symbols.Lookup(name, &entry)) {
@@ -131,6 +131,11 @@ Symbol *SymbolTable::Declare(ORString *name, SymbolType type, MSize offset) cons
 
     symbol->nesting = this->scope->current_nesting;
 
+    if (entry->value->type != SymbolType::LABEL) {
+        symbol->liveness.start = this->liveness_offset;
+        symbol->liveness.end = this->liveness_offset++;
+    }
+
     entry->key = name;
     entry->value = symbol;
 
@@ -142,7 +147,7 @@ Symbol *SymbolTable::Declare(ORString *name, SymbolType type, MSize offset) cons
     return symbol;
 }
 
-Symbol *SymbolTable::Declare(const char *name, SymbolType type, MSize offset) const noexcept {
+Symbol *SymbolTable::Declare(const char *name, SymbolType type, MSize offset) noexcept {
     auto o_name = ORStringNew(this->isolate, name);
     if (!o_name) {
         this->last_error = SymbolTableError::MEMORY_ERROR;
@@ -207,7 +212,7 @@ Symbol *SymbolTable::DeclareSymbolScope(const char *name, SymbolType type, MSize
     return this->DeclareSymbolScope(o_name.get(), type, offset, line_start);
 }
 
-Symbol *SymbolTable::Lookup(ORString *name, MSize offset) const noexcept {
+Symbol *SymbolTable::Lookup(ORString *name, MSize offset) noexcept {
     STHEntry *entry;
 
     const auto *cursor = this->scope;
@@ -216,8 +221,12 @@ Symbol *SymbolTable::Lookup(ORString *name, MSize offset) const noexcept {
             && cursor->type != ScopeType::TRAIT
             && cursor->symbols.Lookup(name, &entry)) {
             const auto *sym = entry->value;
-            if (sym->defining_scope->current_nesting >= sym->nesting && sym->decl_offset <= offset)
+            if (sym->defining_scope->current_nesting >= sym->nesting && sym->decl_offset <= offset) {
+                if (entry->value->type != SymbolType::LABEL)
+                    entry->value->liveness.end = this->liveness_offset++;
+
                 return entry->value;
+            }
         }
 
         cursor = cursor->back;
@@ -227,7 +236,7 @@ Symbol *SymbolTable::Lookup(ORString *name, MSize offset) const noexcept {
     return nullptr;
 }
 
-Symbol *SymbolTable::Lookup(const char *name, MSize offset) const noexcept {
+Symbol *SymbolTable::Lookup(const char *name, MSize offset) noexcept {
     const auto o_name = ORStringNew(this->isolate, name);
     if (!o_name) {
         this->last_error = SymbolTableError::MEMORY_ERROR;
@@ -237,7 +246,7 @@ Symbol *SymbolTable::Lookup(const char *name, MSize offset) const noexcept {
     return this->Lookup(o_name.get(), offset);
 }
 
-Symbol *SymbolTable::LookupInsert(ORString *name, MSize offset) const noexcept {
+Symbol *SymbolTable::LookupInsert(ORString *name, MSize offset) noexcept {
     auto *sym = this->Lookup(name, offset);
     if (sym != nullptr) {
         if (sym->type != SymbolType::VARIABLE
@@ -260,7 +269,7 @@ Symbol *SymbolTable::LookupInsert(ORString *name, MSize offset) const noexcept {
     return this->Declare(name, SymbolType::UNKNOWN, offset);
 }
 
-Symbol *SymbolTable::LookupInsert(const char *name, MSize offset) const noexcept {
+Symbol *SymbolTable::LookupInsert(const char *name, MSize offset) noexcept {
     const auto o_name = ORStringNew(this->isolate, name);
     if (!o_name) {
         this->last_error = SymbolTableError::MEMORY_ERROR;
