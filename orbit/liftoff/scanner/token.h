@@ -225,7 +225,8 @@ namespace liftoff::scanner {
         Position end;
     };
 
-    struct Token {
+    class Token {
+    public:
         orbiter::Isolate *isolate = nullptr;
 
         unsigned char *buffer = nullptr;
