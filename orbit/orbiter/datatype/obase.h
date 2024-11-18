@@ -129,8 +129,8 @@ namespace orbiter::datatype {
 #define O_GET_TYPE(object)                 (O_GET_HEAD(object).type_)
 
 #define O_IS_SMI(object)                    ((MSize)object & 0x01u)
-#define O_IS_ODDBALL(object)                ((!O_IS_SMI(object)) && (((MSize)object & kOddBallMask) == kOddBallMask))
-#define O_IS_OBJECT(object)                 ((!O_IS_SMI(object)) && (((MSize)object & kOddBallMask) != kOddBallMask))
+#define O_IS_ODDBALL(object)                ((!O_IS_SMI(object)) && (((MSize)object & orbiter::datatype::kOddBallMask) == orbiter::datatype::kOddBallMask))
+#define O_IS_OBJECT(object)                 ((!O_IS_SMI(object)) && (((MSize)object & orbiter::datatype::kOddBallMask) != orbiter::datatype::kOddBallMask))
 
 #define O_IS_FALSE(object)                  (O_IS_ODDBALL(object) && ((object & kOddBallFALSE) == kOddBallFALSE))
 #define O_IS_TRUE(object)                   (O_IS_ODDBALL(object) && ((object & kOddBallTRUE) == kOddBallTRUE))
