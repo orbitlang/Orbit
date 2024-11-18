@@ -1782,7 +1782,7 @@ ASTHandle<Parameter *> Parser::ParseParameter(const Position &start, NodeType ty
     if (!this->sym_t_->Declare(id_name.get(), SymbolType::VARIABLE, TKCUR_START.offset))
         throw SymbolTableException();
 
-    auto param = MakeParameter(this->isolate_, TKCUR_LOC, NodeType::KW_PARAM);
+    auto param = MakeParameter(this->isolate_, TKCUR_LOC, type);
 
     this->Eat(false);
 
