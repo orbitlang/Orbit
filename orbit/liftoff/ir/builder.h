@@ -8,7 +8,6 @@
 #include <orbit/orbiter/isolate.h>
 
 #include <orbit/liftoff/ir/basicblock.h>
-#include <orbit/liftoff/ir/function.h>
 
 namespace liftoff::ir {
     class Builder {

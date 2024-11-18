@@ -479,16 +479,16 @@ def generate_visitor_base():
             visit_cases.append(
                 f"case NodeType::{name.upper()}: return static_cast<Derived*>(this)->visit{name}(({name} *) node);")
 
-        visit_methods.append(f"ASTNode* visit{name}({name}* node) {{ return node; }}")
+        visit_methods.append(f"RVal visit{name}({name}* node) {{  }}")
 
     visit_cases_str = "\n        ".join(visit_cases)
     visit_methods_str = "\n\n    ".join(visit_methods)
 
     return f"""
-template <typename Derived>
+template <typename Derived, typename RVal = ASTNode *>
 class ASTVisitor {{
     protected:
-    ASTNode* visit(ASTNode* node) {{
+    RVal visit(ASTNode* node) {{
         switch(node->node_type) {{
         {visit_cases_str}
         default: assert(false); return nullptr;
