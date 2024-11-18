@@ -10,10 +10,11 @@
 namespace liftoff::ir {
     class Register : public Object {
     public:
-        short virtID = -1;
-        short physID = -1;
+        I32 virtID = -1;
+        U8 physID = -1;
 
-        explicit Register() : Object(ObjectType::REGISTER) {};
+        explicit Register() noexcept: Object(ObjectType::REGISTER) {
+        };
     };
 }
 

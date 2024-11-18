@@ -9,16 +9,20 @@
 
 namespace liftoff::ir {
     class BasicBlock : Object {
-        BasicBlock *next;
-        BasicBlock *prev;
+    public:
+        BasicBlock *next = nullptr;
+        BasicBlock *prev = nullptr;
 
         struct {
-            Instruction *head;
-            Instruction *tail;
+            Instruction *head = nullptr;
+            Instruction *tail = nullptr;
         } instr;
 
-        unsigned int offset;
-        unsigned int size;
+        U32 offset = 0;
+        U32 size = 0;
+
+        explicit BasicBlock() noexcept: Object(ObjectType::BASIC_BLOCK) {
+        }
     };
 }
 

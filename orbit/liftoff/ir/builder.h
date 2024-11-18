@@ -7,19 +7,26 @@
 
 #include <orbit/orbiter/isolate.h>
 
-#include <orbit/liftoff/ir/basicblock.h>
+#include <orbit/liftoff/ir/ircontext.h>
+#include <orbit/liftoff/ir/module.h>
 
 namespace liftoff::ir {
     class Builder {
         orbiter::IsolateAllocator allocator_;
 
-        BasicBlock *block_ = nullptr;
+        IRContext *context_ = nullptr;
+
+        BasicBlock *AddInstruction(Instruction *instruction) noexcept;
+
     public:
-        explicit Builder(orbiter::Isolate *isolate) : allocator_(isolate) {};
+        explicit Builder(orbiter::Isolate *isolate) noexcept: allocator_(isolate) {
+        };
 
-        Object *CreateBinaryOp(orbiter::OPCode opcode, Object *left, Object *right);
+        Instruction *CreateBinaryOp(orbiter::OPCode opcode, Object *left, Object *right) noexcept;
 
-        Instruction *LoadFromStackOffset(unsigned short offset);
+        Instruction *LoadFromStackOffset(U16 offset) noexcept;
+
+        Module *CreateModule() noexcept;
     };
 }
 

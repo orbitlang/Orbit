@@ -6,6 +6,55 @@
 
 using namespace liftoff::ir;
 
+Object *IRBuilder::BinaryOP(parser::Binary *binary) {
+    const auto *nr = (parser::Binary *) binary->right;
+
+    Object *left;
+    Object *right;
+
+    bool left2right = true;
+
+    if (nr->node_type == parser::NodeType::BINARY
+        && (nr->token_type == scanner::TokenType::ASTERISK
+            || nr->token_type == scanner::TokenType::SLASH
+            || nr->token_type == scanner::TokenType::SLASH_SLASH)) {
+        left2right = false;
+    }
+
+    if (left2right) {
+        left = this->visit(binary->left);
+        right = this->visit(binary->right);
+    } else {
+        right = this->visit(binary->right);
+        left = this->visit(binary->left);
+    }
+
+    orbiter::OPCode op_code{};
+
+    switch (binary->token_type) {
+        case scanner::TokenType::PLUS:
+            op_code = orbiter::OPCode::ADD;
+            break;
+        case scanner::TokenType::MINUS:
+            // TODO
+            break;
+        case scanner::TokenType::ASTERISK:
+            op_code = orbiter::OPCode::MUL;
+            break;
+        case scanner::TokenType::SLASH:
+            op_code = orbiter::OPCode::DIV;
+            break;
+        case scanner::TokenType::SLASH_SLASH:
+            // TODO
+            break;
+        default:
+            assert(false); // Never get here
+    }
+
+    return this->builder_.CreateBinaryOp(op_code, left, right);
+}
+
+
 Object *IRBuilder::visitASTNode(parser::ASTNode *node) {
     // TODO: Implement ASTNode visitation
     return nullptr;
@@ -13,11 +62,17 @@ Object *IRBuilder::visitASTNode(parser::ASTNode *node) {
 
 Object *IRBuilder::visitAssignment(parser::Assignment *node) {
     // TODO: Implement Assignment visitation
+
     return nullptr;
 }
 
 Object *IRBuilder::visitBinary(parser::Binary *node) {
-    // TODO: Implement Binary visitation
+    switch (node->node_type) {
+        case parser::NodeType::BINARY:
+            return this->BinaryOP(node);
+        default:
+            assert(false);
+    }
     return nullptr;
 }
 
@@ -65,6 +120,7 @@ Object *IRBuilder::visitIdentifier(parser::Identifier *node) {
         return this->builder_.LoadFromStackOffset(sym->offset);
     }
 
+    assert(false);
     return nullptr;
 }
 
@@ -158,6 +214,9 @@ void *IRBuilder::Generate(parser::ASTHandle<parser::Module *> &module) {
 
     // Set symbol table
     this->sym_t_ = module->sym_t;
+
+    // Create first context
+    auto ir_module = this->builder_.CreateModule();
 
     for (auto &statement: module->statements) {
         this->visit(statement.get());

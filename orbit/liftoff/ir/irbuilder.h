@@ -5,10 +5,11 @@
 #ifndef ORBIT_LIFTOFF_IR_IRBUILDER_H_
 #define ORBIT_LIFTOFF_IR_IRBUILDER_H_
 
-#include "orbit/orbiter/datatype/oobject.h"
+#include <orbit/orbiter/datatype/oobject.h>
 
-#include "builder.h"
-#include "orbit/liftoff/parser/ast.h"
+#include <orbit/liftoff/ir/builder.h>
+
+#include <orbit/liftoff/parser/ast.h>
 
 namespace liftoff::ir {
     class IRBuilder : parser::ASTVisitor<IRBuilder, Object *> {
@@ -19,6 +20,8 @@ namespace liftoff::ir {
         SymbolTable *sym_t_;
 
         friend class ASTVisitor;
+
+        Object *BinaryOP(parser::Binary *binary);
 
         Object *visitASTNode(parser::ASTNode *node);
 

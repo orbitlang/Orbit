@@ -5,11 +5,11 @@
 #ifndef ORBIT_LIFTOFF_IR_OBJECT_H_
 #define ORBIT_LIFTOFF_IR_OBJECT_H_
 
-#include "orbit/orbiter/opcode.h"
-
 namespace liftoff::ir {
     enum class ObjectType {
+        BASIC_BLOCK,
         INSTRUCTION,
+        MODULE,
         REGISTER
     };
 
@@ -17,7 +17,7 @@ namespace liftoff::ir {
     protected:
         const ObjectType objType_;
 
-        explicit Object(ObjectType type) : objType_(type) {};
+        explicit Object(ObjectType type) noexcept: objType_(type) {};
     };
 }
 

@@ -15,14 +15,19 @@ namespace liftoff::ir {
     public:
         orbiter::OPCode opcode;
 
-        explicit Instruction(orbiter::OPCode opcode) : Object(ObjectType::INSTRUCTION), opcode(opcode) {};
+        Instruction *next = nullptr;
+        Instruction *prev = nullptr;
+
+        explicit Instruction(orbiter::OPCode opcode) noexcept: Object(ObjectType::INSTRUCTION), opcode(opcode) {
+        }
     };
 
     class DefInstruction : public Instruction {
     public:
         Register dest;
 
-        explicit DefInstruction(orbiter::OPCode opcode) : Instruction(opcode) {};
+        explicit DefInstruction(orbiter::OPCode opcode) noexcept: Instruction(opcode) {
+        };
     };
 
     class BinaryOpInstr : public DefInstruction {
@@ -30,14 +35,16 @@ namespace liftoff::ir {
         Object *left = nullptr;
         Object *right = nullptr;
 
-        explicit BinaryOpInstr(orbiter::OPCode opcode) : DefInstruction(opcode) {};
+        explicit BinaryOpInstr(orbiter::OPCode opcode) noexcept: DefInstruction(opcode) {
+        };
     };
 
     class StackLoadInstr : public DefInstruction {
     public:
-        unsigned short offset = 0;
+        U16 offset = 0;
 
-        explicit StackLoadInstr() : DefInstruction(orbiter::OPCode::SKLDR) {};
+        explicit StackLoadInstr() noexcept: DefInstruction(orbiter::OPCode::SKLDR) {
+        };
     };
 }
 
