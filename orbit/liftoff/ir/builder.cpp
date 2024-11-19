@@ -34,6 +34,25 @@ Instruction *Builder::CreateBinaryOp(OPCode opcode, Object *left, Object *right)
     if (binOp != nullptr) {
         new(binOp)BinaryOpInstr(opcode);
 
+        binOp->dest.virtID = this->context_->GetIncCounter();
+
+        binOp->left = left;
+        binOp->right = right;
+
+        this->AddInstruction(binOp);
+    }
+
+    return binOp;
+}
+
+
+Instruction *Builder::CreateBinaryOpFlags(OPCode opcode, U8 flags, Object *left, Object *right) noexcept {
+    auto binOp = this->allocator_.alloc<BinaryOpFlagsInstr>(sizeof(BinaryOpInstr));
+    if (binOp != nullptr) {
+        new(binOp)BinaryOpFlagsInstr(opcode, flags);
+
+        binOp->dest.virtID = this->context_->GetIncCounter();
+
         binOp->left = left;
         binOp->right = right;
 
@@ -50,6 +69,21 @@ Instruction *Builder::LoadFromStackOffset(unsigned short offset) noexcept {
 
         instr->dest.virtID = this->context_->GetIncCounter();
         instr->offset = offset;
+
+        this->AddInstruction(instr);
+    }
+
+    return instr;
+}
+
+Instruction *Builder::LoadImmediate(MachineSize value) noexcept {
+    auto instr = this->allocator_.alloc<LoadImmValueInstr>(sizeof(LoadImmValueInstr));
+    if (instr != nullptr) {
+        new(instr) LoadImmValueInstr();
+
+        instr->dest.virtID = this->context_->GetIncCounter();
+
+        instr->value = value;
 
         this->AddInstruction(instr);
     }

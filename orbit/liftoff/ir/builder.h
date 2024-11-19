@@ -24,7 +24,11 @@ namespace liftoff::ir {
 
         Instruction *CreateBinaryOp(orbiter::OPCode opcode, Object *left, Object *right) noexcept;
 
+        Instruction *CreateBinaryOpFlags(orbiter::OPCode opcode, U8 flags, Object *left, Object *right) noexcept;
+
         Instruction *LoadFromStackOffset(U16 offset) noexcept;
+
+        Instruction *LoadImmediate(MachineSize value) noexcept;
 
         Module *CreateModule() noexcept;
     };

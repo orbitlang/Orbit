@@ -4,7 +4,46 @@
 
 #include <orbit/liftoff/ir/irbuilder.h>
 
+using namespace liftoff;
 using namespace liftoff::ir;
+
+orbiter::OPCode InfixOp2OpCode(scanner::TokenType tt, bool imm, orbiter::ArithFlags &flags) {
+    flags = orbiter::ArithFlags::NONE;
+
+    switch (tt) {
+        case scanner::TokenType::PLUS:
+            return orbiter::OPCode::ADD;
+        case scanner::TokenType::MINUS:
+            return orbiter::OPCode::SUB;
+        case scanner::TokenType::ASTERISK:
+            return orbiter::OPCode::MUL;
+        case scanner::TokenType::SLASH:
+            return orbiter::OPCode::DIV;
+        case scanner::TokenType::SLASH_SLASH:
+            flags = orbiter::ArithFlags::FLOAT;
+            return orbiter::OPCode::DIV;
+        case scanner::TokenType::PERCENT:
+            flags = orbiter::ArithFlags::DIV_REM;
+            return orbiter::OPCode::DIV;
+
+        case scanner::TokenType::AMPERSAND:
+            return orbiter::OPCode::AND;
+        case scanner::TokenType::PIPE:
+            return orbiter::OPCode::OR;
+        case scanner::TokenType::CARET:
+            return orbiter::OPCode::XOR;
+
+        case scanner::TokenType::SHL:
+            return imm ? orbiter::OPCode::SHLI : orbiter::OPCode::SHLR;
+        case scanner::TokenType::SHR:
+            return imm ? orbiter::OPCode::SHRI : orbiter::OPCode::SHRR;
+
+        default:
+            assert(false); // Never get here
+    }
+
+    return {};
+}
 
 Object *IRBuilder::BinaryOP(parser::Binary *binary) {
     const auto *nr = (parser::Binary *) binary->right;
@@ -29,29 +68,11 @@ Object *IRBuilder::BinaryOP(parser::Binary *binary) {
         left = this->visit(binary->left);
     }
 
-    orbiter::OPCode op_code{};
+    auto op_flags = orbiter::ArithFlags::NONE;
 
-    switch (binary->token_type) {
-        case scanner::TokenType::PLUS:
-            op_code = orbiter::OPCode::ADD;
-            break;
-        case scanner::TokenType::MINUS:
-            // TODO
-            break;
-        case scanner::TokenType::ASTERISK:
-            op_code = orbiter::OPCode::MUL;
-            break;
-        case scanner::TokenType::SLASH:
-            op_code = orbiter::OPCode::DIV;
-            break;
-        case scanner::TokenType::SLASH_SLASH:
-            // TODO
-            break;
-        default:
-            assert(false); // Never get here
-    }
+    auto op_code = InfixOp2OpCode(binary->token_type, false, op_flags);
 
-    return this->builder_.CreateBinaryOp(op_code, left, right);
+    return this->builder_.CreateBinaryOpFlags(op_code, (U8) op_flags, left, right);
 }
 
 
@@ -151,6 +172,9 @@ Object *IRBuilder::visitListExpression(parser::ListExpression *node) {
 
 Object *IRBuilder::visitLiteral(parser::Literal *node) {
     // TODO: Implement Literal visitation
+    if (!O_IS_OBJECT(node->literal))
+        return this->builder_.LoadImmediate((MachineSize) node->literal);
+
     return nullptr;
 }
 
