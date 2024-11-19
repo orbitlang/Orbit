@@ -18,8 +18,8 @@ typedef unsigned short U16;
 typedef int I32;
 typedef unsigned int U32;
 
-typedef long I64;
-typedef unsigned long U64;
+typedef long long I64;
+typedef unsigned long long U64;
 
 typedef U64 PtrSize;
 typedef U64 MSize;
