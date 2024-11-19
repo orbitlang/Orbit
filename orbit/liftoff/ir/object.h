@@ -10,14 +10,19 @@ namespace liftoff::ir {
         BASIC_BLOCK,
         INSTRUCTION,
         MODULE,
-        REGISTER
+        REGISTER,
+        VALUE
     };
 
     class Object {
     protected:
         const ObjectType objType_;
 
-        explicit Object(ObjectType type) noexcept: objType_(type) {};
+        explicit Object(ObjectType type) noexcept: objType_(type) {
+        }
+
+    public:
+        [[nodiscard]] ObjectType type() const noexcept { return objType_; }
     };
 }
 

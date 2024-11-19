@@ -10,6 +10,8 @@
 #include <orbit/liftoff/ir/ircontext.h>
 #include <orbit/liftoff/ir/module.h>
 
+#include "value.h"
+
 namespace liftoff::ir {
     class Builder {
         orbiter::IsolateAllocator allocator_;
@@ -31,6 +33,8 @@ namespace liftoff::ir {
         Instruction *LoadImmediate(MachineSize value) noexcept;
 
         Module *CreateModule() noexcept;
+
+        Value *CreateImmediateValue(U16 value) noexcept;
     };
 }
 

@@ -101,3 +101,11 @@ Module *Builder::CreateModule() noexcept {
 
     return mod;
 }
+
+Value *Builder::CreateImmediateValue(U16 value) noexcept {
+    auto r_value = this->allocator_.alloc<Value>(sizeof(Value));
+    if (r_value != nullptr)
+        new(r_value) Value(value);
+
+    return r_value;
+}

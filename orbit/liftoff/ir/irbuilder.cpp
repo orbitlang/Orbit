@@ -7,7 +7,7 @@
 using namespace liftoff;
 using namespace liftoff::ir;
 
-orbiter::OPCode InfixOp2OpCode(scanner::TokenType tt, bool imm, orbiter::ArithFlags &flags) {
+orbiter::OPCode InfixOp2OpCode(const scanner::TokenType tt, const bool imm, orbiter::ArithFlags &flags) {
     flags = orbiter::ArithFlags::NONE;
 
     switch (tt) {
@@ -45,13 +45,14 @@ orbiter::OPCode InfixOp2OpCode(scanner::TokenType tt, bool imm, orbiter::ArithFl
     return {};
 }
 
-Object *IRBuilder::BinaryOP(parser::Binary *binary) {
+Object *IRBuilder::BinaryOP(const parser::Binary *binary) {
     const auto *nr = (parser::Binary *) binary->right;
 
     Object *left;
-    Object *right;
+    Object *right = nullptr;
 
     bool left2right = true;
+    bool r_ignore = false;
 
     if (nr->node_type == parser::NodeType::BINARY
         && (nr->token_type == scanner::TokenType::ASTERISK
@@ -60,17 +61,41 @@ Object *IRBuilder::BinaryOP(parser::Binary *binary) {
         left2right = false;
     }
 
+    if (binary->right->node_type == parser::NodeType::LITERAL
+        && (binary->token_type == scanner::TokenType::SHL
+            || binary->token_type == scanner::TokenType::SHR)) {
+        const auto literal = (parser::Literal *) binary->right;
+
+        if (O_IS_SMI(literal->literal)) {
+            auto number = (PtrSize) literal->literal;
+
+            number >>= 1;
+
+            // Max immediate size: <= 0xFFFF
+            if (number <= 0xFFFF) {
+                right = this->builder_.CreateImmediateValue((U16) number);
+                r_ignore = true;
+            }
+        }
+    }
+
     if (left2right) {
         left = this->visit(binary->left);
-        right = this->visit(binary->right);
+
+        if (!r_ignore)
+            right = this->visit(binary->right);
     } else {
-        right = this->visit(binary->right);
+        if (!r_ignore)
+            right = this->visit(binary->right);
+
         left = this->visit(binary->left);
     }
 
+    assert(right != nullptr);
+
     auto op_flags = orbiter::ArithFlags::NONE;
 
-    auto op_code = InfixOp2OpCode(binary->token_type, false, op_flags);
+    auto op_code = InfixOp2OpCode(binary->token_type, right->type() == ObjectType::VALUE, op_flags);
 
     return this->builder_.CreateBinaryOpFlags(op_code, (U8) op_flags, left, right);
 }

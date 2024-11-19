@@ -21,7 +21,7 @@ namespace liftoff::ir {
 
         friend class ASTVisitor;
 
-        Object *BinaryOP(parser::Binary *binary);
+        Object *BinaryOP(const parser::Binary *binary);
 
         Object *visitASTNode(parser::ASTNode *node);
 
