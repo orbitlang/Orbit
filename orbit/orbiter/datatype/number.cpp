@@ -48,6 +48,6 @@ HNumber orbiter::datatype::UIntNew(Isolate *isolate, const char *string, int bas
 }
 
 TypeInfo *orbiter::datatype::NumberTypeInit(Isolate *isolate) {
-    auto *number = MakeType(isolate, InstanceType::NUMBER, 0, 0, 0);
+    auto *number = MakeType(isolate, InstanceType::NUMBER, sizeof(Number) - sizeof(OObject), 0, 0);
     return number;
 }
