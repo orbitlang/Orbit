@@ -8,13 +8,13 @@ using namespace liftoff::ir;
 using namespace orbiter;
 
 BasicBlock *Builder::AddInstruction(Instruction *instruction) noexcept {
-    auto *bb = this->context_->entry_;
+    auto *bb = this->context->entry_;
 
     if (bb == nullptr) {
         if ((bb = this->allocator_.AllocObject<BasicBlock>()) == nullptr)
             return nullptr;
 
-        this->context_->entry_ = bb;
+        this->context->entry_ = bb;
     }
 
     if (bb->instr.head == nullptr) {
@@ -29,12 +29,26 @@ BasicBlock *Builder::AddInstruction(Instruction *instruction) noexcept {
     return bb;
 }
 
+Instruction *Builder::LoadStoreOffset(orbiter::OPCode opcode, U16 offset) {
+    auto instr = this->allocator_.alloc<LoadStoreWithOffsetInstr>(sizeof(LoadStoreWithOffsetInstr));
+    if (instr != nullptr) {
+        new(instr) LoadStoreWithOffsetInstr(orbiter::OPCode::SKLDR);
+
+        instr->dest.virtID =  this->context->GetIncRVirtCounter();
+        instr->offset = offset;
+
+        this->AddInstruction(instr);
+    }
+
+    return instr;
+}
+
 Instruction *Builder::CreateBinaryOp(OPCode opcode, Object *left, Object *right) noexcept {
     auto binOp = this->allocator_.alloc<BinaryOpInstr>(sizeof(BinaryOpInstr));
     if (binOp != nullptr) {
         new(binOp)BinaryOpInstr(opcode);
 
-        binOp->dest.virtID = this->context_->GetIncCounter();
+        binOp->dest.virtID =  this->context->GetIncRVirtCounter();
 
         binOp->left = left;
         binOp->right = right;
@@ -51,7 +65,7 @@ Instruction *Builder::CreateBinaryOpFlags(OPCode opcode, U8 flags, Object *left,
     if (binOp != nullptr) {
         new(binOp)BinaryOpFlagsInstr(opcode, flags);
 
-        binOp->dest.virtID = this->context_->GetIncCounter();
+        binOp->dest.virtID =  this->context->GetIncRVirtCounter();
 
         binOp->left = left;
         binOp->right = right;
@@ -62,26 +76,12 @@ Instruction *Builder::CreateBinaryOpFlags(OPCode opcode, U8 flags, Object *left,
     return binOp;
 }
 
-Instruction *Builder::LoadFromStackOffset(unsigned short offset) noexcept {
-    auto instr = this->allocator_.alloc<StackLoadInstr>(sizeof(StackLoadInstr));
-    if (instr != nullptr) {
-        new(instr) StackLoadInstr();
-
-        instr->dest.virtID = this->context_->GetIncCounter();
-        instr->offset = offset;
-
-        this->AddInstruction(instr);
-    }
-
-    return instr;
-}
-
 Instruction *Builder::LoadImmediate(MachineSize value) noexcept {
     auto instr = this->allocator_.alloc<LoadImmValueInstr>(sizeof(LoadImmValueInstr));
     if (instr != nullptr) {
         new(instr) LoadImmValueInstr();
 
-        instr->dest.virtID = this->context_->GetIncCounter();
+        instr->dest.virtID =  this->context->GetIncRVirtCounter();
 
         instr->value = value;
 
@@ -96,7 +96,7 @@ Module *Builder::CreateModule() noexcept {
     if (mod != nullptr) {
         new(mod) Module();
 
-        this->context_ = &mod->context_;
+        this->context = &mod->context_;
     }
 
     return mod;

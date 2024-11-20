@@ -19,7 +19,7 @@ namespace liftoff::ir {
     class IRContext {
         BasicBlock *entry_ = nullptr;
 
-        I32 logical_counter_ = 0;
+        U32 logical_counter_ = 0;
 
         friend class Builder;
 
@@ -29,8 +29,8 @@ namespace liftoff::ir {
         explicit IRContext(const IRContextType type) noexcept: type_(type) {
         }
 
-        I32 GetIncCounter() noexcept{
-            return this->logical_counter_++;
+        I32 GetIncRVirtCounter() noexcept {
+            return (I32) this->logical_counter_++;
         }
     };
 }

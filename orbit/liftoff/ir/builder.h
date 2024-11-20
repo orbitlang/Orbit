@@ -16,11 +16,13 @@ namespace liftoff::ir {
     class Builder {
         orbiter::IsolateAllocator allocator_;
 
-        IRContext *context_ = nullptr;
-
         BasicBlock *AddInstruction(Instruction *instruction) noexcept;
 
+        Instruction *LoadStoreOffset(orbiter::OPCode opcode, U16 offset);
+
     public:
+        IRContext *context = nullptr;
+
         explicit Builder(orbiter::Isolate *isolate) noexcept: allocator_(isolate) {
         };
 
@@ -28,7 +30,13 @@ namespace liftoff::ir {
 
         Instruction *CreateBinaryOpFlags(orbiter::OPCode opcode, U8 flags, Object *left, Object *right) noexcept;
 
-        Instruction *LoadFromStackOffset(U16 offset) noexcept;
+        Instruction *LoadConstant(U16 offset) noexcept {
+            return this->LoadStoreOffset(orbiter::OPCode::LDCST, offset);
+        }
+
+        Instruction *LoadFromStackOffset(U16 offset) noexcept {
+            return this->LoadStoreOffset(orbiter::OPCode::SKLDR, offset);
+        }
 
         Instruction *LoadImmediate(MachineSize value) noexcept;
 

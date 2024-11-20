@@ -69,13 +69,13 @@ namespace liftoff::ir {
         };
     };
 
-    class StackLoadInstr : public DefInstruction {
+    class LoadStoreWithOffsetInstr : public DefInstruction {
         friend Builder;
     public:
         U16 offset = 0;
 
     protected:
-        explicit StackLoadInstr() noexcept: DefInstruction(orbiter::OPCode::SKLDR) {
+        explicit LoadStoreWithOffsetInstr(orbiter::OPCode opcode) noexcept: DefInstruction(opcode) {
         };
     };
 }
