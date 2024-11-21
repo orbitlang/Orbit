@@ -309,6 +309,15 @@ Object *IRBuilder::visitTryBlock(parser::TryBlock *node) {
 
 Object *IRBuilder::visitUnary(parser::Unary *node) {
     // TODO: Implement Unary visitation
+    auto *value = this->visit(node->value);
+
+    if (node->node_type == parser::NodeType::UNARY) {
+        if (node->token_type == scanner::TokenType::EXCLAMATION)
+            return this->builder_.CreateUnaryOp(orbiter::OPCode::NOT, value);
+    }
+
+    assert(false);
+
     return nullptr;
 }
 
