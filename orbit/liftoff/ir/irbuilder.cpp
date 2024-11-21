@@ -100,7 +100,6 @@ Object *IRBuilder::BinaryOP(const parser::Binary *binary) {
     return this->builder_.CreateBinaryOpFlags(op_code, (U8) op_flags, left, right);
 }
 
-
 Object *IRBuilder::visitASTNode(parser::ASTNode *node) {
     // TODO: Implement ASTNode visitation
     return nullptr;
@@ -113,9 +112,64 @@ Object *IRBuilder::visitAssignment(parser::Assignment *node) {
 }
 
 Object *IRBuilder::visitBinary(parser::Binary *node) {
+    Object *ret = nullptr;
+    Object *left;
+    Object *right;
+
+    const auto tk_type = node->token_type;
+    auto flags = orbiter::MembershipFlags::IN;
+
     switch (node->node_type) {
         case parser::NodeType::BINARY:
             return this->BinaryOP(node);
+        case parser::NodeType::CMPEQ: {
+            left = this->visit(node->left);
+            right = this->visit(node->right);
+
+            if (tk_type == scanner::TokenType::EQUAL_EQUAL || tk_type == scanner::TokenType::NOT_EQUAL) {
+                ret = this->builder_.CreateBinaryOpFlags(orbiter::OPCode::EQ,
+                                                         (U8) orbiter::EqualityMode::NORMAL, left, right);
+            }
+
+            if (tk_type == scanner::TokenType::EQUAL_STRICT || tk_type == scanner::TokenType::NOT_EQUAL_STRICT) {
+                ret = this->builder_.CreateBinaryOpFlags(orbiter::OPCode::EQ,
+                                                         (U8) orbiter::EqualityMode::STRICT, left, right);
+            }
+
+            if (tk_type == scanner::TokenType::NOT_EQUAL || tk_type == scanner::TokenType::NOT_EQUAL_STRICT)
+                return this->builder_.CreateUnaryOp(orbiter::OPCode::NOT, ret);
+
+            if (tk_type == scanner::TokenType::LESS) {
+                ret = this->builder_.CreateBinaryOpFlags(orbiter::OPCode::CMP,
+                                                         (U8) orbiter::ComparisonMode::LT,
+                                                         left, right);
+            } else if (tk_type == scanner::TokenType::LESS_EQ) {
+                ret = this->builder_.CreateBinaryOpFlags(orbiter::OPCode::CMP,
+                                                         (U8) (orbiter::ComparisonMode::LT |
+                                                               orbiter::ComparisonMode::EQ),
+                                                         left, right);
+            } else if (tk_type == scanner::TokenType::GREATER) {
+                ret = this->builder_.CreateBinaryOpFlags(orbiter::OPCode::CMP,
+                                                         (U8) orbiter::ComparisonMode::GT,
+                                                         left, right);
+            } else if (tk_type == scanner::TokenType::GREATER_EQ) {
+                ret = this->builder_.CreateBinaryOpFlags(orbiter::OPCode::CMP,
+                                                         (U8) (orbiter::ComparisonMode::GT |
+                                                               orbiter::ComparisonMode::EQ),
+                                                         left, right);
+            }
+
+            assert(ret != nullptr);
+
+            return ret;
+        }
+        case parser::NodeType::NOT_IN:
+            flags = orbiter::MembershipFlags::NOT_IN;
+        case parser::NodeType::IN:
+            left = this->visit(node->left);
+            right = this->visit(node->right);
+
+            return this->builder_.CreateBinaryOpFlags(orbiter::OPCode::MEMB, (U8) flags, left, right);
         default:
             assert(false);
     }
