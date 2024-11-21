@@ -48,7 +48,8 @@ NODES = {
             "left": "ASTNode*",
             "right": "ASTNode*"
         },
-        "node_type": ["BINARY", "CHAN_SEND", "ELVIS", "IN", "NOT_IN", "NULL_COALESCING", "SELECTOR", "SYNC_BLOCK"]
+        "node_type": ["BINARY", "CHAN_SEND", "CMPEQ", "ELVIS", "IN", "NOT_IN", "NULL_COALESCING", "SELECTOR",
+                      "SYNC_BLOCK"]
     },
     "Block": {
         "fields": {

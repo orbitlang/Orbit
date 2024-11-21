@@ -30,6 +30,8 @@ namespace liftoff::ir {
 
         Instruction *CreateBinaryOpFlags(orbiter::OPCode opcode, U8 flags, Object *left, Object *right) noexcept;
 
+        Instruction *CreateUnaryOp(orbiter::OPCode opcode, Object *s_reg) noexcept;
+
         Instruction *LoadConstant(U16 offset) noexcept {
             return this->LoadStoreOffset(orbiter::OPCode::LDCST, offset);
         }

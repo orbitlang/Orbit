@@ -78,6 +78,16 @@ namespace liftoff::ir {
         explicit LoadStoreWithOffsetInstr(orbiter::OPCode opcode) noexcept: DefInstruction(opcode) {
         };
     };
+
+    class UnaryOpInstr : public DefInstruction {
+        friend Builder;
+    public:
+        Object *s_reg = nullptr;
+
+    protected:
+        explicit UnaryOpInstr(orbiter::OPCode opcode) noexcept: DefInstruction(opcode) {
+        };
+    };
 }
 
 #endif // !ORBIT_LIFTOFF_IR_INSTRUCTION_H_

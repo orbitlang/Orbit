@@ -736,9 +736,9 @@ ASTHandle<ASTNode *> Parser::ParseVarDecl(const Position &start, bool pub, bool 
     ASTHandle<ASTNode *> expr{};
 
     auto decl = MakeAssignment(
-        this->isolate_,
-        TKCUR_LOC,
-        identifiers.size() > 1 ? NodeType::VAR_DECLARATIONS : NodeType::VAR_DECLARATION);
+            this->isolate_,
+            TKCUR_LOC,
+            identifiers.size() > 1 ? NodeType::VAR_DECLARATIONS : NodeType::VAR_DECLARATION);
 
 
     decl->loc.start = start;
@@ -1177,7 +1177,7 @@ ASTHandle<ASTNode *> Parser::ParseIdentifier() {
     if (!id_name)
         throw DatatypeException();
 
-    if (!this->sym_t_->LookupInsert(id_name.get(),TKCUR_START.offset))
+    if (!this->sym_t_->LookupInsert(id_name.get(), TKCUR_START.offset))
         throw SymbolTableException();
 
     auto id = MakeIdentifier(this->isolate_, TKCUR_LOC);
@@ -1231,12 +1231,30 @@ ASTHandle<ASTNode *> Parser::ParseIndexing(ASTHandle<ASTNode *> &left) {
 ASTHandle<ASTNode *> Parser::ParseInfix(ASTHandle<ASTNode *> &left) {
     const auto tk_type = TKCUR_TYPE;
 
+    auto node_type = NodeType::BINARY;
+
     this->Eat(true);
 
     auto right = this->ParseExpression(tk_type);
 
-    auto infix = MakeBinary(this->isolate_, TKCUR_LOC,
-                            tk_type == TokenType::ARROW_LEFT ? NodeType::CHAN_SEND : NodeType::BINARY);
+    switch (tk_type) {
+        case scanner::TokenType::ARROW_LEFT:
+            node_type = NodeType::CHAN_SEND;
+            break;
+        case scanner::TokenType::LESS:
+        case scanner::TokenType::LESS_EQ:
+        case scanner::TokenType::GREATER:
+        case scanner::TokenType::GREATER_EQ:
+        case scanner::TokenType::EQUAL_EQUAL:
+        case scanner::TokenType::EQUAL_STRICT:
+        case scanner::TokenType::NOT_EQUAL:
+        case scanner::TokenType::NOT_EQUAL_STRICT:
+            node_type = NodeType::CMPEQ;
+        default:
+            break;
+    }
+
+    auto infix = MakeBinary(this->isolate_, TKCUR_LOC, node_type);
 
     infix->token_type = tk_type;
 
@@ -1570,9 +1588,9 @@ ASTHandle<ASTNode *> Parser::ParseStatement() {
                 this->sym_t_->scope->type = ScopeType::GENERATOR;
             case TokenType::KW_RETURN: {
                 auto ret = MakeUnary(
-                    this->isolate_,
-                    TKCUR_LOC,
-                    TKCUR_TYPE == TokenType::KW_RETURN ? NodeType::RETURN : NodeType::YIELD);
+                        this->isolate_,
+                        TKCUR_LOC,
+                        TKCUR_TYPE == TokenType::KW_RETURN ? NodeType::RETURN : NodeType::YIELD);
 
                 this->Eat(false);
 
@@ -1924,12 +1942,12 @@ Parser::NudMeth Parser::LookupNUD(TokenType token) noexcept {
         case TokenType::TILDE:
             return &Parser::ParsePrefix;
 
-        // Identifiers and self
+            // Identifiers and self
         case TokenType::IDENTIFIER:
         case TokenType::SELF:
             return &Parser::ParseIdentifier;
 
-        // Grouping and composite types
+            // Grouping and composite types
         case TokenType::LEFT_BRACES:
             return &Parser::ParseDictSet;
         case TokenType::LEFT_ROUND:
@@ -1937,7 +1955,7 @@ Parser::NudMeth Parser::LookupNUD(TokenType token) noexcept {
         case TokenType::LEFT_SQUARE:
             return &Parser::ParseList;
 
-        // Keywords that can start expressions
+            // Keywords that can start expressions
         case TokenType::KW_AWAIT:
         case TokenType::KW_PANIC:
         case TokenType::KW_SPAWN:

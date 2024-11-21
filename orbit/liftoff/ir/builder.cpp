@@ -34,7 +34,7 @@ Instruction *Builder::LoadStoreOffset(orbiter::OPCode opcode, U16 offset) {
     if (instr != nullptr) {
         new(instr) LoadStoreWithOffsetInstr(orbiter::OPCode::SKLDR);
 
-        instr->dest.virtID =  this->context->GetIncRVirtCounter();
+        instr->dest.virtID = this->context->GetIncRVirtCounter();
         instr->offset = offset;
 
         this->AddInstruction(instr);
@@ -48,7 +48,7 @@ Instruction *Builder::CreateBinaryOp(OPCode opcode, Object *left, Object *right)
     if (binOp != nullptr) {
         new(binOp)BinaryOpInstr(opcode);
 
-        binOp->dest.virtID =  this->context->GetIncRVirtCounter();
+        binOp->dest.virtID = this->context->GetIncRVirtCounter();
 
         binOp->left = left;
         binOp->right = right;
@@ -59,13 +59,12 @@ Instruction *Builder::CreateBinaryOp(OPCode opcode, Object *left, Object *right)
     return binOp;
 }
 
-
 Instruction *Builder::CreateBinaryOpFlags(OPCode opcode, U8 flags, Object *left, Object *right) noexcept {
     auto binOp = this->allocator_.alloc<BinaryOpFlagsInstr>(sizeof(BinaryOpInstr));
     if (binOp != nullptr) {
         new(binOp)BinaryOpFlagsInstr(opcode, flags);
 
-        binOp->dest.virtID =  this->context->GetIncRVirtCounter();
+        binOp->dest.virtID = this->context->GetIncRVirtCounter();
 
         binOp->left = left;
         binOp->right = right;
@@ -74,6 +73,21 @@ Instruction *Builder::CreateBinaryOpFlags(OPCode opcode, U8 flags, Object *left,
     }
 
     return binOp;
+}
+
+Instruction *Builder::CreateUnaryOp(OPCode opcode, ir::Object *s_reg) noexcept {
+    auto unaryOp = this->allocator_.alloc<UnaryOpInstr>(sizeof(UnaryOpInstr));
+    if (unaryOp != nullptr) {
+        new(unaryOp)UnaryOpInstr(opcode);
+
+        unaryOp->dest.virtID = this->context->GetIncRVirtCounter();
+
+        unaryOp->s_reg = s_reg;
+
+        this->AddInstruction(unaryOp);
+    }
+
+    return unaryOp;
 }
 
 Instruction *Builder::LoadImmediate(MachineSize value) noexcept {
@@ -81,7 +95,7 @@ Instruction *Builder::LoadImmediate(MachineSize value) noexcept {
     if (instr != nullptr) {
         new(instr) LoadImmValueInstr();
 
-        instr->dest.virtID =  this->context->GetIncRVirtCounter();
+        instr->dest.virtID = this->context->GetIncRVirtCounter();
 
         instr->value = value;
 
