@@ -2,105 +2,80 @@
 //
 // Licensed under the Apache License v2.0
 
+#include <cassert>
 #include <orbit/liftoff/ir/builder.h>
 
 using namespace liftoff::ir;
 using namespace orbiter;
 
-BasicBlock *Builder::AddInstruction(Instruction *instruction) noexcept {
-    auto *bb = this->context->entry_;
+Instruction *Builder::LoadStoreOffset(const OPCode opcode, const U16 offset) {
+    auto *instr = this->CreateObject<LoadStoreWithOffsetInstr>(opcode, offset);
 
-    if (bb == nullptr) {
-        if ((bb = this->allocator_.AllocObject<BasicBlock>()) == nullptr)
-            return nullptr;
+    this->AddInstruction(instr);
 
-        this->context->entry_ = bb;
-    }
-
-    if (bb->instr.head == nullptr) {
-        bb->instr.head = instruction;
-        bb->instr.tail = instruction;
-    } else {
-        instruction->prev = bb->instr.tail;
-        bb->instr.tail->next = instruction;
-        bb->instr.tail = instruction;
-    }
-
-    return bb;
-}
-
-Instruction *Builder::LoadStoreOffset(orbiter::OPCode opcode, U16 offset) {
-    auto instr = this->allocator_.alloc<LoadStoreWithOffsetInstr>(sizeof(LoadStoreWithOffsetInstr));
-    if (instr != nullptr) {
-        new(instr) LoadStoreWithOffsetInstr(orbiter::OPCode::SKLDR);
-
-        instr->dest.virtID = this->context->GetIncRVirtCounter();
-        instr->offset = offset;
-
-        this->AddInstruction(instr);
-    }
+    instr->dest.virtID = this->context->GetIncRVirtCounter();
 
     return instr;
 }
 
-Instruction *Builder::CreateBinaryOp(OPCode opcode, Object *left, Object *right) noexcept {
-    auto binOp = this->allocator_.alloc<BinaryOpInstr>(sizeof(BinaryOpInstr));
-    if (binOp != nullptr) {
-        new(binOp)BinaryOpInstr(opcode);
+Instruction *Builder::CreateBinaryOp(const OPCode opcode, Object *left, Object *right) {
+    auto *instr = this->CreateObject<BinaryOpInstr>(opcode);
 
-        binOp->dest.virtID = this->context->GetIncRVirtCounter();
+    instr->dest.virtID = this->context->GetIncRVirtCounter();
 
-        binOp->left = left;
-        binOp->right = right;
+    instr->left = left;
+    instr->right = right;
 
-        this->AddInstruction(binOp);
-    }
+    this->AddInstruction(instr);
+
+    return instr;
+}
+
+Instruction *Builder::CreateBinaryOpFlags(const OPCode opcode, const U8 flags, Object *left, Object *right) {
+    auto *binOp = this->CreateObject<BinaryOpFlagsInstr>(opcode, flags);
+
+    binOp->dest.virtID = this->context->GetIncRVirtCounter();
+
+    binOp->left = left;
+    binOp->right = right;
+
+    this->AddInstruction(binOp);
 
     return binOp;
 }
 
-Instruction *Builder::CreateBinaryOpFlags(OPCode opcode, U8 flags, Object *left, Object *right) noexcept {
-    auto binOp = this->allocator_.alloc<BinaryOpFlagsInstr>(sizeof(BinaryOpInstr));
-    if (binOp != nullptr) {
-        new(binOp)BinaryOpFlagsInstr(opcode, flags);
+Instruction *Builder::CreateBranch(const OPCode opcode, BasicBlock *continuation, BasicBlock *destination) {
+    auto *branch = this->CreateObject<BranchInstruction>(opcode, destination);
 
-        binOp->dest.virtID = this->context->GetIncRVirtCounter();
+    this->AddInstruction(branch);
 
-        binOp->left = left;
-        binOp->right = right;
+    if (continuation == nullptr)
+        this->CreateAppendBasicBlock();
+    else
+        this->AppendBasicBlock(continuation);
 
-        this->AddInstruction(binOp);
-    }
-
-    return binOp;
+    return branch;
 }
 
-Instruction *Builder::CreateUnaryOp(OPCode opcode, ir::Object *s_reg) noexcept {
-    auto unaryOp = this->allocator_.alloc<UnaryOpInstr>(sizeof(UnaryOpInstr));
-    if (unaryOp != nullptr) {
-        new(unaryOp)UnaryOpInstr(opcode);
+Instruction *Builder::CreateUnaryOp(const OPCode opcode, Object *s_reg) {
+    auto *unaryOp = this->CreateObject<UnaryOpInstr>(opcode);
 
-        unaryOp->dest.virtID = this->context->GetIncRVirtCounter();
+    unaryOp->dest.virtID = this->context->GetIncRVirtCounter();
 
-        unaryOp->s_reg = s_reg;
+    unaryOp->s_reg = s_reg;
 
-        this->AddInstruction(unaryOp);
-    }
+    this->AddInstruction(unaryOp);
 
     return unaryOp;
 }
 
-Instruction *Builder::LoadImmediate(MachineSize value) noexcept {
-    auto instr = this->allocator_.alloc<LoadImmValueInstr>(sizeof(LoadImmValueInstr));
-    if (instr != nullptr) {
-        new(instr) LoadImmValueInstr();
+Instruction *Builder::LoadImmediate(const MachineSize value) {
+    auto *instr = this->CreateObject<LoadImmValueInstr>(value);
+    instr->dest.virtID = this->context->GetIncRVirtCounter();
 
-        instr->dest.virtID = this->context->GetIncRVirtCounter();
+    instr->value = value;
 
-        instr->value = value;
-
-        this->AddInstruction(instr);
-    }
+    this->AddInstruction(instr);
 
     return instr;
 }
@@ -116,10 +91,50 @@ Module *Builder::CreateModule() noexcept {
     return mod;
 }
 
-Value *Builder::CreateImmediateValue(U16 value) noexcept {
-    auto r_value = this->allocator_.alloc<Value>(sizeof(Value));
-    if (r_value != nullptr)
-        new(r_value) Value(value);
+void Builder::AppendBasicBlock(BasicBlock *bb) const noexcept {
+    assert(bb != nullptr);
 
-    return r_value;
+    if (this->context->entry_ == nullptr) {
+        this->context->entry_ = bb;
+        this->context->current_ = bb;
+
+        return;
+    }
+
+    this->context->current_->next = bb;
+    bb->prev = this->context->current_;
+
+    this->context->current_ = bb;
+}
+
+void Builder::AddToObjsList(Object *obj) const noexcept {
+    obj->memory_.prev = this->context->objs;
+    this->context->objs = obj;
+}
+
+void Builder::DeleteBasicBlock(BasicBlock *bb) const noexcept {
+    this->RemoveFromObjsList(bb);
+
+    bb->~BasicBlock();
+
+    this->allocator_.free(bb);
+}
+
+void Builder::RemoveFromObjsList(Object *obj) const noexcept {
+    auto *next = obj->memory_.next;
+    auto *prev = obj->memory_.prev;
+
+    obj->memory_.next = nullptr;
+    obj->memory_.prev = nullptr;
+
+    if (next != nullptr)
+        next->memory_.prev = prev;
+
+    if (prev == nullptr) {
+        this->context->objs = next;
+
+        return;
+    }
+
+    prev->memory_.next = next;
 }

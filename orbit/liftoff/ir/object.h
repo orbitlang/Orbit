@@ -15,6 +15,13 @@ namespace liftoff::ir {
     };
 
     class Object {
+        struct {
+            Object *next = nullptr;
+            Object *prev = nullptr;
+        } memory_;
+
+        friend class Builder;
+
     protected:
         const ObjectType objType_;
 

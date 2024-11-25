@@ -17,13 +17,16 @@ namespace liftoff::ir {
     };
 
     class IRContext {
-        BasicBlock *entry_ = nullptr;
+        Object *objs = nullptr;
 
         U32 logical_counter_ = 0;
 
         friend class Builder;
 
     public:
+        BasicBlock *entry_ = nullptr;
+        BasicBlock *current_ = nullptr;
+
         IRContextType type_;
 
         explicit IRContext(const IRContextType type) noexcept: type_(type) {
