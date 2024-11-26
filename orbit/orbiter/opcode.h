@@ -76,7 +76,14 @@ namespace orbiter {
         LDIMM,      // Load immediate into register:    OPCODE | 4 DST | 4 SHIFT     | 16 IMM
         MOV,        // Copy value between registers:    OPCODE | 4 DST | 4 SRC       | 16 RESERVED
         MOWN,       // Move value between registers:    OPCODE | 4 DST | 4 SRC       | 16 RESERVED (Move ownership)
-        SKLDR       // Load from stack into register:   OPCODE | 4 DST | 4 RESERVED  | 16 OFFSET
+        SKLDR,      // Load from stack into register:   OPCODE | 4 DST | 4 RESERVED  | 16 OFFSET
+
+        // Jump Instructions
+        // Format: OPCODE | 4 DST | 20 OFFSET
+        JEN,        // Jump if nil
+        JF,         // Jump if false
+        JT,         // Jump if true
+        JMP,        // Unconditional jump
     };
 }
 

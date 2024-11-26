@@ -11,7 +11,8 @@ namespace liftoff::ir {
         INSTRUCTION,
         MODULE,
         REGISTER,
-        VALUE
+        VALUE,
+        VIRT_INSTRUCTION
     };
 
     class Object {

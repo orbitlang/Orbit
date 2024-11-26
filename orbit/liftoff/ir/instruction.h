@@ -5,6 +5,8 @@
 #ifndef ORBIT_LIFTOFF_IR_INSTRUCTION_H_
 #define ORBIT_LIFTOFF_IR_INSTRUCTION_H_
 
+#include <cassert>
+
 #include <orbit/orbiter/opcode.h>
 
 #include <orbit/liftoff/ir/object.h>
@@ -17,17 +19,39 @@ namespace liftoff::ir {
 
     class Builder;
 
+    class HasDestinationMixin {
+    public:
+        Register dest;
+    };
+
     class Instruction : public Object {
         friend Builder;
 
     public:
-        orbiter::OPCode opcode;
-
         Instruction *next = nullptr;
         Instruction *prev = nullptr;
 
     protected:
-        explicit Instruction(orbiter::OPCode opcode) noexcept: Object(ObjectType::INSTRUCTION), opcode(opcode) {
+        explicit Instruction(ObjectType obj_type) noexcept: Object(obj_type) {
+        }
+    };
+
+    class PhysInstruction : public Instruction {
+        friend Builder;
+
+    protected:
+        orbiter::OPCode opcode{};
+
+        explicit PhysInstruction(orbiter::OPCode opcode) noexcept: Instruction(ObjectType::INSTRUCTION),
+                                                                   opcode(opcode) {
+        }
+    };
+
+    class VirtualInstruction : public Instruction, public HasDestinationMixin {
+        friend Builder;
+
+    protected:
+        explicit VirtualInstruction() noexcept: Instruction(ObjectType::VIRT_INSTRUCTION) {
         }
     };
 
@@ -35,14 +59,11 @@ namespace liftoff::ir {
     // DefInstruction
     // *****************************************************************************************************************
 
-    class DefInstruction : public Instruction {
+    class DefInstruction : public PhysInstruction, public HasDestinationMixin {
         friend Builder;
 
-    public:
-        Register dest;
-
     protected:
-        explicit DefInstruction(orbiter::OPCode opcode) noexcept: Instruction(opcode) {
+        explicit DefInstruction(orbiter::OPCode opcode) noexcept: PhysInstruction(opcode) {
         }
     };
 
@@ -71,14 +92,17 @@ namespace liftoff::ir {
     };
 
     // Branch
-    class BranchInstruction : public Instruction {
+    class BranchInstruction : public PhysInstruction {
         friend Builder;
 
     public:
+        Object *value = nullptr;
+
         BasicBlock *jmp = nullptr;
 
     protected:
-        explicit BranchInstruction(orbiter::OPCode opcode, BasicBlock *jmp) noexcept: Instruction(opcode), jmp(jmp) {
+        explicit BranchInstruction(orbiter::OPCode opcode, Object *value,
+                                   BasicBlock *jmp) noexcept: PhysInstruction(opcode), value(value), jmp(jmp) {
         }
     };
 
@@ -103,6 +127,27 @@ namespace liftoff::ir {
     protected:
         explicit LoadStoreWithOffsetInstr(orbiter::OPCode opcode, U16 offset) noexcept: DefInstruction(opcode),
             offset(offset) {
+        }
+    };
+
+    // Phi(φ) virtual instruction
+    class PhiInstr : public VirtualInstruction {
+        // NOTE: Currently, only two instructions can be allocated,
+        // useful for example for the ternary operator or null coalescing.
+        // If necessary, it will be implemented through a vector
+
+        Instruction *targets_[2]{};
+        short index = 0;
+
+        friend Builder;
+
+    public:
+        PhiInstr *AddTarget(Instruction *target) {
+            assert(this->index <=2);
+
+            this->targets_[this->index++] = target;
+
+            return this;
         }
     };
 

@@ -44,8 +44,9 @@ Instruction *Builder::CreateBinaryOpFlags(const OPCode opcode, const U8 flags, O
     return binOp;
 }
 
-Instruction *Builder::CreateBranch(const OPCode opcode, BasicBlock *continuation, BasicBlock *destination) {
-    auto *branch = this->CreateObject<BranchInstruction>(opcode, destination);
+Instruction *Builder::CreateBranch(const OPCode opcode, Object *value, BasicBlock *continuation,
+                                   BasicBlock *destination) {
+    auto *branch = this->CreateObject<BranchInstruction>(opcode, value, destination);
 
     this->AddInstruction(branch);
 
@@ -71,6 +72,7 @@ Instruction *Builder::CreateUnaryOp(const OPCode opcode, Object *s_reg) {
 
 Instruction *Builder::LoadImmediate(const MachineSize value) {
     auto *instr = this->CreateObject<LoadImmValueInstr>(value);
+
     instr->dest.virtID = this->context->GetIncRVirtCounter();
 
     instr->value = value;
@@ -89,6 +91,14 @@ Module *Builder::CreateModule() noexcept {
     }
 
     return mod;
+}
+
+PhiInstr *Builder::CreatePhi() {
+    auto *phi = this->CreateObject<PhiInstr>();
+
+    this->AddInstruction(phi);
+
+    return phi;
 }
 
 void Builder::AppendBasicBlock(BasicBlock *bb) const noexcept {

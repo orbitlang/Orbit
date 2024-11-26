@@ -83,7 +83,8 @@ namespace liftoff::ir {
 
         Instruction *CreateBinaryOpFlags(orbiter::OPCode opcode, U8 flags, Object *left, Object *right);
 
-        Instruction *CreateBranch(orbiter::OPCode opcode, BasicBlock *continuation, BasicBlock *destination);
+        Instruction *CreateBranch(orbiter::OPCode opcode, Object *value, BasicBlock *continuation,
+                                  BasicBlock *destination);
 
         Instruction *CreateUnaryOp(orbiter::OPCode opcode, Object *s_reg);
 
@@ -98,6 +99,8 @@ namespace liftoff::ir {
         Instruction *LoadImmediate(MachineSize value);
 
         Module *CreateModule() noexcept;
+
+        PhiInstr *CreatePhi();
 
         Value *CreateImmediateValue(const U16 value) {
             return this->CreateObject<Value>(value);
