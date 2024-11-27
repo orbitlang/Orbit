@@ -271,7 +271,7 @@ def generate_cleanup(fields):
         elif type.startswith("std::vector"):
             cleanup_lines.append(f"        node->{name}.~vector();")
         elif type.startswith("SymbolTable"):
-            cleanup_lines.append(f"        SymbolTableDel(node->{name});")
+            cleanup_lines.append(f"        SymbolTable::Delete(node->{name});")
         elif type.endswith("ASTNode*") or type in NODES:
             cleanup_lines.append(f"        if (node->{name})")
             cleanup_lines.append(f"            ASTNodeCleanup(node->{name});")

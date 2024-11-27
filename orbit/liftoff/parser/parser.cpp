@@ -130,14 +130,14 @@ ASTHandle<ASTNode *> Parser::ParseClassTrait() {
     } catch (...) {
         this->exports = old_pub;
 
-        this->sym_t_->LeaveScope();
+        //this->sym_t_->LeaveScope();
 
         throw;
     }
 
     this->exports = old_pub;
 
-    this->sym_t_->LeaveScope();
+    this->sym_t_->LeaveScope(ct->body->loc.end.offset, ct->body->loc.end.line);
 
     return ct;
 }
@@ -208,9 +208,10 @@ ASTHandle<ASTNode *> Parser::ParseForInStatement() {
 
     auto forIn = MakeLoop(this->isolate_, TKCUR_LOC, NodeType::FOR_IN);
 
-    this->Eat(true);
+    if(!this->sym_t_->DeclareNestedScope(TKCUR_START.offset))
+        throw SymbolTableException();
 
-    this->sym_t_->EnterNestedScope();
+    this->Eat(true);
 
     if (this->Match(TokenType::KW_VAR)) {
         constexpr Position end{};
@@ -242,7 +243,9 @@ ASTHandle<ASTNode *> Parser::ParseForInStatement() {
 
     forIn->body = this->ParseBlock(false).release();
 
-    this->sym_t_->LeaveNestedScope();
+    forIn->loc.end = forIn->body->loc.end;
+
+    this->sym_t_->LeaveNestedScope(forIn->loc.end.offset);
 
     return forIn;
 }
@@ -355,9 +358,10 @@ ASTHandle<ASTNode *> Parser::ParseLoopStatement() {
 
     auto loop = MakeLoop(this->isolate_, TKCUR_LOC, NodeType::LOOP);
 
-    this->Eat(true);
+    if(!this->sym_t_->DeclareNestedScope(TKCUR_START.offset))
+        throw SymbolTableException();
 
-    this->sym_t_->EnterNestedScope();
+    this->Eat(true);
 
     if (!this->Match(TokenType::LEFT_BRACES)) {
         loop->init = this->ParseExpression().release();
@@ -380,7 +384,7 @@ ASTHandle<ASTNode *> Parser::ParseLoopStatement() {
     loop->body = this->ParseBlock(false).release();
     loop->loc.end = loop->body->loc.end;
 
-    this->sym_t_->LeaveNestedScope();
+    this->sym_t_->LeaveNestedScope(loop->loc.end.offset);
 
     return loop;
 }
@@ -585,7 +589,8 @@ ASTHandle<ASTNode *> Parser::ParseSwitchCase(bool as_if) {
 
     auto block = MakeBlock(this->isolate_, TKCUR_LOC);
 
-    this->sym_t_->EnterNestedScope();
+    if(!this->sym_t_->DeclareNestedScope(TKCUR_START.offset))
+        throw SymbolTableException();
 
     while (!this->Match(TokenType::KW_CASE, TokenType::KW_DEFAULT, TokenType::RIGHT_BRACES)) {
         if (!this->MatchEat(TokenType::KW_FALLTHROUGH, false)) {
@@ -602,7 +607,7 @@ ASTHandle<ASTNode *> Parser::ParseSwitchCase(bool as_if) {
         this->Eat(true);
     }
 
-    this->sym_t_->LeaveNestedScope();
+    this->sym_t_->LeaveNestedScope(block->loc.end.offset);
 
     sw_case->body = block.release();
 
@@ -890,8 +895,8 @@ ASTHandle<ASTNode *> Parser::ParseBlock(bool nested) {
     if (!this->MatchEat(TokenType::LEFT_BRACES, true))
         throw ParserException(18);
 
-    if (nested)
-        this->sym_t_->EnterNestedScope();
+    if (nested && !this->sym_t_->DeclareNestedScope(block->loc.start.offset))
+        throw SymbolTableException();
 
     while (!this->Match(TokenType::RIGHT_BRACES)) {
         block->statements.push_back(this->ParseStatement());
@@ -908,7 +913,7 @@ ASTHandle<ASTNode *> Parser::ParseBlock(bool nested) {
         throw ParserException(19);
 
     if (nested)
-        this->sym_t_->LeaveNestedScope();
+        this->sym_t_->LeaveNestedScope(TKCUR_END.offset);
 
     block->loc.end = TKCUR_END;
 
@@ -1783,8 +1788,7 @@ ASTHandle<liftoff::parser::Function *> Parser::ParseFunction(bool inl) {
             throw ParserException(68);
     }
 
-    this->sym_t_->scope->line_end = func->loc.end.line;
-    this->sym_t_->LeaveScope();
+    this->sym_t_->LeaveScope(func->loc.end.offset, func->loc.end.line);
 
     return func;
 }
@@ -2075,6 +2079,11 @@ ASTHandle<Module *> Parser::Parse() noexcept {
 
             while (this->MatchEat(TokenType::SEMICOLON, true));
         }
+
+        this->sym_t_->LeaveScope(loc.end.offset, loc.end.line);
+
+        module->sym_t = this->sym_t_;
+        this->sym_t_ = nullptr;
     } catch (ParserException &e) {
         printf("%s\n", kStandardError[e.err_idx]);
         assert(false);
@@ -2082,9 +2091,6 @@ ASTHandle<Module *> Parser::Parse() noexcept {
     catch (...) {
         assert(false);
     }
-
-    module->sym_t = sym_t_;
-    this->sym_t_ = nullptr;
 
     return module;
 }

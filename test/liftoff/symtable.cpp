@@ -12,11 +12,11 @@ class SymbolTableTest : public ::testing::Test {
 protected:
     void SetUp() override {
         this->isolate = orbiter::Isolate::New();
-        this->table = SymbolTable::New(isolate);
+        this->table = SymbolTable::New(this->isolate);
     }
 
     void TearDown() override {
-        SymbolTableDel(this->table);
+        SymbolTable::Delete(this->table);
     }
 
     orbiter::Isolate *isolate = nullptr;
@@ -82,8 +82,8 @@ TEST_F(SymbolTableTest, LookupClosure) {
     ASSERT_TRUE(orbiter::datatype::ORStringCompare(sym->name, "closure1") == 0);
     ASSERT_TRUE(sym->type == SymbolType::UPVALUE);
 
-    this->table->LeaveScope(); // Exit from Inner
-    this->table->LeaveScope(); // Exit from func1
+    this->table->LeaveScope(18, 8); // Exit from Inner
+    this->table->LeaveScope(20, 20); // Exit from func1
 }
 
 TEST_F(SymbolTableTest, DuplicateError) {
@@ -104,7 +104,7 @@ TEST_F(SymbolTableTest, EnterScope) {
 
     ASSERT_TRUE(this->table->DeclareSymbolScope("func1", SymbolType::FUNC, 10, 5) != nullptr);
 
-    this->table->LeaveScope();
+    this->table->LeaveScope(20, 10);
 
     ASSERT_TRUE(this->table->EnterScope("func1"));
 }
@@ -112,9 +112,9 @@ TEST_F(SymbolTableTest, EnterScope) {
 TEST_F(SymbolTableTest, NestedScope) {
     ASSERT_TRUE(this->table->Declare("var1", SymbolType::VARIABLE, 1));
 
-    this->table->EnterNestedScope();
+    this->table->DeclareNestedScope(2);
 
-    ASSERT_TRUE(this->table->Declare("var_nested", SymbolType::VARIABLE, 2));
+    ASSERT_TRUE(this->table->Declare("var_nested", SymbolType::VARIABLE, 3));
 
     ASSERT_NE(this->table->Lookup("var1", 3), nullptr);
     ASSERT_NE(this->table->Lookup("var_nested", 3), nullptr);

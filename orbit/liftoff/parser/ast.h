@@ -494,7 +494,7 @@ namespace liftoff::parser {
                 node->statements.~vector();
                 node->exports.~vector();
                 node->imports.~vector();
-                SymbolTableDel(node->sym_t);
+                SymbolTable::Delete(node->sym_t);
                 break;
             }
             case NodeType::NATIVEFUNC: {
