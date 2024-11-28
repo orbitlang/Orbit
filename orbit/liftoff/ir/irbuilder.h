@@ -23,15 +23,17 @@ namespace liftoff::ir {
 
         Object *BinaryOP(const parser::Binary *binary);
 
+        Object *CreateJumpForElvisOrNil(const parser::Binary *binary, orbiter::OPCode opcode);
+
         Object *visitASTNode(parser::ASTNode *node);
 
         Object *visitAssignment(parser::Assignment *node);
 
         Object *visitBinary(parser::Binary *node);
 
-        Object *visitBlock(parser::Block *node);
+        Object *visitBlock(const parser::Block *node);
 
-        Object *visitBranch(parser::Branch *node);
+        Object *visitBranch(const parser::Branch *node);
 
         Object *visitCall(parser::Call *node);
 

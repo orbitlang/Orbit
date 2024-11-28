@@ -100,6 +100,22 @@ Object *IRBuilder::BinaryOP(const parser::Binary *binary) {
     return this->builder_.CreateBinaryOpFlags(op_code, (U8) op_flags, left, right);
 }
 
+Object *IRBuilder::CreateJumpForElvisOrNil(const parser::Binary *binary, orbiter::OPCode opcode) {
+    auto *left = this->visit(binary->left);
+
+    auto *end = this->builder_.CreateBasicBlock();
+
+    this->builder_.CreateBranch(opcode, left, nullptr, end);
+
+    auto *right = this->visit(binary->right);
+
+    this->builder_.AppendBasicBlock(end);
+
+    const auto phi = this->builder_.CreatePhi();
+
+    return phi->AddTarget((Instruction *) left)->AddTarget((Instruction *) right);
+}
+
 Object *IRBuilder::visitASTNode(parser::ASTNode *node) {
     // TODO: Implement ASTNode visitation
     return nullptr;
@@ -163,6 +179,10 @@ Object *IRBuilder::visitBinary(parser::Binary *node) {
 
             return ret;
         }
+        case parser::NodeType::ELVIS:
+            return this->CreateJumpForElvisOrNil(node, orbiter::OPCode::JT);
+        case parser::NodeType::NULL_COALESCING:
+            return this->CreateJumpForElvisOrNil(node, orbiter::OPCode::JEN);
         case parser::NodeType::NOT_IN:
             flags = orbiter::MembershipFlags::NOT_IN;
         case parser::NodeType::IN:
@@ -173,16 +193,49 @@ Object *IRBuilder::visitBinary(parser::Binary *node) {
         default:
             assert(false);
     }
+
     return nullptr;
 }
 
-Object *IRBuilder::visitBlock(parser::Block *node) {
-    // TODO: Implement Block visitation
-    return nullptr;
+Object *IRBuilder::visitBlock(const parser::Block *node) {
+    Object *last = nullptr;
+
+    for (auto &statement: node->statements)
+        last = this->visit(statement.get());
+
+    return last;
 }
 
-Object *IRBuilder::visitBranch(parser::Branch *node) {
-    // TODO: Implement Branch visitation
+Object *IRBuilder::visitBranch(const parser::Branch *node) {
+    BranchInstruction *last = nullptr;
+
+    auto *end = this->builder_.CreateBasicBlock();
+    auto *orelse = end;
+
+    auto *value = this->visit(node->test);
+
+    this->builder_.CreateBranch(orbiter::OPCode::JF, value, nullptr, orelse);
+
+    this->sym_t_->EnterNestedScope(node->body->loc.start.offset);
+
+    this->visit(node->body);
+
+    this->sym_t_->LeaveNestedScope();
+
+    if (node->orelse != nullptr) {
+        last = (BranchInstruction *) this->builder_.CreateBranch(orbiter::OPCode::JMP, nullptr, orelse, nullptr);
+
+        this->visit(node->orelse);
+    }
+
+    if (last != nullptr) {
+        if (this->builder_.context->current_->IsInstructionListEmpty())
+            last->jmp = this->builder_.context->current_;
+        else
+            last->jmp = this->builder_.CreateAppendBasicBlock();
+    } else
+        this->builder_.AppendBasicBlock(end);
+
     return nullptr;
 }
 
