@@ -58,6 +58,14 @@ Instruction *Builder::CreateBranch(const OPCode opcode, Object *value, BasicBloc
     return branch;
 }
 
+Instruction *Builder::CreateJump(BasicBlock *destination) {
+    auto *jmp = this->CreateObject<BranchInstruction>(OPCode::JMP, nullptr, destination);
+
+    this->AddInstruction(jmp);
+
+    return jmp;
+}
+
 Instruction *Builder::CreateUnaryOp(const OPCode opcode, Object *s_reg) {
     auto *unaryOp = this->CreateObject<UnaryOpInstr>(opcode);
 

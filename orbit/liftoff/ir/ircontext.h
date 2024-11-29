@@ -8,6 +8,7 @@
 #include <orbit/datatype.h>
 
 #include <orbit/liftoff/ir/basicblock.h>
+#include <orbit/liftoff/ir/jblock.h>
 
 namespace liftoff::ir {
     enum class IRContextType {
@@ -22,10 +23,11 @@ namespace liftoff::ir {
         U32 logical_counter_ = 0;
 
         friend class Builder;
-
     public:
         BasicBlock *entry_ = nullptr;
         BasicBlock *current_ = nullptr;
+
+        JBlock *j_chain = nullptr;
 
         IRContextType type_;
 

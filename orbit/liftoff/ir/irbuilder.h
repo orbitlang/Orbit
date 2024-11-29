@@ -53,13 +53,13 @@ namespace liftoff::ir {
 
         Object *visitJump(parser::Jump *node);
 
-        Object *visitLabel(parser::Label *node);
+        Object *visitLabel(const parser::Label *node);
 
         Object *visitListExpression(parser::ListExpression *node);
 
         Object *visitLiteral(parser::Literal *node);
 
-        Object *visitLoop(parser::Loop *node);
+        Object *visitLoop(const parser::Loop *node);
 
         Object *visitModule(parser::Module *node);
 

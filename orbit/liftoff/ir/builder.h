@@ -86,6 +86,8 @@ namespace liftoff::ir {
         Instruction *CreateBranch(orbiter::OPCode opcode, Object *value, BasicBlock *continuation,
                                   BasicBlock *destination);
 
+        Instruction *CreateJump(BasicBlock *destination);
+
         Instruction *CreateUnaryOp(orbiter::OPCode opcode, Object *s_reg);
 
         Instruction *LoadConstant(U16 offset) {

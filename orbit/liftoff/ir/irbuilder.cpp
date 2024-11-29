@@ -288,13 +288,19 @@ Object *IRBuilder::visitImportName(parser::ImportName *node) {
 }
 
 Object *IRBuilder::visitJump(parser::Jump *node) {
-    // TODO: Implement Jump visitation
-    return nullptr;
+    auto b_target = this->builder_.context->j_chain->FindLabeledBlock(node->label);
+
+    if (b_target == nullptr)
+        assert(false); // TODO ERROR
+
+    return this->builder_.CreateJump(
+        node->token_type == scanner::TokenType::KW_BREAK ? b_target->end : b_target->begin);
 }
 
-Object *IRBuilder::visitLabel(parser::Label *node) {
-    // TODO: Implement Label visitation
-    return nullptr;
+Object *IRBuilder::visitLabel(const parser::Label *node) {
+    JBlock _(&this->builder_, JBlockType::LABEL, node->label);
+
+    return this->visit(node->statement);
 }
 
 Object *IRBuilder::visitListExpression(parser::ListExpression *node) {
@@ -310,8 +316,54 @@ Object *IRBuilder::visitLiteral(parser::Literal *node) {
     return nullptr;
 }
 
-Object *IRBuilder::visitLoop(parser::Loop *node) {
-    // TODO: Implement Loop visitation
+Object *IRBuilder::visitLoop(const parser::Loop *node) {
+    const JBlock jb(&this->builder_, JBlockType::LOOP, nullptr);
+
+    if (node->node_type == parser::NodeType::LOOP) {
+        this->builder_.AppendBasicBlock(jb.begin);
+
+        if (node->test != nullptr) {
+            const auto test = this->visit(node->test);
+
+            this->builder_.CreateBranch(orbiter::OPCode::JF, test, nullptr, jb.end);
+        }
+
+        this->sym_t_->EnterNestedScope(node->body->loc.start.offset);
+
+        this->visit(node->body);
+
+        this->builder_.CreateJump(jb.begin);
+
+        this->sym_t_->LeaveNestedScope();
+
+        return nullptr;
+    }
+
+    if (node->node_type != parser::NodeType::FOR)
+        assert(false); // Never get here
+
+    this->sym_t_->EnterNestedScope(node->loc.start.offset);
+
+    if (node->init != nullptr)
+        this->visit(node->init);
+
+    this->builder_.AppendBasicBlock(jb.begin);
+
+    auto *test = this->visit(node->test);
+
+    this->builder_.CreateBranch(orbiter::OPCode::JF, test, nullptr, jb.end);
+
+    this->visit(node->body);
+
+    if (node->inc != nullptr)
+        this->visit(node->inc);
+
+    this->builder_.CreateJump(jb.begin);
+
+    this->sym_t_->LeaveNestedScope();
+
+    this->builder_.AppendBasicBlock(jb.end);
+
     return nullptr;
 }
 
