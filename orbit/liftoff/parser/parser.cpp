@@ -208,7 +208,7 @@ ASTHandle<ASTNode *> Parser::ParseForInStatement() {
 
     auto forIn = MakeLoop(this->isolate_, TKCUR_LOC, NodeType::FOR_IN);
 
-    if(!this->sym_t_->DeclareNestedScope(TKCUR_START.offset))
+    if (!this->sym_t_->DeclareNestedScope(TKCUR_START.offset))
         throw SymbolTableException();
 
     this->Eat(true);
@@ -358,13 +358,14 @@ ASTHandle<ASTNode *> Parser::ParseLoopStatement() {
 
     auto loop = MakeLoop(this->isolate_, TKCUR_LOC, NodeType::LOOP);
 
-    if(!this->sym_t_->DeclareNestedScope(TKCUR_START.offset))
+    if (!this->sym_t_->DeclareNestedScope(TKCUR_START.offset))
         throw SymbolTableException();
 
     this->Eat(true);
 
     if (!this->Match(TokenType::LEFT_BRACES)) {
-        loop->init = this->ParseExpression().release();
+        if (!this->Match(TokenType::SEMICOLON))
+            loop->init = this->ParseExpression().release();
 
         if (this->MatchEat(TokenType::SEMICOLON, true)) {
             loop->node_type = NodeType::FOR;
@@ -379,6 +380,11 @@ ASTHandle<ASTNode *> Parser::ParseLoopStatement() {
             if (!this->Match(TokenType::LEFT_BRACES))
                 loop->inc = this->ParseExpression().release();
         }
+    }
+
+    if (loop->node_type == NodeType::LOOP) {
+        loop->test = loop->init;
+        loop->init = nullptr;
     }
 
     loop->body = this->ParseBlock(false).release();
@@ -589,7 +595,7 @@ ASTHandle<ASTNode *> Parser::ParseSwitchCase(bool as_if) {
 
     auto block = MakeBlock(this->isolate_, TKCUR_LOC);
 
-    if(!this->sym_t_->DeclareNestedScope(TKCUR_START.offset))
+    if (!this->sym_t_->DeclareNestedScope(TKCUR_START.offset))
         throw SymbolTableException();
 
     while (!this->Match(TokenType::KW_CASE, TokenType::KW_DEFAULT, TokenType::RIGHT_BRACES)) {
@@ -741,9 +747,9 @@ ASTHandle<ASTNode *> Parser::ParseVarDecl(const Position &start, bool pub, bool 
     ASTHandle<ASTNode *> expr{};
 
     auto decl = MakeAssignment(
-            this->isolate_,
-            TKCUR_LOC,
-            identifiers.size() > 1 ? NodeType::VAR_DECLARATIONS : NodeType::VAR_DECLARATION);
+        this->isolate_,
+        TKCUR_LOC,
+        identifiers.size() > 1 ? NodeType::VAR_DECLARATIONS : NodeType::VAR_DECLARATION);
 
 
     decl->loc.start = start;
@@ -1593,9 +1599,9 @@ ASTHandle<ASTNode *> Parser::ParseStatement() {
                 this->sym_t_->scope->type = ScopeType::GENERATOR;
             case TokenType::KW_RETURN: {
                 auto ret = MakeUnary(
-                        this->isolate_,
-                        TKCUR_LOC,
-                        TKCUR_TYPE == TokenType::KW_RETURN ? NodeType::RETURN : NodeType::YIELD);
+                    this->isolate_,
+                    TKCUR_LOC,
+                    TKCUR_TYPE == TokenType::KW_RETURN ? NodeType::RETURN : NodeType::YIELD);
 
                 this->Eat(false);
 
@@ -1946,12 +1952,12 @@ Parser::NudMeth Parser::LookupNUD(TokenType token) noexcept {
         case TokenType::TILDE:
             return &Parser::ParsePrefix;
 
-            // Identifiers and self
+        // Identifiers and self
         case TokenType::IDENTIFIER:
         case TokenType::SELF:
             return &Parser::ParseIdentifier;
 
-            // Grouping and composite types
+        // Grouping and composite types
         case TokenType::LEFT_BRACES:
             return &Parser::ParseDictSet;
         case TokenType::LEFT_ROUND:
@@ -1959,7 +1965,7 @@ Parser::NudMeth Parser::LookupNUD(TokenType token) noexcept {
         case TokenType::LEFT_SQUARE:
             return &Parser::ParseList;
 
-            // Keywords that can start expressions
+        // Keywords that can start expressions
         case TokenType::KW_AWAIT:
         case TokenType::KW_PANIC:
         case TokenType::KW_SPAWN:
