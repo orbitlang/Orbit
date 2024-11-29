@@ -1,0 +1,40 @@
+// This source file is part of the Orbit project.
+//
+// Licensed under the Apache License v2.0
+
+#ifndef ORBIT_LIFTOFF_IR_JBLOCK_H_
+#define ORBIT_LIFTOFF_IR_JBLOCK_H_
+
+#include <orbit/orbiter/datatype/orstring.h>
+
+#include <orbit/liftoff/ir/basicblock.h>
+
+namespace liftoff::ir {
+    class Builder;
+
+    enum class JBlockType {
+        LABEL,
+        LOOP
+    };
+
+    class JBlock {
+        Builder *builder_;
+    public:
+        JBlock *prev = nullptr;
+
+        BasicBlock *begin = nullptr;
+        BasicBlock *end = nullptr;
+
+        orbiter::datatype::ORString *label = nullptr;
+
+        JBlockType type = JBlockType::LOOP;
+
+        JBlock(Builder *builder, JBlockType type, orbiter::datatype::ORString *label);
+
+        ~JBlock();
+
+        JBlock *FindLabeledBlock(const orbiter::datatype::ORString *label);
+    };
+};
+
+#endif // !ORBIT_LIFTOFF_IR_JBLOCK_H_
