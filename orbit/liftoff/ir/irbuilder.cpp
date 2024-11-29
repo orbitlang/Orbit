@@ -365,8 +365,18 @@ Object *IRBuilder::visitUnary(parser::Unary *node) {
     auto *value = this->visit(node->value);
 
     if (node->node_type == parser::NodeType::UNARY) {
-        if (node->token_type == scanner::TokenType::EXCLAMATION)
-            return this->builder_.CreateUnaryOp(orbiter::OPCode::NOT, value);
+        switch (node->token_type) {
+            case scanner::TokenType::EXCLAMATION:
+                return this->builder_.CreateUnaryOp(orbiter::OPCode::NOT, value);
+            case scanner::TokenType::MINUS:
+                return this->builder_.CreateUnaryOp(orbiter::OPCode::NEG, value);
+            case scanner::TokenType::PLUS:
+                return value; // + Is a No-Op
+            case scanner::TokenType::TILDE:
+                return this->builder_.CreateUnaryOp(orbiter::OPCode::MVN, value);
+            default:
+                assert(false);
+        }
     }
 
     assert(false);

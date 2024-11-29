@@ -69,7 +69,11 @@ namespace orbiter {
         CMP,        // Generic compare (flags for <,>,<=,>=)
         EQ,         // Equality (== or ===)
 
-        NOT,
+        // UNARY OP
+        // Format: OPCODE | 4 DST | 4 SRC | 24 RESERVED
+        MVN,        // Move Not (bitwise complement)
+        NEG,        // Arithmetic negation (-value)
+        NOT,        // Logical NOT (!value)
 
         // Load/Store Operations
         LDCST,      // Load constr from Code object:    OPCODE | 4 DST | 4 RESERVED  | 16 OFFSET
