@@ -16,7 +16,7 @@ namespace orbiter {
 }
 
 namespace orbiter::datatype {
-    constexpr auto kOddBallMask = memory::RCBitOffsets::InlineMask | memory::RCBitOffsets::StrongVFLAGMask;
+    constexpr auto kOddBallMask = (MSize) memory::RCBitOffsets::InlineMask | memory::RCBitOffsets::StrongVFLAGMask;
 
     constexpr auto kOddBallNIL = nullptr;
     constexpr auto kOddBallFALSE = 0x08u | kOddBallMask;
@@ -132,12 +132,12 @@ namespace orbiter::datatype {
 #define O_IS_ODDBALL(object)                ((!O_IS_SMI(object)) && (((MSize)object & orbiter::datatype::kOddBallMask) == orbiter::datatype::kOddBallMask))
 #define O_IS_OBJECT(object)                 ((!O_IS_SMI(object)) && (((MSize)object & orbiter::datatype::kOddBallMask) != orbiter::datatype::kOddBallMask))
 
-#define O_IS_FALSE(object)                  (O_IS_ODDBALL(object) && ((object & kOddBallFALSE) == kOddBallFALSE))
-#define O_IS_TRUE(object)                   (O_IS_ODDBALL(object) && ((object & kOddBallTRUE) == kOddBallTRUE))
-#define O_IS_NIL(object)                    (object == kOddBallNIL)
+#define O_IS_FALSE(object)                  (O_IS_ODDBALL(object) && ((object & orbiter::datatype::kOddBallFALSE) == orbiter::datatype::kOddBallFALSE))
+#define O_IS_TRUE(object)                   (O_IS_ODDBALL(object) && ((object & orbiter::datatype::kOddBallTRUE) == orbiter::datatype::kOddBallTRUE))
+#define O_IS_NIL(object)                    (object == orbiter::datatype::kOddBallNIL)
 
 #define O_INCREF(object)                    (O_IS_OBJECT(object) && O_GET_RC(object).IncStrong(), object)
-#define O_VFY_INCREF(object)                ((object != nullptr && (O_IS_OBJECT(object) && O_GET_RC(object).IncStrong())) ? nullptr : object)
+#define O_VFY_INCREF(object)                ((object != nullptr && (O_IS_OBJECT(object) && O_GET_RC(object).IncStrong())) ? object : nullptr)
 
 #define O_GET_SLOT_COUNT(type)              (((type->i_size) - sizeof(OObject)) / sizeof(MSize))
 }
