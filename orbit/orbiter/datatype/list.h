@@ -81,6 +81,10 @@ namespace orbiter::datatype {
 
     HList ListNew(Isolate *isolate, MSize capacity);
 
+    inline HList ListNew(Isolate *isolate) {
+        return ListNew(isolate, kListInitialCapacity);
+    }
+
     /**
      * @brief Initialize and create the specified type
      *
