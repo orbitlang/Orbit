@@ -425,7 +425,7 @@ Object *IRBuilder::visitTryBlock(parser::TryBlock *node) {
     return nullptr;
 }
 
-Object *IRBuilder::visitUnary(parser::Unary *node) {
+Object *IRBuilder::visitUnary(const parser::Unary *node) {
     // TODO: Implement Unary visitation
     auto *value = this->visit(node->value);
 
@@ -444,10 +444,17 @@ Object *IRBuilder::visitUnary(parser::Unary *node) {
         }
     }
 
-    if (node->token_type == scanner::TokenType::KW_RETURN)
-        return this->builder_.CreateReturn(value);
+    if (node->node_type == parser::NodeType::PANIC)
+        return this->builder_.CreateUnaryOp(orbiter::OPCode::PANIC, value);
+
+    if (node->node_type == parser::NodeType::RETURN)
+        return this->builder_.CreateReturn(value, false);
+
+    if (node->node_type == parser::NodeType::YIELD)
+        return this->builder_.CreateReturn(value, true);
 
     assert(false);
+
     return nullptr;
 }
 

@@ -70,13 +70,15 @@ namespace orbiter {
         EQ, // Equality (== or ===)
 
         // UNARY OP
-        // Format: OPCODE | 4 DST | 4 SRC | 24 RESERVED
+        // Format: OPCODE | 4 DST | 4 SRC | 16 RESERVED
         MVN, // Move Not (bitwise complement)
         NEG, // Arithmetic negation (-value)
         NOT, // Logical NOT (!value)
 
-        // Format: OPCODE | 4 SRC
+        // Format: OPCODE | 4 SRC | 20 RESERVED
+        PANIC, // Start panic
         RET, // Return instruction
+        YLD, // Yield instruction
 
         // Load/Store Operations
         LDCST, // Load constr from Code object:    OPCODE | 4 DST | 4 RESERVED  | 16 OFFSET

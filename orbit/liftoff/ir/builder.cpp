@@ -90,8 +90,8 @@ Instruction *Builder::LoadImmediate(const MachineSize value) {
     return instr;
 }
 
-Instruction *Builder::CreateReturn(Object *s_reg) {
-    auto *instr = this->CreateObject<ReturnInstruction>();
+Instruction *Builder::CreateReturn(Object *s_reg, bool yield) {
+    auto *instr = this->CreateObject<ReturnInstruction>(s_reg,yield);
 
     this->AddInstruction(instr);
 

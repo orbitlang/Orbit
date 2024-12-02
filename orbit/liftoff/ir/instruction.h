@@ -58,7 +58,14 @@ namespace liftoff::ir {
     class ReturnInstruction : PhysInstruction {
         friend Builder;
 
-        ReturnInstruction() : PhysInstruction(orbiter::OPCode::RET) {
+    public:
+        Object *source = nullptr;
+
+    protected:
+        explicit ReturnInstruction(Object *source, bool yield) : PhysInstruction(
+                                                                     yield
+                                                                         ? orbiter::OPCode::YLD
+                                                                         : orbiter::OPCode::RET), source(source) {
         }
     };
 

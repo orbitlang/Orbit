@@ -79,7 +79,7 @@ namespace liftoff::ir {
 
         Object *visitTryBlock(parser::TryBlock *node);
 
-        Object *visitUnary(parser::Unary *node);
+        Object *visitUnary(const parser::Unary *node);
 
         void PutSyncExit(const JBlock *block);
     public:

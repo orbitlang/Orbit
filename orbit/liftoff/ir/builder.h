@@ -100,7 +100,7 @@ namespace liftoff::ir {
 
         Instruction *LoadImmediate(MachineSize value);
 
-        Instruction *CreateReturn(Object *s_reg);
+        Instruction *CreateReturn(Object *s_reg, bool yield);
 
         Module *CreateModule() noexcept;
 
