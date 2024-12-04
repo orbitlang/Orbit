@@ -23,20 +23,23 @@ namespace orbiter {
         // NONE = DIV (integer division)
     };
 
-    enum class EqualityMode : U8 {
-        NORMAL,
-        STRICT
-    };
-
     enum class ComparisonMode : U8 {
         EQ = 0x1, // Equal (LE, GE)
         LT = 0x2, // Less Than (<)
         GT = 0x4, // Greater Than (>)
     };
 
-    enum class MembershipFlags : U8 {
-        IN = 0x0,
-        NOT_IN = 0x1
+    enum class EqualityMode : U8 {
+        NORMAL,
+        STRICT
+    };
+
+    enum class LoadFuncFlags : U8 {
+        SIMPLE = 0,
+
+        ASYNC = 0x1,
+        CLOSURE = 0x2,
+        GENERATOR = 0x4
     };
 
     enum class LoadConstantMode : U8 {
@@ -44,6 +47,11 @@ namespace orbiter {
         FALSE,
         TRUE,
         NIL
+    };
+
+    enum class MembershipFlags : U8 {
+        IN = 0x0,
+        NOT_IN = 0x1
     };
 
     // Single instruction format:
@@ -88,11 +96,15 @@ namespace orbiter {
         YLD, // Yield instruction
 
         // Load/Store Operations
-        LDCST, // Load constr from Code object:    OPCODE | 4 DST | 4 FLAGS(LoadConstantMode) | 16 OFFSET
-        LDIMM, // Load immediate into register:    OPCODE | 4 DST | 4 SHIFT     | 16 IMM
-        MOV, // Copy value between registers:    OPCODE | 4 DST | 4 SRC       | 16 RESERVED
-        MOWN, // Move value between registers:    OPCODE | 4 DST | 4 SRC       | 16 RESERVED (Move ownership)
-        SKLDR, // Load from stack into register:   OPCODE | 4 DST | 4 RESERVED  | 16 OFFSET
+        LDCODE, // Load Code from Code object:      OPCODE | 4 DST | 4 RESERVED  | 16 OFFSET
+        LDCST, // Load constr from Code object:     OPCODE | 4 DST | 4 FLAGS(LoadConstantMode) | 16 OFFSET
+        LDIMM, // Load immediate into register:     OPCODE | 4 DST | 4 SHIFT     | 16 IMM
+        MOV, // Copy value between registers:       OPCODE | 4 DST | 4 SRC       | 16 RESERVED
+        MOWN, // Move value between registers:      OPCODE | 4 DST | 4 SRC       | 16 RESERVED (Move ownership)
+        SKLDR, // Load from stack into register:    OPCODE | 4 DST | 4 RESERVED  | 16 OFFSET
+
+        // OPCODE | 4 DST | 4 SRC | 4 FLAGS | 12 RESERVED
+        LDFUNC, // Create function from Code object
 
         // Jump Instructions
         // Format: OPCODE | 4 DST | 20 OFFSET
@@ -111,5 +123,7 @@ namespace orbiter {
 ENUMBITMASK_ENABLE(orbiter::ArithFlags);
 
 ENUMBITMASK_ENABLE(orbiter::ComparisonMode);
+
+ENUMBITMASK_ENABLE(orbiter::LoadFuncFlags);
 
 #endif // !ORBIT_ORBITER_OPCODE_H_

@@ -121,6 +121,46 @@ namespace liftoff::ir {
     };
 
     // Load/Store
+
+    class OffsetInstruction : public DefInstruction {
+    public:
+        U16 offset = 0;
+
+        OffsetInstruction(orbiter::OPCode opcode, U16 offset) noexcept : DefInstruction(opcode), offset(offset) {
+        }
+    };
+
+    class LoadCodeInstr : public OffsetInstruction {
+        friend Builder;
+
+    protected:
+        explicit LoadCodeInstr(U16 offset) noexcept: OffsetInstruction(orbiter::OPCode::LDCODE, offset) {
+        }
+    };
+
+    class LoadFuncInstr : public DefInstruction {
+        friend Builder;
+
+    public:
+        Object *src = nullptr;
+
+        U8 flags = 0;
+
+    protected:
+        LoadFuncInstr(Object *src, U8 flags) noexcept: DefInstruction(orbiter::OPCode::LDFUNC), src(src), flags(flags) {
+        }
+    };
+
+    class LoadImmConstantInstr : public DefInstruction {
+        U8 mode;
+
+        friend Builder;
+
+    protected:
+        explicit LoadImmConstantInstr(U8 mode) : DefInstruction(orbiter::OPCode::LDCST), mode(mode) {
+        }
+    };
+
     class LoadImmValueInstr : public DefInstruction {
         friend Builder;
 
@@ -132,24 +172,12 @@ namespace liftoff::ir {
         }
     };
 
-    class LoadImmConstantInstr : public DefInstruction {
-        U8 mode;
-
-        friend Builder;
-    protected:
-        explicit LoadImmConstantInstr(U8 mode) : DefInstruction(orbiter::OPCode::LDCST), mode(mode) {
-        }
-    };
-
-    class LoadStoreWithOffsetInstr : public DefInstruction {
+    class LoadStoreWithOffsetInstr : public OffsetInstruction {
         friend Builder;
 
-    public:
-        U16 offset = 0;
-
     protected:
-        explicit LoadStoreWithOffsetInstr(orbiter::OPCode opcode, U16 offset) noexcept: DefInstruction(opcode),
-            offset(offset) {
+        explicit LoadStoreWithOffsetInstr(orbiter::OPCode opcode, U16 offset) noexcept: OffsetInstruction(
+            opcode, offset) {
         }
     };
 
