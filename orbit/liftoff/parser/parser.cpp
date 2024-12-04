@@ -921,7 +921,7 @@ ASTHandle<ASTNode *> Parser::ParseBlock(bool nested) {
     if (nested)
         this->sym_t_->LeaveNestedScope(TKCUR_END.offset);
 
-    block->loc.end = TKCUR_END;
+    block->loc.end = TKCUR_START;
 
     return block;
 }
@@ -1786,12 +1786,16 @@ ASTHandle<liftoff::parser::Function *> Parser::ParseFunction(bool inl) {
 
     this->IgnoreNewLineIF(TokenType::LEFT_BRACES);
 
-    if (this->Match(TokenType::LEFT_BRACES))
+    if (this->Match(TokenType::LEFT_BRACES)) {
         func->body = this->ParseBlock(false).release();
+        func->loc.end = func->body->loc.end;
+    }
     else {
         if (!this->context_->CheckBack(ContextType::CLASS)
             && !this->context_->CheckBack(ContextType::TRAIT))
             throw ParserException(68);
+
+        func->loc.end = TKCUR_START;
     }
 
     this->sym_t_->LeaveScope(func->loc.end.offset, func->loc.end.line);
