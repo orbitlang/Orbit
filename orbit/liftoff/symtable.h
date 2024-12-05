@@ -100,6 +100,16 @@ namespace liftoff {
         MSize line_start = 0;
 
         MSize line_end = 0;
+
+        bool closure = false;
+
+        [[nodiscard]] bool ShouldCreateClosure() const {
+            return this->closure_offset > 0;
+        }
+
+        [[nodiscard]] U16 GetClosureSize() const {
+            return this->closure_offset;
+        }
     };
 
     struct Symbol {
@@ -122,6 +132,8 @@ namespace liftoff {
 
     class SymbolTable {
         orbiter::Isolate *isolate = nullptr;
+
+        unsigned short *c_offset = nullptr;
 
         explicit SymbolTable(orbiter::Isolate *isolate): isolate(isolate) {
         }

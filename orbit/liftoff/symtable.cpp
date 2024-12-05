@@ -297,7 +297,14 @@ Symbol *SymbolTable::LookupInsert(ORString *name, MSize offset) noexcept {
 
         sym->type = SymbolType::UPVALUE;
 
-        sym->offset = sym->defining_scope->closure_offset++;
+        if (this->c_offset == nullptr)
+            this->c_offset = &sym->defining_scope->closure_offset;
+
+        sym->offset = *this->c_offset;
+
+        *this->c_offset += 1;
+
+        this->scope->closure = true;
 
         return sym;
     }
@@ -369,6 +376,9 @@ void SymbolTable::LeaveScope(MSize offset, MSize line_end) noexcept {
 
     c_scope->sub_scope.offset_end = offset;
     c_scope->line_end = line_end;
+
+    if (this->c_offset == &c_scope->closure_offset)
+        this->c_offset = nullptr;
 
     if (this->scope->type != ScopeType::MODULE)
         this->scope = c_scope->back;
