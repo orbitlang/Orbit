@@ -228,7 +228,7 @@ namespace liftoff::parser {
 
         [[nodiscard]] ASTHandle<Function *> ParseFunction(bool inl);
 
-        [[nodiscard]] ASTHandle<Parameter *> ParseParameter(const scanner::Position &start, NodeType type, int offset);
+        [[nodiscard]] ASTHandle<Parameter *> ParseParameter(const scanner::Position &start, NodeType type);
 
         [[nodiscard]] orbiter::datatype::HORString GetDocString();
 

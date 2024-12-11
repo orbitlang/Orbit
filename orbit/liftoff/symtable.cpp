@@ -167,9 +167,14 @@ Symbol *SymbolTable::Declare(ORString *name, SymbolType type, MSize offset) noex
     symbol->decl_offset = offset;
 
     symbol->offset = 0;
+    symbol->stack_offset = 0;
 
-    if (type != SymbolType::UNKNOWN && type != SymbolType::PARAMETER && type != SymbolType::VARIABLE)
-        symbol->offset = (short) this->scope->static_offset++;
+    if (type != SymbolType::UNKNOWN) {
+        if (type == SymbolType::PARAMETER)
+            symbol->offset = this->scope->parameter_count++;
+        else if (type != SymbolType::VARIABLE)
+            symbol->offset = this->scope->static_offset++;
+    }
 
     symbol->nesting = table->nesting;
 
@@ -291,13 +296,18 @@ Symbol *SymbolTable::Lookup(const char *name, MSize offset) noexcept {
 Symbol *SymbolTable::LookupInsert(ORString *name, MSize offset) noexcept {
     auto *sym = this->Lookup(name, offset);
     if (sym != nullptr) {
-        if (sym->type != SymbolType::VARIABLE
+        if ((sym->type != SymbolType::VARIABLE && sym->type != SymbolType::PARAMETER)
             || sym->defining_scope == nullptr
             || this->scope == sym->defining_scope
             || sym->defining_scope->type != ScopeType::FUNCTION)
             return sym;
 
-        sym->type = SymbolType::UPVALUE;
+        if (sym->type == SymbolType::PARAMETER) {
+            sym->type = SymbolType::PARAMETER_UPVALUE;
+            sym->stack_offset = sym->offset;
+        }
+        else
+            sym->type = SymbolType::UPVALUE;
 
         if (this->c_offset == nullptr)
             this->c_offset = &sym->defining_scope->closure_offset;

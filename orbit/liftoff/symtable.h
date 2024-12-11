@@ -15,10 +15,10 @@ namespace liftoff {
 
     using STHEntry = orbiter::datatype::HEntry<orbiter::datatype::ORString *, struct Symbol *>;
     using STHMap = orbiter::datatype::HashMap<
-        orbiter::datatype::ORString *,
-        Symbol *,
-        orbiter::datatype::ORStringEqual,
-        orbiter::datatype::ORStringHash
+            orbiter::datatype::ORString *,
+            Symbol *,
+            orbiter::datatype::ORStringEqual,
+            orbiter::datatype::ORStringHash
     >;
 
     enum class SymbolTableError {
@@ -38,6 +38,7 @@ namespace liftoff {
         NATIVE_FUNC,
         NATIVE_VAR,
         PARAMETER,
+        PARAMETER_UPVALUE,
         TRAIT,
         VARIABLE,
         UPVALUE,
@@ -76,6 +77,7 @@ namespace liftoff {
         }
 
         friend class Scope;
+
         friend class SymbolTable;
     };
 
@@ -89,6 +91,8 @@ namespace liftoff {
         unsigned short closure_offset = 0;
 
         unsigned short static_offset = 0;
+
+        unsigned short parameter_count = 0;
 
         unsigned short local_variables = 0;
 
@@ -117,6 +121,12 @@ namespace liftoff {
         [[nodiscard]] U16 GetLocalVariableCount() const {
             return this->local_variables;
         }
+
+        [[nodiscard]] U16 GetParameterCount() const {
+            assert(this->type == ScopeType::FUNCTION);
+
+            return this->parameter_count;
+        }
     };
 
     struct Symbol {
@@ -134,6 +144,8 @@ namespace liftoff {
 
         unsigned short offset;
 
+        unsigned short stack_offset;
+
         unsigned short nesting;
     };
 
@@ -142,7 +154,7 @@ namespace liftoff {
 
         unsigned short *c_offset = nullptr;
 
-        explicit SymbolTable(orbiter::Isolate *isolate): isolate(isolate) {
+        explicit SymbolTable(orbiter::Isolate *isolate) : isolate(isolate) {
         }
 
         ~SymbolTable();
