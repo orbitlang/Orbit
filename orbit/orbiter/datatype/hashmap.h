@@ -6,6 +6,7 @@
 #define ORBIT_ORBITER_DATATYPE_HASHMAP_H_
 
 #include <functional>
+#include <cstring>
 
 #include <orbit/orbiter/datatype/oobject.h>
 

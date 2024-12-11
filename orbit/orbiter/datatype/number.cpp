@@ -2,6 +2,8 @@
 //
 // Licensed under the Apache License v2.0
 
+#include <cstdlib>
+
 #include <orbit/orbiter/datatype/number.h>
 
 using namespace orbiter::datatype;

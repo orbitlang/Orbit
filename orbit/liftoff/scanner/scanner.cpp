@@ -4,6 +4,7 @@
 
 #include <cassert>
 #include <cctype>
+#include <cstdlib>
 
 #include <orbit/orbiter/datatype/stringbuilder.h>
 
