@@ -119,11 +119,12 @@ Object *IRBuilder::CreateJumpForElvisOrNil(const parser::Binary *binary, orbiter
 Object *IRBuilder::LoadVariable(const Symbol *symbol) {
     auto offset = (I16) symbol->offset;
 
-    if (symbol->type == SymbolType::PARAMETER_UPVALUE || symbol->type == SymbolType::UPVALUE) {
+    if (symbol->upvalue) {
         const auto on_stack = symbol->defining_scope == this->sym_t_->scope;
 
-        return this->builder_.LoadFromClosureAtOffset(offset, on_stack ? orbiter::ClosureLSMode::STACK
-                                                                       : orbiter::ClosureLSMode::FUNC_SLOT);
+        return this->builder_.LoadFromClosureAtOffset(offset, on_stack
+                                                                  ? orbiter::ClosureLSMode::STACK
+                                                                  : orbiter::ClosureLSMode::FUNC_SLOT);
     }
 
     // TODO: Module/Class/Trait
@@ -146,25 +147,29 @@ Object *IRBuilder::StoreVariable(const Symbol *symbol, Object *value) {
     if (value == nullptr)
         value = this->builder_.LoadNilValue();
 
-    if (symbol->type == SymbolType::PARAMETER_UPVALUE || symbol->type == SymbolType::UPVALUE) {
+    if (symbol->upvalue) {
         const auto on_stack = symbol->defining_scope == this->sym_t_->scope;
 
-        return this->builder_.StoreToClosureAtOffset(value, offset, on_stack ? orbiter::ClosureLSMode::STACK
-                                                                             : orbiter::ClosureLSMode::FUNC_SLOT);
+        this->builder_.StoreToClosureAtOffset(value, offset,
+                                              on_stack
+                                                  ? orbiter::ClosureLSMode::STACK
+                                                  : orbiter::ClosureLSMode::FUNC_SLOT);
+    } else {
+        // TODO: Module/Class/Trait
+
+        if (symbol->type == SymbolType::PARAMETER) {
+            const auto params_count = (I16) this->sym_t_->scope->GetParameterCount();
+            const auto p_offset = params_count - offset;
+
+            assert(p_offset > 0);
+
+            offset = (I16) -p_offset;
+        }
+
+        this->builder_.StoreToStackOffset(value, offset);
     }
 
-    // TODO: Module/Class/Trait
-
-    if (symbol->type == SymbolType::PARAMETER) {
-        const auto params_count = (I16) this->sym_t_->scope->GetParameterCount();
-        const auto p_offset = params_count - offset;
-
-        assert(p_offset > 0);
-
-        offset = (I16) -p_offset;
-    }
-
-    return this->builder_.StoreToStackOffset(value, offset);
+    return nullptr;
 }
 
 Object *IRBuilder::visitASTNode(parser::ASTNode *node) {
@@ -177,7 +182,7 @@ Object *IRBuilder::visitAssignment(parser::Assignment *node) {
     const Symbol *sym;
 
     if (node->name->node_type == parser::NodeType::TUPLE) {
-        assert(false);
+        //assert(false);
         return nullptr;
     }
 
@@ -333,7 +338,11 @@ Object *IRBuilder::visitDecorator(parser::Decorator *node) {
 }
 
 Object *IRBuilder::visitFunction(const parser::Function *node) {
+    // params / ret addr / EBP / [locals] / [closure_ptr]
+
     auto f_flags = orbiter::LoadFuncFlags::SIMPLE;
+
+    this->builder_.IRContextNew(IRContextType::FUNCTION);
 
     if (!this->sym_t_->EnterScope(node->name))
         throw SymbolTableException();
@@ -345,19 +354,35 @@ Object *IRBuilder::visitFunction(const parser::Function *node) {
     if (this->sym_t_->scope->ShouldCreateClosure()) {
         this->builder_.AllocStackSlots(1, orbiter::AllocaFlags::ZERO_INIT);
 
-        const auto closure = this->builder_.CreateUnaryOp(orbiter::OPCode::CLONEW, this->sym_t_->scope->GetClosureSize());
+        const auto closure = this->builder_.CreateUnaryOp(orbiter::OPCode::CLONEW,
+                                                          this->sym_t_->scope->GetClosureSize());
 
-        this->builder_.StoreToStackOffset(closure, (I16)node->params.size());
+        this->builder_.StoreToStackOffset(closure, (I16) node->params.size());
 
         this->CaptureParametersIntoClosure(node);
     }
 
+    if (this->sym_t_->scope->closure)
+        f_flags = orbiter::LoadFuncFlags::CLOSURE;
+
     this->visit(node->body);
 
+    this->sym_t_->LeaveScope();
 
-    // params / ret addr / EBP / [locals] / [closure_ptr]
+    this->builder_.LeaveContext();
 
-    return nullptr;
+    auto *res = this->builder_.LoadCodeObject(this->builder_.context->GetSubcontextCount() - 1);
+
+    auto *func = this->builder_.LoadFunction(res, f_flags);
+
+    if (node->anon)
+        return func;
+
+    const auto *sym = this->sym_t_->Lookup(node->name, node->loc.start.offset);
+    if (sym == nullptr)
+        throw SymbolTableException();
+
+    return this->StoreVariable(sym, func);
 }
 
 Object *IRBuilder::visitIdentifier(parser::Identifier *node) {
@@ -387,7 +412,7 @@ Object *IRBuilder::visitJump(const parser::Jump *node) {
     this->PutSyncExit(b_target);
 
     return this->builder_.CreateJump(
-            node->token_type == scanner::TokenType::KW_BREAK ? b_target->end : b_target->begin);
+        node->token_type == scanner::TokenType::KW_BREAK ? b_target->end : b_target->begin);
 }
 
 Object *IRBuilder::visitLabel(const parser::Label *node) {
@@ -559,11 +584,11 @@ void IRBuilder::CaptureParametersIntoClosure(const parser::Function *node) {
     // This ensures the parameter is accessible in the closure's scope.
 
     for (const auto &cursor: node->params) {
-        const auto *sym = this->sym_t_->Lookup(((parser::Identifier *)cursor.get())->value, cursor->loc.start.offset);
+        const auto *sym = this->sym_t_->Lookup(((parser::Identifier *) cursor.get())->value, cursor->loc.start.offset);
 
         assert(sym != nullptr);
 
-        if (sym->type == SymbolType::PARAMETER_UPVALUE) {
+        if (sym->type == SymbolType::PARAMETER && sym->upvalue) {
             const auto params_count = (I16) this->sym_t_->scope->GetParameterCount();
             const auto p_offset = params_count - sym->stack_offset;
 

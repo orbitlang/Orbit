@@ -108,6 +108,10 @@ namespace liftoff::ir {
             return this->static_values->length - 1;
         }
 
+        [[nodiscard]] U16 GetSubcontextCount() const noexcept {
+            return this->sub.count;
+        }
+
         static void Delete(IRContext *context) {
             if (context == nullptr)
                 return;
