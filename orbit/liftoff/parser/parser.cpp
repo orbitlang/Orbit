@@ -1766,8 +1766,12 @@ ASTHandle<liftoff::parser::Function *> Parser::ParseFunction(bool inl) {
         func->anon = true;
     }
 
-    if (this->sym_t_->DeclareSymbolScope(func->name, SymbolType::FUNC, TKCUR_START.offset, TKCUR_START.line) == nullptr)
+    auto *sym = this->sym_t_->DeclareSymbolScope(func->name, SymbolType::FUNC, func->loc.start.offset,
+                                                 func->loc.start.line);
+    if (sym == nullptr)
         throw SymbolTableException();
+
+    sym->anon = inl;
 
     func->params = this->ParseFuncParams();
 

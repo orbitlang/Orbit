@@ -169,6 +169,9 @@ Symbol *SymbolTable::Declare(ORString *name, SymbolType type, MSize offset) noex
     symbol->offset = 0;
     symbol->stack_offset = 0;
 
+    symbol->anon = false;
+    symbol->upvalue=false;
+
     if (type != SymbolType::UNKNOWN) {
         if (type == SymbolType::PARAMETER)
             symbol->offset = this->scope->parameter_count++;
@@ -296,18 +299,16 @@ Symbol *SymbolTable::Lookup(const char *name, MSize offset) noexcept {
 Symbol *SymbolTable::LookupInsert(ORString *name, MSize offset) noexcept {
     auto *sym = this->Lookup(name, offset);
     if (sym != nullptr) {
-        if ((sym->type != SymbolType::VARIABLE && sym->type != SymbolType::PARAMETER)
+        if ((sym->type != SymbolType::FUNC && sym->type != SymbolType::VARIABLE && sym->type != SymbolType::PARAMETER)
             || sym->defining_scope == nullptr
             || this->scope == sym->defining_scope
             || sym->defining_scope->type != ScopeType::FUNCTION)
             return sym;
 
-        if (sym->type == SymbolType::PARAMETER) {
-            sym->type = SymbolType::PARAMETER_UPVALUE;
+        if (sym->type == SymbolType::PARAMETER)
             sym->stack_offset = sym->offset;
-        }
-        else
-            sym->type = SymbolType::UPVALUE;
+
+        sym->upvalue = true;
 
         if (this->c_offset == nullptr)
             this->c_offset = &sym->defining_scope->closure_offset;
@@ -368,7 +369,8 @@ void SymbolTable::ComputeLocalVarOffset(const SubScope *s_scope) {
 
     for (auto s_cursor = s_scope; s_cursor != nullptr; s_cursor = s_cursor->next) {
         for (auto cursor = s_cursor->symbols.iter_begin; cursor != nullptr; cursor = cursor->iter_next) {
-            if (cursor->value->type == SymbolType::VARIABLE)
+            const auto *value = cursor->value;
+            if ((value->type == SymbolType::VARIABLE || value->type == SymbolType::FUNC) && !value->anon)
                 cursor->value->offset = this->scope->local_variables++;
         }
     }
@@ -408,6 +410,13 @@ void SymbolTable::LeaveScope(MSize offset, MSize line_end) noexcept {
 
     if (this->scope->type != ScopeType::MODULE)
         this->scope = c_scope->back;
+}
+
+void SymbolTable::LeaveScope() noexcept {
+    this->last_error = SymbolTableError::OK;
+
+    if (this->scope->type != ScopeType::MODULE)
+        this->scope = this->scope->back;
 }
 
 void SymbolTable::ScopeDel(Scope *scope) {

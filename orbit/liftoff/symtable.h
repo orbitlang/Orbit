@@ -38,10 +38,8 @@ namespace liftoff {
         NATIVE_FUNC,
         NATIVE_VAR,
         PARAMETER,
-        PARAMETER_UPVALUE,
         TRAIT,
         VARIABLE,
-        UPVALUE,
         UNKNOWN
     };
 
@@ -147,6 +145,10 @@ namespace liftoff {
         unsigned short stack_offset;
 
         unsigned short nesting;
+
+        bool anon;
+
+        bool upvalue;
     };
 
     class SymbolTable {
@@ -319,8 +321,15 @@ namespace liftoff {
 
         /**
          * @brief Leave the current scope, effectively ending its lifetime.
+         * @note This method is designed to be used during parsing.
          */
         void LeaveScope(MSize offset, MSize line_end) noexcept;
+
+        /**
+         * @brief Leave the current scope, effectively ending its lifetime.
+         * @note This method is designed to step back during various compiler analyses.
+         */
+        void LeaveScope() noexcept;
     };
 }
 
