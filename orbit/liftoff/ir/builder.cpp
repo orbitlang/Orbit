@@ -140,6 +140,22 @@ Instruction *Builder::CreateReturn(Object *s_reg, bool yield) {
     return instr;
 }
 
+Instruction *Builder::StackPop() {
+    auto *instr = this->CreateObject<PopInstr>();
+
+    this->AddInstruction(instr);
+
+    return instr;
+}
+
+Instruction *Builder::StackPush(Object *s_reg) {
+    auto *instr = this->CreateObject<PushInstr>(s_reg);
+
+    this->AddInstruction(instr);
+
+    return instr;
+}
+
 U16 Builder::IRContextNew(IRContextType type) {
     auto *ictx = this->allocator_.alloc<IRContext>(sizeof(IRContext));
     if (ictx == nullptr)

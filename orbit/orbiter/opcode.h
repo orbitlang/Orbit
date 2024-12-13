@@ -116,6 +116,9 @@ namespace orbiter {
         SKLDR, // Load from stack into register:    OPCODE | 4 DST | 4 RESERVED  | 16 SIGNED OFFSET
         SKSTR, // Store register into EBP+OFFSET    OPCODE | 4 SRC | 4 RESERVED  | 16 SIGNED OFFSET
 
+        PUSH,  // Push value onto stack:            OPCODE | 4 RESERVED | 4 SRC | 20 RESERVED
+        POP,   // Pop value from stack:             OPCODE | 4 DST | 20 RESERVED
+
         CLONEW, // Create new closure object        OPCODE | 8 RESERVED | 16 UNSIGNED SLOTS
         CLOLDR, // Load from closure object         OPCODE | 4 RESERVED | 4 FLAGS(ClosureLSMode) | 16 UNSIGNED OFFSET
         CLOSTR, // Store to closure object          OPCODE | 4 RESERVED | 4 FLAGS(ClosureLSMode) | 16 UNSIGNED OFFSET

@@ -198,6 +198,14 @@ namespace liftoff::ir {
         }
     };
 
+    class PopInstr : public DefInstruction {
+        friend Builder;
+
+    protected:
+        PopInstr() noexcept: DefInstruction(orbiter::OPCode::POP) {
+        }
+    };
+
     // UnaryOp
     class UnaryOpInstr : public DefInstruction {
         friend Builder;
@@ -262,6 +270,17 @@ namespace liftoff::ir {
         explicit AllocaInstr(U16 slots, orbiter::AllocaFlags flags) noexcept: PhysInstruction(orbiter::OPCode::ALLOCA),
                                                                               slots(slots),
                                                                               flags(flags) {
+        }
+    };
+
+    class PushInstr : public PhysInstruction {
+        friend Builder;
+
+    public:
+        Object *src;
+
+    protected:
+        explicit PushInstr(Object *src) noexcept: PhysInstruction(orbiter::OPCode::PUSH), src(src){
         }
     };
 }

@@ -167,6 +167,10 @@ namespace liftoff::ir {
 
         Instruction *CreateReturn(Object *s_reg, bool yield);
 
+        Instruction *StackPop();
+
+        Instruction *StackPush(Object *s_reg);
+
         U16 IRContextNew(IRContextType type);
 
         PhiInstr *CreatePhi();

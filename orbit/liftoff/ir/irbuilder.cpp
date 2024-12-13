@@ -319,6 +319,16 @@ Object *IRBuilder::visitBranch(const parser::Branch *node) {
 
 Object *IRBuilder::visitCall(parser::Call *node) {
     // TODO: Implement Call visitation
+
+    for (const auto &arg: node->args) {
+        auto *arg_value = this->visit(arg.get());
+        this->builder_.StackPush(arg_value);
+    }
+
+    auto *func = this->visit(node->left);
+
+    // TODO: Impl this!
+
     return nullptr;
 }
 
