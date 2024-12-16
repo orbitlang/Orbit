@@ -106,6 +106,8 @@ namespace orbiter {
         RET, // Return instruction
         YLD, // Yield instruction
 
+        CALL, // Call function: OPCODE | 4 RESERVED | 4 SRC | 16 ARITY
+
         // Load/Store Operations
         LDCODE, // Load Code from Code object:      OPCODE | 4 DST | 4 RESERVED  | 16 OFFSET
         LDCST, // Load constr from Code object:     OPCODE | 4 DST | 4 FLAGS(LoadConstantMode) | 16 OFFSET
@@ -113,8 +115,8 @@ namespace orbiter {
         MOV, // Copy value between registers:       OPCODE | 4 DST | 4 SRC       | 16 RESERVED
         MOWN, // Move value between registers:      OPCODE | 4 DST | 4 SRC       | 16 RESERVED (Move ownership)
 
-        SKLDR, // Load from stack into register:    OPCODE | 4 DST | 4 RESERVED  | 16 SIGNED OFFSET
-        SKSTR, // Store register into EBP+OFFSET    OPCODE | 4 SRC | 4 RESERVED  | 16 SIGNED OFFSET
+        SKLDR, // Load from stack into register:    OPCODE | 4 DST      | 4 RESERVED  | 16 SIGNED OFFSET
+        SKSTR, // Store register into EBP+OFFSET    OPCODE | 4 RESERVED | 4 SRC       | 16 SIGNED OFFSET
 
         PUSH,  // Push value onto stack:            OPCODE | 4 RESERVED | 4 SRC | 20 RESERVED
         POP,   // Pop value from stack:             OPCODE | 4 DST | 20 RESERVED

@@ -78,6 +78,14 @@ Instruction *Builder::CreateBranch(const OPCode opcode, Object *value, BasicBloc
     return branch;
 }
 
+Instruction *Builder::CreateCall(Object *src, U16 arguments) {
+    auto *instr = this->CreateObject<CallInstr>(src, arguments);
+
+    this->AddInstruction(instr);
+
+    return instr;
+}
+
 Instruction *Builder::CreateJump(BasicBlock *destination) {
     auto *jmp = this->CreateObject<BranchInstruction>(OPCode::JMP, nullptr, destination);
 

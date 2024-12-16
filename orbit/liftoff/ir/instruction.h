@@ -273,6 +273,20 @@ namespace liftoff::ir {
         }
     };
 
+    class CallInstr : public PhysInstruction {
+        friend Builder;
+
+    public:
+        Object *func;
+        U16 arguments = 0;
+
+    protected:
+        explicit CallInstr(Object *func_src, U16 arguments) noexcept: PhysInstruction(orbiter::OPCode::CALL),
+                                                                              func(func_src),
+                                                                              arguments(arguments) {
+        }
+    };
+
     class PushInstr : public PhysInstruction {
         friend Builder;
 

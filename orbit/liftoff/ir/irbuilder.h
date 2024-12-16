@@ -94,7 +94,7 @@ namespace liftoff::ir {
         explicit IRBuilder(orbiter::Isolate *isolate) : builder_(isolate), isolate_(isolate) {
         }
 
-        [[nodiscard]] void *Generate(parser::ASTHandle<parser::Module *> &module);
+        [[nodiscard]] IRContext *Generate(parser::ASTHandle<parser::Module *> &module);
     };
 }
 

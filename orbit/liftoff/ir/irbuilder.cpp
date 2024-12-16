@@ -318,8 +318,6 @@ Object *IRBuilder::visitBranch(const parser::Branch *node) {
 }
 
 Object *IRBuilder::visitCall(parser::Call *node) {
-    // TODO: Implement Call visitation
-
     for (const auto &arg: node->args) {
         auto *arg_value = this->visit(arg.get());
         this->builder_.StackPush(arg_value);
@@ -327,9 +325,7 @@ Object *IRBuilder::visitCall(parser::Call *node) {
 
     auto *func = this->visit(node->left);
 
-    // TODO: Impl this!
-
-    return nullptr;
+    return this->builder_.CreateCall(func, node->args.size());
 }
 
 Object *IRBuilder::visitCatchBlock(parser::CatchBlock *node) {
@@ -631,7 +627,7 @@ void IRBuilder::PutSyncExit(const JBlock *block) {
     }
 }
 
-void *IRBuilder::Generate(parser::ASTHandle<parser::Module *> &module) {
+IRContext *IRBuilder::Generate(parser::ASTHandle<parser::Module *> &module) {
     assert(this->isolate_ == module->isolate); // Security check.
 
     // Set symbol table
@@ -644,5 +640,5 @@ void *IRBuilder::Generate(parser::ASTHandle<parser::Module *> &module) {
         this->visit(statement.get());
     }
 
-    return nullptr;
+    return this->builder_.context;
 }

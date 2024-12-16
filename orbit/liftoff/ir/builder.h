@@ -90,6 +90,8 @@ namespace liftoff::ir {
         Instruction *CreateBranch(orbiter::OPCode opcode, Object *value, BasicBlock *continuation,
                                   BasicBlock *destination);
 
+        Instruction *CreateCall(Object *src, U16 arguments);
+
         Instruction *CreateJump(BasicBlock *destination);
 
         Instruction *CreateUnaryOp(orbiter::OPCode opcode, Object *s_reg);
