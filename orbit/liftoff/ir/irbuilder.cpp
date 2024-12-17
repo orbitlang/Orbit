@@ -117,28 +117,33 @@ Object *IRBuilder::CreateJumpForElvisOrNil(const parser::Binary *binary, orbiter
 }
 
 Object *IRBuilder::LoadVariable(const Symbol *symbol) {
+    Instruction *ret = nullptr;
     auto offset = (I16) symbol->offset;
 
     if (symbol->upvalue) {
         const auto on_stack = symbol->defining_scope == this->sym_t_->scope;
 
-        return this->builder_.LoadFromClosureAtOffset(offset, on_stack
-                                                                  ? orbiter::ClosureLSMode::STACK
-                                                                  : orbiter::ClosureLSMode::FUNC_SLOT);
+        ret = this->builder_.LoadFromClosureAtOffset(offset, on_stack
+                                                                 ? orbiter::ClosureLSMode::STACK
+                                                                 : orbiter::ClosureLSMode::FUNC_SLOT);
+    } else {
+        // TODO: Module/Class/Trait
+
+        if (symbol->type == SymbolType::PARAMETER) {
+            const auto params_count = (I16) this->sym_t_->scope->GetParameterCount();
+            const auto p_offset = params_count - offset;
+
+            assert(p_offset > 0);
+
+            offset = (I16) -p_offset;
+        }
+
+        ret = this->builder_.LoadFromStackOffset(offset);
     }
 
-    // TODO: Module/Class/Trait
+    this->builder_.GetCurrentBasicBlock()->UseVar(symbol);
 
-    if (symbol->type == SymbolType::PARAMETER) {
-        const auto params_count = (I16) this->sym_t_->scope->GetParameterCount();
-        const auto p_offset = params_count - offset;
-
-        assert(p_offset > 0);
-
-        offset = (I16) -p_offset;
-    }
-
-    return this->builder_.LoadFromStackOffset(offset);
+    return ret;
 }
 
 Object *IRBuilder::StoreVariable(const Symbol *symbol, Object *value) {
@@ -168,6 +173,8 @@ Object *IRBuilder::StoreVariable(const Symbol *symbol, Object *value) {
 
         this->builder_.StoreToStackOffset(value, offset);
     }
+
+    this->builder_.GetCurrentBasicBlock()->DefVar(symbol);
 
     return nullptr;
 }

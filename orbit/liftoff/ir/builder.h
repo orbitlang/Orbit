@@ -81,6 +81,10 @@ namespace liftoff::ir {
         explicit Builder(orbiter::Isolate *isolate) noexcept: allocator_(isolate), isolate_(isolate) {
         }
 
+        [[nodiscard]] BasicBlock *GetCurrentBasicBlock() const noexcept {
+            return this->context->current_;
+        }
+
         Instruction *AllocStackSlots(U16 slots, orbiter::AllocaFlags flags);
 
         Instruction *CreateBinaryOp(orbiter::OPCode opcode, Object *left, Object *right);
