@@ -27,12 +27,18 @@ namespace liftoff::ir {
         /// Represents the set of variables used within a basic block.
         std::unordered_set<const Symbol *> use_;
 
+        std::unordered_set<const Symbol *> live_in_;
+        std::unordered_set<const Symbol *> live_out_;
+
+        friend class Builder;
     public:
         /// Pointer to the next basic block in the control flow.
         BasicBlock *next = nullptr;
 
         /// Pointer to the previous basic block in the control flow.
         BasicBlock *prev = nullptr;
+
+        BasicBlock *alt = nullptr;
 
         /**
          * @struct instr

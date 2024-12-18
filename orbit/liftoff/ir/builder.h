@@ -63,6 +63,8 @@ namespace liftoff::ir {
          */
         void AddToObjsList(Object *obj) const noexcept;
 
+        [[nodiscard]] bool ComputeLiveness() const;
+
         /**
          * @brief Removes an object from the object list.
          *
@@ -142,10 +144,10 @@ namespace liftoff::ir {
 
         Instruction *LoadFromClosureAtOffset(I16 offset, orbiter::ClosureLSMode mode) {
             auto *instr = this->CreateObject<LoadStoreClosureWithOffsetInstr>(
-                    orbiter::OPCode::CLOLDR,
-                    offset,
-                    mode,
-                    nullptr);
+                orbiter::OPCode::CLOLDR,
+                offset,
+                mode,
+                nullptr);
 
             this->AddInstruction(instr);
 
@@ -211,8 +213,14 @@ namespace liftoff::ir {
          */
         void DeleteBasicBlock(BasicBlock *bb) const noexcept;
 
-        void LeaveContext() noexcept {
-            this->context = this->context->back;
+        void LeaveContext() {
+            bool changed = this->ComputeLiveness();
+
+            while (changed)
+                changed = this->ComputeLiveness();
+
+            if (this->context->back != nullptr)
+                this->context = this->context->back;
         }
     };
 }

@@ -647,5 +647,7 @@ IRContext *IRBuilder::Generate(parser::ASTHandle<parser::Module *> &module) {
         this->visit(statement.get());
     }
 
+    this->builder_.LeaveContext();
+
     return this->builder_.context;
 }
