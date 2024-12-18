@@ -170,7 +170,8 @@ Symbol *SymbolTable::Declare(ORString *name, SymbolType type, MSize offset) noex
     symbol->stack_offset = 0;
 
     symbol->anon = false;
-    symbol->upvalue=false;
+    symbol->tdz = false;
+    symbol->upvalue = false;
 
     if (type != SymbolType::UNKNOWN) {
         if (type == SymbolType::PARAMETER)
@@ -272,7 +273,7 @@ Symbol *SymbolTable::Lookup(ORString *name, MSize offset) noexcept {
                 && s_scope->symbols.Lookup(name, &entry)) {
                 const auto *sym = entry->value;
 
-                if (s_scope->nesting >= sym->nesting && sym->decl_offset <= offset)
+                if (!sym->tdz && s_scope->nesting >= sym->nesting && sym->decl_offset <= offset)
                     return entry->value;
             }
 

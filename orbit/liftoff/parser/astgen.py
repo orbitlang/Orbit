@@ -108,6 +108,7 @@ NODES = {
     },
     "Identifier": {
         "fields": {
+            "symbol": "Symbol*",
             "value": "orbiter::datatype::ORString*"
         }
     },

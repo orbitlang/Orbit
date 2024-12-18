@@ -193,7 +193,7 @@ Object *IRBuilder::visitAssignment(parser::Assignment *node) {
         return nullptr;
     }
 
-    sym = this->sym_t_->Lookup(((parser::Identifier *) node->name)->value, node->name->loc.start.offset);
+    sym = ((parser::Identifier *) node->name)->symbol;
 
     if (node->value != nullptr)
         value = this->visit(node->value);
@@ -399,7 +399,7 @@ Object *IRBuilder::visitFunction(const parser::Function *node) {
 }
 
 Object *IRBuilder::visitIdentifier(parser::Identifier *node) {
-    const auto *sym = this->sym_t_->Lookup(node->value, node->loc.start.offset);
+    const auto *sym = node->symbol;
 
     assert(sym != nullptr);
 

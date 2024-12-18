@@ -5,6 +5,8 @@
 #ifndef ORBIT_LIFTOFF_SYMTABLE_H_
 #define ORBIT_LIFTOFF_SYMTABLE_H_
 
+#include <cassert>
+
 #include <orbit/orbiter/isolate.h>
 
 #include <orbit/orbiter/datatype/hashmap.h>
@@ -147,6 +149,8 @@ namespace liftoff {
         unsigned short nesting;
 
         bool anon;
+
+        bool tdz;
 
         bool upvalue;
     };

@@ -732,14 +732,18 @@ ASTHandle<ASTNode *> Parser::ParseVarDecl(const Position &start, bool pub, bool 
         if (pub)
             this->exports.push_back(id_str);
 
-        const auto sym = this->sym_t_->Declare(id_str.get(), constant ? SymbolType::CONSTANT : SymbolType::VARIABLE,
-                                               TKCUR_LOC.start.offset);
+        auto sym = this->sym_t_->Declare(id_str.get(), constant ? SymbolType::CONSTANT : SymbolType::VARIABLE,
+                                         TKCUR_LOC.start.offset);
         if (sym == nullptr)
             throw SymbolTableException();
 
         sym->access = pub ? AccessModifier::PUBLIC : AccessModifier::PRIVATE;
 
+        sym->tdz = true;
+
         auto identifier = MakeIdentifier(this->isolate_, TKCUR_LOC);
+
+        identifier->symbol = sym;
         identifier->value = id_str.release();
 
         identifiers.emplace_back(std::move(identifier));
@@ -770,6 +774,9 @@ ASTHandle<ASTNode *> Parser::ParseVarDecl(const Position &start, bool pub, bool 
         } else if (constant)
             throw ParserException(24);
     }
+
+    for (auto &identifier: identifiers)
+        ((Identifier *) identifier.get())->symbol->tdz = false;
 
     if (identifiers.size() == 1)
         decl->name = identifiers.front().release();
@@ -1193,11 +1200,13 @@ ASTHandle<ASTNode *> Parser::ParseIdentifier() {
     if (!id_name)
         throw DatatypeException();
 
-    if (!this->sym_t_->LookupInsert(id_name.get(), TKCUR_START.offset))
+    auto *sym = this->sym_t_->LookupInsert(id_name.get(), TKCUR_START.offset);
+    if (!sym)
         throw SymbolTableException();
 
     auto id = MakeIdentifier(this->isolate_, TKCUR_LOC);
 
+    id->symbol = sym;
     id->value = id_name.release();
 
     this->Eat(false);
