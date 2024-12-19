@@ -189,6 +189,9 @@ U16 Builder::IRContextNew(IRContextType type) {
         }
     }
 
+    if (this->context != nullptr)
+        this->context->InvalidateActiveVar(nullptr);
+
     this->context = ictx;
 
     return r_id;

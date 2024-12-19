@@ -117,8 +117,11 @@ Object *IRBuilder::CreateJumpForElvisOrNil(const parser::Binary *binary, orbiter
 }
 
 Object *IRBuilder::LoadVariable(const Symbol *symbol) {
-    Instruction *ret = nullptr;
+    Instruction *ret = this->builder_.context->GetLastActiveVariableLoad(symbol);
     auto offset = (I16) symbol->offset;
+
+    if (ret != nullptr)
+        return ret;
 
     if (symbol->upvalue) {
         const auto on_stack = symbol->defining_scope == this->sym_t_->scope;
@@ -143,11 +146,15 @@ Object *IRBuilder::LoadVariable(const Symbol *symbol) {
 
     this->builder_.GetCurrentBasicBlock()->UseVar(symbol);
 
+    this->builder_.context->AddActiveVar(symbol, ret);
+
     return ret;
 }
 
 Object *IRBuilder::StoreVariable(const Symbol *symbol, Object *value) {
     auto offset = (I16) symbol->offset;
+
+    this->builder_.context->InvalidateActiveVar(symbol);
 
     if (value == nullptr)
         value = this->builder_.LoadNilValue();
