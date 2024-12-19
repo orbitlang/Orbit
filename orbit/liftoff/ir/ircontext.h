@@ -38,6 +38,8 @@ namespace liftoff::ir {
 
         U32 logical_counter_ = 0;
 
+        U32 vreg_counter_ = 0;
+
         friend class Builder;
 
         explicit IRContext(orbiter::Isolate *isolate,
@@ -92,7 +94,7 @@ namespace liftoff::ir {
         IRContextType type_;
 
         I32 GetIncRVirtCounter() noexcept {
-            return (I32) this->logical_counter_++;
+            return (I32) this->vreg_counter_++;
         }
 
         U16 PushStaticValue(orbiter::datatype::OObject *value) {

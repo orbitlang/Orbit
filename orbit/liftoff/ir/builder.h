@@ -27,6 +27,7 @@ namespace liftoff::ir {
             if (bb == nullptr)
                 bb = this->CreateAppendBasicBlock();
 
+            instruction->offset = this->context->logical_counter_++;
             bb->AddInstruction(instruction);
 
             return bb;

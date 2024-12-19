@@ -31,6 +31,8 @@ namespace liftoff::ir {
         Instruction *next = nullptr;
         Instruction *prev = nullptr;
 
+        U32 offset = 0;
+
     protected:
         explicit Instruction(ObjectType obj_type) noexcept: Object(obj_type) {
         }
