@@ -483,6 +483,8 @@ Object *IRBuilder::visitLoop(const parser::Loop *node) {
 
         this->sym_t_->LeaveNestedScope();
 
+        this->builder_.AppendBasicBlock(jb.end);
+
         return nullptr;
     }
 
