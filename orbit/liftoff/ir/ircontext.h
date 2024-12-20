@@ -185,9 +185,7 @@ namespace liftoff::ir {
          * @param symbol A pointer to the symbol to be marked as active.
          * @param instr A pointer to the instruction associated with the active symbol.
          */
-        void AddActiveVar(const Symbol *symbol, Instruction *instr) {
-            this->active_regs_.insert({symbol, instr});
-        }
+        void AddActiveVar(const Symbol *symbol, Instruction *instr);
 
         /**
          * @brief Invalidates a specific active variable or clears all active variables in the

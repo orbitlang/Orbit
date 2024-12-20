@@ -10,8 +10,11 @@ IRContext::~IRContext() noexcept {
     if (this->sub.context != nullptr) {
         const orbiter::IsolateAllocator allocator(this->isolate_);
 
-        for (auto i = 0; i < this->sub.count; i++)
-            Delete(this->sub.context[i]);
+        for (auto i = 0; i < this->sub.count; i++) {
+            this->sub.context[i].~IRContext();
+
+            allocator.free(this->sub.context[i]);
+        }
 
         allocator.free(this->sub.context);
     }
@@ -61,14 +64,23 @@ U16 IRContext::PushSubContext(IRContext *context) {
 Instruction *IRContext::GetLastActiveVariableLoad(const Symbol *symbol) {
     auto instr = this->active_regs_.find(symbol);
 
-    if(instr != this->active_regs_.end())
+    if (instr != this->active_regs_.end())
         return instr->second;
 
     return nullptr;
 }
 
+void IRContext::AddActiveVar(const Symbol *symbol, Instruction *instr) {
+    const auto defining_scope = symbol->defining_scope->type;
+
+    if (symbol->upvalue || (defining_scope != ScopeType::FUNCTION && defining_scope != ScopeType::GENERATOR))
+        return;
+
+    this->active_regs_.insert({symbol, instr});
+}
+
 void IRContext::InvalidateActiveVar(const Symbol *symbol) {
-    if(symbol == nullptr) {
+    if (symbol == nullptr) {
         this->active_regs_.clear();
         return;
     }
