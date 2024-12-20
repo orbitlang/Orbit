@@ -606,7 +606,7 @@ void IRBuilder::CaptureParametersIntoClosure(const parser::Function *node) {
     // This ensures the parameter is accessible in the closure's scope.
 
     for (const auto &cursor: node->params) {
-        const auto *sym = this->sym_t_->Lookup(((parser::Identifier *) cursor.get())->value, cursor->loc.start.offset);
+        const auto *sym = this->sym_t_->Lookup(((parser::Parameter *) cursor.get())->id, cursor->loc.start.offset);
 
         assert(sym != nullptr);
 
