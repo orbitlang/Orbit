@@ -130,6 +130,19 @@ namespace liftoff::ir {
         IRContextType type_;
 
         /**
+         * @brief Computes the liveness information for the blocks in the intermediate representation (IR)
+         * context.
+         *
+         * This function updates the live_in and live_out sets for each block
+         * by traversing the control flow graph in reverse order. Liveness is determined
+         * based on variable use and definition, as well as requirements from successor blocks.
+         *
+         * @return A boolean value indicating whether any liveness information has changed
+         *         as a result of the computation. Returns true if updates were made, and false otherwise.
+         */
+        [[nodiscard]] bool ComputeLiveness() const;
+
+        /**
          * @brief Increments the virtual register counter and returns its pre-incremented value.
          *
          * This method is used for obtaining a unique identifier for a virtual register

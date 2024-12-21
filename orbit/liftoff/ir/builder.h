@@ -64,8 +64,6 @@ namespace liftoff::ir {
          */
         void AddToObjsList(Object *obj) const noexcept;
 
-        [[nodiscard]] bool ComputeLiveness() const;
-
         /**
          * @brief Removes an object from the object list.
          *
@@ -215,10 +213,10 @@ namespace liftoff::ir {
         void DeleteBasicBlock(BasicBlock *bb) const noexcept;
 
         void LeaveContext() {
-            bool changed = this->ComputeLiveness();
+            bool changed = this->context->ComputeLiveness();
 
             while (changed)
-                changed = this->ComputeLiveness();
+                changed = this->context->ComputeLiveness();
 
             if (this->context->back != nullptr)
                 this->context = this->context->back;

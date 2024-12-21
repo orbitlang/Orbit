@@ -33,7 +33,7 @@ namespace liftoff::ir {
         /// Represents the set of variables that are live at the exit point of the basic block.
         std::unordered_set<const Symbol *> live_out_;
 
-        friend class Builder;
+        friend class IRContext;
     public:
         /// Pointer to the next basic block in the control flow.
         BasicBlock *next = nullptr;
