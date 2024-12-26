@@ -35,7 +35,7 @@ JBlock::JBlock(Builder *builder, JBlockType type, ORString *label) : builder_(bu
     builder->context->j_chain = this;
 }
 
-JBlock::JBlock(Builder *builder, Object *value) : JBlock(builder, JBlockType::SYNC, nullptr) {
+JBlock::JBlock(Builder *builder, Instruction *value) : JBlock(builder, JBlockType::SYNC, nullptr) {
     this->value = value;
 }
 

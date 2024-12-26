@@ -21,6 +21,27 @@ namespace liftoff::ir {
     };
 
     /**
+     * @struct LiveInterval
+     *
+     * Represents a live interval of a variable or temporary value in an intermediate
+     * representation. It marks the range of program instructions where the value is
+     * active and needs to be kept alive. These intervals are typically used during
+     * register allocation to determine the lifetime of values and optimize resource usage.
+     *
+     * Each interval associates with a specific instruction and defines the start
+     * and end points, indicating where the live range begins and ends.
+     */
+    struct LiveInterval {
+        Instruction *instr;
+
+        U32 start;
+        U32 end;
+
+        LiveInterval(Instruction *instr, U32 start, U32 end) noexcept: instr(instr), start(start), end(end) {
+        }
+    };
+
+    /**
      * @class IRContext
      *
      * Represents an intermediate representation (IR) context used to manage the state
@@ -30,9 +51,26 @@ namespace liftoff::ir {
      * Isolate instance.
      */
     class IRContext {
-        /// Maps symbols to their corresponding active instructions within the IR.
-        /// The primary purpose of this mapping is to manage variable lifetimes and optimize
+        /**
+         * @var active_regs_
+         *
+         * Maps symbols to their corresponding register instructions within the
+         * intermediate representation context. This unordered map is used to track
+         * the active registers associated with specific symbols, ensuring efficient
+         * management and retrieval of instructions during IR generation and execution.
+         */
         std::unordered_map<const Symbol *, Instruction *> active_regs_;
+
+        /**
+         * @variable live_intervals_
+         *
+         * Stores a collection of live intervals used for tracking the lifespan of variables
+         * or registers during code generation. Each interval represents a continuous range
+         * where a variable remains alive or allocated before it is no longer needed.
+         * This data is integral for register allocation and optimizing the usage of
+         * available registers or memory resources.
+         */
+        std::vector<LiveInterval> live_intervals_;
 
         /**
          * @var objs_
@@ -96,17 +134,6 @@ namespace liftoff::ir {
          */
         U32 logical_counter_ = 0;
 
-        /**
-         * @var vreg_counter_
-         *
-         * A 32-bit unsigned integer used to maintain a virtual register counter within the
-         * intermediate representation (IR) context. This counter is incremented sequentially
-         * for each virtual register allocated during IR generation. It ensures unique
-         * identification of virtual registers, aiding in register allocation and tracking
-         * within the context.
-         */
-        U32 vreg_counter_ = 0;
-
         friend class Builder;
 
         explicit IRContext(orbiter::Isolate *isolate,
@@ -115,6 +142,17 @@ namespace liftoff::ir {
 
         ~IRContext() noexcept;
 
+        /**
+         * @brief Pushes a new sub-context onto the stack of sub-contexts maintained by this IRContext instance.
+         *
+         * Allocates or resizes memory for sub-context storage as needed, and establishes the linkage
+         * between the current context and the newly added sub-context.
+         *
+         * @param context A pointer to the IRContext instance representing the sub-context to be pushed.
+         *                This context will be managed by the current IRContext instance.
+         *
+         * @return The index of the newly added sub-context within the stack of sub-contexts.
+         */
         U16 PushSubContext(IRContext *context);
 
     public:
@@ -141,19 +179,6 @@ namespace liftoff::ir {
          *         as a result of the computation. Returns true if updates were made, and false otherwise.
          */
         [[nodiscard]] bool ComputeLiveness() const;
-
-        /**
-         * @brief Increments the virtual register counter and returns its pre-incremented value.
-         *
-         * This method is used for obtaining a unique identifier for a virtual register
-         * in the intermediate representation (IR) context by incrementing the internal
-         * virtual register counter.
-         *
-         * @return The value of the virtual register counter before it was incremented, as an `I32`.
-         */
-        I32 GetIncRVirtCounter() noexcept {
-            return (I32) this->vreg_counter_++;
-        }
 
         /**
          * @brief Retrieves the last active load instruction associated with the provided symbol.
@@ -199,6 +224,16 @@ namespace liftoff::ir {
          * @param instr A pointer to the instruction associated with the active symbol.
          */
         void AddActiveVar(const Symbol *symbol, Instruction *instr);
+
+        /**
+         * @brief Computes the live intervals for all instructions within the intermediate representation (IR).
+         *
+         * This process calculates the lifetime of each instruction by iterating through the basic blocks
+         * and their individual instructions, identifying the range between their starting point and their
+         * last usage. The results are stored in the collection of live intervals maintained within the
+         * IRContext instance.
+         */
+        void ComputeLiveIntervals();
 
         /**
          * @brief Invalidates a specific active variable or clears all active variables in the

@@ -28,7 +28,7 @@ namespace liftoff::ir {
         BasicBlock *begin = nullptr;
         BasicBlock *end = nullptr;
 
-        Object *value = nullptr;
+        Instruction *value = nullptr;
 
         orbiter::datatype::ORString *label = nullptr;
 
@@ -36,7 +36,7 @@ namespace liftoff::ir {
 
         JBlock(Builder *builder, JBlockType type, orbiter::datatype::ORString *label);
 
-        JBlock(Builder *builder, Object *value);
+        JBlock(Builder *builder, Instruction *value);
 
         ~JBlock();
 

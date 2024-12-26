@@ -88,18 +88,20 @@ namespace liftoff::ir {
 
         Instruction *AllocStackSlots(U16 slots, orbiter::AllocaFlags flags);
 
-        Instruction *CreateBinaryOp(orbiter::OPCode opcode, Object *left, Object *right);
+        Instruction *CreateBinaryOp(orbiter::OPCode opcode, Instruction *left, Instruction *right);
 
-        Instruction *CreateBinaryOpFlags(orbiter::OPCode opcode, U8 flags, Object *left, Object *right);
+        Instruction *CreateBinaryOpFlags(orbiter::OPCode opcode, U8 flags,Instruction *left, Instruction *right);
 
-        Instruction *CreateBranch(orbiter::OPCode opcode, Object *value, BasicBlock *continuation,
+        Instruction *CreateBinaryOpFlags(orbiter::OPCode opcode, U8 flags,Instruction *left, U16 right);
+
+        Instruction *CreateBranch(orbiter::OPCode opcode, Instruction *value, BasicBlock *continuation,
                                   BasicBlock *destination);
 
-        Instruction *CreateCall(Object *src, U16 arguments);
+        Instruction *CreateCall(Instruction *src, U16 arguments);
 
         Instruction *CreateJump(BasicBlock *destination);
 
-        Instruction *CreateUnaryOp(orbiter::OPCode opcode, Object *s_reg);
+        Instruction *CreateUnaryOp(orbiter::OPCode opcode, Instruction *s_reg);
 
         Instruction *CreateUnaryOp(orbiter::OPCode opcode, U16 imm, U8 flags);
 
@@ -128,16 +130,14 @@ namespace liftoff::ir {
         }
 
         Instruction *LoadCodeObject(U16 offset) {
-            auto *instr = this->CreateObject<LoadCodeInstr>(offset);
+            auto *instr = this->CreateObject<OffsetInstruction>(orbiter::OPCode::LDCODE, offset);
 
             this->AddInstruction(instr);
-
-            instr->dest.virtID = this->context->GetIncRVirtCounter();
 
             return instr;
         }
 
-        Instruction *LoadFunction(Object *src, orbiter::LoadFuncFlags flags);
+        Instruction *LoadFunction(Instruction *src, orbiter::LoadFuncFlags flags);
 
         Instruction *LoadImmediate(MachineSize value);
 
@@ -153,7 +153,7 @@ namespace liftoff::ir {
             return instr;
         }
 
-        Instruction *StoreToClosureAtOffset(Object *src, I16 offset, orbiter::ClosureLSMode mode) {
+        Instruction *StoreToClosureAtOffset(Instruction *src, I16 offset, orbiter::ClosureLSMode mode) {
             auto *instr = this->CreateObject<LoadStoreClosureWithOffsetInstr>(orbiter::OPCode::CLOSTR,
                                                                               offset,
                                                                               mode,
@@ -164,19 +164,19 @@ namespace liftoff::ir {
             return instr;
         }
 
-        Instruction *StoreToStackOffset(Object *src, I16 offset) {
-            auto *instr = (LoadStoreWithOffsetInstr *) this->LoadStoreOffset(orbiter::OPCode::SKSTR, offset);
+        Instruction *StoreToStackOffset(Instruction *src, I16 offset) {
+            auto *instr = this->CreateObject<OffsetInstruction>(orbiter::OPCode::SKSTR, offset, src);
 
-            instr->src = src;
+            this->AddInstruction(instr);
 
             return instr;
         }
 
-        Instruction *CreateReturn(Object *s_reg, bool yield);
+        Instruction *CreateReturn(Instruction *s_reg, bool yield);
 
         Instruction *StackPop();
 
-        Instruction *StackPush(Object *s_reg);
+        Instruction *StackPush(Instruction *s_reg);
 
         U16 IRContextNew(IRContextType type);
 
@@ -217,6 +217,8 @@ namespace liftoff::ir {
 
             while (changed)
                 changed = this->context->ComputeLiveness();
+
+            this->context->ComputeLiveIntervals();
 
             if (this->context->back != nullptr)
                 this->context = this->context->back;

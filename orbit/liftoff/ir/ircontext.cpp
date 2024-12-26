@@ -122,6 +122,24 @@ void IRContext::AddActiveVar(const Symbol *symbol, Instruction *instr) {
     this->active_regs_.insert({symbol, instr});
 }
 
+void IRContext::ComputeLiveIntervals() {
+    for (auto *block = this->entry_; block != nullptr; block = block->next) {
+        for (auto *instr = block->instr.head; instr != nullptr; instr = instr->next) {
+            if (instr->use_list != nullptr) {
+                U32 end = instr->use_list->user->offset;
+
+                for (auto *i_max = instr->use_list->next; i_max != nullptr; i_max = i_max->next) {
+                    if (i_max->user->offset > end)
+                        end = i_max->user->offset;
+                }
+
+
+                this->live_intervals_.emplace_back(instr, instr->offset, end);
+            }
+        }
+    }
+}
+
 void IRContext::InvalidateActiveVar(const Symbol *symbol) {
     if (symbol == nullptr) {
         this->active_regs_.clear();

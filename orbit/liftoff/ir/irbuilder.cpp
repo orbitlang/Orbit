@@ -45,11 +45,11 @@ orbiter::OPCode InfixOp2OpCode(const scanner::TokenType tt, const bool imm, orbi
     return {};
 }
 
-Object *IRBuilder::BinaryOP(const parser::Binary *binary) {
+Instruction *IRBuilder::BinaryOP(const parser::Binary *binary) {
     const auto *nr = (parser::Binary *) binary->right;
 
-    Object *left;
-    Object *right = nullptr;
+    Instruction *left;
+    Instruction *right = nullptr;
 
     bool left2right = true;
     bool r_ignore = false;
@@ -67,13 +67,11 @@ Object *IRBuilder::BinaryOP(const parser::Binary *binary) {
         const auto literal = (parser::Literal *) binary->right;
 
         if (O_IS_SMI(literal->literal)) {
-            auto number = (PtrSize) literal->literal;
-
-            number >>= 1;
+            const auto number = ((PtrSize) literal->literal) >> 1;
 
             // Max immediate size: <= 0xFFFF
             if (number <= 0xFFFF) {
-                right = this->builder_.CreateImmediateValue((U16) number);
+                right = (Instruction *) number;
                 r_ignore = true;
             }
         }
@@ -95,12 +93,15 @@ Object *IRBuilder::BinaryOP(const parser::Binary *binary) {
 
     auto op_flags = orbiter::ArithFlags::NONE;
 
-    auto op_code = InfixOp2OpCode(binary->token_type, right->type() == ObjectType::VALUE, op_flags);
+    auto op_code = InfixOp2OpCode(binary->token_type, r_ignore, op_flags);
+
+    if (r_ignore)
+        return this->builder_.CreateBinaryOpFlags(op_code, (U8) op_flags, left, (U16) ((PtrSize)right));
 
     return this->builder_.CreateBinaryOpFlags(op_code, (U8) op_flags, left, right);
 }
 
-Object *IRBuilder::CreateJumpForElvisOrNil(const parser::Binary *binary, orbiter::OPCode opcode) {
+Instruction *IRBuilder::CreateJumpForElvisOrNil(const parser::Binary *binary, orbiter::OPCode opcode) {
     auto *left = this->visit(binary->left);
 
     auto *end = this->builder_.CreateBasicBlock();
@@ -113,10 +114,10 @@ Object *IRBuilder::CreateJumpForElvisOrNil(const parser::Binary *binary, orbiter
 
     const auto phi = this->builder_.CreatePhi();
 
-    return phi->AddTarget((Instruction *) left)->AddTarget((Instruction *) right);
+    return phi->AddTarget(left)->AddTarget(right);
 }
 
-Object *IRBuilder::LoadVariable(const Symbol *symbol) {
+Instruction *IRBuilder::LoadVariable(const Symbol *symbol) {
     Instruction *ret = this->builder_.context->GetLastActiveVariableLoad(symbol);
     auto offset = (I16) symbol->offset;
 
@@ -151,7 +152,7 @@ Object *IRBuilder::LoadVariable(const Symbol *symbol) {
     return ret;
 }
 
-Object *IRBuilder::StoreVariable(const Symbol *symbol, Object *value) {
+Instruction *IRBuilder::StoreVariable(const Symbol *symbol, Instruction *value) {
     auto offset = (I16) symbol->offset;
 
     this->builder_.context->InvalidateActiveVar(symbol);
@@ -186,13 +187,13 @@ Object *IRBuilder::StoreVariable(const Symbol *symbol, Object *value) {
     return nullptr;
 }
 
-Object *IRBuilder::visitASTNode(parser::ASTNode *node) {
+Instruction *IRBuilder::visitASTNode(parser::ASTNode *node) {
     // TODO: Implement ASTNode visitation
     return nullptr;
 }
 
-Object *IRBuilder::visitAssignment(parser::Assignment *node) {
-    Object *value = nullptr;
+Instruction *IRBuilder::visitAssignment(parser::Assignment *node) {
+    Instruction *value = nullptr;
     const Symbol *sym;
 
     if (node->name->node_type == parser::NodeType::TUPLE) {
@@ -208,10 +209,10 @@ Object *IRBuilder::visitAssignment(parser::Assignment *node) {
     return this->StoreVariable(sym, value);
 }
 
-Object *IRBuilder::visitBinary(parser::Binary *node) {
-    Object *ret = nullptr;
-    Object *left;
-    Object *right;
+Instruction *IRBuilder::visitBinary(parser::Binary *node) {
+    Instruction *ret = nullptr;
+    Instruction *left;
+    Instruction *right;
 
     const auto tk_type = node->token_type;
     auto flags = orbiter::MembershipFlags::IN;
@@ -289,8 +290,8 @@ Object *IRBuilder::visitBinary(parser::Binary *node) {
     return nullptr;
 }
 
-Object *IRBuilder::visitBlock(const parser::Block *node) {
-    Object *last = nullptr;
+Instruction *IRBuilder::visitBlock(const parser::Block *node) {
+    Instruction *last = nullptr;
 
     for (auto &statement: node->statements)
         last = this->visit(statement.get());
@@ -298,7 +299,7 @@ Object *IRBuilder::visitBlock(const parser::Block *node) {
     return last;
 }
 
-Object *IRBuilder::visitBranch(const parser::Branch *node) {
+Instruction *IRBuilder::visitBranch(const parser::Branch *node) {
     BranchInstruction *last = nullptr;
 
     auto *end = this->builder_.CreateBasicBlock();
@@ -331,7 +332,7 @@ Object *IRBuilder::visitBranch(const parser::Branch *node) {
     return nullptr;
 }
 
-Object *IRBuilder::visitCall(parser::Call *node) {
+Instruction *IRBuilder::visitCall(parser::Call *node) {
     for (const auto &arg: node->args) {
         auto *arg_value = this->visit(arg.get());
         this->builder_.StackPush(arg_value);
@@ -342,22 +343,22 @@ Object *IRBuilder::visitCall(parser::Call *node) {
     return this->builder_.CreateCall(func, node->args.size());
 }
 
-Object *IRBuilder::visitCatchBlock(parser::CatchBlock *node) {
+Instruction *IRBuilder::visitCatchBlock(parser::CatchBlock *node) {
     // TODO: Implement CatchBlock visitation
     return nullptr;
 }
 
-Object *IRBuilder::visitConstruct(parser::Construct *node) {
+Instruction *IRBuilder::visitConstruct(parser::Construct *node) {
     // TODO: Implement Construct visitation
     return nullptr;
 }
 
-Object *IRBuilder::visitDecorator(parser::Decorator *node) {
+Instruction *IRBuilder::visitDecorator(parser::Decorator *node) {
     // TODO: Implement Decorator visitation
     return nullptr;
 }
 
-Object *IRBuilder::visitFunction(const parser::Function *node) {
+Instruction *IRBuilder::visitFunction(const parser::Function *node) {
     // params / ret addr / EBP / [locals] / [closure_ptr]
 
     auto f_flags = orbiter::LoadFuncFlags::SIMPLE;
@@ -405,7 +406,7 @@ Object *IRBuilder::visitFunction(const parser::Function *node) {
     return this->StoreVariable(sym, func);
 }
 
-Object *IRBuilder::visitIdentifier(parser::Identifier *node) {
+Instruction *IRBuilder::visitIdentifier(parser::Identifier *node) {
     const auto *sym = node->symbol;
 
     assert(sym != nullptr);
@@ -413,17 +414,17 @@ Object *IRBuilder::visitIdentifier(parser::Identifier *node) {
     return this->LoadVariable(sym);
 }
 
-Object *IRBuilder::visitImport(parser::Import *node) {
+Instruction *IRBuilder::visitImport(parser::Import *node) {
     // TODO: Implement Import visitation
     return nullptr;
 }
 
-Object *IRBuilder::visitImportName(parser::ImportName *node) {
+Instruction *IRBuilder::visitImportName(parser::ImportName *node) {
     // TODO: Implement ImportName visitation
     return nullptr;
 }
 
-Object *IRBuilder::visitJump(const parser::Jump *node) {
+Instruction *IRBuilder::visitJump(const parser::Jump *node) {
     const auto b_target = this->builder_.context->j_chain->FindLabeledBlock(node->label);
 
     if (b_target == nullptr)
@@ -435,18 +436,18 @@ Object *IRBuilder::visitJump(const parser::Jump *node) {
         node->token_type == scanner::TokenType::KW_BREAK ? b_target->end : b_target->begin);
 }
 
-Object *IRBuilder::visitLabel(const parser::Label *node) {
+Instruction *IRBuilder::visitLabel(const parser::Label *node) {
     JBlock _(&this->builder_, JBlockType::LABEL, node->label);
 
     return this->visit(node->statement);
 }
 
-Object *IRBuilder::visitListExpression(parser::ListExpression *node) {
+Instruction *IRBuilder::visitListExpression(parser::ListExpression *node) {
     // TODO: Implement ListExpression visitation
     return nullptr;
 }
 
-Object *IRBuilder::visitLiteral(parser::Literal *node) {
+Instruction *IRBuilder::visitLiteral(parser::Literal *node) {
     if (node->literal == orbiter::datatype::kOddBallNIL)
         return this->builder_.LoadNilValue();
 
@@ -464,7 +465,7 @@ Object *IRBuilder::visitLiteral(parser::Literal *node) {
     return this->builder_.LoadConstant(offset);
 }
 
-Object *IRBuilder::visitLoop(const parser::Loop *node) {
+Instruction *IRBuilder::visitLoop(const parser::Loop *node) {
     if (node->node_type == parser::NodeType::FOR_IN) {
         this->visitForInLoop(node);
 
@@ -523,52 +524,52 @@ Object *IRBuilder::visitLoop(const parser::Loop *node) {
     return nullptr;
 }
 
-Object *IRBuilder::visitModule(parser::Module *node) {
+Instruction *IRBuilder::visitModule(parser::Module *node) {
     // TODO: Implement Module visitation
     return nullptr;
 }
 
-Object *IRBuilder::visitNativeFunc(parser::NativeFunc *node) {
+Instruction *IRBuilder::visitNativeFunc(parser::NativeFunc *node) {
     // TODO: Implement NativeFunc visitation
     return nullptr;
 }
 
-Object *IRBuilder::visitNativeParameter(parser::NativeParameter *node) {
+Instruction *IRBuilder::visitNativeParameter(parser::NativeParameter *node) {
     // TODO: Implement NativeParameter visitation
     return nullptr;
 }
 
-Object *IRBuilder::visitNativeVariable(parser::NativeVariable *node) {
+Instruction *IRBuilder::visitNativeVariable(parser::NativeVariable *node) {
     // TODO: Implement NativeVariable visitation
     return nullptr;
 }
 
-Object *IRBuilder::visitParameter(parser::Parameter *node) {
+Instruction *IRBuilder::visitParameter(parser::Parameter *node) {
     // TODO: Implement Parameter visitation
     return nullptr;
 }
 
-Object *IRBuilder::visitSubscript(parser::Subscript *node) {
+Instruction *IRBuilder::visitSubscript(parser::Subscript *node) {
     // TODO: Implement Subscript visitation
     return nullptr;
 }
 
-Object *IRBuilder::visitSwitchCase(parser::SwitchCase *node) {
+Instruction *IRBuilder::visitSwitchCase(parser::SwitchCase *node) {
     // TODO: Implement SwitchCase visitation
     return nullptr;
 }
 
-Object *IRBuilder::visitSwitchBlock(parser::SwitchBlock *node) {
+Instruction *IRBuilder::visitSwitchBlock(parser::SwitchBlock *node) {
     // TODO: Implement SwitchBlock visitation
     return nullptr;
 }
 
-Object *IRBuilder::visitTryBlock(parser::TryBlock *node) {
+Instruction *IRBuilder::visitTryBlock(parser::TryBlock *node) {
     // TODO: Implement TryBlock visitation
     return nullptr;
 }
 
-Object *IRBuilder::visitUnary(const parser::Unary *node) {
+Instruction *IRBuilder::visitUnary(const parser::Unary *node) {
     // TODO: Implement Unary visitation
     auto *value = this->visit(node->value);
 

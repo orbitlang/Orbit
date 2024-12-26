@@ -10,61 +10,54 @@ using namespace liftoff::ir;
 using namespace orbiter;
 
 Instruction *Builder::LoadImmConstant(LoadConstantMode mode) {
-    auto *instr = this->CreateObject<LoadImmConstantInstr>((U8) mode);
+    auto *instr = this->CreateObject<UnaryImmInstr>(OPCode::LDIMM, (U8) mode);
 
     this->AddInstruction(instr);
-
-    instr->dest.virtID = this->context->GetIncRVirtCounter();
 
     return instr;
 }
 
 Instruction *Builder::LoadStoreOffset(const OPCode opcode, const I16 offset) {
-    auto *instr = this->CreateObject<LoadStoreWithOffsetInstr>(opcode, offset);
+    auto *instr = this->CreateObject<OffsetInstruction>(opcode, offset);
 
     this->AddInstruction(instr);
-
-    if (opcode == orbiter::OPCode::SKLDR)
-        instr->dest.virtID = this->context->GetIncRVirtCounter();
 
     return instr;
 }
 
 Instruction *Builder::AllocStackSlots(U16 slots, AllocaFlags flags) {
-    auto *instr = this->CreateObject<AllocaInstr>(slots, flags);
+    auto *instr = this->CreateObject<UnaryImmInstr>(OPCode::ALLOCA, (U8)flags, slots);
 
     this->AddInstruction(instr);
 
     return instr;
 }
 
-Instruction *Builder::CreateBinaryOp(const OPCode opcode, Object *left, Object *right) {
-    auto *instr = this->CreateObject<BinaryOpInstr>(opcode);
-
-    instr->dest.virtID = this->context->GetIncRVirtCounter();
-
-    instr->left = left;
-    instr->right = right;
+Instruction *Builder::CreateBinaryOp(const OPCode opcode, Instruction *left, Instruction *right) {
+    auto *instr = this->CreateObject<BinaryOpInstr>(opcode, left, right);
 
     this->AddInstruction(instr);
 
     return instr;
 }
 
-Instruction *Builder::CreateBinaryOpFlags(const OPCode opcode, const U8 flags, Object *left, Object *right) {
-    auto *binOp = this->CreateObject<BinaryOpFlagsInstr>(opcode, flags);
-
-    binOp->dest.virtID = this->context->GetIncRVirtCounter();
-
-    binOp->left = left;
-    binOp->right = right;
+Instruction *Builder::CreateBinaryOpFlags(const OPCode opcode, const U8 flags, Instruction *left, Instruction *right) {
+    auto *binOp = this->CreateObject<BinaryOpInstr>(opcode, flags, left, right);
 
     this->AddInstruction(binOp);
 
     return binOp;
 }
 
-Instruction *Builder::CreateBranch(const OPCode opcode, Object *value, BasicBlock *continuation,
+Instruction *Builder::CreateBinaryOpFlags(const OPCode opcode, const U8 flags, Instruction *left, U16 right) {
+    auto *binOp = this->CreateObject<BinaryOpImmInstr>(opcode, flags, left, right);
+
+    this->AddInstruction(binOp);
+
+    return binOp;
+}
+
+Instruction *Builder::CreateBranch(const OPCode opcode, Instruction *value, BasicBlock *continuation,
                                    BasicBlock *destination) {
     auto *branch = this->CreateObject<BranchInstruction>(opcode, value, destination);
 
@@ -80,7 +73,7 @@ Instruction *Builder::CreateBranch(const OPCode opcode, Object *value, BasicBloc
     return branch;
 }
 
-Instruction *Builder::CreateCall(Object *src, U16 arguments) {
+Instruction *Builder::CreateCall(Instruction *src, U16 arguments) {
     auto *instr = this->CreateObject<CallInstr>(src, arguments);
 
     this->AddInstruction(instr);
@@ -98,12 +91,8 @@ Instruction *Builder::CreateJump(BasicBlock *destination) {
     return jmp;
 }
 
-Instruction *Builder::CreateUnaryOp(const OPCode opcode, Object *s_reg) {
-    auto *unaryOp = this->CreateObject<UnaryOpInstr>(opcode);
-
-    unaryOp->dest.virtID = this->context->GetIncRVirtCounter();
-
-    unaryOp->s_reg = s_reg;
+Instruction *Builder::CreateUnaryOp(const OPCode opcode, Instruction *s_reg) {
+    auto *unaryOp = this->CreateObject<UnaryOpInstr>(opcode, s_reg);
 
     this->AddInstruction(unaryOp);
 
@@ -111,20 +100,15 @@ Instruction *Builder::CreateUnaryOp(const OPCode opcode, Object *s_reg) {
 }
 
 Instruction *Builder::CreateUnaryOp(const OPCode opcode, U16 imm, U8 flags) {
-    auto *unaryOp = this->CreateObject<UnaryImmInstr>(opcode);
-
-    unaryOp->dest.virtID = this->context->GetIncRVirtCounter();
-
-    unaryOp->imm = imm;
-    unaryOp->flags = flags;
+    auto *unaryOp = this->CreateObject<UnaryImmInstr>(opcode, flags, imm);
 
     this->AddInstruction(unaryOp);
 
     return unaryOp;
 }
 
-Instruction *Builder::LoadFunction(Object *src, LoadFuncFlags flags) {
-    auto *instr = this->CreateObject<LoadFuncInstr>(src, (U8) flags);
+Instruction *Builder::LoadFunction(Instruction *src, LoadFuncFlags flags) {
+    auto *instr = this->CreateObject<UnaryOpInstr>(OPCode::LDFUNC, (U8) flags,src);
 
     this->AddInstruction(instr);
 
@@ -135,16 +119,12 @@ Instruction *Builder::LoadImmediate(const MachineSize value) {
     auto *instr = this->CreateObject<LoadImmValueInstr>(value);
     // TODO: check size, use shift to load whole value
 
-    instr->dest.virtID = this->context->GetIncRVirtCounter();
-
-    instr->value = value;
-
     this->AddInstruction(instr);
 
     return instr;
 }
 
-Instruction *Builder::CreateReturn(Object *s_reg, bool yield) {
+Instruction *Builder::CreateReturn(Instruction *s_reg, bool yield) {
     auto *instr = this->CreateObject<ReturnInstruction>(s_reg, yield);
 
     this->AddInstruction(instr);
@@ -153,15 +133,15 @@ Instruction *Builder::CreateReturn(Object *s_reg, bool yield) {
 }
 
 Instruction *Builder::StackPop() {
-    auto *instr = this->CreateObject<PopInstr>();
+    auto *instr = this->CreateObject<UnaryOpInstr>(OPCode::POP);
 
     this->AddInstruction(instr);
 
     return instr;
 }
 
-Instruction *Builder::StackPush(Object *s_reg) {
-    auto *instr = this->CreateObject<PushInstr>(s_reg);
+Instruction *Builder::StackPush(Instruction *s_reg) {
+    auto *instr = this->CreateObject<UnaryOpInstr>(OPCode::PUSH, s_reg);
 
     this->AddInstruction(instr);
 

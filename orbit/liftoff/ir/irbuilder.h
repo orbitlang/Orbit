@@ -12,7 +12,7 @@
 #include <orbit/liftoff/parser/ast.h>
 
 namespace liftoff::ir {
-    class IRBuilder : parser::ASTVisitor<IRBuilder, Object *> {
+    class IRBuilder : parser::ASTVisitor<IRBuilder, Instruction *> {
         Builder builder_;
 
         orbiter::Isolate *isolate_ = nullptr;
@@ -21,69 +21,69 @@ namespace liftoff::ir {
 
         friend class ASTVisitor;
 
-        Object *BinaryOP(const parser::Binary *binary);
+        Instruction *BinaryOP(const parser::Binary *binary);
 
-        Object *CreateJumpForElvisOrNil(const parser::Binary *binary, orbiter::OPCode opcode);
+        Instruction *CreateJumpForElvisOrNil(const parser::Binary *binary, orbiter::OPCode opcode);
 
-        Object *LoadVariable(const Symbol *symbol);
+        Instruction *LoadVariable(const Symbol *symbol);
 
-        Object *StoreVariable(const Symbol *symbol, Object *value);
+        Instruction *StoreVariable(const Symbol *symbol, Instruction *value);
 
-        Object *visitASTNode(parser::ASTNode *node);
+        Instruction *visitASTNode(parser::ASTNode *node);
 
-        Object *visitAssignment(parser::Assignment *node);
+        Instruction *visitAssignment(parser::Assignment *node);
 
-        Object *visitBinary(parser::Binary *node);
+        Instruction *visitBinary(parser::Binary *node);
 
-        Object *visitBlock(const parser::Block *node);
+        Instruction *visitBlock(const parser::Block *node);
 
-        Object *visitBranch(const parser::Branch *node);
+        Instruction *visitBranch(const parser::Branch *node);
 
-        Object *visitCall(parser::Call *node);
+        Instruction *visitCall(parser::Call *node);
 
-        Object *visitCatchBlock(parser::CatchBlock *node);
+        Instruction *visitCatchBlock(parser::CatchBlock *node);
 
-        Object *visitConstruct(parser::Construct *node);
+        Instruction *visitConstruct(parser::Construct *node);
 
-        Object *visitDecorator(parser::Decorator *node);
+        Instruction *visitDecorator(parser::Decorator *node);
 
-        Object *visitFunction(const parser::Function *node);
+        Instruction *visitFunction(const parser::Function *node);
 
-        Object *visitIdentifier(parser::Identifier *node);
+        Instruction *visitIdentifier(parser::Identifier *node);
 
-        Object *visitImport(parser::Import *node);
+        Instruction *visitImport(parser::Import *node);
 
-        Object *visitImportName(parser::ImportName *node);
+        Instruction *visitImportName(parser::ImportName *node);
 
-        Object *visitJump(const parser::Jump *node);
+        Instruction *visitJump(const parser::Jump *node);
 
-        Object *visitLabel(const parser::Label *node);
+        Instruction *visitLabel(const parser::Label *node);
 
-        Object *visitListExpression(parser::ListExpression *node);
+        Instruction *visitListExpression(parser::ListExpression *node);
 
-        Object *visitLiteral(parser::Literal *node);
+        Instruction *visitLiteral(parser::Literal *node);
 
-        Object *visitLoop(const parser::Loop *node);
+        Instruction *visitLoop(const parser::Loop *node);
 
-        Object *visitModule(parser::Module *node);
+        Instruction *visitModule(parser::Module *node);
 
-        Object *visitNativeFunc(parser::NativeFunc *node);
+        Instruction *visitNativeFunc(parser::NativeFunc *node);
 
-        Object *visitNativeParameter(parser::NativeParameter *node);
+        Instruction *visitNativeParameter(parser::NativeParameter *node);
 
-        Object *visitNativeVariable(parser::NativeVariable *node);
+        Instruction *visitNativeVariable(parser::NativeVariable *node);
 
-        Object *visitParameter(parser::Parameter *node);
+        Instruction *visitParameter(parser::Parameter *node);
 
-        Object *visitSubscript(parser::Subscript *node);
+        Instruction *visitSubscript(parser::Subscript *node);
 
-        Object *visitSwitchCase(parser::SwitchCase *node);
+        Instruction *visitSwitchCase(parser::SwitchCase *node);
 
-        Object *visitSwitchBlock(parser::SwitchBlock *node);
+        Instruction *visitSwitchBlock(parser::SwitchBlock *node);
 
-        Object *visitTryBlock(parser::TryBlock *node);
+        Instruction *visitTryBlock(parser::TryBlock *node);
 
-        Object *visitUnary(const parser::Unary *node);
+        Instruction *visitUnary(const parser::Unary *node);
 
         void CaptureParametersIntoClosure(const parser::Function *node);
 
