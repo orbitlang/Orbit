@@ -133,7 +133,6 @@ void IRContext::ComputeLiveIntervals() {
                         end = i_max->user->offset;
                 }
 
-
                 this->live_intervals_.emplace_back(instr, instr->offset, end);
             }
         }

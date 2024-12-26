@@ -145,7 +145,7 @@ Instruction *IRBuilder::LoadVariable(const Symbol *symbol) {
         ret = this->builder_.LoadFromStackOffset(offset);
     }
 
-    this->builder_.GetCurrentBasicBlock()->UseVar(symbol);
+    this->builder_.context->current_->UseVar(symbol);
 
     this->builder_.context->AddActiveVar(symbol, ret);
 
@@ -182,7 +182,7 @@ Instruction *IRBuilder::StoreVariable(const Symbol *symbol, Instruction *value) 
         this->builder_.StoreToStackOffset(value, offset);
     }
 
-    this->builder_.GetCurrentBasicBlock()->DefVar(symbol);
+    this->builder_.context->current_->DefVar(symbol);
 
     return nullptr;
 }
