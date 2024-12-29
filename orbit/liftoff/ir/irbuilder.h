@@ -5,11 +5,11 @@
 #ifndef ORBIT_LIFTOFF_IR_IRBUILDER_H_
 #define ORBIT_LIFTOFF_IR_IRBUILDER_H_
 
-#include <orbit/orbiter/datatype/oobject.h>
-
 #include <orbit/liftoff/ir/builder.h>
 
 #include <orbit/liftoff/parser/ast.h>
+
+#include <orbit/liftoff/olevel.h>
 
 namespace liftoff::ir {
     class IRBuilder : parser::ASTVisitor<IRBuilder, Instruction *> {
@@ -19,6 +19,8 @@ namespace liftoff::ir {
 
         SymbolTable *sym_t_;
 
+        OptimizationLevel level_;
+
         friend class ASTVisitor;
 
         Instruction *BinaryOP(const parser::Binary *binary);
@@ -27,7 +29,7 @@ namespace liftoff::ir {
 
         Instruction *LoadVariable(const Symbol *symbol);
 
-        Instruction *StoreVariable(const Symbol *symbol, Instruction *value);
+        Instruction *StoreVariable(const Symbol *symbol, Instruction *value, bool decl);
 
         Instruction *visitASTNode(parser::ASTNode *node);
 
@@ -90,8 +92,10 @@ namespace liftoff::ir {
         void visitForInLoop(const parser::Loop *node);
 
         void PutSyncExit(const JBlock *block);
+
     public:
-        explicit IRBuilder(orbiter::Isolate *isolate) : builder_(isolate), isolate_(isolate) {
+        explicit IRBuilder(orbiter::Isolate *isolate, OptimizationLevel level) : builder_(isolate), isolate_(isolate),
+            level_(level) {
         }
 
         [[nodiscard]] IRContext *Generate(parser::ASTHandle<parser::Module *> &module);

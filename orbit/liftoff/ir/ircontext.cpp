@@ -72,6 +72,46 @@ Instruction *IRContext::GetLastActiveVariableLoad(const Symbol *symbol) {
     return nullptr;
 }
 
+U16 IRContext::PushKnownProps(orbiter::datatype::ORString *id) {
+    if (!this->known_props) {
+        this->known_props = orbiter::datatype::ListNew(this->isolate_);
+        if (!this->known_props)
+            throw std::bad_alloc();
+    }
+
+    const auto array = this->known_props->objects;
+    for (auto i = 0; i < this->known_props->length; i++) {
+        if (array[i] == (orbiter::datatype::OObject *) id)
+            return (U16) i;
+    }
+
+    const auto ok = ListAppend(this->known_props.get(), (orbiter::datatype::OObject *) id);
+    if (!ok)
+        throw std::bad_alloc();
+
+    return this->known_props->length - 1;
+}
+
+U16 IRContext::PushUnknownProps(orbiter::datatype::ORString *id) {
+    if (!this->unknown_props) {
+        this->unknown_props = orbiter::datatype::ListNew(this->isolate_);
+        if (!this->unknown_props)
+            throw std::bad_alloc();
+    }
+
+    const auto array = this->unknown_props->objects;
+    for (auto i = 0; i < this->unknown_props->length; i++) {
+        if (array[i] == (orbiter::datatype::OObject *) id)
+            return (U16) i;
+    }
+
+    const auto ok = ListAppend(this->unknown_props.get(), (orbiter::datatype::OObject *) id);
+    if (!ok)
+        throw std::bad_alloc();
+
+    return this->unknown_props->length - 1;
+}
+
 U16 IRContext::PushStaticValue(orbiter::datatype::OObject *value) {
     if (!this->static_values) {
         this->static_values = orbiter::datatype::ListNew(this->isolate_);

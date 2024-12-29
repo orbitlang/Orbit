@@ -85,9 +85,12 @@ namespace liftoff::ir {
         Instruction *next = nullptr;
         Instruction *prev = nullptr;
 
+        const U32 num_ops = 0;
+
         U32 offset = 0;
 
-        const U32 num_ops = 0;
+        I16 assigned_reg = -1;
+        I16 stack_slot = -1;
 
         virtual ~Instruction() {
             delete[] this->operands;

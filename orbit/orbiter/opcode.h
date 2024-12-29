@@ -65,6 +65,13 @@ namespace orbiter {
         NOT_IN = 0x1
     };
 
+    enum class NewVariableFlags : U8 {
+        VARIABLE = 0x0,
+        CONSTANT = 0x1,
+        PUBLIC = 0x2,
+        WEAK = 0x4
+    };
+
     // Single instruction format:
     // XXXXXXXX - XXXXXXXX - XXXXXXXX - XXXXXXXX <-- 32Bit
     enum class OPCode {
@@ -115,11 +122,17 @@ namespace orbiter {
         MOV, // Copy value between registers:       OPCODE | 4 DST | 4 SRC       | 16 RESERVED
         MOWN, // Move value between registers:      OPCODE | 4 DST | 4 SRC       | 16 RESERVED (Move ownership)
 
+        NGBLV, // Create new module variable:                       OPCODE | 4 RESERVED | 4 FLAGS | 16 UNSIGNED OFFSET
+        STGBL, // Store value into global variable using key:       OPCODE | 4 RESERVED | 4 SRC   | 16 UNSIGNED OFFSET
+        STGOFF,// Store value into global variable using offset:    OPCODE | 4 RESERVED | 4 SRC   | 16 UNSIGNED OFFSET
+        LDGBL, // Load value from global variable using key:        OPCODE | 4 DST | 4 RESERVED   | 16 UNSIGNED OFFSET
+        LDGOFF, // Load value from global variable using offset:    OPCODE | 4 DST | 4 RESERVED   | 16 UNSIGNED OFFSET
+
         SKLDR, // Load from stack into register:    OPCODE | 4 DST      | 4 RESERVED  | 16 SIGNED OFFSET
         SKSTR, // Store register into EBP+OFFSET    OPCODE | 4 RESERVED | 4 SRC       | 16 SIGNED OFFSET
 
-        PUSH,  // Push value onto stack:            OPCODE | 4 RESERVED | 4 SRC | 20 RESERVED
-        POP,   // Pop value from stack:             OPCODE | 4 DST | 20 RESERVED
+        PUSH, // Push value onto stack:            OPCODE | 4 RESERVED | 4 SRC | 20 RESERVED
+        POP, // Pop value from stack:             OPCODE | 4 DST | 20 RESERVED
 
         CLONEW, // Create new closure object        OPCODE | 8 RESERVED | 16 UNSIGNED SLOTS
         CLOLDR, // Load from closure object         OPCODE | 4 RESERVED | 4 FLAGS(ClosureLSMode) | 16 UNSIGNED OFFSET
@@ -150,5 +163,7 @@ ENUMBITMASK_ENABLE(orbiter::ArithFlags);
 ENUMBITMASK_ENABLE(orbiter::ComparisonMode);
 
 ENUMBITMASK_ENABLE(orbiter::LoadFuncFlags);
+
+ENUMBITMASK_ENABLE(orbiter::NewVariableFlags);
 
 #endif // !ORBIT_ORBITER_OPCODE_H_

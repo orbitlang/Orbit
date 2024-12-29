@@ -20,10 +20,6 @@ BasicBlock *Builder::AddInstruction(Instruction *instruction) {
     return bb;
 }
 
-Instruction *Builder::LoadStoreOffset(const OPCode opcode, const I16 offset) {
-    return this->CreateInstruction<OffsetInstruction>(opcode, offset);
-}
-
 void Builder::AddToObjsList(Object *obj) const noexcept {
     obj->memory_.prev = this->context->objs_;
     this->context->objs_ = obj;
@@ -102,6 +98,14 @@ Instruction *Builder::CreateJump(BasicBlock *destination) {
     return jmp;
 }
 
+Instruction *Builder::CreateStoreVariable(OPCode opcode, I16 offset, U8 flags, Instruction *value) {
+    auto *instr = this->CreateInstruction<OffsetInstruction>(opcode, offset, value);
+
+    instr->flags = flags;
+
+    return instr;
+}
+
 Instruction *Builder::CreateReturn(Instruction *s_reg, bool yield) {
     return this->CreateInstruction<ReturnInstruction>(s_reg, yield);
 }
@@ -119,7 +123,7 @@ Instruction *Builder::LoadCodeObject(U16 offset) {
 }
 
 Instruction *Builder::LoadConstant(U16 offset) {
-    return this->LoadStoreOffset(OPCode::LDCST, offset);
+    return this->LoadFromOffset(OPCode::LDCST, (I16) offset, 0);
 }
 
 Instruction *Builder::LoadFromClosureAtOffset(I16 offset, ClosureLSMode mode) {
@@ -127,7 +131,7 @@ Instruction *Builder::LoadFromClosureAtOffset(I16 offset, ClosureLSMode mode) {
 }
 
 Instruction *Builder::LoadFromStackOffset(I16 offset) {
-    return this->LoadStoreOffset(OPCode::SKLDR, offset);
+    return this->LoadFromOffset(OPCode::SKLDR, offset, 0);
 }
 
 Instruction *Builder::LoadFunction(Instruction *src, LoadFuncFlags flags) {
@@ -139,6 +143,14 @@ Instruction *Builder::LoadImmediate(const MachineSize value) {
     // TODO: check size, use shift to load whole value
 
     this->AddInstruction(instr);
+
+    return instr;
+}
+
+Instruction *Builder::LoadFromOffset(const OPCode opcode, const I16 offset, U8 flags) {
+    auto *instr = this->CreateInstruction<OffsetInstruction>(opcode, offset);
+
+    instr->flags = flags;
 
     return instr;
 }

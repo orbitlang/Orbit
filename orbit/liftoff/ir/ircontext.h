@@ -102,6 +102,10 @@ namespace liftoff::ir {
          */
         IRContext *back = nullptr;
 
+        orbiter::datatype::HList known_props;
+
+        orbiter::datatype::HList unknown_props;
+
         orbiter::datatype::HList static_values;
 
         /**
@@ -201,6 +205,10 @@ namespace liftoff::ir {
         [[nodiscard]] U16 GetSubcontextCount() const noexcept {
             return this->sub.count;
         }
+
+        U16 PushKnownProps(orbiter::datatype::ORString *id);
+
+        U16 PushUnknownProps(orbiter::datatype::ORString *id);
 
         /**
          * @brief Adds a static value to the internal list of static values managed by the IRContext

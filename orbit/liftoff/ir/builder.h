@@ -76,16 +76,6 @@ namespace liftoff::ir {
         BasicBlock *AddInstruction(Instruction *instruction);
 
         /**
-         * @brief Loads or stores using the specified opcode and offset.
-         *
-         * @param opcode The opcode for the load/store operation.
-         * @param offset The offset for the load/store operation.
-         *
-         * @return Pointer to the created instruction.
-         */
-        Instruction *LoadStoreOffset(orbiter::OPCode opcode, I16 offset);
-
-        /**
          * @brief Adds an object to the object list.
          *
          * @param obj The object to add.
@@ -147,6 +137,8 @@ namespace liftoff::ir {
 
         Instruction *CreateJump(BasicBlock *destination);
 
+        Instruction *CreateStoreVariable(orbiter::OPCode opcode, I16 offset, U8 flags, Instruction *value);
+
         Instruction *CreateReturn(Instruction *s_reg, bool yield);
 
         Instruction *CreateUnaryOp(orbiter::OPCode opcode, Instruction *s_reg);
@@ -177,6 +169,17 @@ namespace liftoff::ir {
         Instruction *LoadNilValue() {
             return this->CreateInstruction<UnaryImmInstr>(orbiter::OPCode::LDIMM, (U8) orbiter::LoadConstantMode::NIL);
         }
+
+        /**
+         * @brief Loads or stores using the specified opcode and offset.
+         *
+         * @param opcode The opcode for the load/store operation.
+         * @param offset The offset for the load/store operation.
+         * @param flags flags
+         *
+         * @return Pointer to the created instruction.
+         */
+        Instruction *LoadFromOffset(orbiter::OPCode opcode, I16 offset, U8 flags);
 
         Instruction *LoadTrueValue() {
             return this->CreateInstruction<UnaryImmInstr>(orbiter::OPCode::LDIMM, (U8) orbiter::LoadConstantMode::TRUE);
