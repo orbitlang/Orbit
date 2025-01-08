@@ -220,6 +220,8 @@ void Builder::AppendBasicBlock(BasicBlock *bb) const noexcept {
     this->context->current_->next = bb;
     bb->prev = this->context->current_;
 
+    bb->offset = this->context->current_->offset + this->context->current_->size;
+
     this->context->current_ = bb;
 }
 
