@@ -10,6 +10,10 @@
 #include <orbit/orbiter/datatype/code.h>
 
 namespace orbiter {
+    constexpr auto kGeneralPurposeRegistersCount = 13;
+    constexpr auto kSpecialPurposeRegistersCount = 3;
+    constexpr auto kInternalRegistersCount = 2;
+
     using MachineWord = U32;
 
     union Register {
