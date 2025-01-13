@@ -7,11 +7,30 @@
 
 #include <orbit/orbiter/datatype/oobject.h>
 
+#include <orbit/orbiter/datatype/list.h>
+#include <orbit/orbiter/datatype/orstring.h>
+
 namespace orbiter::datatype {
     struct Code {
         OROBJ_HEAD;
 
-        unsigned char *m_code;
+        List *codes;
+
+        List *names;
+
+        List *static_resources;
+
+        ORString *doc;
+
+        const unsigned char *m_code;
+
+        const unsigned char *m_end;
+
+        U16 knames_length;
+
+        U16 stack_size;
+
+        MSize hash;
     };
 
     using HCode = Handle<Code>;
@@ -32,6 +51,9 @@ namespace orbiter::datatype {
     * @return true if setup was successful, false otherwise
     */
     bool CodeTypeSetup(Isolate *isolate, TypeInfo *self);
+
+    HCode CodeNew(Isolate *isolate, List *codes, List *names, List *static_resources, ORString *doc,
+                  const unsigned char *m_code, U32 m_size, U16 known_length, U16 stack_size);
 
     /**
      * @brief Initialize and create the specified type
