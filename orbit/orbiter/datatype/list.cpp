@@ -42,6 +42,19 @@ bool orbiter::datatype::ListAppend(List *list, OObject *object) {
     return true;
 }
 
+bool orbiter::datatype::ListAppend(List *list, const List *other) {
+    if (other == nullptr)
+        return true;
+
+    if (!ListCheckSize(list, other->length))
+        return false;
+
+    for (MSize i = 0; i < other->length; i++)
+        list->objects[list->length++] = O_VFY_INCREF(other->objects[i]);
+
+    return true;
+}
+
 bool orbiter::datatype::ListInsert(List *list, OObject *object, MSize index) {
     if (index < 0)
         index = ((MSize) list->length) + index;

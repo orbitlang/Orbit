@@ -51,6 +51,24 @@ namespace orbiter::datatype {
     bool ListAppend(List *list, OObject *object);
 
     /**
+     * @brief Appends the contents of one list to another
+     *
+     * This function takes all elements from the `other` list and appends them
+     * to the end of the `list`. It ensures that the destination list has
+     * enough capacity to accommodate the new elements. Each appended element
+     * has its reference count incremented to maintain proper memory management.
+     *
+     * If the `other` list is null, the function does nothing and returns true.
+     *
+     * @param list Pointer to the destination List to which the elements will be appended
+     * @param other Pointer to the source List whose elements will be appended to the destination List
+     *
+     * @return true if the appending was successful or if the `other` list is null,
+     * false if the destination list lacks sufficient capacity to store the new elements.
+     */
+    bool ListAppend(List *list, const List *other);
+
+    /**
     * @brief Insert element into the list.
     *
     * @param list List object.
