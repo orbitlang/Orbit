@@ -26,13 +26,19 @@ namespace orbiter {
 
     template<typename Derived>
     class IsolateAllocatorBase {
+        Isolate *isolate_;
+
     protected:
         stratum::Memory *allocator_;
 
     public:
         using size_type = MSize;
 
-        explicit IsolateAllocatorBase(Isolate *isolate) noexcept : allocator_(&isolate->allocator_) {
+        explicit IsolateAllocatorBase(Isolate *isolate) noexcept : isolate_(isolate), allocator_(&isolate->allocator_) {
+        }
+
+        [[nodiscard]] Isolate *GetIsolate() const noexcept {
+            return isolate_;
         }
 
         template<typename T, typename... Args>
