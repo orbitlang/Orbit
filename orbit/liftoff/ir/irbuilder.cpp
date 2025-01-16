@@ -421,8 +421,10 @@ Instruction *IRBuilder::visitFunction(const parser::Function *node) {
     if (!this->sym_t_->EnterScope(node->name))
         throw SymbolTableException();
 
+    this->builder_.context->stack_slot = this->sym_t_->scope->GetLocalVariableCount();
+
     // Alloc stack space for local variables
-    this->builder_.AllocStackSlots(this->sym_t_->scope->GetLocalVariableCount(), orbiter::AllocaFlags::DEFAULT);
+    this->builder_.AllocStackSlots(this->builder_.context->stack_slot, orbiter::AllocaFlags::DEFAULT);
 
     // Check if this function can create a lexical environment, if yes, allocate another slot in stack
     if (this->sym_t_->scope->ShouldCreateClosure()) {

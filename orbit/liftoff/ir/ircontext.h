@@ -62,17 +62,6 @@ namespace liftoff::ir {
         std::unordered_map<const Symbol *, Instruction *> active_regs_;
 
         /**
-         * @variable live_intervals_
-         *
-         * Stores a collection of live intervals used for tracking the lifespan of variables
-         * or registers during code generation. Each interval represents a continuous range
-         * where a variable remains alive or allocated before it is no longer needed.
-         * This data is integral for register allocation and optimizing the usage of
-         * available registers or memory resources.
-         */
-        std::vector<LiveInterval> live_intervals_;
-
-        /**
          * @var objs_
          *
          * A pointer to the head of a linked list of dynamically allocated `Object` instances
@@ -167,6 +156,19 @@ namespace liftoff::ir {
         JBlock *j_chain = nullptr;
 
         orbiter::datatype::HList static_values;
+
+        /**
+         * @variable live_intervals_
+         *
+         * Stores a collection of live intervals used for tracking the lifespan of variables
+         * or registers during code generation. Each interval represents a continuous range
+         * where a variable remains alive or allocated before it is no longer needed.
+         * This data is integral for register allocation and optimizing the usage of
+         * available registers or memory resources.
+         */
+        std::vector<LiveInterval> live_intervals_;
+
+        U16 stack_slot = 0;
 
         U32 program_size = 0;
 
