@@ -210,6 +210,28 @@ std::vector<LiveInterval> &IRContext::ComputeLiveIntervals() {
     return this->live_intervals_;
 }
 
+void IRContext::InsertInstructionAfter(Instruction *instruction, Instruction *after) noexcept {
+    after->next = instruction->next;
+    after->prev = instruction;
+
+    assert(instruction->next!=nullptr);
+
+    instruction->next->prev = after;
+
+    instruction->next = after;
+}
+
+void IRContext::InsertInstructionBefore(Instruction *instruction, Instruction *before) noexcept {
+    before->next = instruction;
+    before->prev = instruction->prev;
+
+    assert(instruction->prev!=nullptr);
+
+    instruction->prev->next = before;
+
+    instruction->prev = before;
+}
+
 void IRContext::InvalidateActiveVar(const Symbol *symbol) {
     if (symbol == nullptr) {
         this->active_regs_.clear();

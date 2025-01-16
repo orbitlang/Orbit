@@ -185,6 +185,14 @@ namespace liftoff::ir {
             return this->CreateInstruction<UnaryImmInstr>(orbiter::OPCode::LDCST, (U8) orbiter::LoadConstantMode::TRUE);
         }
 
+        Instruction *GetLoadFromStackOffset(I16 offset) {
+            return this->CreateObject<OffsetInstruction>(orbiter::OPCode::SKLDR, offset);
+        }
+
+        Instruction *GetStoreToStackOffset(Instruction *src, I16 offset) {
+            return this->CreateObject<OffsetInstruction>(orbiter::OPCode::SKSTR, offset, src);
+        }
+
         Instruction *StackPop();
 
         Instruction *StackPush(Instruction *s_reg);

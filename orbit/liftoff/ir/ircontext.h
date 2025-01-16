@@ -283,6 +283,30 @@ namespace liftoff::ir {
         std::vector<LiveInterval> &ComputeLiveIntervals();
 
         /**
+         * @brief Inserts an instruction immediately after a given instruction in the instruction list.
+         *
+         * This method adds the specified instruction `after` directly after the existing
+         * instruction `instruction` in the linked list of instructions.
+         *
+         * @param instruction The instruction after which the new instruction will be inserted. This
+         *                     must already exist in the instruction list.
+         * @param after The instruction to be inserted after the specified `instruction`.
+         */
+        static void InsertInstructionAfter(Instruction *instruction, Instruction *after) noexcept;
+
+        /**
+         * @brief Inserts a new instruction before a specified instruction in the instruction list.
+         *
+         * This method modifies the instruction list by inserting a given instruction
+         * immediately before another specified instruction.
+         *
+         * @param instruction The instruction before which the new instruction will be inserted. This
+         *                     must already exist in the instruction list.
+         * @param before The instruction to be inserted before the specified `instruction`.
+         */
+        static void InsertInstructionBefore(Instruction *instruction, Instruction *before) noexcept;
+
+        /**
          * @brief Invalidates a specific active variable or clears all active variables in the
          * current IR context.
          *
