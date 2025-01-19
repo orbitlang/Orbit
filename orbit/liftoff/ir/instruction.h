@@ -14,6 +14,9 @@
 namespace liftoff::ir {
     using MachineSize = PtrSize;
 
+    constexpr auto kUninitializedReg = -1;
+    constexpr auto kDoNotAllocateReg = -2;
+
     class BasicBlock;
 
     class Builder;
@@ -34,8 +37,12 @@ namespace liftoff::ir {
 
         U32 instr_offset = 0;
 
-        I16 assigned_reg = -1;
+        I16 assigned_reg = kUninitializedReg;
         I16 stack_slot = -1;
+
+        virtual void SetRegister(I16 reg) noexcept {
+            this->assigned_reg = reg;
+        }
     };
 
     class PhysInstruction : public Instruction {
@@ -243,9 +250,18 @@ namespace liftoff::ir {
         PhiInstr *AddTarget(Instruction *src) noexcept {
             assert(this->index<2);
 
+            src->assigned_reg = kDoNotAllocateReg;
+
             this->SetOperand(this->index++, src);
 
             return this;
+        }
+
+        void SetRegister(I16 reg) noexcept override {
+            this->assigned_reg = reg;
+
+            for (auto i = 0; i < this->index; i++)
+                ((Instruction *) this->operands[i].value)->assigned_reg = reg;
         }
     };
 }
