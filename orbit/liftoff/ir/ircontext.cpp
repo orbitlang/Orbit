@@ -194,7 +194,7 @@ std::vector<LiveInterval> &IRContext::ComputeLiveIntervals() {
                 U32 end = 0;
 
                 for (const auto *use = instr->use_list; use != nullptr; use = use->next) {
-                    if (use->user->type() != ObjectType::INSTRUCTION)
+                    if (use->user->type() != ObjectType::INSTRUCTION && use->user->type() != ObjectType::VIRT_INSTRUCTION)
                         continue;
 
                     const auto *u_instr = (Instruction *) use->user;
