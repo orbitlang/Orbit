@@ -53,7 +53,7 @@ void LinearScan::EmitStackLoad(Instruction *instruction) {
 void LinearScan::ExpireOldIntervals(U32 position) {
     auto cond_func = [&](const LiveInterval *interval) {
         // Check if the interval's end has passed the current position.
-        if (interval->end <= position) {
+        if (interval->end < position) {
             // Reclaim the assigned register and add it back to the list of free registers.
             this->free_registers_.push_back(interval->instr->assigned_reg);
 
@@ -82,7 +82,7 @@ void LinearScan::HandleSpill(LiveInterval *interval) {
     const auto spilled_instr = (*longest)->instr;
 
     // Assign the register of the spilled instruction to the new interval
-    interval->instr->assigned_reg = spilled_instr->assigned_reg;
+    interval->instr->SetRegister(spilled_instr->assigned_reg);
 
     // Assign a free stack slot to the spilled instruction
     spilled_instr->stack_slot = (I16) this->GetFreeStackSlot();
@@ -108,6 +108,9 @@ void LinearScan::HandleSpill(LiveInterval *interval) {
 
 void LinearScan::Allocate(IRContext *ir) {
     for (auto &interval: ir->live_intervals_) {
+        if (interval.instr->assigned_reg == kDoNotAllocateReg)
+            continue;
+
         this->ExpireOldIntervals(interval.start);
 
         if (this->active_.size() == this->total_regs_) {
@@ -115,7 +118,7 @@ void LinearScan::Allocate(IRContext *ir) {
             continue;
         }
 
-        interval.instr->assigned_reg = (I16) this->free_registers_.back();
+        interval.instr->SetRegister((I16) this->free_registers_.back());
         this->free_registers_.pop_back();
 
         this->active_.push_back(&interval);

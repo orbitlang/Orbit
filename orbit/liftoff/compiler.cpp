@@ -37,16 +37,25 @@ orbiter::datatype::HList Compiler::BuildCodesList(IRContext *ir) {
 }
 
 orbiter::datatype::HCode Compiler::Compile(IRContext *ir) {
+    /*
+     * IR Generation
+     *   -> Optimizations
+     *   -> Liveness Analysis
+     *   -> Linear Scan
+     *   -> Phi Resolution
+     *   -> Code Generation
+     */
+
     // Step 1: Optimization
     // TODO: Implement optimization phase here...
 
     // Step 2: Perform Liveness Analysis
     ir->ComputeLiveIntervals();
 
-    // Step 3: Allocate Registers
+    // Step 3-4: Allocate Registers / Phi resolution
     LinearScan(this->isolate_, orbiter::kGeneralPurposeRegistersCount).Allocate(ir);
 
-    // Step 4: Generate machine code
+    // Step 5: Generate machine code
     auto code = Codegen(this->isolate_).Generate(ir);
     if (code) {
         if (ir->GetSubcontextCount() > 0) {
