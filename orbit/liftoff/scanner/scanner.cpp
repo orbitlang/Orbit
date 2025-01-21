@@ -139,7 +139,7 @@ bool Scanner::ParseEscape(int stop, bool ignore_unicode) {
 
     if (value == stop) {
         if (!this->sbuf_.PutChar((unsigned char) value)) {
-            this->status_ = ScannerStatus::NOMEM;
+            this->status = ScannerStatus::NOMEM;
             return false;
         }
 
@@ -188,7 +188,7 @@ bool Scanner::ParseEscape(int stop, bool ignore_unicode) {
     }
 
     if (!ok) {
-        this->status_ = ScannerStatus::NOMEM;
+        this->status = ScannerStatus::NOMEM;
         return false;
     }
 
@@ -199,12 +199,12 @@ bool Scanner::ParseHexEscape() {
     int byte;
 
     if ((byte = this->HexToByte()) < 0) {
-        this->status_ = ScannerStatus::INVALID_HEX_BYTE;
+        this->status = ScannerStatus::INVALID_HEX_BYTE;
         return false;
     }
 
     if (!this->sbuf_.PutChar((unsigned char) byte)) {
-        this->status_ = ScannerStatus::NOMEM;
+        this->status = ScannerStatus::NOMEM;
         return false;
     }
 
@@ -230,7 +230,7 @@ bool Scanner::ParseOctEscape(int value) {
     }
 
     if (!this->sbuf_.PutChar(byte)) {
-        this->status_ = ScannerStatus::NOMEM;
+        this->status = ScannerStatus::NOMEM;
         return false;
     }
 
@@ -248,9 +248,9 @@ bool Scanner::ParseUnicode(bool extended) {
 
     for (int i = 0; i < width; i++) {
         if ((byte = this->HexToByte()) < 0) {
-            this->status_ = ScannerStatus::INVALID_BYTE_USHORT;
+            this->status = ScannerStatus::INVALID_BYTE_USHORT;
             if (extended)
-                this->status_ = ScannerStatus::INVALID_BYTE_ULONG;
+                this->status = ScannerStatus::INVALID_BYTE_ULONG;
             return false;
         }
         sequence[(width - 1) - i] = (unsigned char) byte;
@@ -258,12 +258,12 @@ bool Scanner::ParseUnicode(bool extended) {
 
     const int len = orbiter::datatype::StringIntToUTF8(*((unsigned int *) sequence), buf);
     if (len == 0) {
-        this->status_ = ScannerStatus::INVALID_UCHR;
+        this->status = ScannerStatus::INVALID_UCHR;
         return false;
     }
 
     if (!this->sbuf_.PutString(buf, len)) {
-        this->status_ = ScannerStatus::NOMEM;
+        this->status = ScannerStatus::NOMEM;
         return false;
     }
 
@@ -287,7 +287,7 @@ bool Scanner::TokenizeAtom(Token *out_token) {
 
     while (isalnum(value) || value == '_') {
         if (!this->sbuf_.PutChar((unsigned char) this->Next())) {
-            this->status_ = ScannerStatus::NOMEM;
+            this->status = ScannerStatus::NOMEM;
             return false;
         }
 
@@ -305,7 +305,7 @@ bool Scanner::TokenizeBinary(Token *out_token) {
 
     while (value >= '0' && value <= '1') {
         if (!this->sbuf_.PutChar((unsigned char) this->Next())) {
-            this->status_ = ScannerStatus::NOMEM;
+            this->status = ScannerStatus::NOMEM;
             return false;
         }
 
@@ -313,7 +313,7 @@ bool Scanner::TokenizeBinary(Token *out_token) {
     }
 
     if (isdigit(value)) {
-        this->status_ = ScannerStatus::INVALID_BINARY_LITERAL;
+        this->status = ScannerStatus::INVALID_BINARY_LITERAL;
         return false;
     }
 
@@ -327,7 +327,7 @@ bool Scanner::TokenizeChar(Token *out_token) {
     int value = this->Peek();
 
     if (value == '\'') {
-        this->status_ = ScannerStatus::EMPTY_SQUOTE;
+        this->status = ScannerStatus::EMPTY_SQUOTE;
         return false;
     }
 
@@ -339,19 +339,19 @@ bool Scanner::TokenizeChar(Token *out_token) {
                 return false;
         } else {
             if (!this->sbuf_.PutChar((unsigned char) this->Next())) {
-                this->status_ = ScannerStatus::NOMEM;
+                this->status = ScannerStatus::NOMEM;
                 return false;
             }
         }
     } else {
         if (!this->sbuf_.PutChar((unsigned char) this->Next())) {
-            this->status_ = ScannerStatus::NOMEM;
+            this->status = ScannerStatus::NOMEM;
             return false;
         }
     }
 
     if (this->Next() != '\'') {
-        this->status_ = ScannerStatus::INVALID_SQUOTE;
+        this->status = ScannerStatus::INVALID_SQUOTE;
         return false;
     }
 
@@ -380,7 +380,7 @@ bool Scanner::TokenizeComment(Token *out_token, bool inline_comment) {
             break;
 
         if (!this->sbuf_.PutChar((unsigned char) peek)) {
-            this->status_ = ScannerStatus::NOMEM;
+            this->status = ScannerStatus::NOMEM;
             return false;
         }
 
@@ -402,18 +402,18 @@ bool Scanner::TokenizeComment(Token *out_token, bool inline_comment) {
 
 bool Scanner::TokenizeDecimal(Token *out_token, TokenType type, bool begin_zero) {
     if (begin_zero && !this->sbuf_.PutChar('0')) {
-        this->status_ = ScannerStatus::NOMEM;
+        this->status = ScannerStatus::NOMEM;
         return false;
     }
 
     if (type == TokenType::DECIMAL && !this->sbuf_.PutChar('.')) {
-        this->status_ = ScannerStatus::NOMEM;
+        this->status = ScannerStatus::NOMEM;
         return false;
     }
 
     while (isdigit(this->Peek())) {
         if (!this->sbuf_.PutChar((unsigned char) this->Next())) {
-            this->status_ = ScannerStatus::NOMEM;
+            this->status = ScannerStatus::NOMEM;
             return false;
         }
     }
@@ -421,13 +421,13 @@ bool Scanner::TokenizeDecimal(Token *out_token, TokenType type, bool begin_zero)
     // Look for a fractional part.
     if (this->Peek() == '.' && type != TokenType::DECIMAL) {
         if (!this->sbuf_.PutChar((unsigned char) this->Next())) {
-            this->status_ = ScannerStatus::NOMEM;
+            this->status = ScannerStatus::NOMEM;
             return false;
         }
 
         while (isdigit(this->Peek())) {
             if (!this->sbuf_.PutChar((unsigned char) this->Next())) {
-                this->status_ = ScannerStatus::NOMEM;
+                this->status = ScannerStatus::NOMEM;
                 return false;
             }
         }
@@ -446,7 +446,7 @@ bool Scanner::TokenizeHex(Token *out_token) {
 
     while (IsHexDigit(value)) {
         if (!this->sbuf_.PutChar((unsigned char) this->Next())) {
-            this->status_ = ScannerStatus::NOMEM;
+            this->status = ScannerStatus::NOMEM;
             return false;
         }
 
@@ -454,7 +454,7 @@ bool Scanner::TokenizeHex(Token *out_token) {
     }
 
     if (isalpha(value) && (value != 'u' && value != 'U')) {
-        this->status_ = ScannerStatus::INVALID_HEX_LITERAL;
+        this->status = ScannerStatus::INVALID_HEX_LITERAL;
         return false;
     }
 
@@ -506,7 +506,7 @@ bool Scanner::TokenizeNumber(Token *out_token) {
                 out_token->type = TokenType::U_NUMBER;
                 break;
             default:
-                this->status_ = ScannerStatus::INVALID_U_NUM;
+                this->status = ScannerStatus::INVALID_U_NUM;
                 return false;
         }
     }
@@ -519,7 +519,7 @@ bool Scanner::TokenizeOctal(Token *out_token) {
 
     while (IsOctDigit(value)) {
         if (!this->sbuf_.PutChar((unsigned char) this->Next())) {
-            this->status_ = ScannerStatus::NOMEM;
+            this->status = ScannerStatus::NOMEM;
             return false;
         }
 
@@ -527,7 +527,7 @@ bool Scanner::TokenizeOctal(Token *out_token) {
     }
 
     if (isdigit(value)) {
-        this->status_ = ScannerStatus::INVALID_OCTAL_LITERAL;
+        this->status = ScannerStatus::INVALID_OCTAL_LITERAL;
         return false;
     }
 
@@ -549,7 +549,7 @@ bool Scanner::TokenizeString(Token *out_token, bool check_prefix, bool byte_stri
     for (; this->Peek() == '#'; this->Next(), hashes++);
 
     if (check_prefix && this->Next() != '"') {
-        this->status_ = ScannerStatus::INVALID_RS_PROLOGUE;
+        this->status = ScannerStatus::INVALID_RS_PROLOGUE;
         return false;
     }
 
@@ -567,12 +567,12 @@ bool Scanner::TokenizeString(Token *out_token, bool check_prefix, bool byte_stri
             }
 
             if (!this->sbuf_.PutChar('"')) {
-                this->status_ = ScannerStatus::NOMEM;
+                this->status = ScannerStatus::NOMEM;
                 return false;
             }
 
             if (!this->sbuf_.PutCharRepeat('#', count)) {
-                this->status_ = ScannerStatus::NOMEM;
+                this->status = ScannerStatus::NOMEM;
                 return false;
             }
 
@@ -580,13 +580,13 @@ bool Scanner::TokenizeString(Token *out_token, bool check_prefix, bool byte_stri
         }
 
         if (value == '\n' && hashes == 0) {
-            this->status_ = ScannerStatus::INVALID_STR;
+            this->status = ScannerStatus::INVALID_STR;
             return false;
         }
 
         // Byte string accept byte in range (0x00 - 0x7F)
         if (byte_string && value > 0x7F) {
-            this->status_ = ScannerStatus::INVALID_BSTR;
+            this->status = ScannerStatus::INVALID_BSTR;
             return false;
         }
 
@@ -602,13 +602,13 @@ bool Scanner::TokenizeString(Token *out_token, bool check_prefix, bool byte_stri
         }
 
         if (!this->sbuf_.PutChar((unsigned char) value)) {
-            this->status_ = ScannerStatus::NOMEM;
+            this->status = ScannerStatus::NOMEM;
             return false;
         }
     }
 
     if (value <= 0) {
-        this->status_ = ScannerStatus::INVALID_STR;
+        this->status = ScannerStatus::INVALID_STR;
         return false;
     }
 
@@ -630,7 +630,7 @@ bool Scanner::TokenizeWord(Token *out_token) {
     bool next = false;
     while (isalnum(value) || value == '_') {
         if (!this->sbuf_.PutChar((unsigned char) value)) {
-            this->status_ = ScannerStatus::NOMEM;
+            this->status = ScannerStatus::NOMEM;
             return false;
         }
 
@@ -667,7 +667,7 @@ bool Scanner::NextToken(Token *out_token) noexcept {
     int value;
 
     // Reset error status
-    this->status_ = ScannerStatus::GOOD;
+    this->status = ScannerStatus::GOOD;
 
     out_token->isolate = this->isolate_;
 
@@ -726,7 +726,7 @@ bool Scanner::NextToken(Token *out_token) noexcept {
                 return true;
             case '\r': // \r\n
                 CHECK_AGAIN('\n', TokenType::END_OF_LINE)
-                this->status_ = ScannerStatus::INVALID_TK;
+                this->status = ScannerStatus::INVALID_TK;
                 return false;
             case '!':
                 if (this->Peek() == '=') {
@@ -768,7 +768,7 @@ bool Scanner::NextToken(Token *out_token) noexcept {
                 if (this->Peek() == '.') {
                     this->Next();
                     CHECK_AGAIN('.', TokenType::ELLIPSIS)
-                    this->status_ = ScannerStatus::INVALID_TK;
+                    this->status = ScannerStatus::INVALID_TK;
                     return false;
                 }
 
@@ -830,7 +830,7 @@ bool Scanner::NextToken(Token *out_token) noexcept {
                 RETURN_TK(TokenType::LEFT_SQUARE);
             case '\\':
                 if (this->Next() != '\n') {
-                    this->status_ = ScannerStatus::INVALID_LC;
+                    this->status = ScannerStatus::INVALID_LC;
                     return false;
                 }
                 continue;
@@ -849,7 +849,7 @@ bool Scanner::NextToken(Token *out_token) noexcept {
             case '~':
                 RETURN_TK(TokenType::TILDE);
             default:
-                this->status_ = ScannerStatus::INVALID_TK;
+                this->status = ScannerStatus::INVALID_TK;
                 return false;
         }
 #undef RETURN_TK
@@ -886,7 +886,7 @@ int Scanner::Peek(bool advance) {
             break;
 
         if (this->fd_ == nullptr) {
-            this->status_ = ScannerStatus::END_OF_FILE;
+            this->status = ScannerStatus::END_OF_FILE;
             return -1;
         }
 
@@ -896,12 +896,12 @@ int Scanner::Peek(bool advance) {
             err = this->ibuf_.ReadFile(this->fd_);
 
         if (err == 0) {
-            this->status_ = ScannerStatus::END_OF_FILE;
+            this->status = ScannerStatus::END_OF_FILE;
             return -1;
         }
 
         if (err < 0)
-            this->status_ = ScannerStatus::NOMEM;
+            this->status = ScannerStatus::NOMEM;
 
         chr = err;
     } while (chr > 0);
@@ -946,7 +946,7 @@ const char *Scanner::GetStatusMessage() const {
         "ok"
     };
 
-    return messages[(int) this->status_];
+    return messages[(int) this->status];
 }
 
 Scanner::Scanner(orbiter::Isolate *isolate, FILE *fd, const char *ps1, const char *ps2,

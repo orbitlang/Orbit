@@ -56,11 +56,9 @@ namespace liftoff::scanner {
 
         InputBuffer ibuf_;
 
-        Token peeked{};
+        Token peeked;
 
         Position loc{1, 1, 0};
-
-        ScannerStatus status_ = ScannerStatus::GOOD;
 
         bool ParseEscape(int stop, bool ignore_unicode);
 
@@ -101,6 +99,8 @@ namespace liftoff::scanner {
         int UnderflowInteractive();
 
     public:
+        ScannerStatus status = ScannerStatus::GOOD;
+
         /**
          * @brief Initialize scanner using a string and length.
          *
@@ -109,8 +109,8 @@ namespace liftoff::scanner {
          * @param length Length of the string that contains the source code.
          */
         Scanner(orbiter::Isolate *isolate, const char *str,
-                unsigned long length) noexcept: isolate_(isolate), ibuf_(isolate, (unsigned char *) str, length),
-                                                sbuf_(isolate) {
+                unsigned long length) noexcept: isolate_(isolate), sbuf_(isolate),
+                                                ibuf_(isolate, (unsigned char *) str, length) {
         }
 
         /**
@@ -120,7 +120,7 @@ namespace liftoff::scanner {
          * @param str Pointer to the string that contains the source code.
          */
         explicit Scanner(orbiter::Isolate *isolate, const char *str) noexcept: Scanner(isolate, str, strlen(str)) {
-        };
+        }
 
         /**
          * @brief Initialize scanner using a file to read from and prompts to show (interactive mode).
@@ -143,7 +143,7 @@ namespace liftoff::scanner {
          */
         Scanner(orbiter::Isolate *isolate, FILE *fd, const char *ps1, const char *ps2) noexcept: Scanner(
             isolate, fd, ps1, ps2, kScannerFileBuffer) {
-        };
+        }
 
         /**
          * @brief Reads the next token from the stream and returns it.

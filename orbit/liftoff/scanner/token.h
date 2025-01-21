@@ -221,24 +221,75 @@ namespace liftoff::scanner {
     };
 
     struct Loc {
+        /**
+         * @brief Tracks the starting position within a source code file.
+         *
+         * This variable is an instance of the `scanner::Position` struct and represents
+         * the starting column, line, and offset in the source code during parsing.
+         */
         Position start;
+
+        /**
+         * @brief Tracks the ending position within a source code file.
+         *
+         * This variable is an instance of the `scanner::Position` struct and represents
+         * the ending column, line, and offset in the source code during parsing.
+         */
         Position end;
     };
 
     class Token {
     public:
+        /**
+        * @brief Pointer to an instance of the orbiter::Isolate class.
+        *
+        * This variable represents a null-initialized pointer to an `orbiter::Isolate` instance.
+        * The variable is typically used when interaction with isolated environments is required,
+        * and provides a mechanism to reference or manipulate those individual states.
+        */
         orbiter::Isolate *isolate = nullptr;
 
+        /**
+         * @brief Pointer to a dynamically allocated buffer.
+         *
+         * This buffer is used to store data related to the Token instance.
+         * It may be allocated or freed during the lifecycle of the Token.
+         * The ownership and lifetime of this buffer are managed by the `Token` class,
+         * ensuring proper memory handling.
+         */
         unsigned char *buffer = nullptr;
+
+        /// @brief Represents the length of a buffer or string in terms of the number of characters or bytes.
         MSize length = 0;
 
+        /**
+         * Represents the type of token in the source code.
+         *
+         * The 'type' variable is initialized to `TokenType::TK_NULL`, indicating that the token currently has no assigned type.
+         * TokenType is an enumeration that classifies tokens based on their syntactical or functional role in the source code.
+         */
         TokenType type = TokenType::TK_NULL;
 
+        /**
+         * Represents the location of a token or syntactic element within the source code.
+         *
+         * This variable holds a `Loc` object which defines the starting and ending positions of the token or element.
+         * The `start` and `end` positions contain offset and line information to facilitate precise source code mapping.
+         */
         Loc loc{};
 
         Token() = default;
 
         Token(Token &other) = delete;
+
+        Token(Token &&other) noexcept: isolate(other.isolate),
+                                       buffer(other.buffer),
+                                       length(other.length),
+                                       type(other.type),
+                                       loc(other.loc) {
+            other.buffer = nullptr;
+            other.length = 0;
+        }
 
         ~Token() {
             this->type = TokenType::TK_NULL;
