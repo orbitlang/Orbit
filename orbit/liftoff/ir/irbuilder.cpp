@@ -699,20 +699,26 @@ void IRBuilder::PutSyncExit(const JBlock *block) {
     }
 }
 
-IRContext *IRBuilder::Generate(parser::ASTHandle<parser::Module *> &module) {
+IRContext *IRBuilder::Generate(parser::ASTHandle<parser::Module *> &module) noexcept {
     assert(this->isolate_ == module->isolate); // Security check.
 
-    // Set symbol table
-    this->sym_t_ = module->sym_t;
+    try {
+        // Set symbol table
+        this->sym_t_ = module->sym_t;
 
-    // Create first context
-    auto ir_module = this->builder_.IRContextNew(IRContextType::MODULE);
+        // Create first context
+        this->builder_.IRContextNew(IRContextType::MODULE);
 
-    for (auto &statement: module->statements) {
-        this->visit(statement.get());
+        for (auto &statement: module->statements) {
+            this->visit(statement.get());
+        }
+
+        this->builder_.LeaveContext();
+
+        return this->builder_.context;
+    } catch (const SymbolTableException &) {
+        assert(false);
     }
 
-    this->builder_.LeaveContext();
-
-    return this->builder_.context;
+    return nullptr;
 }

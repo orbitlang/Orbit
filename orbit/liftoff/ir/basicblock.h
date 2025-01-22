@@ -34,6 +34,7 @@ namespace liftoff::ir {
         std::unordered_set<const Symbol *> live_out_;
 
         friend class IRContext;
+
     public:
         /// Pointer to the next basic block in the control flow.
         BasicBlock *next = nullptr;

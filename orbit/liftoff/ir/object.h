@@ -32,6 +32,7 @@ namespace liftoff::ir {
         } memory_;
 
         friend class Builder;
+        friend class IRContext;
 
     protected:
         const ObjectType objType_;

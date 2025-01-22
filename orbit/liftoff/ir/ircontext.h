@@ -146,6 +146,21 @@ namespace liftoff::ir {
          */
         U16 PushSubContext(IRContext *context);
 
+        /**
+         * @brief Adds an object to the object's linked list.
+         *
+         * This method updates an object's metadata to insert it
+         * into a linked list structure. It ensures that the object's
+         * current state properly links to the preceding nodes, allowing
+         * for efficient list traversal and management.
+         *
+         * @param obj Pointer to the object being added to the list.
+         */
+        void Add2ObjList(Object *obj) noexcept {
+            obj->memory_.prev = this->objs_;
+            this->objs_ = obj;
+        }
+
     public:
         /// A pointer to the entry `BasicBlock` of the current intermediate representation (IR) context.
         BasicBlock *entry_ = nullptr;

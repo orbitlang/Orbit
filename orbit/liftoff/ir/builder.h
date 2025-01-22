@@ -22,7 +22,7 @@ namespace liftoff::ir {
     class Builder {
         orbiter::IsolateAllocator allocator_;
 
-        orbiter::Isolate *isolate_;
+        bool delete_context_ = true;
 
         template<typename T, typename... Args>
         /** @brief Creates an object of a specified type and adds it to the object list.
@@ -41,7 +41,7 @@ namespace liftoff::ir {
 
             new(obj)T(args...);
 
-            this->AddToObjsList(obj);
+            this->context->Add2ObjList(obj);
 
             return obj;
         }
@@ -76,13 +76,6 @@ namespace liftoff::ir {
         BasicBlock *AddInstruction(Instruction *instruction);
 
         /**
-         * @brief Adds an object to the object list.
-         *
-         * @param obj The object to add.
-         */
-        void AddToObjsList(Object *obj) const noexcept;
-
-        /**
          * @brief Removes an object from the object list.
          *
          * @param obj The object to remove.
@@ -97,13 +90,15 @@ namespace liftoff::ir {
          *
          * @param isolate Pointer to isolate.
          */
-        explicit Builder(orbiter::Isolate *isolate) noexcept: allocator_(isolate), isolate_(isolate) {
+        explicit Builder(orbiter::Isolate *isolate) noexcept: allocator_(isolate) {
         }
 
         explicit Builder(IRContext *ir) noexcept: allocator_(ir->GetIsolate()),
-                                                  isolate_(ir->GetIsolate()),
+                                                  delete_context_(false),
                                                   context(ir) {
         }
+
+        ~Builder() noexcept;
 
         /**
          * @brief Creates and appends a new basic block to the builder's context.

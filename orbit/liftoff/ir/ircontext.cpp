@@ -7,9 +7,18 @@
 using namespace liftoff::ir;
 
 IRContext::~IRContext() noexcept {
-    if (this->sub.context != nullptr) {
-        const orbiter::IsolateAllocator allocator(this->isolate_);
+    const orbiter::IsolateAllocator allocator(this->isolate_);
 
+    Object *next = nullptr;
+    for (auto cursor = this->objs_; cursor != nullptr; cursor = next) {
+        next = cursor->memory_.next;
+
+        cursor->~Object();
+
+        allocator.free(cursor);
+    }
+
+    if (this->sub.context != nullptr) {
         for (auto i = 0; i < this->sub.count; i++) {
             this->sub.context[i]->~IRContext();
 
@@ -194,7 +203,8 @@ std::vector<LiveInterval> &IRContext::ComputeLiveIntervals() {
                 U32 end = 0;
 
                 for (const auto *use = instr->use_list; use != nullptr; use = use->next) {
-                    if (use->user->type() != ObjectType::INSTRUCTION && use->user->type() != ObjectType::VIRT_INSTRUCTION)
+                    if (use->user->type() != ObjectType::INSTRUCTION
+                        && use->user->type() != ObjectType::VIRT_INSTRUCTION)
                         continue;
 
                     const auto *u_instr = (Instruction *) use->user;
@@ -244,6 +254,8 @@ void IRContext::InvalidateActiveVar(const Symbol *symbol) {
 void IRContext::Delete(IRContext *context) {
     if (context == nullptr)
         return;
+
+    assert(context->back == nullptr);
 
     const orbiter::IsolateAllocator allocator(context->isolate_);
 

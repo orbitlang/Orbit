@@ -17,7 +17,7 @@ namespace liftoff::ir {
 
         orbiter::Isolate *isolate_ = nullptr;
 
-        SymbolTable *sym_t_;
+        SymbolTable *sym_t_ = nullptr;
 
         OptimizationLevel level_;
 
@@ -94,11 +94,12 @@ namespace liftoff::ir {
         void PutSyncExit(const JBlock *block);
 
     public:
-        explicit IRBuilder(orbiter::Isolate *isolate, OptimizationLevel level) : builder_(isolate), isolate_(isolate),
+        explicit IRBuilder(orbiter::Isolate *isolate, OptimizationLevel level) : builder_(isolate),
+            isolate_(isolate),
             level_(level) {
         }
 
-        [[nodiscard]] IRContext *Generate(parser::ASTHandle<parser::Module *> &module);
+        [[nodiscard]] IRContext *Generate(parser::ASTHandle<parser::Module *> &module) noexcept;
     };
 }
 

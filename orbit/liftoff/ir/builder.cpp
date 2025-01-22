@@ -23,11 +23,6 @@ BasicBlock *Builder::AddInstruction(Instruction *instruction) {
     return bb;
 }
 
-void Builder::AddToObjsList(Object *obj) const noexcept {
-    obj->memory_.prev = this->context->objs_;
-    this->context->objs_ = obj;
-}
-
 void Builder::RemoveFromObjsList(Object *obj) const noexcept {
     auto *next = obj->memory_.next;
     auto *prev = obj->memory_.prev;
@@ -50,6 +45,17 @@ void Builder::RemoveFromObjsList(Object *obj) const noexcept {
 // *********************************************************************************************************************
 // PUBLIC
 // *********************************************************************************************************************
+
+Builder::~Builder() noexcept {
+    if (!this->delete_context_)
+        return;
+
+    auto *first = this->context;
+    while (first->back != nullptr)
+        first = first->back;
+
+    IRContext::Delete(first);
+}
 
 BasicBlock *Builder::CreateAppendBasicBlock() {
     auto *bb = this->CreateBasicBlock();
@@ -181,7 +187,7 @@ U16 Builder::IRContextNew(IRContextType type) {
     if (ictx == nullptr)
         throw std::bad_alloc();
 
-    new(ictx)IRContext(this->isolate_, type);
+    new(ictx)IRContext(this->allocator_.GetIsolate(), type);
 
     U16 r_id = 0;
 
