@@ -80,15 +80,11 @@ orbiter::datatype::HCode Compiler::Compile(const char *filename, scanner::Scanne
 
     IRBuilder builder(this->isolate_, this->level_);
 
-    auto *ir = builder.Generate(ast);
-    if (ir == nullptr)
+    const auto ir = builder.Generate(ast);
+    if (!ir)
         assert(false);
 
-    auto code = this->Compile(ir);
-
-    IRContext::Delete(ir);
-
-    return code;
+    return this->Compile(ir.get());
 }
 
 orbiter::datatype::HCode Compiler::Compile(const char *filename, FILE *fd) {

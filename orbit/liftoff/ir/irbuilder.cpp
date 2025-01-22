@@ -699,7 +699,7 @@ void IRBuilder::PutSyncExit(const JBlock *block) {
     }
 }
 
-IRContext *IRBuilder::Generate(parser::ASTHandle<parser::Module *> &module) noexcept {
+IRCHandle IRBuilder::Generate(parser::ASTHandle<parser::Module *> &module) noexcept {
     assert(this->isolate_ == module->isolate); // Security check.
 
     try {
@@ -719,10 +719,10 @@ IRContext *IRBuilder::Generate(parser::ASTHandle<parser::Module *> &module) noex
 
         this->builder_.context = nullptr;
 
-        return context;
+        return IRCHandle(context);
     } catch (const SymbolTableException &) {
         assert(false);
     }
 
-    return nullptr;
+    return {};
 }

@@ -94,12 +94,12 @@ namespace liftoff::ir {
         void PutSyncExit(const JBlock *block);
 
     public:
-        explicit IRBuilder(orbiter::Isolate *isolate, OptimizationLevel level) : builder_(isolate),
+        explicit IRBuilder(orbiter::Isolate *isolate, OptimizationLevel level) noexcept: builder_(isolate),
             isolate_(isolate),
             level_(level) {
         }
 
-        [[nodiscard]] IRContext *Generate(parser::ASTHandle<parser::Module *> &module) noexcept;
+        [[nodiscard]] IRCHandle Generate(parser::ASTHandle<parser::Module *> &module) noexcept;
     };
 }
 
