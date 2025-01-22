@@ -715,7 +715,11 @@ IRContext *IRBuilder::Generate(parser::ASTHandle<parser::Module *> &module) noex
 
         this->builder_.LeaveContext();
 
-        return this->builder_.context;
+        auto *context = this->builder_.context;
+
+        this->builder_.context = nullptr;
+
+        return context;
     } catch (const SymbolTableException &) {
         assert(false);
     }

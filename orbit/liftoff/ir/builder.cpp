@@ -47,7 +47,7 @@ void Builder::RemoveFromObjsList(Object *obj) const noexcept {
 // *********************************************************************************************************************
 
 Builder::~Builder() noexcept {
-    if (!this->delete_context_)
+    if (this->context == nullptr || !this->delete_context_)
         return;
 
     auto *first = this->context;
