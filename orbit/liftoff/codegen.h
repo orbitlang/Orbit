@@ -13,13 +13,15 @@ namespace liftoff {
     class Codegen {
         orbiter::IsolateAllocator allocator_;
 
-        unsigned char *EmitOpcodes(ir::BasicBlock *block, unsigned char *m_code);
+        ir::IRContext *ir_;
+
+        static unsigned char *EmitOpcodes(ir::BasicBlock *block, unsigned char *m_code);
 
     public:
-        explicit Codegen(orbiter::Isolate *isolate) noexcept : allocator_(isolate) {
+        explicit Codegen(ir::IRContext *ir) noexcept : allocator_(ir->GetIsolate()), ir_(ir) {
         }
 
-        orbiter::datatype::HCode Generate(ir::IRContext *ir);
+        orbiter::datatype::HCode Generate() noexcept;
     };
 }
 

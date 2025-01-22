@@ -257,31 +257,36 @@ unsigned char *Codegen::EmitOpcodes(BasicBlock *block, unsigned char *m_code) {
     return m_code;
 }
 
-orbiter::datatype::HCode Codegen::Generate(IRContext *ir) {
+orbiter::datatype::HCode Codegen::Generate() noexcept {
+    const auto *ir = this->ir_;
+
     auto *m_code = this->allocator_.alloc<unsigned char>(ir->program_size);
     if (m_code == nullptr)
-        throw std::bad_alloc();
+        return {};
 
-    auto *m_cursor = m_code;
-    for (auto *b_cursor = ir->entry_; b_cursor; b_cursor = b_cursor->next)
-        m_cursor = this->EmitOpcodes(b_cursor, m_cursor);
+    try {
+        auto *m_cursor = m_code;
+        for (auto *b_cursor = ir->entry_; b_cursor; b_cursor = b_cursor->next)
+            m_cursor = EmitOpcodes(b_cursor, m_cursor);
 
-    U16 knows_length = 0;
-    auto names = ir->GetNamesList(&knows_length);
-    auto code = CodeNew(this->allocator_.GetIsolate(),
-                        nullptr,
-                        names.get(),
-                        ir->static_values.get(),
-                        nullptr,
-                        m_code,
-                        ir->program_size,
-                        knows_length,
-                        0);
-    if (!code) {
+        U16 knows_length = 0;
+        auto names = ir->GetNamesList(&knows_length);
+        auto code = CodeNew(this->allocator_.GetIsolate(),
+                            nullptr,
+                            names.get(),
+                            ir->static_values.get(),
+                            nullptr,
+                            m_code,
+                            ir->program_size,
+                            knows_length,
+                            0);
+        if (!code)
+            throw std::bad_alloc();
+
+        return code;
+    } catch (...) {
         this->allocator_.free(m_code);
-
-        throw std::bad_alloc();
     }
 
-    return code;
+    return {};
 }

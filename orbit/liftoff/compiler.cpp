@@ -53,10 +53,10 @@ orbiter::datatype::HCode Compiler::Compile(IRContext *ir) {
     ir->ComputeLiveIntervals();
 
     // Step 3-4: Allocate Registers / Phi resolution
-    LinearScan(ir,orbiter::kGeneralPurposeRegistersCount).Allocate();
+    LinearScan(ir, orbiter::kGeneralPurposeRegistersCount).Allocate();
 
     // Step 5: Generate machine code
-    auto code = Codegen(this->isolate_).Generate(ir);
+    auto code = Codegen(ir).Generate();
     if (code) {
         if (ir->GetSubcontextCount() > 0) {
             code->codes = this->BuildCodesList(ir).get();
@@ -69,16 +69,26 @@ orbiter::datatype::HCode Compiler::Compile(IRContext *ir) {
 }
 
 orbiter::datatype::HCode Compiler::Compile(const char *filename, scanner::Scanner &scanner) {
-    auto ast = Parser(this->isolate_, filename, scanner).Parse();
+    Parser parser(this->isolate_, filename, scanner);
+
+    auto ast = parser.Parse();
     if (!ast) {
+        auto error = parser.GetLastError();
+        printf("%s\n", error.message);
         assert(false);
     }
 
-    auto ir = IRBuilder(this->isolate_, this->level_).Generate(ast);
+    IRBuilder builder(this->isolate_, this->level_);
+
+    auto *ir = builder.Generate(ast);
     if (ir == nullptr)
         assert(false);
 
-    return this->Compile(ir);
+    auto code = this->Compile(ir);
+
+    IRContext::Delete(ir);
+
+    return code;
 }
 
 orbiter::datatype::HCode Compiler::Compile(const char *filename, FILE *fd) {
