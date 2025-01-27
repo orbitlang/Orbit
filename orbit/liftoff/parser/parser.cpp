@@ -2134,6 +2134,8 @@ ASTHandle<Module *> Parser::Parse() noexcept {
         module->sym_t = this->sym_t_;
         this->sym_t_ = nullptr;
 
+        module->exports = std::move(this->exports);
+
         return module;
     } catch (DatatypeException &) {
         this->error_.type = ParserErrorType::NOMEM;
