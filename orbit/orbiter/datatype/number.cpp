@@ -8,7 +8,7 @@
 
 using namespace orbiter::datatype;
 
-bool orbiter::datatype::NumberTypeSetup(Isolate *isolate, TypeInfo *self) {
+bool orbiter::datatype::NumberTypeSetup(TypeInfo *self) {
     return true;
 }
 

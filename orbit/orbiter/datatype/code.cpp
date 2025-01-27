@@ -6,7 +6,7 @@
 
 using namespace orbiter::datatype;
 
-bool orbiter::datatype::CodeTypeSetup(Isolate *isolate, TypeInfo *self) {
+bool orbiter::datatype::CodeTypeSetup(TypeInfo *self) {
     return true;
 }
 

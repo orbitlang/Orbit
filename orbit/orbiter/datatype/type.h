@@ -32,12 +32,11 @@ namespace orbiter::datatype {
      *
      * This function is called immediately after the type's Init function to complete its setup.
      *
-     * @param isolate Pointer to the Isolate in which the type is being set up
      * @param self Pointer to TypeInfo created by %type%Init call
      *
      * @return true if setup was successful, false otherwise
      */
-    bool TypeSetup(Isolate *isolate, TypeInfo *self);
+    bool TypeSetup(TypeInfo *self);
 }
 
 #endif // !ORBIT_ORBITER_DATATYPE_TYPE_H_

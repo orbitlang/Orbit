@@ -25,7 +25,7 @@ Isolate *Isolate::New() {
 
 #define SETUP_TYPE(num, fn)                             \
     do {                                                \
-        if(!fn(isolate, isolate->primitive[(int) num])) \
+        if(!fn(isolate->primitive[(int) num]))          \
             goto ERROR;                                 \
     } while(0)
 

@@ -68,7 +68,7 @@ bool StringInitKind(ORString *string) {
     return true;
 }
 
-bool orbiter::datatype::ORStringTypeSetup(Isolate *isolate, TypeInfo *self) {
+bool orbiter::datatype::ORStringTypeSetup(TypeInfo *self) {
     return true;
 }
 

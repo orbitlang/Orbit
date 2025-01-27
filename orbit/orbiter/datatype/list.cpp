@@ -29,7 +29,7 @@ bool ListCheckSize(List *list, MSize count) {
     return true;
 }
 
-bool orbiter::datatype::ListTypeSetup(Isolate *isolate, TypeInfo *self) {
+bool orbiter::datatype::ListTypeSetup(TypeInfo *self) {
     return true;
 }
 

@@ -8,7 +8,7 @@
 
 using namespace orbiter::datatype;
 
-bool orbiter::datatype::DecimalTypeSetup(Isolate *isolate, TypeInfo *self) {
+bool orbiter::datatype::DecimalTypeSetup(TypeInfo *self) {
     return true;
 }
 

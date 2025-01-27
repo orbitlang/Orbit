@@ -34,10 +34,10 @@ bool AtomGATDtor(TypeInfo *self) {
     return true;
 }
 
-bool orbiter::datatype::AtomTypeSetup(Isolate *isolate, TypeInfo *self) {
-    IsolateAllocator allocator(isolate);
+bool orbiter::datatype::AtomTypeSetup(TypeInfo *self) {
+    IsolateAllocator allocator(self->isolate);
 
-    auto *map = allocator.AllocObject<GATMap>(isolate);
+    auto *map = allocator.AllocObject<GATMap>(self->isolate);
     if (map == nullptr)
         return false;
 

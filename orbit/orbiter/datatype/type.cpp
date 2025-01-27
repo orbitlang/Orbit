@@ -50,8 +50,8 @@ TypeInfo *orbiter::datatype::TypeInit(Isolate *isolate) {
     return type;
 }
 
-bool orbiter::datatype::TypeSetup(Isolate *isolate, TypeInfo *self) {
+bool orbiter::datatype::TypeSetup(TypeInfo *self) {
     assert(self != nullptr);
 
-    return TIPropertyAdd(isolate, self, type_methods);
+    return TIPropertyAdd(self, type_methods);
 }

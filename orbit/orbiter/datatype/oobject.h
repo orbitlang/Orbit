@@ -15,7 +15,6 @@ namespace orbiter::datatype {
     /**
      * @brief Add a property to a TypeInfo
      *
-     * @param isolate Pointer to the Isolate
      * @param type Pointer to the TypeInfo
      * @param name Name of the property
      * @param value Pointer to the OObject representing the property's value
@@ -23,34 +22,58 @@ namespace orbiter::datatype {
      *
      * @return true if property was added successfully, false otherwise
      */
-    bool TIPropertyAdd(Isolate *isolate, TypeInfo *type, const char *name, OObject *value, PropertyDetail detail);
+    bool TIPropertyAdd(TypeInfo *type, const char *name, OObject *value, PropertyDetail detail);
+
+    /**
+     * @brief Add an inline property to a TypeInfo using an offset
+     *
+     * @param type Pointer to the TypeInfo
+     * @param name Name of the property
+     * @param offset Offset of the property(expected 0,1,2,3... not an offset in bytes), adjusted relative to the TypeInfo.
+     * @param detail Additional details about the property
+     *
+     * @return true if property was added successfully, false otherwise
+     */
+    inline bool TIPropertyAdd(TypeInfo *type, const char *name, U16 offset, PropertyDetail detail) {
+        offset = type->offset + type->headroom + (offset * sizeof(void *));
+        return TIPropertyAdd(type, name, (OObject *) offset, detail | PropertyDetail::INLINE);
+    }
+
+    /**
+     * @brief Add a property to a TypeInfo
+     *
+     * @param type Pointer to the TypeInfo.
+     * @param name Pointer to the ORString representing the name of the property.
+     * @param value Pointer to the OObject representing the property's value.
+     * @param detail Additional details about the property.
+     *
+     * @return true if property was added successfully, false otherwise.
+     */
+    bool TIPropertyAdd(TypeInfo *type, OObject *name, OObject *value, PropertyDetail detail);
+
+    /**
+     * @brief Add an inline property to a TypeInfo using an offset
+     *
+     * @param type Pointer to the TypeInfo where the property will be added.
+     * @param name Pointer to the ORString representing the name of the property.
+     * @param offset Offset of the property(expected 0,1,2,3... not an offset in bytes), adjusted relative to the TypeInfo.
+     * @param detail Additional details about the property.
+     *
+     * @return true if the property was added successfully, false otherwise.
+     */
+    inline bool TIPropertyAdd(TypeInfo *type, OObject *name, U16 offset, PropertyDetail detail) {
+        return TIPropertyAdd(type, name, (OObject *) offset, detail | PropertyDetail::INLINE);
+    }
 
     /**
      * @brief Add multiple properties(functions/methods) to a TypeInfo from a bulk definition
      *
-     * @param isolate Pointer to the Isolate
      * @param type Pointer to the TypeInfo
      * @param bulk Pointer to the FunctionDef array containing bulk property definitions
      *
      * @return true if properties were added successfully, false otherwise
      */
-    bool TIPropertyAdd(Isolate *isolate, TypeInfo *type, const FunctionDef *bulk);
-
-    /**
-     * @brief Add an inline property to a TypeInfo using an offset
-     *
-     * @param isolate Pointer to the Isolate
-     * @param type Pointer to the TypeInfo
-     * @param name Name of the property
-     * @param offset Offset of the property within the object
-     * @param detail Additional details about the property
-     *
-     * @return true if property was added successfully, false otherwise
-     */
-    inline bool TIPropertyAddOffset(Isolate *isolate, TypeInfo *type, const char *name,
-                                    U8 offset, PropertyDetail detail) {
-        return TIPropertyAdd(isolate, type, name, (OObject *) ((MSize) offset), detail | PropertyDetail::INLINE);
-    }
+    bool TIPropertyAdd(TypeInfo *type, const FunctionDef *bulk);
 
     /**
      * @brief Initialize properties for a TypeInfo

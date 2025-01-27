@@ -13,27 +13,30 @@ bool orbiter::datatype::Equal(const OObject *left, const OObject *right) {
     return false;
 }
 
-bool orbiter::datatype::TIPropertyAdd(Isolate *isolate, TypeInfo *type, const char *name,
-                                      OObject *value, PropertyDetail detail) {
-    PropertyDescriptor tmp{};
-    int i = 0;
-
-    auto orname = ORStringIntern(isolate, name);
+bool orbiter::datatype::TIPropertyAdd(TypeInfo *type, const char *name, OObject *value, PropertyDetail detail) {
+    auto orname = ORStringIntern(type->isolate, name);
     if (!orname)
         return false;
 
-    auto r_orname = orname.get();
+    return TIPropertyAdd(type, (OObject *) orname.get(), value, detail);
+}
 
+bool orbiter::datatype::TIPropertyAdd(TypeInfo *type, OObject *name, OObject *value, PropertyDetail detail) {
+    PropertyDescriptor tmp{};
+
+    auto *orname = (ORString *) name;
+
+    assert(orname != nullptr && O_GET_TYPE(orname)->i_type == InstanceType::STRING);
+
+    int i = 0;
     for (; i < type->properties.count; i++) {
         auto *property = type->properties.p_array + i;
 
-        if (property->name == nullptr || ORStringCompare(r_orname, property->name) <= 0) {
+        if (property->name == nullptr || ORStringCompare(orname, property->name) <= 0) {
             if (property->name != nullptr)
                 tmp = *property;
 
-            property->name = orname.release();
-
-            // TODO: offset + slot of super type
+            property->name = O_INCREF(orname);
 
             property->value = value;
 
@@ -46,7 +49,7 @@ bool orbiter::datatype::TIPropertyAdd(Isolate *isolate, TypeInfo *type, const ch
     if (tmp.name != nullptr) {
         for (i += 1; i < type->properties.count; i++) {
             auto *property = type->properties.p_array + i;
-            auto cmp = ORStringCompare(r_orname, property->name);
+            auto cmp = ORStringCompare(orname, property->name);
 
             if (cmp < 0) {
                 auto swap = *property;
@@ -64,13 +67,13 @@ bool orbiter::datatype::TIPropertyAdd(Isolate *isolate, TypeInfo *type, const ch
     return true;
 }
 
-bool orbiter::datatype::TIPropertyAdd(Isolate *isolate, TypeInfo *type, const FunctionDef *bulk) {
+bool orbiter::datatype::TIPropertyAdd(TypeInfo *type, const FunctionDef *bulk) {
     for (auto *cursor = bulk; cursor->name != nullptr; cursor++) {
-        auto *fn = FunctionNew(isolate, cursor);
+        auto *fn = FunctionNew(type->isolate, cursor);
         if (fn == nullptr)
             return false;
 
-        if (!TIPropertyAdd(isolate, type, cursor->name, (OObject *) fn, {})) {
+        if (!TIPropertyAdd(type, cursor->name, (OObject *) fn, {})) {
             Release(fn);
 
             return false;

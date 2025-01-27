@@ -53,7 +53,7 @@ void FunSharedDel(orbiter::Isolate *isolate, FuncShared *shared) {
     allocator.free(shared);
 }
 
-bool orbiter::datatype::FunctionTypeSetup(Isolate *isolate, TypeInfo *self) {
+bool orbiter::datatype::FunctionTypeSetup(TypeInfo *self) {
     return true;
 }
 

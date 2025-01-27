@@ -56,12 +56,11 @@ namespace orbiter::datatype {
      *
      * This function is called immediately after the type's Init function to complete its setup.
      *
-     * @param isolate Pointer to the Isolate in which the type is being set up
      * @param self Pointer to TypeInfo created by %type%Init call
      *
      * @return true if setup was successful, false otherwise
      */
-    bool ORStringTypeSetup(Isolate *isolate, TypeInfo *self);
+    bool ORStringTypeSetup(TypeInfo *self);
 
     /**
      * @brief Compares two strings lexicographically.
