@@ -132,6 +132,8 @@ namespace liftoff {
     };
 
     struct Symbol {
+        Symbol *next;
+
         Scope *defining_scope;
 
         Scope *scope;
@@ -165,17 +167,19 @@ namespace liftoff {
         explicit SymbolTable(orbiter::Isolate *isolate) : isolate(isolate) {
         }
 
-        ~SymbolTable();
+        ~SymbolTable() noexcept;
 
-        [[nodiscard]] Scope *ScopeNew(MSize line_start) const;
+        [[nodiscard]] Scope *ScopeNew(MSize line_start) const noexcept;
 
-        void ComputeLocalVarOffset(const SubScope *s_scope);
+        [[nodiscard]] Symbol *SymbolNew(orbiter::datatype::ORString *name, SymbolType type, MSize offset) noexcept;
 
-        void SubScopeDel(SubScope *sub_scope, bool r_memory);
+        void ComputeLocalVarOffset(const SubScope *s_scope) const noexcept;
 
-        void ScopeDel(Scope *scope);
+        void SubScopeDel(SubScope *sub_scope, bool r_memory) const noexcept;
 
-        void SymbolDel(Symbol *symbol);
+        void ScopeDel(Scope *scope) const noexcept;
+
+        void SymbolDel(Symbol *symbol) const noexcept;
 
     public:
         /**

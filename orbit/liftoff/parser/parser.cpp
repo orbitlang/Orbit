@@ -1710,6 +1710,7 @@ ASTHandle<ASTNode *> Parser::ParseTernary(ASTHandle<ASTNode *> &left) {
 
 ASTHandle<ASTNode *> Parser::ParseWalrus(ASTHandle<ASTNode *> &left) {
     auto node_type = NodeType::VAR_DECLARATION;
+    Symbol *sym = nullptr;
 
     this->Eat(true);
 
@@ -1722,8 +1723,11 @@ ASTHandle<ASTNode *> Parser::ParseWalrus(ASTHandle<ASTNode *> &left) {
             if (cursor->node_type != NodeType::IDENTIFIER)
                 throw ParserException(23);
 
-            if (!this->sym_t_->Declare(id->value, SymbolType::VARIABLE, id->loc.start.offset))
+            sym = this->sym_t_->Declare(id->value, SymbolType::VARIABLE, id->loc.start.offset);
+            if (sym == nullptr)
                 throw SymbolTableException();
+
+            id->symbol = sym;
         }
 
         node_type = NodeType::VAR_DECLARATIONS;
@@ -1740,10 +1744,12 @@ ASTHandle<ASTNode *> Parser::ParseWalrus(ASTHandle<ASTNode *> &left) {
     decl->inl = true;
 
     if (node_type == NodeType::VAR_DECLARATION) {
-        if (!this->sym_t_->Declare(((Identifier *) decl->name)->value,
-                                   SymbolType::VARIABLE,
-                                   decl->name->loc.start.offset))
+        sym = this->sym_t_->Declare(((Identifier *) decl->name)->value, SymbolType::VARIABLE,
+                                    decl->name->loc.start.offset);
+        if (sym == nullptr)
             throw SymbolTableException();
+
+        ((Identifier *) decl->name)->symbol = sym;
     }
 
     return decl;

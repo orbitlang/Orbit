@@ -119,7 +119,7 @@ const char *SymbolTable::GetStatusMessage() const {
     return messages[(int) this->status];
 }
 
-Scope *SymbolTable::ScopeNew(MSize line_start) const {
+Scope *SymbolTable::ScopeNew(MSize line_start) const noexcept {
     orbiter::IsolateAllocator allocator(this->isolate);
 
     auto *scope = allocator.alloc<Scope>(sizeof(Scope));
@@ -140,32 +140,11 @@ Scope *SymbolTable::ScopeNew(MSize line_start) const {
     return scope;
 }
 
-Symbol *SymbolTable::Declare(ORString *name, SymbolType type, MSize offset) noexcept {
-    auto *table = this->scope->active;
-
-    STHEntry *entry;
-
-    if (table->symbols.Lookup(name, &entry)) {
-        if (entry->value->decl_offset != offset) {
-            this->status = SymbolTableError::SYMBOL_ALREADY_EXISTS;
-            return nullptr;
-        }
-
-        entry->value->type = type;
-
-        return entry->value;
-    }
-
-    if ((entry = table->symbols.AllocHEntry()) == nullptr) {
-        this->status = SymbolTableError::MEMORY_ERROR;
-        return nullptr;
-    }
-
+Symbol *SymbolTable::SymbolNew(ORString *name, SymbolType type, MSize offset) noexcept {
     orbiter::IsolateAllocator allocator(isolate);
+
     auto *symbol = allocator.calloc<Symbol>(sizeof(Symbol));
     if (symbol == nullptr) {
-        table->symbols.FreeHEntry(entry);
-
         this->status = SymbolTableError::MEMORY_ERROR;
 
         return nullptr;
@@ -173,7 +152,7 @@ Symbol *SymbolTable::Declare(ORString *name, SymbolType type, MSize offset) noex
 
     symbol->defining_scope = this->scope;
 
-    symbol->name = name;
+    symbol->name = O_INCREF(name);
 
     symbol->type = type;
     symbol->decl_offset = offset;
@@ -192,17 +171,64 @@ Symbol *SymbolTable::Declare(ORString *name, SymbolType type, MSize offset) noex
             symbol->offset = this->scope->static_offset++;
     }
 
-    symbol->nesting = table->nesting;
-
-    entry->key = name;
-    entry->value = symbol;
-
-    if (table->symbols.Insert(entry)) {
-        O_INCREF(name);
-        O_INCREF(name);
-    }
+    symbol->nesting = this->scope->active->nesting;
 
     return symbol;
+}
+
+
+Symbol *SymbolTable::Declare(ORString *name, SymbolType type, MSize offset) noexcept {
+    auto *table = this->scope->active;
+
+    STHEntry *entry;
+
+    if (table->symbols.Lookup(name, &entry)) {
+        auto *value = entry->value;
+
+        if (value->decl_offset != offset) {
+            if (value->type == SymbolType::UNKNOWN) {
+                value->next = this->SymbolNew(name, type, offset);
+                if (value->next == nullptr) {
+                    this->status = SymbolTableError::MEMORY_ERROR;
+                    return nullptr;
+                }
+
+                return value->next;
+            }
+
+            this->status = SymbolTableError::SYMBOL_ALREADY_EXISTS;
+            return nullptr;
+        }
+
+        value->type = type;
+
+        return value;
+    }
+
+    if ((entry = table->symbols.AllocHEntry()) == nullptr) {
+        this->status = SymbolTableError::MEMORY_ERROR;
+        return nullptr;
+    }
+
+    entry->key = O_INCREF(name);
+    entry->value = this->SymbolNew(name, type, offset);
+    if (entry->value == nullptr) {
+        Release(entry->key);
+
+        return nullptr;
+    }
+
+    if (!table->symbols.Insert(entry)) {
+        Release(entry->key);
+
+        SymbolDel(entry->value);
+
+        table->symbols.FreeHEntry(entry);
+
+        return nullptr;
+    }
+
+    return entry->value;
 }
 
 Symbol *SymbolTable::Declare(const char *name, SymbolType type, MSize offset) noexcept {
@@ -283,10 +309,13 @@ Symbol *SymbolTable::Lookup(ORString *name, MSize offset) noexcept {
             if (scope->type != ScopeType::CLASS
                 && scope->type != ScopeType::TRAIT
                 && s_scope->symbols.Lookup(name, &entry)) {
-                const auto *sym = entry->value;
+                auto *sym = entry->value;
+
+                if (sym->next != nullptr && sym->next->decl_offset <= offset)
+                    sym = sym->next;
 
                 if (!sym->tdz && s_scope->nesting >= sym->nesting && sym->decl_offset <= offset)
-                    return entry->value;
+                    return sym;
             }
 
             s_scope = s_scope->parent;
@@ -379,17 +408,22 @@ SymbolTable *SymbolTable::New(orbiter::Isolate *isolate) noexcept {
     return table;
 }
 
-void SymbolTable::ComputeLocalVarOffset(const SubScope *s_scope) {
+void SymbolTable::ComputeLocalVarOffset(const SubScope *s_scope) const noexcept {
     if (s_scope->sibling != nullptr)
         this->ComputeLocalVarOffset(s_scope->sibling);
 
     for (auto s_cursor = s_scope; s_cursor != nullptr; s_cursor = s_cursor->next) {
         for (auto cursor = s_cursor->symbols.iter_begin; cursor != nullptr; cursor = cursor->iter_next) {
-            const auto *value = cursor->value;
-            if ((value->type == SymbolType::VARIABLE || value->type == SymbolType::FUNC) && !value->anon)
-                cursor->value->offset = this->scope->local_variables++;
-            else if (value->type == SymbolType::UNKNOWN)
-                cursor->value->offset = this->scope->unknown_variables++;
+            auto *value = cursor->value;
+
+            while (value != nullptr) {
+                if ((value->type == SymbolType::VARIABLE || value->type == SymbolType::FUNC) && !value->anon)
+                    value->offset = this->scope->local_variables++;
+                else if (value->type == SymbolType::UNKNOWN)
+                    value->offset = this->scope->unknown_variables++;
+
+                value = value->next;
+            }
         }
     }
 }
@@ -437,7 +471,7 @@ void SymbolTable::LeaveScope() noexcept {
         this->scope = this->scope->back;
 }
 
-void SymbolTable::ScopeDel(Scope *scope) {
+void SymbolTable::ScopeDel(Scope *scope) const noexcept {
     const orbiter::IsolateAllocator allocator(this->isolate);
 
     this->SubScopeDel(&scope->sub_scope, false);
@@ -447,21 +481,27 @@ void SymbolTable::ScopeDel(Scope *scope) {
     allocator.free(scope);
 }
 
-void SymbolTable::SymbolDel(Symbol *symbol) {
+void SymbolTable::SymbolDel(Symbol *symbol) const noexcept {
     if (symbol == nullptr)
         return;
 
     const orbiter::IsolateAllocator allocator(this->isolate);
 
-    Release(symbol->name);
+    while (symbol != nullptr) {
+        Release(symbol->name);
 
-    if (symbol->scope != nullptr)
-        this->ScopeDel(symbol->scope);
+        if (symbol->scope != nullptr)
+            this->ScopeDel(symbol->scope);
 
-    allocator.free(symbol);
+        auto *tmp = symbol->next;
+
+        allocator.free(symbol);
+
+        symbol = tmp;
+    }
 }
 
-void SymbolTable::SubScopeDel(SubScope *sub_scope, bool r_memory) {
+void SymbolTable::SubScopeDel(SubScope *sub_scope, bool r_memory) const noexcept {
     sub_scope->symbols.Finalize([this](const STHEntry *entry) {
         Release(entry->key);
 
@@ -481,7 +521,7 @@ void SymbolTable::SubScopeDel(SubScope *sub_scope, bool r_memory) {
         allocator.free(sub_scope);
 }
 
-SymbolTable::~SymbolTable() {
+SymbolTable::~SymbolTable() noexcept {
     auto *base = this->scope;
 
     while (base->type != ScopeType::MODULE)
