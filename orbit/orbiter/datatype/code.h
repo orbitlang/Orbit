@@ -7,26 +7,39 @@
 
 #include <orbit/orbiter/datatype/oobject.h>
 
+#include <orbit/orbiter/opcode.h>
 #include <orbit/orbiter/datatype/list.h>
 #include <orbit/orbiter/datatype/orstring.h>
 
 namespace orbiter::datatype {
+    struct ExportedSymbol {
+        ORString *name;
+
+        NewVariableFlags flags;
+    };
+
     struct Code {
         OROBJ_HEAD;
-
-        List *codes;
-
-        List *names;
-
-        List *static_resources;
-
-        ORString *doc;
 
         const unsigned char *m_code;
 
         const unsigned char *m_end;
 
-        U16 knames_length;
+        struct {
+            ExportedSymbol *symbols;
+
+            U16 length;
+        } exported;
+
+        List *codes;
+
+        List *unknown_symbols;
+
+        List *static_resources;
+
+        ORString *doc;
+
+        U16 slots_count;
 
         U16 stack_size;
 
@@ -51,8 +64,8 @@ namespace orbiter::datatype {
     */
     bool CodeTypeSetup(TypeInfo *self);
 
-    HCode CodeNew(Isolate *isolate, List *codes, List *names, List *static_resources, ORString *doc,
-                  const unsigned char *m_code, U32 m_size, U16 known_length, U16 stack_size);
+    HCode CodeNew(Isolate *isolate, const unsigned char *m_code, List *unknown_symbols, List *static_resources,
+                  U32 m_size, U16 slots_count, U16 stack_size);
 
     /**
      * @brief Initialize and create the specified type

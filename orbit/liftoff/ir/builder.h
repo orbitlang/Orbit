@@ -210,13 +210,15 @@ namespace liftoff::ir {
          * before associating the new context as the current context.
          *
          * @param type The type of the IR context to be created.
+         * @param local_slots The number of local slots available for the IR context.
+         * @param stack_slots The number of stack slots available for the IR context.
          *
          * @return The identifier of the new IR context as a U16 type.
          *
          * @throws std::bad_alloc if memory allocation for the new IR context fails.
          * @throws Any exception propagated from context management operations.
          */
-        U16 IRContextNew(IRContextType type);
+        U16 IRContextNew(IRContextType type, U16 local_slots, U16 stack_slots);
 
         /*
         Value *CreateImmediateValue(const U16 value) {

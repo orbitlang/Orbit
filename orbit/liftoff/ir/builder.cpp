@@ -182,12 +182,15 @@ PhiInstr *Builder::CreatePhi() {
     return this->CreateInstruction<PhiInstr>();
 }
 
-U16 Builder::IRContextNew(IRContextType type) {
+U16 Builder::IRContextNew(IRContextType type, U16 local_slots, U16 stack_slots) {
     auto *ictx = this->allocator_.alloc<IRContext>(sizeof(IRContext));
     if (ictx == nullptr)
         throw std::bad_alloc();
 
     new(ictx)IRContext(this->allocator_.GetIsolate(), type);
+
+    ictx->local_slots = local_slots;
+    ictx->stack_slots = stack_slots;
 
     U16 r_id = 0;
 

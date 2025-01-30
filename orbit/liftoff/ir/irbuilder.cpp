@@ -143,7 +143,7 @@ Instruction *IRBuilder::LoadVariable(const Symbol *symbol) {
 
     // TODO: Class/Trait
     if (symbol->defining_scope->type == ScopeType::MODULE) {
-        if (this->level_ == OptimizationLevel::OFF && symbol->defining_scope != this->sym_t_->scope) {
+        if (this->level_ == OptimizationLevel::OFF) {
             offset = (I16) (this->builder_.context->PushUnknownProps(symbol->name)
                             + this->sym_t_->scope->GetLocalVariableCount());
 
@@ -181,6 +181,14 @@ Instruction *IRBuilder::StoreVariable(const Symbol *symbol, Instruction *value, 
     if (value == nullptr)
         value = this->builder_.LoadNilValue();
 
+    auto v_flags = orbiter::NewVariableFlags::VARIABLE;
+
+    if (symbol->type == SymbolType::CONSTANT)
+        v_flags = orbiter::NewVariableFlags::CONSTANT;
+
+    if (symbol->access == AccessModifier::PUBLIC)
+        v_flags |= orbiter::NewVariableFlags::PUBLIC;
+
     if (symbol->upvalue) {
         this->builder_.StoreToClosureAtOffset(value, offset,
                                               symbol->defining_scope == this->sym_t_->scope
@@ -200,25 +208,23 @@ Instruction *IRBuilder::StoreVariable(const Symbol *symbol, Instruction *value, 
     }
 
     if (symbol->defining_scope->type == ScopeType::MODULE) {
-        if (decl) {
-            auto v_flags = orbiter::NewVariableFlags::VARIABLE;
-            if (symbol->access == AccessModifier::PUBLIC)
-                v_flags |= orbiter::NewVariableFlags::PUBLIC;
-
-            this->builder_.context->PushKnownProps(symbol->name);
-
+        if (decl && this->level_ == OptimizationLevel::OFF) {
             this->builder_.CreateStoreVariable(orbiter::OPCode::NGBLV, offset, (U8) v_flags, value);
 
             goto EXIT;
         }
 
-        if (this->level_ == OptimizationLevel::OFF && symbol->defining_scope != this->sym_t_->scope) {
+        if (this->level_ == OptimizationLevel::OFF) {
             offset = (I16) (this->sym_t_->scope->GetLocalVariableCount() +
                             this->builder_.context->PushUnknownProps(symbol->name));
 
             this->builder_.CreateStoreVariable(orbiter::OPCode::STGBL, offset, 0, value);
-        } else
+        } else {
+            if (decl && symbol->access == AccessModifier::PUBLIC)
+                this->builder_.context->PushKnownProps(symbol->name, v_flags);
+
             this->builder_.CreateStoreVariable(orbiter::OPCode::STGOFF, offset, 0, value);
+        }
 
         goto EXIT;
     }
@@ -416,15 +422,13 @@ Instruction *IRBuilder::visitFunction(const parser::Function *node) {
 
     auto f_flags = orbiter::LoadFuncFlags::SIMPLE;
 
-    this->builder_.IRContextNew(IRContextType::FUNCTION);
+    this->builder_.IRContextNew(IRContextType::FUNCTION, 0, this->sym_t_->scope->GetLocalVariableCount());
 
     if (!this->sym_t_->EnterScope(node->name))
         throw SymbolTableException();
 
-    this->builder_.context->stack_slot = this->sym_t_->scope->GetLocalVariableCount();
-
     // Alloc stack space for local variables
-    this->builder_.AllocStackSlots(this->builder_.context->stack_slot, orbiter::AllocaFlags::DEFAULT);
+    this->builder_.AllocStackSlots(this->builder_.context->stack_slots, orbiter::AllocaFlags::DEFAULT);
 
     // Check if this function can create a lexical environment, if yes, allocate another slot in stack
     if (this->sym_t_->scope->ShouldCreateClosure()) {
@@ -699,7 +703,7 @@ void IRBuilder::PutSyncExit(const JBlock *block) {
     }
 }
 
-IRCHandle IRBuilder::Generate(parser::ASTHandle<parser::Module *> &module) noexcept {
+IRCHandle IRBuilder::Generate(const parser::ASTHandle<parser::Module *> &module) noexcept {
     assert(this->isolate_ == module->isolate); // Security check.
 
     try {
@@ -707,15 +711,15 @@ IRCHandle IRBuilder::Generate(parser::ASTHandle<parser::Module *> &module) noexc
         this->sym_t_ = module->sym_t;
 
         // Create first context
-        this->builder_.IRContextNew(IRContextType::MODULE);
+        this->builder_.IRContextNew(IRContextType::MODULE, this->sym_t_->scope->GetLocalVariableCount(), 0);
+
+        auto *context = this->builder_.context;
 
         for (auto &statement: module->statements) {
             this->visit(statement.get());
         }
 
-        this->builder_.LeaveContext();
-
-        auto *context = this->builder_.context;
+        assert(this->builder_.context == context);
 
         this->builder_.context = nullptr;
 

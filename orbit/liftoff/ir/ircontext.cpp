@@ -72,31 +72,6 @@ bool IRContext::ComputeLiveness() const {
     return changed;
 }
 
-orbiter::datatype::HList IRContext::GetNamesList(U16 *known_length) const {
-    MSize length = 0;
-
-    assert(known_length != nullptr);
-
-    *known_length = 0;
-
-    if (this->known_props) {
-        length = this->known_props->length;
-        *known_length = (U16) length;
-    }
-
-    if (this->unknown_props)
-        length += this->unknown_props->length;
-
-    auto res = orbiter::datatype::ListNew(this->isolate_, length);
-    if (!res)
-        throw std::bad_alloc();
-
-    ListAppend(res.get(), this->known_props.get());
-    ListAppend(res.get(), this->unknown_props.get());
-
-    return res;
-}
-
 Instruction *IRContext::GetLastActiveVariableLoad(const Symbol *symbol) {
     auto instr = this->active_regs_.find(symbol);
 
@@ -106,44 +81,32 @@ Instruction *IRContext::GetLastActiveVariableLoad(const Symbol *symbol) {
     return nullptr;
 }
 
-U16 IRContext::PushKnownProps(orbiter::datatype::ORString *id) {
-    if (!this->known_props) {
-        this->known_props = orbiter::datatype::ListNew(this->isolate_);
-        if (!this->known_props)
-            throw std::bad_alloc();
-    }
+U16 IRContext::PushKnownProps(orbiter::datatype::ORString *id, orbiter::NewVariableFlags flags) {
+    const auto length = this->exported_names.size();
 
-    const auto array = this->known_props->objects;
-    for (auto i = 0; i < this->known_props->length; i++) {
-        if (array[i] == (orbiter::datatype::OObject *) id)
-            return (U16) i;
-    }
+    this->exported_names.emplace_back(id, flags);
 
-    const auto ok = ListAppend(this->known_props.get(), (orbiter::datatype::OObject *) id);
-    if (!ok)
-        throw std::bad_alloc();
-
-    return this->known_props->length - 1;
+    return length;
 }
 
 U16 IRContext::PushUnknownProps(orbiter::datatype::ORString *id) {
-    if (!this->unknown_props) {
-        this->unknown_props = orbiter::datatype::ListNew(this->isolate_);
-        if (!this->unknown_props)
+    if (!this->unknown_names) {
+        this->unknown_names = orbiter::datatype::ListNew(this->isolate_);
+        if (!this->unknown_names)
             throw std::bad_alloc();
     }
 
-    const auto array = this->unknown_props->objects;
-    for (auto i = 0; i < this->unknown_props->length; i++) {
+    const auto array = this->unknown_names->objects;
+    for (auto i = 0; i < this->unknown_names->length; i++) {
         if (array[i] == (orbiter::datatype::OObject *) id)
             return (U16) i;
     }
 
-    const auto ok = ListAppend(this->unknown_props.get(), (orbiter::datatype::OObject *) id);
+    const auto ok = ListAppend(this->unknown_names.get(), (orbiter::datatype::OObject *) id);
     if (!ok)
         throw std::bad_alloc();
 
-    return this->unknown_props->length - 1;
+    return this->unknown_names->length - 1;
 }
 
 U16 IRContext::PushStaticValue(orbiter::datatype::OObject *value) {
@@ -188,9 +151,7 @@ U16 IRContext::PushSubContext(IRContext *context) {
 }
 
 void IRContext::AddActiveVar(const Symbol *symbol, Instruction *instr) {
-    const auto defining_scope = symbol->defining_scope->type;
-
-    if (symbol->upvalue || (defining_scope != ScopeType::FUNCTION && defining_scope != ScopeType::GENERATOR))
+    if (symbol->upvalue)
         return;
 
     this->active_regs_.insert({symbol, instr});

@@ -257,6 +257,30 @@ unsigned char *Codegen::EmitOpcodes(BasicBlock *block, unsigned char *m_code) {
     return m_code;
 }
 
+void Codegen::ExportSymbols(orbiter::datatype::HCode &code) {
+    const auto *ir = this->ir_;
+
+    if (ir->exported_names.empty())
+        return;
+
+    code->exported.length = ir->exported_names.size();
+    code->exported.symbols = this->allocator_.alloc<orbiter::datatype::ExportedSymbol>(
+        ir->exported_names.size() * sizeof(orbiter::datatype::ExportedSymbol)
+    );
+
+    if (code->exported.symbols == nullptr)
+        throw std::bad_alloc();
+
+    U16 index = 0;
+    for (const auto &cursor: ir->exported_names) {
+        auto *symbol = code->exported.symbols + index++;
+
+        symbol->name = cursor.name.get_inc();
+        symbol->flags = cursor.flags;
+    }
+}
+
+
 orbiter::datatype::HCode Codegen::Generate() noexcept {
     const auto *ir = this->ir_;
 
@@ -269,19 +293,12 @@ orbiter::datatype::HCode Codegen::Generate() noexcept {
         for (auto *b_cursor = ir->entry_; b_cursor; b_cursor = b_cursor->next)
             m_cursor = EmitOpcodes(b_cursor, m_cursor);
 
-        U16 knows_length = 0;
-        auto names = ir->GetNamesList(&knows_length);
-        auto code = CodeNew(this->allocator_.GetIsolate(),
-                            nullptr,
-                            names.get(),
-                            ir->static_values.get(),
-                            nullptr,
-                            m_code,
-                            ir->program_size,
-                            knows_length,
-                            0);
+        auto code = CodeNew(this->allocator_.GetIsolate(), m_code, ir->unknown_names.get(), ir->static_values.get(),
+                            ir->program_size, ir->local_slots, 0);
         if (!code)
             throw std::bad_alloc();
+
+        this->ExportSymbols(code);
 
         return code;
     } catch (...) {

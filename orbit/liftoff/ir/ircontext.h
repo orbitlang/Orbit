@@ -21,7 +21,7 @@ namespace liftoff::ir {
     };
 
     /**
-     * @struct LiveInterval
+     * @class LiveInterval
      *
      * Represents a live interval of a variable or temporary value in an intermediate
      * representation. It marks the range of program instructions where the value is
@@ -31,13 +31,36 @@ namespace liftoff::ir {
      * Each interval associates with a specific instruction and defines the start
      * and end points, indicating where the live range begins and ends.
      */
-    struct LiveInterval {
+    class LiveInterval {
+    public:
         Instruction *instr;
 
         U32 start;
         U32 end;
 
         LiveInterval(Instruction *instr, U32 start, U32 end) noexcept: instr(instr), start(start), end(end) {
+        }
+    };
+
+    /**
+     * @class ExportedName
+     *
+     * Represents an exported name in the intermediate representation. It contains
+     * a name and associated flags describing the properties of the exported variable
+     * or identifier. This class is used to provide metadata for symbols exported
+     * during the intermediate representation creation process.
+     *
+     * The name field holds the specific identifier for the exported entity, while
+     * the flags indicate attributes such as its mutability within the generated code.
+     */
+    class ExportedName {
+    public:
+        orbiter::datatype::HORString name;
+
+        orbiter::NewVariableFlags flags;
+
+        ExportedName(orbiter::datatype::ORString *name, orbiter::NewVariableFlags flags) noexcept: name(O_INCREF(name)),
+            flags(flags) {
         }
     };
 
@@ -90,10 +113,6 @@ namespace liftoff::ir {
          * compilation processes.
          */
         IRContext *back = nullptr;
-
-        orbiter::datatype::HList known_props;
-
-        orbiter::datatype::HList unknown_props;
 
         /**
          * @struct sub
@@ -162,15 +181,7 @@ namespace liftoff::ir {
         }
 
     public:
-        /// A pointer to the entry `BasicBlock` of the current intermediate representation (IR) context.
-        BasicBlock *entry_ = nullptr;
-
-        /// A pointer to the current `BasicBlock` of the current intermediate representation (IR) context.
-        BasicBlock *current_ = nullptr;
-
-        JBlock *j_chain = nullptr;
-
-        orbiter::datatype::HList static_values;
+        std::vector<ExportedName> exported_names;
 
         /**
          * @variable live_intervals_
@@ -183,7 +194,21 @@ namespace liftoff::ir {
          */
         std::vector<LiveInterval> live_intervals_;
 
-        U16 stack_slot = 0;
+        orbiter::datatype::HList unknown_names;
+
+        orbiter::datatype::HList static_values;
+
+        /// A pointer to the entry `BasicBlock` of the current intermediate representation (IR) context.
+        BasicBlock *entry_ = nullptr;
+
+        /// A pointer to the current `BasicBlock` of the current intermediate representation (IR) context.
+        BasicBlock *current_ = nullptr;
+
+        JBlock *j_chain = nullptr;
+
+        U16 stack_slots = 0;
+
+        U16 local_slots = 0;
 
         U32 program_size = 0;
 
@@ -202,22 +227,6 @@ namespace liftoff::ir {
          *         as a result of the computation. Returns true if updates were made, and false otherwise.
          */
         [[nodiscard]] bool ComputeLiveness() const;
-
-        /**
-         * @brief Retrieves a list of names associated with the IRContext.
-         *
-         * This method returns a list containing names from both known and unknown properties
-         * associated with the instance of IRContext. It additionally provides the total number
-         * of known names through the `known_length` parameter. The resultant list combines
-         * entries from both known and unknown properties, preserving their respective order.
-         * If either of these properties is absent, their contribution to the list is skipped.
-         *
-         * @param known_length A pointer to a U16 where the method will store the number of known properties' names.
-         * Must not be null.
-         * @return A handle to a list (HList) containing the combined names from both known
-         *         and unknown properties.
-         */
-        [[nodiscard]] orbiter::datatype::HList GetNamesList(U16 *known_length) const;
 
         /**
          * @brief Retrieves the last active load instruction associated with the provided symbol.
@@ -264,8 +273,35 @@ namespace liftoff::ir {
             return this->sub.count;
         }
 
-        U16 PushKnownProps(orbiter::datatype::ORString *id);
+        /**
+         * @brief Adds a new entry into the collection of known exported names with the associated properties.
+         *
+         * This function inserts the given identifier and its associated flags into the exported_names
+         * list maintained within the IRContext. The input specifies an identifier to be stored and its
+         * configuration, encapsulated in the flags parameter. Upon adding the new entry, the function
+         * returns the total number of previously stored entries before the insertion.
+         *
+         * @param id Pointer to an ORString object representing the identifier to be added.
+         * @param flags Configuration flags associated with the identifier.
+         * @return The size of the exported_names collection before the addition.
+         */
+        U16 PushKnownProps(orbiter::datatype::ORString *id, orbiter::NewVariableFlags flags);
 
+        /**
+         * @brief Adds an unknown property identifier to the internal list of unknown names.
+         *
+         * This method appends the given property identifier to a managed list of unknown
+         * property names within the IRContext instance. If the property already exists
+         * in the list, its index is returned. If the identifier does not exist, it is
+         * appended to the list, and the index of this newly added identifier is returned.
+         *
+         * The list is lazily initialized upon the first invocation of this method. If the
+         * list allocation or appending operation fails, a `std::bad_alloc` exception is thrown.
+         *
+         * @param id Pointer to an ORString object representing the identifier of the unknown property.
+         * @return The index of the property identifier in the list of unknown names as an unsigned short (U16).
+         * @throws std::bad_alloc If memory allocation fails during list initialization or appending.
+         */
         U16 PushUnknownProps(orbiter::datatype::ORString *id);
 
         /**

@@ -59,7 +59,7 @@ orbiter::datatype::HCode Compiler::Compile(IRContext *ir) {
     auto code = Codegen(ir).Generate();
     if (code) {
         if (ir->GetSubcontextCount() > 0) {
-            code->codes = this->BuildCodesList(ir).get();
+            code->codes = this->BuildCodesList(ir).get_inc();
             if (code->codes == nullptr)
                 return {};
         }

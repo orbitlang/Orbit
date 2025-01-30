@@ -17,6 +17,7 @@ namespace liftoff {
 
         static unsigned char *EmitOpcodes(ir::BasicBlock *block, unsigned char *m_code);
 
+        void ExportSymbols(orbiter::datatype::HCode &code);
     public:
         explicit Codegen(ir::IRContext *ir) noexcept : allocator_(ir->GetIsolate()), ir_(ir) {
         }

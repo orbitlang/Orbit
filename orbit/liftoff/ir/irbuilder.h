@@ -99,7 +99,7 @@ namespace liftoff::ir {
             level_(level) {
         }
 
-        [[nodiscard]] IRCHandle Generate(parser::ASTHandle<parser::Module *> &module) noexcept;
+        [[nodiscard]] IRCHandle Generate(const parser::ASTHandle<parser::Module *> &module) noexcept;
     };
 }
 
