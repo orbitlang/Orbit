@@ -2042,12 +2042,21 @@ void Parser::AdjustInlineExport(const Assignment *decl, bool pub, bool weak) {
         return;
 
     if (pub) {
-        if (decl->node_type == NodeType::VAR_DECLARATION)
-            this->exports.emplace_back(O_INCREF(((Identifier *) decl->name)->value));
-        else {
+        if (decl->node_type == NodeType::VAR_DECLARATION) {
+            const auto *id = (const Identifier *) decl->name;
+
+            id->symbol->access = AccessModifier::PUBLIC;
+
+            this->exports.emplace_back(O_INCREF(id->value));
+        } else {
             const auto &tuple = (ListExpression *) decl->name;
-            for (const auto &cursor: tuple->elements)
-                this->exports.emplace_back(O_INCREF(((Identifier *) cursor.get())->value));
+            for (const auto &cursor: tuple->elements) {
+                const auto *id = (const Identifier *) decl->name;
+
+                id->symbol->access = AccessModifier::PUBLIC;
+
+                this->exports.emplace_back(O_INCREF(id->value));
+            }
         }
     }
 }
