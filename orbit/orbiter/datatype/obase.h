@@ -42,11 +42,12 @@ namespace orbiter::datatype {
 
 #define FUNCTIONDEF_SENTINEL {nullptr, nullptr, nullptr, 0, false}
 
-    enum class PropertyDetail {
+    enum class PropertyFlag:U8 {
         IN_OBJECT = 0x01,
 
         IS_PUBLIC = 0x01 << 1,
-        IS_CONSTANT = 0x01 << 2
+        IS_CONSTANT = 0x01 << 2,
+        IS_WEAK = 0x01 << 3
     };
 
     struct PropertyDescriptor {
@@ -56,7 +57,7 @@ namespace orbiter::datatype {
         struct OObject *value;
 
         /* Additional details about the property */
-        PropertyDetail detail;
+        PropertyFlag detail;
     };
 
 #define OROBJ_HEAD                                                      \
@@ -71,6 +72,7 @@ namespace orbiter::datatype {
         ATOM,
         BYTES,
         CODE,
+        CONTEXT,
         DECIMAL,
         DICT,
         FUNCTION,
@@ -84,7 +86,7 @@ namespace orbiter::datatype {
         TUPLE
     };
 
-    constexpr int kInstanceTypeCount = 15;
+    constexpr int kInstanceTypeCount = 16;
 
     using TypeInfoAUXDtor = bool (*)(struct TypeInfo *self);
 
@@ -144,11 +146,11 @@ namespace orbiter::datatype {
 #define O_IS_NIL(object)                    (object == orbiter::datatype::kOddBallNIL)
 
 #define O_INCREF(object)                    (O_IS_OBJECT(object) && O_GET_RC(object).IncStrong(), object)
-#define O_VFY_INCREF(object)                ((object != nullptr && (O_IS_OBJECT(object) && O_GET_RC(object).IncStrong())) ? object : nullptr)
+#define O_VFY_INCREF(object)                ((object != nullptr && (O_IS_OBJECT(object) && O_GET_RC(object).IncStrong())), object)
 
 #define O_GET_SLOT_COUNT(type)              (((type->i_size) - sizeof(OObject)) / sizeof(MSize))
 }
 
-ENUMBITMASK_ENABLE(orbiter::datatype::PropertyDetail);
+ENUMBITMASK_ENABLE(orbiter::datatype::PropertyFlag);
 
 #endif // !ORBIT_ORBITER_DATATYPE_OBASE_H_

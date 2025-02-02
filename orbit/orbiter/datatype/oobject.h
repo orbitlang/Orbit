@@ -18,11 +18,11 @@ namespace orbiter::datatype {
      * @param type Pointer to the TypeInfo
      * @param name Name of the property
      * @param value Pointer to the OObject representing the property's value
-     * @param detail Additional details about the property
+     * @param flags Additional flags about the property
      *
      * @return true if property was added successfully, false otherwise
      */
-    bool TIPropertyAdd(TypeInfo *type, const char *name, OObject *value, PropertyDetail detail);
+    bool TIPropertyAdd(TypeInfo *type, const char *name, OObject *value, PropertyFlag flags);
 
     /**
      * @brief Add an inline property to a TypeInfo using an offset
@@ -30,13 +30,13 @@ namespace orbiter::datatype {
      * @param type Pointer to the TypeInfo
      * @param name Name of the property
      * @param offset Offset of the property(expected 0,1,2,3... not an offset in bytes), adjusted relative to the TypeInfo.
-     * @param detail Additional details about the property
+     * @param flags Additional flags about the property
      *
      * @return true if property was added successfully, false otherwise
      */
-    inline bool TIPropertyAdd(TypeInfo *type, const char *name, U16 offset, PropertyDetail detail) {
+    inline bool TIPropertyAdd(TypeInfo *type, const char *name, U16 offset, PropertyFlag flags) {
         offset = type->offset + type->headroom + (offset * sizeof(void *));
-        return TIPropertyAdd(type, name, (OObject *) offset, detail | PropertyDetail::IN_OBJECT);
+        return TIPropertyAdd(type, name, (OObject *) offset, flags | PropertyFlag::IN_OBJECT);
     }
 
     /**
@@ -45,11 +45,11 @@ namespace orbiter::datatype {
      * @param type Pointer to the TypeInfo.
      * @param name Pointer to the ORString representing the name of the property.
      * @param value Pointer to the OObject representing the property's value.
-     * @param detail Additional details about the property.
+     * @param flags Additional flags about the property.
      *
      * @return true if property was added successfully, false otherwise.
      */
-    bool TIPropertyAdd(TypeInfo *type, OObject *name, OObject *value, PropertyDetail detail);
+    bool TIPropertyAdd(TypeInfo *type, OObject *name, OObject *value, PropertyFlag flags);
 
     /**
      * @brief Add an inline property to a TypeInfo using an offset
@@ -57,12 +57,12 @@ namespace orbiter::datatype {
      * @param type Pointer to the TypeInfo where the property will be added.
      * @param name Pointer to the ORString representing the name of the property.
      * @param offset Offset of the property(expected 0,1,2,3... not an offset in bytes), adjusted relative to the TypeInfo.
-     * @param detail Additional details about the property.
+     * @param flags Additional flags about the property.
      *
      * @return true if the property was added successfully, false otherwise.
      */
-    inline bool TIPropertyAdd(TypeInfo *type, OObject *name, U16 offset, PropertyDetail detail) {
-        return TIPropertyAdd(type, name, (OObject *) offset, detail | PropertyDetail::IN_OBJECT);
+    inline bool TIPropertyAdd(TypeInfo *type, OObject *name, U16 offset, PropertyFlag flags) {
+        return TIPropertyAdd(type, name, (OObject *) offset, flags | PropertyFlag::IN_OBJECT);
     }
 
     /**

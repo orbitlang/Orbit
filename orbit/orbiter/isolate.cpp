@@ -4,6 +4,7 @@
 
 #include <orbit/orbiter/datatype/atom.h>
 #include <orbit/orbiter/datatype/code.h>
+#include <orbit/orbiter/datatype/context.h>
 #include <orbit/orbiter/datatype/decimal.h>
 #include <orbit/orbiter/datatype/function.h>
 #include <orbit/orbiter/datatype/list.h>
@@ -46,6 +47,7 @@ Isolate *Isolate::New() {
 
     INIT_TYPE(InstanceType::ATOM, AtomTypeInit);
     INIT_TYPE(InstanceType::CODE, CodeTypeInit);
+    INIT_TYPE(InstanceType::CONTEXT, ContextInit);
     INIT_TYPE(InstanceType::DECIMAL, DecimalTypeInit);
     INIT_TYPE(InstanceType::FUNCTION, FunctionTypeInit);
     INIT_TYPE(InstanceType::LIST, ListTypeInit);
@@ -59,6 +61,7 @@ Isolate *Isolate::New() {
 
     SETUP_TYPE(InstanceType::ATOM, AtomTypeSetup);
     SETUP_TYPE(InstanceType::CODE, CodeTypeSetup);
+    SETUP_TYPE(InstanceType::CONTEXT, ContextSetup);
     SETUP_TYPE(InstanceType::DECIMAL, DecimalTypeSetup);
     SETUP_TYPE(InstanceType::FUNCTION, FunctionTypeSetup);
     SETUP_TYPE(InstanceType::LIST, ListTypeSetup);

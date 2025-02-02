@@ -13,15 +13,15 @@ bool orbiter::datatype::Equal(const OObject *left, const OObject *right) {
     return false;
 }
 
-bool orbiter::datatype::TIPropertyAdd(TypeInfo *type, const char *name, OObject *value, PropertyDetail detail) {
+bool orbiter::datatype::TIPropertyAdd(TypeInfo *type, const char *name, OObject *value, PropertyFlag flags) {
     auto orname = ORStringIntern(type->isolate, name);
     if (!orname)
         return false;
 
-    return TIPropertyAdd(type, (OObject *) orname.get(), value, detail);
+    return TIPropertyAdd(type, (OObject *) orname.get(), value, flags);
 }
 
-bool orbiter::datatype::TIPropertyAdd(TypeInfo *type, OObject *name, OObject *value, PropertyDetail detail) {
+bool orbiter::datatype::TIPropertyAdd(TypeInfo *type, OObject *name, OObject *value, PropertyFlag flags) {
     PropertyDescriptor tmp{};
 
     auto *orname = (ORString *) name;
@@ -40,7 +40,7 @@ bool orbiter::datatype::TIPropertyAdd(TypeInfo *type, OObject *name, OObject *va
 
             property->value = value;
 
-            property->detail = detail;
+            property->detail = flags;
 
             break;
         }

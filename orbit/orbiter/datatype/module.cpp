@@ -16,10 +16,10 @@ TypeInfo *orbiter::datatype::ModuleNew(Isolate *isolate, ORString *name, ORStrin
 
     auto *module = MakeTypeExtended(isolate, InstanceType::MODULE, 0, total_props, slots);
     if (module != nullptr) {
-        if (!TIPropertyAdd(module, "__name__", (OObject *) name, PropertyDetail::IS_CONSTANT))
+        if (!TIPropertyAdd(module, "__name__", (OObject *) name, PropertyFlag::IS_CONSTANT))
             goto ERROR;
 
-        if (!TIPropertyAdd(module, "__doc__", (OObject *) doc, PropertyDetail::IS_CONSTANT))
+        if (!TIPropertyAdd(module, "__doc__", (OObject *) doc, PropertyFlag::IS_CONSTANT))
             goto ERROR;
     }
 
@@ -40,9 +40,9 @@ TypeInfo *orbiter::datatype::ModuleNew(Code *code, ORString *name) {
         for (auto i = 0; i < code->exported.length; i++) {
             const auto *symbol = code->exported.symbols + i;
 
-            PropertyDetail pd{};
+            PropertyFlag pd{};
             if (ENUMBITMASK_ISTRUE(symbol->flags, VariableFlags::CONSTANT))
-                pd = PropertyDetail::IS_CONSTANT;
+                pd = PropertyFlag::IS_CONSTANT;
 
             if (!TIPropertyAdd(module, (OObject *) symbol->name, symbol->slot, pd)) {
                 Release(module);
