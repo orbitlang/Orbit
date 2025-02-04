@@ -10,6 +10,30 @@
 using namespace orbiter;
 using namespace orbiter::datatype;
 
+bool orbiter::VMContextInit(VMContext *vmc, Isolate *isolate, MSize stackSize) noexcept {
+    if (!VMStackInit(&vmc->stack, isolate, stackSize))
+        return false;
+
+    memory::MemoryZero(&vmc->regs, sizeof(Registers));
+
+    vmc->state = VMState::RUNNABLE;
+
+    return true;
+}
+
+bool orbiter::VMStackInit(VMStack *vms, Isolate *isolate, MSize stackSize) noexcept {
+    IsolateAllocator allocator(isolate);
+
+    vms->stack = allocator.alloc<Byte>(stackSize);
+    if (vms->stack == nullptr)
+        return false;
+
+    vms->current = 0;
+    vms->stackSize = stackSize;
+
+    return true;
+}
+
 void *orbiter::eval(VMContext *vmc, Code *code) {
     auto *regs = &vmc->regs;
     auto *stack = &vmc->stack;

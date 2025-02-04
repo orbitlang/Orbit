@@ -14,6 +14,12 @@ namespace orbiter {
     constexpr auto kSpecialPurposeRegistersCount = 3;
     constexpr auto kInternalRegistersCount = 2;
 
+    constexpr size_t kToBytes = 1;
+    constexpr size_t kToKBytes = 1024 * kToBytes; // 1 KB = 1024 byte
+    constexpr size_t kToMBytes = 1024 * kToKBytes; // 1 MB = 1024 KB
+
+    constexpr size_t kMinStackSize = 16 * kToKBytes;
+
     using MachineWord = U32;
 
     union Register {
@@ -53,7 +59,7 @@ namespace orbiter {
     };
 
     struct VMStack {
-        PtrSize *stack;
+        Bytes stack;
 
         MSize current;
         MSize stackSize;
@@ -72,6 +78,10 @@ namespace orbiter {
 
         VMState state;
     };
+
+    bool VMContextInit(VMContext *vmc, Isolate *isolate, MSize stackSize) noexcept;
+
+    bool VMStackInit(VMStack *vms, Isolate *isolate, MSize stackSize) noexcept;
 
     void *eval(VMContext *vmc, datatype::Code *code);
 }

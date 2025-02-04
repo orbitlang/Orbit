@@ -9,6 +9,10 @@
 #include <orbit/orbiter/datatype/code.h>
 
 namespace orbiter::datatype {
+    struct Module {
+        OROBJ_HEAD;
+    };
+
     /**
      * @brief Initialize and create the specified type
      *
