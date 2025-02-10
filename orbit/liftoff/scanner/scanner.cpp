@@ -673,7 +673,7 @@ bool Scanner::NextToken(Token *out_token) noexcept {
 
     // Cleanup token
     if (out_token->buffer != nullptr) {
-        orbiter::IsolateAllocator allocator(this->isolate_);
+        orbiter::memory::IsolateAllocator allocator(this->isolate_);
         allocator.free(out_token->buffer);
 
         out_token->buffer = nullptr;

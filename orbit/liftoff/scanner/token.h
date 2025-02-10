@@ -295,7 +295,7 @@ namespace liftoff::scanner {
             this->type = TokenType::TK_NULL;
 
             if (this->isolate != nullptr && this->buffer != nullptr) {
-                const orbiter::IsolateAllocator allocator(this->isolate);
+                const orbiter::memory::IsolateAllocator allocator(this->isolate);
                 allocator.free(this->buffer);
             }
 

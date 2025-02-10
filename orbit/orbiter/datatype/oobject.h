@@ -7,6 +7,8 @@
 
 #include <orbit/orbiter/isolate.h>
 
+#include <orbit/orbiter/memory/gc.h>
+
 #include <orbit/orbiter/datatype/obase.h>
 
 namespace orbiter::datatype {
@@ -139,9 +141,9 @@ namespace orbiter::datatype {
      */
     template<typename T>
     T *MakeObject(TypeInfo *type) {
-        IsolateAllocator allocator(O_GET_ISOLATE(type));
+        auto *isolate = O_GET_ISOLATE(type);
 
-        auto *ret = allocator.alloc<OObject>(type->i_size);
+        auto *ret = (OObject*)isolate->gc->AllocObject(type->i_size);
         if (ret == nullptr)
             return nullptr;
 

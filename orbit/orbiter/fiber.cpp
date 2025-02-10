@@ -27,7 +27,7 @@ void Fiber::SetCurrent(Fiber *fiber) noexcept {
 }
 
 Fiber *Fiber::New(Isolate *isolate, MSize stackSize) noexcept {
-    IsolateAllocator allocator(isolate);
+    memory::IsolateAllocator allocator(isolate);
 
     const auto fiber = allocator.alloc<Fiber>(sizeof(Fiber));
     if (fiber != nullptr) {

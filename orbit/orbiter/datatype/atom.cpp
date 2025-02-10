@@ -26,7 +26,7 @@ bool AtomGATDtor(TypeInfo *self) {
         Release(entry->value);
     });
 
-    orbiter::IsolateAllocator allocator(self->isolate);
+    orbiter::memory::IsolateAllocator allocator(self->isolate);
     allocator.FreeObject(self);
 
     self->aux.data = nullptr;
@@ -35,7 +35,7 @@ bool AtomGATDtor(TypeInfo *self) {
 }
 
 bool orbiter::datatype::AtomTypeSetup(TypeInfo *self) {
-    IsolateAllocator allocator(self->isolate);
+    memory::IsolateAllocator allocator(self->isolate);
 
     auto *map = allocator.AllocObject<GATMap>(self->isolate);
     if (map == nullptr)

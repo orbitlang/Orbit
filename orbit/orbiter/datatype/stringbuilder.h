@@ -13,7 +13,7 @@ namespace orbiter::datatype {
     constexpr int kERR_MSG_MAX_LENGTH = 80;
 
     class StringBuilder {
-        IsolateAllocator allocator_;
+        memory::IsolateAllocator allocator_;
 
         char e_msg_[kERR_MSG_MAX_LENGTH]{};
 

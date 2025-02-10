@@ -319,7 +319,7 @@ def generate_cleanup_function():
             break;
     }}
     
-    const orbiter::IsolateAllocator allocator(ast_node->isolate);
+    const orbiter::memory::IsolateAllocator allocator(ast_node->isolate);
     allocator.free(ast_node);
 }}
 """
@@ -343,7 +343,7 @@ def generate_make_functions():
             node_type_check = " || ".join(f"node_type == NodeType::{nt}" for nt in node_types)
             make_functions.append(f"""
 inline ASTHandle<{node_name}*> Make{node_name}(orbiter::Isolate *isolate, const scanner::Loc &loc, NodeType node_type) {{
-    orbiter::IsolateAllocator allocator(isolate);
+    orbiter::memory::IsolateAllocator allocator(isolate);
     
     assert({node_type_check});
     
@@ -363,7 +363,7 @@ inline ASTHandle<{node_name}*> Make{node_name}(orbiter::Isolate *isolate, const 
         else:
             make_functions.append(f"""
 inline ASTHandle<{node_name}*> Make{node_name}(orbiter::Isolate *isolate, const scanner::Loc &loc) {{
-    orbiter::IsolateAllocator allocator(isolate);
+    orbiter::memory::IsolateAllocator allocator(isolate);
     
     auto *node = allocator.calloc<{node_name}>(sizeof({node_name}));
     if(node == nullptr)

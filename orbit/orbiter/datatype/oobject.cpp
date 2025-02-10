@@ -93,7 +93,7 @@ bool orbiter::datatype::TIPropertiesInit(Isolate *isolate, TypeInfo *type, U8 n)
         return true;
     }
 
-    IsolateAllocator allocator(isolate);
+    memory::IsolateAllocator allocator(isolate);
     auto *tmp = allocator.calloc<PropertyDescriptor>(sizeof(PropertyDescriptor) * n);
     if (tmp == nullptr)
         return false;
@@ -145,9 +145,7 @@ PropertyDescriptor *orbiter::datatype::TIFindProperty(const TypeInfo *type, cons
 
 TypeInfo *orbiter::datatype::MakeType(Isolate *isolate, TypeInfo *super, InstanceType type,
                                       U8 headroom, U8 props, U8 slots) {
-    IsolateAllocator allocator(isolate);
-
-    auto *ti = allocator.alloc<TypeInfo>(sizeof(TypeInfo));
+    auto *ti = (TypeInfo *) isolate->gc->AllocObject(sizeof(TypeInfo));
     if (ti == nullptr)
         return nullptr;
 
@@ -176,7 +174,7 @@ TypeInfo *orbiter::datatype::MakeType(Isolate *isolate, TypeInfo *super, Instanc
     ti->properties.p_array = nullptr;
 
     if (!TIPropertiesInit(isolate, ti, props)) {
-        allocator.free(ti);
+        isolate->gc->Free(ti);
 
         return nullptr;
     }

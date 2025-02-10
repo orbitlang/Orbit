@@ -5,7 +5,7 @@
 #ifndef ORBIT_LIFTOFF_IR_BUILDER_H_
 #define ORBIT_LIFTOFF_IR_BUILDER_H_
 
-#include <orbit/orbiter/isolate.h>
+#include <orbit/orbiter/memory/iallocator.h>
 
 #include <orbit/liftoff/ir/ircontext.h>
 
@@ -19,7 +19,7 @@ namespace liftoff::ir {
      * operations, constants, and various opcodes.
      */
     class Builder {
-        orbiter::IsolateAllocator allocator_;
+        orbiter::memory::IsolateAllocator allocator_;
 
         bool delete_context_ = true;
 

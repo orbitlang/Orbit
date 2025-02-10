@@ -7,7 +7,7 @@
 using namespace liftoff::ir;
 
 IRContext::~IRContext() noexcept {
-    const orbiter::IsolateAllocator allocator(this->isolate_);
+    const orbiter::memory::IsolateAllocator allocator(this->isolate_);
 
     Object *next = nullptr;
     for (auto cursor = this->objs_; cursor != nullptr; cursor = next) {
@@ -123,7 +123,7 @@ U16 IRContext::PushStaticValue(orbiter::datatype::OObject *value) {
 }
 
 U16 IRContext::PushSubContext(IRContext *context) {
-    orbiter::IsolateAllocator allocator(this->isolate_);
+    orbiter::memory::IsolateAllocator allocator(this->isolate_);
 
     if (this->sub.context == nullptr) {
         this->sub.context = allocator.alloc<IRContext *>(8 * sizeof(void *));
@@ -218,7 +218,7 @@ void IRContext::Delete(IRContext *context) {
 
     assert(context->back == nullptr);
 
-    const orbiter::IsolateAllocator allocator(context->isolate_);
+    const orbiter::memory::IsolateAllocator allocator(context->isolate_);
 
     context->~IRContext();
 

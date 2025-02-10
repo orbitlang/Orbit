@@ -8,14 +8,10 @@
 #include <functional>
 #include <cstring>
 
+#include <orbit/orbiter/memory/iallocator.h>
 #include <orbit/orbiter/datatype/oobject.h>
 
 namespace orbiter::datatype {
-    template<typename T>
-    struct CheckHMapAllocator {
-        static constexpr bool value = std::is_base_of<IsolateAllocatorBase<T>, T>::value;
-    };
-
     template<typename K, typename V>
     struct HEntry {
         std::atomic_int ref;
@@ -34,10 +30,8 @@ namespace orbiter::datatype {
         typename K, typename V,
         auto EqualFn, // bool EqualFn(const K, const K)
         auto HashFn, // size_t HashFn(const K)
-        typename Allocator = IsolateAllocator>
+        typename Allocator = memory::IsolateAllocator>
     class HashMap {
-        static_assert(CheckHMapAllocator<Allocator>::value, "Allocator must inherit from IsolateAllocatorBase");
-
         static constexpr auto kHashMapInitialSize = 24;
         static constexpr auto kHashMapLoadFactor = 0.75f;
         static constexpr auto kHashMapMulFactor = 2;

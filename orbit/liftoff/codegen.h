@@ -5,13 +5,15 @@
 #ifndef ORBIT_LIFTOFF_CODEGEN_H_
 #define ORBIT_LIFTOFF_CODEGEN_H_
 
+#include <orbit/orbiter/memory/iallocator.h>
+
 #include <orbit/liftoff/ir/ircontext.h>
 
 #include <orbit/orbiter/datatype/code.h>
 
 namespace liftoff {
     class Codegen {
-        orbiter::IsolateAllocator allocator_;
+        orbiter::memory::IsolateAllocator allocator_;
 
         ir::IRContext *ir_;
 

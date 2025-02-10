@@ -13,10 +13,19 @@
 #include <orbit/orbiter/datatype/orstring.h>
 #include <orbit/orbiter/datatype/type.h>
 
+#include <orbit/orbiter/memory/gc.h>
+
 #include <orbit/orbiter/isolate.h>
 
 using namespace orbiter;
 using namespace orbiter::datatype;
+
+Isolate::~Isolate() {
+    delete this->gc;
+
+    this->allocator_->Finalize();
+    delete this->allocator_;
+}
 
 Isolate *Isolate::New() {
 #define INIT_TYPE(num, fn)                                              \
@@ -35,13 +44,13 @@ Isolate *Isolate::New() {
     if (isolate == nullptr)
         return nullptr;
 
-    new(&isolate->allocator_) stratum::Memory();
+    isolate->allocator_ = new stratum::Memory();
+    if (!isolate->allocator_->Initialize())
+        goto ERROR;
 
-    if (!isolate->allocator_.Initialize()) {
-        delete isolate;
-
-        return nullptr;
-    }
+    isolate->gc = new memory::GC(isolate);
+    if (!isolate->gc->Initialize())
+        goto ERROR;
 
     INIT_TYPE(InstanceType::TYPE, TypeInit);
 
@@ -72,8 +81,6 @@ Isolate *Isolate::New() {
     return isolate;
 
 ERROR:
-    isolate->allocator_.Finalize();
-
     delete isolate;
 
     return nullptr;

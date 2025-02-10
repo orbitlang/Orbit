@@ -24,7 +24,7 @@ bool orbiter::VMContextInit(VMContext *vmc, Isolate *isolate, MSize stackSize) n
 }
 
 bool orbiter::VMStackInit(VMStack *vms, Isolate *isolate, MSize stackSize) noexcept {
-    IsolateAllocator allocator(isolate);
+    memory::IsolateAllocator allocator(isolate);
 
     vms->stack = allocator.alloc<Byte>(stackSize);
     if (vms->stack == nullptr)

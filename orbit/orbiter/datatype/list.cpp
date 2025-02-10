@@ -17,7 +17,7 @@ bool ListCheckSize(List *list, MSize count) {
         if (list->objects == nullptr)
             len = kListInitialCapacity;
 
-        orbiter::IsolateAllocator allocator(O_GET_TYPE(list)->isolate);
+        orbiter::memory::IsolateAllocator allocator(O_GET_TYPE(list)->isolate);
 
         if ((tmp = allocator.realloc(list->objects, len * sizeof(void *))) == nullptr)
             return false;
@@ -98,7 +98,7 @@ HList orbiter::datatype::ListNew(Isolate *isolate, MSize capacity) {
     list->length = 0;
 
     if (capacity > 0) {
-        IsolateAllocator allocator(isolate);
+        memory::IsolateAllocator allocator(isolate);
 
         list->objects = allocator.alloc<OObject *>(capacity * sizeof(void *));
         if (list->objects == nullptr) {

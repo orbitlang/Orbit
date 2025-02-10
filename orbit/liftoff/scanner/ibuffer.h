@@ -13,7 +13,7 @@ namespace liftoff::scanner {
     constexpr int kLastLineSize = 1024;
 
     class InputBuffer {
-        orbiter::IsolateAllocator allocator_;
+        orbiter::memory::IsolateAllocator allocator_;
 
         unsigned char *buffer_ = nullptr;
         unsigned char *last_line_ = nullptr;

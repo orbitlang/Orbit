@@ -9,7 +9,7 @@
 
 namespace liftoff::scanner {
     class StoreBuffer {
-        orbiter::IsolateAllocator allocator_;
+        orbiter::memory::IsolateAllocator allocator_;
 
         unsigned char *buffer_ = nullptr;
         unsigned char *cursor_ = nullptr;

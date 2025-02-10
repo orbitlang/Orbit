@@ -2,8 +2,6 @@
 //
 // Licensed under the Apache License v2.0
 
-#include <orbit/orbiter/memory/memory.h>
-
 #include <orbit/orbiter/datatype/function.h>
 
 using namespace orbiter::datatype;
@@ -22,7 +20,7 @@ FuncShared *FunSharedNew(orbiter::Isolate *isolate, const char *name, const char
             return nullptr;
     }
 
-    orbiter::IsolateAllocator allocator(isolate);
+    orbiter::memory::IsolateAllocator allocator(isolate);
     auto *shared = allocator.alloc<FuncShared>(sizeof(FuncShared));
     if (shared != nullptr) {
         shared->refs = 1;
@@ -49,8 +47,7 @@ void FunSharedDel(orbiter::Isolate *isolate, FuncShared *shared) {
     if (shared->IsInterpreted())
         Release(shared->code);
 
-    orbiter::IsolateAllocator allocator(isolate);
-    allocator.free(shared);
+    orbiter::memory::IsolateAllocator(isolate).free(shared);
 }
 
 bool orbiter::datatype::FunctionTypeSetup(TypeInfo *self) {

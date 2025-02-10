@@ -10,7 +10,7 @@ using namespace orbiter::datatype;
 using namespace liftoff;
 
 bool SymbolTable::DeclareNestedScope(MSize offset) noexcept {
-    orbiter::IsolateAllocator allocator(this->isolate);
+    orbiter::memory::IsolateAllocator allocator(this->isolate);
 
     auto *active = this->scope->active;
 
@@ -120,7 +120,7 @@ const char *SymbolTable::GetStatusMessage() const {
 }
 
 Scope *SymbolTable::ScopeNew(MSize line_start) const noexcept {
-    orbiter::IsolateAllocator allocator(this->isolate);
+    orbiter::memory::IsolateAllocator allocator(this->isolate);
 
     auto *scope = allocator.alloc<Scope>(sizeof(Scope));
     if (scope != nullptr) {
@@ -141,7 +141,7 @@ Scope *SymbolTable::ScopeNew(MSize line_start) const noexcept {
 }
 
 Symbol *SymbolTable::SymbolNew(ORString *name, SymbolType type, MSize offset) noexcept {
-    orbiter::IsolateAllocator allocator(isolate);
+    orbiter::memory::IsolateAllocator allocator(isolate);
 
     auto *symbol = allocator.calloc<Symbol>(sizeof(Symbol));
     if (symbol == nullptr) {
@@ -383,7 +383,7 @@ Symbol *SymbolTable::LookupInsert(const char *name, MSize offset) noexcept {
 }
 
 SymbolTable *SymbolTable::New(orbiter::Isolate *isolate) noexcept {
-    orbiter::IsolateAllocator allocator(isolate);
+    orbiter::memory::IsolateAllocator allocator(isolate);
 
     auto *table = allocator.alloc<SymbolTable>(sizeof(SymbolTable));
     if (table != nullptr) {
@@ -432,7 +432,7 @@ void SymbolTable::Delete(SymbolTable *table) noexcept {
     if (table == nullptr)
         return;
 
-    const orbiter::IsolateAllocator allocator(table->isolate);
+    const orbiter::memory::IsolateAllocator allocator(table->isolate);
 
     table->~SymbolTable();
 
@@ -472,7 +472,7 @@ void SymbolTable::LeaveScope() noexcept {
 }
 
 void SymbolTable::ScopeDel(Scope *scope) const noexcept {
-    const orbiter::IsolateAllocator allocator(this->isolate);
+    const orbiter::memory::IsolateAllocator allocator(this->isolate);
 
     this->SubScopeDel(&scope->sub_scope, false);
 
@@ -485,7 +485,7 @@ void SymbolTable::SymbolDel(Symbol *symbol) const noexcept {
     if (symbol == nullptr)
         return;
 
-    const orbiter::IsolateAllocator allocator(this->isolate);
+    const orbiter::memory::IsolateAllocator allocator(this->isolate);
 
     while (symbol != nullptr) {
         Release(symbol->name);
@@ -515,7 +515,7 @@ void SymbolTable::SubScopeDel(SubScope *sub_scope, bool r_memory) const noexcept
         this->SubScopeDel(cursor, true);
     }
 
-    const orbiter::IsolateAllocator allocator(this->isolate);
+    const orbiter::memory::IsolateAllocator allocator(this->isolate);
 
     if (r_memory)
         allocator.free(sub_scope);
