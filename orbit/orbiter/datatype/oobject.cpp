@@ -174,7 +174,7 @@ TypeInfo *orbiter::datatype::MakeType(Isolate *isolate, TypeInfo *super, Instanc
     ti->properties.p_array = nullptr;
 
     if (!TIPropertiesInit(isolate, ti, props)) {
-        isolate->gc->Free(ti);
+        isolate->gc->Free((OObject *) ti);
 
         return nullptr;
     }

@@ -49,8 +49,6 @@ Isolate *Isolate::New() {
         goto ERROR;
 
     isolate->gc = new memory::GC(isolate);
-    if (!isolate->gc->Initialize())
-        goto ERROR;
 
     INIT_TYPE(InstanceType::TYPE, TypeInit);
 

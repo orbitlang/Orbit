@@ -96,6 +96,15 @@ namespace orbiter::datatype {
      * @param object Pointer to the OObject to release
      */
     inline void Release(OObject *object) {
+        if (object == nullptr)
+            return;
+
+        if (O_IS_OBJECT(object)) {
+            uintptr_t counter;
+
+            if (O_GET_RC(object).DecStrong(&counter) && !RC_CHECK_IS_GCOBJ(counter))
+                O_GET_ISOLATE(object)->gc->MarkForCollection(object);
+        }
     }
 
     /**
@@ -143,7 +152,7 @@ namespace orbiter::datatype {
     T *MakeObject(TypeInfo *type) {
         auto *isolate = O_GET_ISOLATE(type);
 
-        auto *ret = (OObject*)isolate->gc->AllocObject(type->i_size);
+        auto *ret = (OObject *) isolate->gc->AllocObject(type->i_size);
         if (ret == nullptr)
             return nullptr;
 
@@ -170,14 +179,26 @@ namespace orbiter::datatype {
 
     template<typename T>
     T *MakeGCObject(TypeInfo *type) {
-        // TODO: impl!
-        return MakeObject<T>(type);
+        auto *obj = MakeObject<T>(type);
+        if (obj != nullptr) {
+            O_UNSAFE_GET_RC(obj) = (MSize) memory::RCType::GC;
+
+            O_GET_ISOLATE(type)->gc->Track((OObject *) obj);
+        }
+
+        return obj;
     }
 
     template<typename T>
     T *MakeGCObject(Isolate *isolate, InstanceType type) {
-        // TODO: impl!
-        return MakeObject<T>(isolate, type);
+        auto *obj = MakeObject<T>(isolate, type);
+        if (obj != nullptr) {
+            O_UNSAFE_GET_RC(obj) = (MSize) memory::RCType::GC;
+
+            isolate->gc->Track((OObject *) obj);
+        }
+
+        return obj;
     }
 
     /**
