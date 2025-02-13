@@ -2,10 +2,48 @@
 //
 // Licensed under the Apache License v2.0
 
+#include <cassert>
 #include <orbit/orbiter/memory/gc.h>
 
 using namespace orbiter;
+using namespace orbiter::datatype;
 using namespace orbiter::memory;
+
+void InitGCRefCount(GCHead *head) {
+    head->r_count = O_GET_RC(GC_GET_OBJ(head)).GetStrongCount();
+    head->SetVisited(true);
+}
+
+void GCDecRef(OObject *self) {
+    if (self == nullptr || !O_IS_OBJECT(self) || !RC_CHECK_IS_GCOBJ(O_UNSAFE_GET_RC(self)))
+        return;
+
+    auto *head = GC_GET_HEAD(self);
+
+    if (!head->IsVisited())
+        InitGCRefCount(head);
+
+    head->r_count -= 1;
+}
+
+void GCIncRef(OObject *self) {
+    if (self == nullptr || !O_IS_OBJECT(self) || !RC_CHECK_IS_GCOBJ(O_UNSAFE_GET_RC(self)))
+        return;
+
+    auto *head = GC_GET_HEAD(self);
+
+    if (head->IsVisited()) {
+        head->SetVisited(false);
+
+        O_GET_TYPE(self)->trace(self, GCIncRef);
+    }
+
+    head->r_count += 1;
+}
+
+// *********************************************************************************************************************
+// PRIVATE
+// *********************************************************************************************************************
 
 MSize GC::CollectRCQueue() noexcept {
     MSize count = 0;
@@ -86,7 +124,163 @@ void GC::HeadRemove(const GCHead *head) noexcept {
         next->prev = head->prev;
 }
 
-datatype::OObject *GC::AllocObject(MSize size) noexcept {
+void GC::ResetStats(int generation) noexcept {
+    if (generation > 0)
+        this->context_.generations[generation - 1].times = 0;
+
+    auto *gen = this->context_.generations + generation;
+    gen->collected = 0;
+    gen->uncollected = 0;
+}
+
+void GC::Trace(OObject *object, bool inc) noexcept {
+    const auto *info = O_GET_TYPE(object);
+
+    assert(info != nullptr);
+
+    do {
+        const auto *slots = O_SLOT(object, info);
+        const auto slots_count = O_SLOT_COUNT(object, info);
+
+        for (auto i = 0; i < slots_count; i++) {
+            auto *obj = slots[i];
+
+            if (O_IS_OBJECT(obj) && RC_CHECK_IS_GCOBJ(O_UNSAFE_GET_RC(obj))) {
+                auto *head = GC_GET_HEAD(obj);
+
+                if (!inc) {
+                    if (!head->IsVisited())
+                        InitGCRefCount(head);
+
+                    head->r_count -= 1;
+
+                    continue;
+                }
+
+                if (head->IsVisited()) {
+                    head->SetVisited(false);
+
+                    Trace(obj, true);
+                }
+
+                head->r_count += 1;
+            }
+        }
+
+        if (info->trace != nullptr)
+            info->trace(object, inc ? GCIncRef : GCDecRef);
+
+        info = info->head_.type_;
+    } while (info != nullptr);
+}
+
+void GC::TraceRoots(GCGeneration *generation, GCHead **unreachable) noexcept {
+    GCHead *next;
+
+    for (auto *cursor = generation->list; cursor != nullptr; cursor = next) {
+        next = cursor->Next();
+
+        if (cursor->r_count == 0) {
+            cursor->SetFinalize(true);
+
+            HeadRemove(cursor);
+            HeadInsert(unreachable, cursor);
+
+            generation->count -= 1;
+
+            continue;
+        }
+
+        if (cursor->IsVisited()) {
+            cursor->SetVisited(false);
+
+            Trace(GC_GET_OBJ(cursor), true);
+        }
+    }
+}
+
+void GC::Trashing(GCGeneration *nextgen, GCHead *unreachable) noexcept {
+    GCHead *next;
+
+    for (auto *cursor = unreachable; cursor != nullptr; cursor = next) {
+        next = cursor->Next();
+
+        HeadRemove(cursor);
+
+        // Check if objects are really unreachable
+        if (cursor->r_count == 0) {
+            // TODO: garbage lock
+            //HeadInsert()
+
+            this->context_.tracked_count -= 1;
+            this->context_.tracked_bytes -= cursor->size;
+
+            continue;
+        }
+
+        cursor->SetFinalize(false);
+
+        HeadInsert(&nextgen->list, cursor);
+        nextgen->count += 1;
+    }
+}
+
+void GC::SearchRoots(const GCGeneration *generation) noexcept {
+    for (auto *cursor = generation->list; cursor != nullptr; cursor = cursor->Next()) {
+        auto *obj = GC_GET_OBJ(cursor);
+
+        if (!cursor->IsVisited())
+            InitGCRefCount(cursor);
+
+        Trace(obj, false);
+    }
+}
+
+// *********************************************************************************************************************
+// PUBLIC
+// *********************************************************************************************************************
+
+MSize GC::Collect() noexcept {
+}
+
+MSize GC::Collect(int generation) noexcept {
+    GCHead *unreachable = nullptr;
+
+    generation = generation % kGCGenerations;
+
+    int next_gen;
+    if ((next_gen = (generation + 1) % kGCGenerations) == 0)
+        next_gen = kGCGenerations - 1;
+
+    auto selected = this->context_.generations + generation;
+
+    this->ResetStats(generation);
+
+    if (selected->list == nullptr)
+        return 0;
+
+    selected->times += 1;
+
+    const auto total = selected->count;
+
+    // 1) Enumerate roots
+    SearchRoots(selected);
+
+    // 2) Trace all objects reachable from roots
+    TraceRoots(selected, &unreachable);
+
+    // TODO: trace regs!
+
+    // 3) Collect unreachable objects
+    Trashing(this->context_.generations + next_gen, unreachable);
+
+    selected->collected = total - selected->count;
+    selected->uncollected = selected->count;
+
+    return selected->collected;
+}
+
+OObject *GC::AllocObject(MSize size) noexcept {
     auto allocate = sizeof(GCHead) + size;
 
     auto *obj = this->allocator_.alloc<GCHead>(allocate);
@@ -103,7 +297,7 @@ datatype::OObject *GC::AllocObject(MSize size) noexcept {
     return nullptr;
 }
 
-void GC::MarkForCollection(datatype::OObject *object) noexcept {
+void GC::MarkForCollection(OObject *object) noexcept {
     auto *head = GC_GET_HEAD(object);
 
     // TODO: recursive mutex!
@@ -120,7 +314,7 @@ void GC::ThresholdCollect() noexcept {
     // TODO STUB
 }
 
-void GC::Track(datatype::OObject *object) noexcept {
+void GC::Track(OObject *object) noexcept {
     auto *head = GC_GET_HEAD(object);
 
     this->ThresholdCollect();
@@ -132,6 +326,7 @@ void GC::Track(datatype::OObject *object) noexcept {
         HeadInsert(&generation->list, head);
         generation->count++;
 
-        this->context_.total_tracked++;
+        this->context_.tracked_count++;
+        this->context_.tracked_bytes += head->size;
     }
 }

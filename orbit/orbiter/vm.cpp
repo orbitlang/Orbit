@@ -66,7 +66,7 @@ CGOTO
 
     OObject **module_slots = nullptr;
     if (fiber->context.module != nullptr)
-        module_slots = O_SLOT(fiber->context.module);
+        module_slots = O_SLOT(fiber->context.module, O_GET_TYPE(fiber->context.module));
 
     while (1) {
         const auto instr = FETCH;

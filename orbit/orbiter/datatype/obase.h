@@ -22,7 +22,9 @@ namespace orbiter::datatype {
     constexpr auto kOddBallFALSE = 0x08u | kOddBallMask;
     constexpr auto kOddBallTRUE = 0x10u | kOddBallMask;
 
-    using FunctionPtr = struct OObject *(*)(struct Function *, OObject **argv, OObject *kwargs, U16 argc);
+    using TraceFn = void (*)(OObject *self, void (*gc_callback)(OObject *));
+
+    using FunctionPtr = OObject *(*)(struct Function *, OObject **argv, OObject *kwargs, U16 argc);
 
     struct FunctionDef {
         /* Name of native function (this name will be exposed to Orbit) */
@@ -54,7 +56,7 @@ namespace orbiter::datatype {
         struct ORString *name; // from: orstring.h
 
         /* Pointer to the OObject representing the property's value */
-        struct OObject *value;
+        OObject *value;
 
         /* Additional details about the property */
         PropertyFlag detail;
@@ -106,6 +108,8 @@ namespace orbiter::datatype {
 
         Isolate *isolate;
 
+        TraceFn trace;
+
         /* Auxiliary data storage for type-specific information */
         struct {
             /* Pointer to type-specific auxiliary data.
@@ -135,8 +139,11 @@ namespace orbiter::datatype {
 #define O_UNSAFE_GET_RC(object)             (*((MSize *) &O_GET_HEAD(object).ref_count_))
 #define O_GET_TYPE(object)                  (O_GET_HEAD(object).type_)
 #define O_GET_ISOLATE(object)               (O_GET_TYPE(object)->isolate)
-#define O_CAST(object, hr_type)             ((hr_type *) (((unsigned char*) object) + (O_GET_TYPE((OObject*) object)->offset)))
-#define O_SLOT(object)                      ((orbiter::datatype::OObject **) (O_CAST(object, unsigned char) + O_GET_TYPE(object)->headroom))
+
+#define O_CAST(object, tp_info, type_)      ((type_ *) (((unsigned char*) object) + (tp_info)->offset))
+
+#define O_SLOT(object, tp_info)             ((orbiter::datatype::OObject **) (O_CAST(object, tp_info, unsigned char) + (tp_info)->headroom))
+#define O_SLOT_COUNT(object, tp_info)       (((tp_info)->i_size - (tp_info)->offset - (tp_info)->headroom) / sizeof(void *))
 
 #define O_IS_SMI(object)                    ((MSize)object & 0x01u)
 #define O_IS_ODDBALL(object)                ((!O_IS_SMI(object)) && (((MSize)object & orbiter::datatype::kOddBallMask) == orbiter::datatype::kOddBallMask))

@@ -30,6 +30,14 @@ namespace orbiter::memory {
             return this->prev != nullptr;
         }
 
+        [[nodiscard]] bool IsFinalized() const {
+            return ((((uintptr_t) this->next) & GCBitOffsets::FinalizedMask) >> GCBitOffsets::FinalizedShift);
+        }
+
+        [[nodiscard]] bool IsVisited() const {
+            return ((((uintptr_t) this->next) & GCBitOffsets::VisitedMask) >> GCBitOffsets::VisitedShift);
+        }
+
         [[nodiscard]] GCHead *Next() const {
             return (GCHead *) (((uintptr_t) this->next) & GCBitOffsets::AddressMask);
         }
@@ -37,12 +45,27 @@ namespace orbiter::memory {
         void SetNext(GCHead *head) {
             this->next = (GCHead *) (((uintptr_t) head) | ((uintptr_t) this->next & ~GCBitOffsets::AddressMask));
         }
+
+        void SetFinalize(bool visited) {
+            if (visited)
+                this->next = (GCHead *) (((uintptr_t) this->next) | GCBitOffsets::FinalizedMask);
+            else
+                this->next = (GCHead *) (((uintptr_t) this->next) & ~GCBitOffsets::FinalizedMask);
+        }
+
+        void SetVisited(bool visited) {
+            if (visited)
+                this->next = (GCHead *) (((uintptr_t) this->next) | GCBitOffsets::VisitedMask);
+            else
+                this->next = (GCHead *) (((uintptr_t) this->next) & ~GCBitOffsets::VisitedMask);
+        }
     };
 
     struct GCGeneration {
         GCHead *list;
 
         MSize count;
+
         MSize collected;
         MSize uncollected;
 
@@ -61,7 +84,9 @@ namespace orbiter::memory {
 
         MSize rel_count = 0;
         MSize rel_bytes = 0;
-        MSize total_tracked = 0;
+
+        MSize tracked_count = 0;
+        MSize tracked_bytes = 0;
 
         std::atomic_uintptr_t allocated_bytes = 0;
     };
@@ -90,11 +115,25 @@ namespace orbiter::memory {
 
         static void HeadRemove(const GCHead *head) noexcept;
 
+        void ResetStats(int generation) noexcept;
+
+        static void Trace(datatype::OObject *object, bool inc) noexcept;
+
+        static void TraceRoots(GCGeneration *generation, GCHead **unreachable) noexcept;
+
+        void Trashing(GCGeneration *nextgen, GCHead *unreachable)  noexcept;
+
+        static void SearchRoots(const GCGeneration *generation) noexcept;
+
         friend Isolate;
 
     public:
         GC() noexcept: allocator_(nullptr) {
         }
+
+        MSize Collect() noexcept;
+
+        MSize Collect(int generation) noexcept;
 
         datatype::OObject *AllocObject(MSize size) noexcept;
 

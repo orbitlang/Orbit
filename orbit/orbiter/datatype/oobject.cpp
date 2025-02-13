@@ -166,6 +166,7 @@ TypeInfo *orbiter::datatype::MakeType(Isolate *isolate, TypeInfo *super, Instanc
     ti->headroom = headroom;
 
     ti->isolate = isolate;
+    ti->trace = nullptr;
 
     ti->aux.data = nullptr;
     ti->aux.dtor = nullptr;
