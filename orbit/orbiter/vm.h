@@ -14,11 +14,7 @@ namespace orbiter {
     constexpr auto kSpecialPurposeRegistersCount = 3;
     constexpr auto kInternalRegistersCount = 2;
 
-    constexpr size_t kToBytes = 1;
-    constexpr size_t kToKBytes = 1024 * kToBytes; // 1 KB = 1024 byte
-    constexpr size_t kToMBytes = 1024 * kToKBytes; // 1 MB = 1024 KB
-
-    constexpr size_t kMinStackSize = 16 * kToKBytes;
+    constexpr size_t kMinStackSize = 16 * memory::kToKBytes;
 
     using MachineWord = U32;
 

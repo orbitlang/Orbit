@@ -9,6 +9,8 @@ using namespace orbiter;
 using namespace orbiter::datatype;
 using namespace orbiter::memory;
 
+thread_local bool rc_trashing = false;
+
 void InitGCRefCount(GCHead *head) {
     head->r_count = O_GET_RC(GC_GET_OBJ(head)).GetStrongCount();
     head->SetVisited(true);
@@ -49,6 +51,10 @@ MSize GC::CollectRCQueue() noexcept {
     MSize count = 0;
     MSize bytes = 0;
 
+    // TODO: registers scan
+
+    rc_trashing = true;
+
     GCHead *next;
     for (auto *cursor = this->context_.rel_list; cursor != nullptr; cursor = next) {
         next = cursor->Next();
@@ -83,6 +89,8 @@ MSize GC::CollectRCQueue() noexcept {
         // Reset the r_count for the next cycle to prepare it for a future check
         cursor->r_count = 0;
     }
+
+    rc_trashing = false;
 
     this->context_.rel_count -= count;
     this->context_.rel_bytes -= bytes;
@@ -241,6 +249,12 @@ void GC::SearchRoots(const GCGeneration *generation) noexcept {
 // *********************************************************************************************************************
 
 MSize GC::Collect() noexcept {
+    MSize collected = 0;
+
+    for (auto i = 0; i < kGCGenerations; i++)
+        collected += this->Collect(i);
+
+    return collected;
 }
 
 MSize GC::Collect(int generation) noexcept {
@@ -252,7 +266,7 @@ MSize GC::Collect(int generation) noexcept {
     if ((next_gen = (generation + 1) % kGCGenerations) == 0)
         next_gen = kGCGenerations - 1;
 
-    auto selected = this->context_.generations + generation;
+    const auto selected = this->context_.generations + generation;
 
     this->ResetStats(generation);
 
@@ -283,6 +297,8 @@ MSize GC::Collect(int generation) noexcept {
 OObject *GC::AllocObject(MSize size) noexcept {
     auto allocate = sizeof(GCHead) + size;
 
+    this->ThresholdCollect();
+
     auto *obj = this->allocator_.alloc<GCHead>(allocate);
     if (obj != nullptr) {
         new(obj)GCHead();
@@ -300,7 +316,14 @@ OObject *GC::AllocObject(MSize size) noexcept {
 void GC::MarkForCollection(OObject *object) noexcept {
     auto *head = GC_GET_HEAD(object);
 
-    // TODO: recursive mutex!
+    if (rc_trashing) {
+        HeadInsert(&this->context_.rel_list, head);
+
+        this->context_.rel_count++;
+        this->context_.rel_bytes += head->size;
+
+        return;
+    }
 
     std::unique_lock _(this->context_.rel_lock);
 
@@ -311,15 +334,41 @@ void GC::MarkForCollection(OObject *object) noexcept {
 }
 
 void GC::ThresholdCollect() noexcept {
-    // TODO STUB
+    auto allocated_bytes = this->context_.allocated_bytes.load(std::memory_order_relaxed);
+
+    if (this->enabled_) {
+        if (allocated_bytes < ((this->max_heap_size_ * 90) / 100)) {
+            if (allocated_bytes >= (U32) ((this->max_heap_size_ * 40) / 100)) {
+                this->Collect(0);
+
+                for (unsigned short i = 1; i < kGCGenerations; i++) {
+                    const auto *generations = this->context_.generations;
+
+                    if (generations[i - 1].times < generations[i].threshold
+                        && generations[i].count < kGCThresholdElementsCount)
+                        break;
+
+                    Collect(i);
+                }
+            }
+        } else
+            this->Collect();
+    }
+
+    auto rc_max_memory = this->max_heap_size_ - this->context_.tracked_bytes;
+
+    if (this->context_.rel_bytes < ((rc_max_memory * 20) / 100)
+        && this->context_.rel_count < kGCRCThresholdElementsCount)
+        return;
+
+    this->CollectRCQueue();
 }
 
 void GC::Track(OObject *object) noexcept {
     auto *head = GC_GET_HEAD(object);
 
-    this->ThresholdCollect();
-
     std::unique_lock _(this->context_.track_lock);
+
     if (!head->IsTracked()) {
         auto *generation = this->context_.generations;
 

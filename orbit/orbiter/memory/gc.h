@@ -18,6 +18,12 @@
 namespace orbiter::memory {
     constexpr unsigned short kGCGenerations = 3;
 
+    constexpr unsigned int kGCMinHeapSize = 1 * kToMBytes;
+    constexpr unsigned int kGCMaxHeapSize = 256 * kToMBytes;
+
+    constexpr unsigned int kGCThresholdElementsCount = 10000;
+    constexpr unsigned int kGCRCThresholdElementsCount = 2000;
+
     class alignas(ORBIT_ORBITER_MEMORY_QUANTUM) GCHead {
     public:
         GCHead *next = nullptr;
@@ -96,7 +102,17 @@ namespace orbiter::memory {
 
         GCContext context_;
 
-        explicit GC(Isolate *isolate) noexcept : allocator_(isolate) {
+        std::atomic_bool enabled_;
+
+        MSize max_heap_size_;
+
+        explicit GC(Isolate *isolate, U32 heap_size) noexcept : allocator_(isolate), enabled_(true),
+                                                                max_heap_size_(heap_size) {
+            if (heap_size < kGCMinHeapSize)
+                this->max_heap_size_ = kGCMinHeapSize;
+        }
+
+        explicit GC(Isolate *isolate) noexcept : GC(isolate, kGCMaxHeapSize) {
         }
 
         /**
@@ -121,16 +137,13 @@ namespace orbiter::memory {
 
         static void TraceRoots(GCGeneration *generation, GCHead **unreachable) noexcept;
 
-        void Trashing(GCGeneration *nextgen, GCHead *unreachable)  noexcept;
+        void Trashing(GCGeneration *nextgen, GCHead *unreachable) noexcept;
 
         static void SearchRoots(const GCGeneration *generation) noexcept;
 
         friend Isolate;
 
     public:
-        GC() noexcept: allocator_(nullptr) {
-        }
-
         MSize Collect() noexcept;
 
         MSize Collect(int generation) noexcept;
