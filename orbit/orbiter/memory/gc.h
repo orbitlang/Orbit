@@ -15,151 +15,166 @@
 #define GC_GET_HEAD(ptr) ((GCHead *) (((unsigned char *) ptr) - sizeof(GCHead)))
 #define GC_GET_OBJ(head) ((datatype::OObject*) (((unsigned char*) head) + sizeof(GCHead)))
 
-namespace orbiter::memory {
-    constexpr unsigned short kGCGenerations = 3;
+namespace orbiter {
+    struct Fiber;
 
-    constexpr unsigned int kGCMinHeapSize = 1 * kToMBytes;
-    constexpr unsigned int kGCMaxHeapSize = 256 * kToMBytes;
+    namespace memory {
+        constexpr unsigned short kGCGenerations = 3;
 
-    constexpr unsigned int kGCThresholdElementsCount = 10000;
-    constexpr unsigned int kGCRCThresholdElementsCount = 2000;
+        constexpr unsigned int kGCMinHeapSize = 1 * kToMBytes;
+        constexpr unsigned int kGCMaxHeapSize = 256 * kToMBytes;
 
-    class alignas(ORBIT_ORBITER_MEMORY_QUANTUM) GCHead {
-    public:
-        GCHead *next = nullptr;
-        GCHead **prev = nullptr;
+        constexpr unsigned int kGCThresholdElementsCount = 10000;
+        constexpr unsigned int kGCRCThresholdElementsCount = 2000;
 
-        MSize r_count = 0;
-        MSize size = 0;
+        class alignas(ORBIT_ORBITER_MEMORY_QUANTUM) GCHead {
+        public:
+            GCHead *next = nullptr;
+            GCHead **prev = nullptr;
 
-        [[nodiscard]] bool IsTracked() const {
-            return this->prev != nullptr;
-        }
+            MSize r_count = 0;
+            MSize size = 0;
 
-        [[nodiscard]] bool IsFinalized() const {
-            return ((((uintptr_t) this->next) & GCBitOffsets::FinalizedMask) >> GCBitOffsets::FinalizedShift);
-        }
+            [[nodiscard]] bool IsTracked() const {
+                return this->prev != nullptr;
+            }
 
-        [[nodiscard]] bool IsVisited() const {
-            return ((((uintptr_t) this->next) & GCBitOffsets::VisitedMask) >> GCBitOffsets::VisitedShift);
-        }
+            [[nodiscard]] bool IsFinalized() const {
+                return ((((uintptr_t) this->next) & GCBitOffsets::FinalizedMask) >> GCBitOffsets::FinalizedShift);
+            }
 
-        [[nodiscard]] GCHead *Next() const {
-            return (GCHead *) (((uintptr_t) this->next) & GCBitOffsets::AddressMask);
-        }
+            [[nodiscard]] bool IsVisited() const {
+                return ((((uintptr_t) this->next) & GCBitOffsets::VisitedMask) >> GCBitOffsets::VisitedShift);
+            }
 
-        void SetNext(GCHead *head) {
-            this->next = (GCHead *) (((uintptr_t) head) | ((uintptr_t) this->next & ~GCBitOffsets::AddressMask));
-        }
+            [[nodiscard]] GCHead *Next() const {
+                return (GCHead *) (((uintptr_t) this->next) & GCBitOffsets::AddressMask);
+            }
 
-        void SetFinalize(bool visited) {
-            if (visited)
-                this->next = (GCHead *) (((uintptr_t) this->next) | GCBitOffsets::FinalizedMask);
-            else
-                this->next = (GCHead *) (((uintptr_t) this->next) & ~GCBitOffsets::FinalizedMask);
-        }
+            void SetNext(GCHead *head) {
+                this->next = (GCHead *) (((uintptr_t) head) | ((uintptr_t) this->next & ~GCBitOffsets::AddressMask));
+            }
 
-        void SetVisited(bool visited) {
-            if (visited)
-                this->next = (GCHead *) (((uintptr_t) this->next) | GCBitOffsets::VisitedMask);
-            else
-                this->next = (GCHead *) (((uintptr_t) this->next) & ~GCBitOffsets::VisitedMask);
-        }
-    };
+            void SetFinalize(bool visited) {
+                if (visited)
+                    this->next = (GCHead *) (((uintptr_t) this->next) | GCBitOffsets::FinalizedMask);
+                else
+                    this->next = (GCHead *) (((uintptr_t) this->next) & ~GCBitOffsets::FinalizedMask);
+            }
 
-    struct GCGeneration {
-        GCHead *list;
+            void SetVisited(bool visited) {
+                if (visited)
+                    this->next = (GCHead *) (((uintptr_t) this->next) | GCBitOffsets::VisitedMask);
+                else
+                    this->next = (GCHead *) (((uintptr_t) this->next) & ~GCBitOffsets::VisitedMask);
+            }
+        };
 
-        MSize count;
+        struct GCGeneration {
+            GCHead *list;
 
-        MSize collected;
-        MSize uncollected;
+            MSize count;
 
-        U32 threshold;
-        U32 times;
-    };
+            MSize collected;
+            MSize uncollected;
 
-    class GCContext {
-    public:
-        std::mutex track_lock;
-        std::mutex rel_lock;
+            U32 threshold;
+            U32 times;
+        };
 
-        GCGeneration generations[kGCGenerations]{};
+        class GCContext {
+        public:
+            std::mutex track_lock;
+            std::mutex rel_lock;
+            std::mutex vm_lock;
 
-        GCHead *rel_list = nullptr;
+            GCGeneration generations[kGCGenerations]{};
 
-        MSize rel_count = 0;
-        MSize rel_bytes = 0;
+            GCHead *rel_list = nullptr;
 
-        MSize tracked_count = 0;
-        MSize tracked_bytes = 0;
+            MSize rel_count = 0;
+            MSize rel_bytes = 0;
 
-        std::atomic_uintptr_t allocated_bytes = 0;
-    };
+            MSize tracked_count = 0;
+            MSize tracked_bytes = 0;
 
-    class GC {
-        IsolateAllocator allocator_;
+            std::atomic_uintptr_t allocated_bytes = 0;
+        };
 
-        GCContext context_;
+        class GC {
+            IsolateAllocator allocator_;
 
-        std::atomic_bool enabled_;
+            GCContext context_;
 
-        MSize max_heap_size_;
+            Fiber *fibers_;
 
-        explicit GC(Isolate *isolate, U32 heap_size) noexcept : allocator_(isolate), enabled_(true),
-                                                                max_heap_size_(heap_size) {
-            if (heap_size < kGCMinHeapSize)
-                this->max_heap_size_ = kGCMinHeapSize;
-        }
+            MSize max_heap_size_;
 
-        explicit GC(Isolate *isolate) noexcept : GC(isolate, kGCMaxHeapSize) {
-        }
+            std::atomic_bool enabled_;
 
-        /**
-         * @brief Executes the reference-count based garbage collection process by traversing the release list.
-         *
-         * It identifies and collects objects with a reference count of zero or removes actively used objects
-         * (with a strong reference count greater than zero) from the release list to prevent erroneous collection.
-         *
-         * @return The number of objects that were successfully collected during the process.
-         */
-        MSize CollectRCQueue() noexcept;
+            explicit GC(Isolate *isolate, U32 heap_size) noexcept : allocator_(isolate),
+                                                                    fibers_(nullptr),
+                                                                    max_heap_size_(heap_size),
+                                                                    enabled_(true) {
+                if (heap_size < kGCMinHeapSize)
+                    this->max_heap_size_ = kGCMinHeapSize;
+            }
 
-        void Free(GCHead *head) noexcept;
+            explicit GC(Isolate *isolate) noexcept : GC(isolate, kGCMaxHeapSize) {
+            }
 
-        static void HeadInsert(GCHead **list, GCHead *head) noexcept;
+            /**
+             * @brief Executes the reference-count based garbage collection process by traversing the release list.
+             *
+             * It identifies and collects objects with a reference count of zero or removes actively used objects
+             * (with a strong reference count greater than zero) from the release list to prevent erroneous collection.
+             *
+             * @return The number of objects that were successfully collected during the process.
+             */
+            MSize CollectRCQueue() noexcept;
 
-        static void HeadRemove(const GCHead *head) noexcept;
+            void Free(GCHead *head) noexcept;
 
-        void ResetStats(int generation) noexcept;
+            static void HeadInsert(GCHead **list, GCHead *head) noexcept;
 
-        static void Trace(datatype::OObject *object, bool inc) noexcept;
+            static void HeadRemove(const GCHead *head) noexcept;
 
-        static void TraceRoots(GCGeneration *generation, GCHead **unreachable) noexcept;
+            void ResetStats(int generation) noexcept;
 
-        void Trashing(GCGeneration *nextgen, GCHead *unreachable) noexcept;
+            void ScanVMRegisters() noexcept;
 
-        static void SearchRoots(const GCGeneration *generation) noexcept;
+            static void Trace(datatype::OObject *object, bool inc) noexcept;
 
-        friend Isolate;
+            static void TraceRoots(GCGeneration *generation, GCHead **unreachable) noexcept;
 
-    public:
-        MSize Collect() noexcept;
+            void Trashing(GCGeneration *nextgen, GCHead *unreachable) noexcept;
 
-        MSize Collect(int generation) noexcept;
+            static void SearchRoots(const GCGeneration *generation) noexcept;
 
-        datatype::OObject *AllocObject(MSize size) noexcept;
+            friend Isolate;
 
-        void Free(datatype::OObject *object) noexcept {
-            this->Free(GC_GET_HEAD(object));
-        }
+        public:
+            MSize Collect() noexcept;
 
-        void MarkForCollection(datatype::OObject *object) noexcept;
+            MSize Collect(int generation) noexcept;
 
-        void ThresholdCollect() noexcept;
+            datatype::OObject *AllocObject(MSize size) noexcept;
 
-        void Track(datatype::OObject *object) noexcept;
-    };
+            void AddFiber(Fiber *fiber) noexcept;
+
+            void Free(datatype::OObject *object) noexcept {
+                this->Free(GC_GET_HEAD(object));
+            }
+
+            void MarkForCollection(datatype::OObject *object) noexcept;
+
+            void RemoveFiber(Fiber *fiber) noexcept;
+
+            void ThresholdCollect() noexcept;
+
+            void Track(datatype::OObject *object) noexcept;
+        };
+    }
 }
 
 #endif // !ORBIT_ORBITER_MEMORY_GC_H_

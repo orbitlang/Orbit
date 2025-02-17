@@ -3,6 +3,9 @@
 // Licensed under the Apache License v2.0
 
 #include <cassert>
+
+#include <orbit/orbiter/fiber.h>
+
 #include <orbit/orbiter/memory/gc.h>
 
 using namespace orbiter;
@@ -51,7 +54,7 @@ MSize GC::CollectRCQueue() noexcept {
     MSize count = 0;
     MSize bytes = 0;
 
-    // TODO: registers scan
+    this->ScanVMRegisters();
 
     rc_trashing = true;
 
@@ -139,6 +142,24 @@ void GC::ResetStats(int generation) noexcept {
     auto *gen = this->context_.generations + generation;
     gen->collected = 0;
     gen->uncollected = 0;
+}
+
+void GC::ScanVMRegisters() noexcept {
+    std::unique_lock _(this->context_.vm_lock);
+
+    for (const auto *cursor = this->fibers_; cursor != nullptr; cursor = cursor->gc_set.next) {
+        const auto *regs = (Register *) &cursor->vm.regs;
+
+        for (auto i = 0; i < sizeof(Registers); i++) {
+            auto *obj = (OObject *) ((PtrSize *) (regs + i));
+
+            if (obj == nullptr || !O_IS_OBJECT(obj))
+                continue;
+
+            auto *head = GC_GET_HEAD(obj);
+            head->r_count += 1;
+        }
+    }
 }
 
 void GC::Trace(OObject *object, bool inc) noexcept {
@@ -283,9 +304,10 @@ MSize GC::Collect(int generation) noexcept {
     // 2) Trace all objects reachable from roots
     TraceRoots(selected, &unreachable);
 
-    // TODO: trace regs!
+    // 3) Scan all VMs Registers
+    this->ScanVMRegisters();
 
-    // 3) Collect unreachable objects
+    // 4) Collect unreachable objects
     Trashing(this->context_.generations + next_gen, unreachable);
 
     selected->collected = total - selected->count;
@@ -313,6 +335,24 @@ OObject *GC::AllocObject(MSize size) noexcept {
     return nullptr;
 }
 
+void GC::AddFiber(Fiber *fiber) noexcept {
+    std::unique_lock _(this->context_.vm_lock);
+
+    if (this->fibers_ == nullptr) {
+        fiber->gc_set.next = nullptr;
+        fiber->gc_set.prev = &this->fibers_;
+    } else {
+        fiber->gc_set.next = this->fibers_;
+
+        if (this->fibers_ != nullptr)
+            this->fibers_->gc_set.prev = &fiber->gc_set.next;
+
+        fiber->gc_set.prev = &this->fibers_;
+    }
+
+    this->fibers_ = fiber;
+}
+
 void GC::MarkForCollection(OObject *object) noexcept {
     auto *head = GC_GET_HEAD(object);
 
@@ -331,6 +371,18 @@ void GC::MarkForCollection(OObject *object) noexcept {
 
     this->context_.rel_count++;
     this->context_.rel_bytes += head->size;
+}
+
+void GC::RemoveFiber(Fiber *fiber) noexcept {
+    std::unique_lock _(this->context_.vm_lock);
+
+    auto *next = fiber->gc_set.next;
+
+    if (fiber->gc_set.prev != nullptr)
+        *fiber->gc_set.prev = next;
+
+    if (next != nullptr)
+        next->gc_set.prev = fiber->gc_set.prev;
 }
 
 void GC::ThresholdCollect() noexcept {

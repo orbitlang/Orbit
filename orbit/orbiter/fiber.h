@@ -27,6 +27,11 @@ namespace orbiter {
             datatype::Code *code;
         } context;
 
+        struct {
+            Fiber *next;
+            Fiber **prev;
+        } gc_set;
+
         /**
          * Returns the current thread-local Fiber instance.
          *
