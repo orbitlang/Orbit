@@ -54,14 +54,14 @@ MSize GC::CollectRCQueue() noexcept {
     MSize count = 0;
     MSize bytes = 0;
 
-    std::unique_lock _(this->context_.rel_lock);
+    std::unique_lock _(this->context_.rc_lock);
 
     this->ScanVMRegisters();
 
     rc_trashing = true;
 
     GCHead *next;
-    for (auto *cursor = this->context_.rel_list; cursor != nullptr; cursor = next) {
+    for (auto *cursor = this->context_.rc_list; cursor != nullptr; cursor = next) {
         next = cursor->Next();
 
         // If the reference count is zero, the object is unused and not in VM registers
@@ -95,8 +95,8 @@ MSize GC::CollectRCQueue() noexcept {
 
     rc_trashing = false;
 
-    this->context_.rel_count -= count;
-    this->context_.rel_bytes -= bytes;
+    this->context_.rc_count -= count;
+    this->context_.rc_bytes -= bytes;
 
     return count;
 }
@@ -111,7 +111,7 @@ void GC::Free(GCHead *head) noexcept {
 
     this->allocator_.free(head);
 
-    this->context_.allocated_bytes -= size;
+    this->allocated_bytes_ -= size;
 }
 
 void GC::HeadInsert(GCHead **list, GCHead *head) noexcept {
@@ -358,7 +358,7 @@ OObject *GC::AllocObject(MSize size) noexcept {
 
         obj->size = allocate;
 
-        this->context_.allocated_bytes += allocate;
+        this->allocated_bytes_ += allocate;
 
         return GC_GET_OBJ(obj);
     }
@@ -388,20 +388,20 @@ void GC::MarkForCollection(OObject *object) noexcept {
     auto *head = GC_GET_HEAD(object);
 
     if (rc_trashing) {
-        HeadInsert(&this->context_.rel_list, head);
+        HeadInsert(&this->context_.rc_list, head);
 
-        this->context_.rel_count++;
-        this->context_.rel_bytes += head->size;
+        this->context_.rc_count++;
+        this->context_.rc_bytes += head->size;
 
         return;
     }
 
-    std::unique_lock _(this->context_.rel_lock);
+    std::unique_lock _(this->context_.rc_lock);
 
-    HeadInsert(&this->context_.rel_list, head);
+    HeadInsert(&this->context_.rc_list, head);
 
-    this->context_.rel_count++;
-    this->context_.rel_bytes += head->size;
+    this->context_.rc_count++;
+    this->context_.rc_bytes += head->size;
 }
 
 void GC::RemoveFiber(Fiber *fiber) noexcept {
@@ -417,7 +417,7 @@ void GC::RemoveFiber(Fiber *fiber) noexcept {
 }
 
 void GC::ThresholdCollect() noexcept {
-    auto allocated_bytes = this->context_.allocated_bytes.load(std::memory_order_relaxed);
+    auto allocated_bytes = this->allocated_bytes_.load(std::memory_order_relaxed);
 
     bool running = false;
     if (!this->running_.compare_exchange_strong(running, true, std::memory_order_relaxed))
@@ -446,8 +446,8 @@ void GC::ThresholdCollect() noexcept {
 
     auto rc_max_memory = this->max_heap_size_ - this->context_.tracked_bytes;
 
-    if (this->context_.rel_bytes < ((rc_max_memory * 20) / 100)
-        && this->context_.rel_count < kGCRCThresholdElementsCount)
+    if (this->context_.rc_bytes < ((rc_max_memory * 20) / 100)
+        && this->context_.rc_count < kGCRCThresholdElementsCount)
         return;
 
     this->CollectRCQueue();

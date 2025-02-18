@@ -27,6 +27,15 @@ namespace orbiter {
         constexpr unsigned int kGCThresholdElementsCount = 10000;
         constexpr unsigned int kGCRCThresholdElementsCount = 2000;
 
+        /**
+         * @brief Represents a node in the garbage collection (GC) management chain with metadata for object tracking.
+         *
+         * The GCHead class is utilized to manage and track objects within a garbage-collected memory system. Each instance
+         * of this class contains information about the object's reference count, size, and its position within linked GC
+         * structures. This class provides methods to determine the state of the tracked object, including whether it has
+         * been visited, finalized, or is currently tracked. Additionally, it allows manipulation of the next tracked object
+         * and state flags using bit-level operations.
+         */
         class alignas(ORBIT_ORBITER_MEMORY_QUANTUM) GCHead {
         public:
             GCHead *next = nullptr;
@@ -70,6 +79,14 @@ namespace orbiter {
             }
         };
 
+        /**
+         * @brief Represents a generation in a generational garbage collection system.
+         *
+         * The GCGeneration struct is used to manage and track objects within a specific generation in a garbage-collected memory system.
+         * Generational garbage collection segregates objects based on their age, allowing optimizations for frequently collected younger objects
+         * while reducing overhead for older, frequently referenced objects. Each generation maintains metadata about the objects under its control
+         * and the collection process.
+         */
         struct GCGeneration {
             GCHead *list;
 
@@ -82,28 +99,59 @@ namespace orbiter {
             U32 times;
         };
 
+        /**
+         * @brief Represents the context for managing garbage collection operations and related resources.
+         *
+         * The GCContext class provides critical synchronization mechanisms and metadata structures
+         * required to manage garbage collection in a memory system. It encapsulates locks and
+         * data structures for generational garbage collection, reference counting, and object tracking.
+         * It serves as the core structure for coordinating the various components involved in garbage
+         * collection processes.
+         *
+         * Key features include:
+         *
+         * - Synchronization:
+         *   Contains multiple mutex locks to ensure thread-safe operations across garbage collection tasks,
+         *   such as garbage list updates, reference counting manipulations, tracked object management,
+         *   and interactions with the virtual machine.
+         *
+         * - Generational Collection:
+         *   Manages multiple generations for garbage collection using the `generations` array, enabling
+         *   optimized collection of objects based on their lifespan and access patterns.
+         *
+         * - Object Tracking:
+         *   Maintains metadata for garbage, including objects awaiting collection, reference-counted objects,
+         *   and tracked allocations. Provides counters for the number of objects and their total memory usage
+         *   in various states.
+         */
         class GCContext {
         public:
-            std::mutex track_lock;
-            std::mutex rel_lock;
-            std::mutex vm_lock;
             std::mutex garbage_lock;
+            std::mutex rc_lock;
+            std::mutex track_lock;
+            std::mutex vm_lock;
 
             GCGeneration generations[kGCGenerations]{};
 
             GCHead *garbage = nullptr;
 
-            GCHead *rel_list = nullptr;
+            GCHead *rc_list = nullptr;
 
-            MSize rel_count = 0;
-            MSize rel_bytes = 0;
+            MSize rc_count = 0;
+            MSize rc_bytes = 0;
 
             MSize tracked_count = 0;
             MSize tracked_bytes = 0;
-
-            std::atomic_uintptr_t allocated_bytes = 0;
         };
 
+        /**
+         * @brief Represents a garbage collector responsible for memory management and cleanup of unused objects.
+         *
+         * The GC class provides mechanisms to allocate, free, and manage memory in a controlled environment.
+         * It employs various garbage collection strategies, such as reference counting, generational collection,
+         * and threshold-based triggers. The garbage collector ensures the application's memory usage remains
+         * within specified heap size limits while preventing memory leaks and over-allocation.
+         */
         class GC {
             IsolateAllocator allocator_;
 
@@ -113,13 +161,14 @@ namespace orbiter {
 
             MSize max_heap_size_;
 
-            std::atomic_bool enabled_;
-            std::atomic_bool running_;
+            std::atomic_bool enabled_ = true;
+            std::atomic_bool running_ = false;
+
+            std::atomic_uintptr_t allocated_bytes_ = 0;
 
             explicit GC(Isolate *isolate, U32 heap_size) noexcept : allocator_(isolate),
                                                                     fibers_(nullptr),
-                                                                    max_heap_size_(heap_size),
-                                                                    enabled_(true) {
+                                                                    max_heap_size_(heap_size) {
                 if (heap_size < kGCMinHeapSize)
                     this->max_heap_size_ = kGCMinHeapSize;
             }
@@ -164,20 +213,91 @@ namespace orbiter {
             friend Isolate;
 
         public:
+            /**
+             * @brief Allocates memory for a new object managed by the garbage collector.
+             *
+             * This method allocates enough memory to store the requested size along with
+             * metadata (such as the GCHead). It also updates the internal account of
+             * allocated memory. If allocation fails, it returns a null pointer.
+             *
+             * Before allocation, the method invokes ThresholdCollect() to check and perform
+             * garbage collection if necessary.
+             *
+             * @param size The size of the object to be allocated, in bytes.
+             * @return A pointer to the newly allocated object, or nullptr if allocation fails.
+             */
             datatype::OObject *AllocObject(MSize size) noexcept;
 
+            /**
+             * @brief Adds a Fiber object to the garbage collector's list for tracking.
+             *
+             * Registers the provided Fiber instance with the garbage collector, ensuring
+             * it is properly managed throughout its lifecycle, including garbage collection
+             * processes and resource cleanup.
+             *
+             * @param fiber A pointer to the Fiber instance to be added for tracking.
+             */
             void AddFiber(Fiber *fiber) noexcept;
 
+            /**
+             * @brief Frees the memory associated with the given object by invoking the garbage collection mechanism on its header.
+             *
+             * This function retrieves the garbage collection header of the specified object and delegates the deallocation
+             * process to the appropriate garbage collection system.
+             *
+             * @param object A pointer to the object to be freed. This must be an instance of datatype::OObject.
+             */
             void Free(datatype::OObject *object) noexcept {
                 this->Free(GC_GET_HEAD(object));
             }
 
+            /**
+             * @brief Marks the specified object for garbage collection.
+             *
+             * This method adds the object to the reference-count-based collection list and updates
+             * internal tracking metrics. Thread-safety is ensured using appropriate locks when reference
+             * count trashing is not active.
+             *
+             * @param object The object to be marked for the garbage collection process.
+             */
             void MarkForCollection(datatype::OObject *object) noexcept;
 
+            /**
+             * @brief Removes the specified Fiber instance from the fiber tracking list in the garbage collector.
+             *
+             * This method ensures the safe removal of the Fiber instance from its internal doubly linked list,
+             * updating the necessary pointers to maintain the integrity of the list. It is used during cleanup
+             * or when the Fiber is no longer required.
+             *
+             * @param fiber A pointer to the Fiber instance to be removed from the tracking list.
+             */
             void RemoveFiber(Fiber *fiber) noexcept;
 
+            /**
+             * @brief Performs a threshold-based garbage collection process to manage allocated memory.
+             *
+             * This method monitors memory usage and triggers garbage collection if certain conditions
+             * are met. It ensures that the memory usage remains within the defined heap size limits
+             * by invoking collection on objects based on their allocation thresholds, generation
+             * thresholds, and reference-count conditions. The method also integrates a sweeping phase
+             * to finalize the cleanup process.
+             *
+             * It prevents simultaneous invocation by leveraging a thread-safe mechanism
+             * to ensure only one instance of the garbage collection process runs at any given time.
+             */
             void ThresholdCollect() noexcept;
 
+            /**
+             * @brief Tracks a given object in the garbage collection process.
+             *
+             * This method ensures that the provided object is registered for tracking
+             * in the current generation of objects monitored by the garbage collector.
+             * If the object is not yet tracked, it is added to the tracking list, and
+             * the corresponding generation's object count and tracked memory size are updated.
+             *
+             * @param object A pointer to the object to be tracked. The object must be properly
+             *               initialized and convertible to the expected type.
+             */
             void Track(datatype::OObject *object) noexcept;
         };
     }
