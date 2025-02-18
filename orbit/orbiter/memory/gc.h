@@ -87,8 +87,11 @@ namespace orbiter {
             std::mutex track_lock;
             std::mutex rel_lock;
             std::mutex vm_lock;
+            std::mutex garbage_lock;
 
             GCGeneration generations[kGCGenerations]{};
+
+            GCHead *garbage = nullptr;
 
             GCHead *rel_list = nullptr;
 
@@ -148,13 +151,15 @@ namespace orbiter {
 
             void ScanVMRegisters() noexcept;
 
+            void Sweep() noexcept;
+
+            static void SearchRoots(const GCGeneration *generation) noexcept;
+
             static void Trace(datatype::OObject *object, bool inc) noexcept;
 
             static void TraceRoots(GCGeneration *generation, GCHead **unreachable) noexcept;
 
             void Trashing(GCGeneration *nextgen, GCHead *unreachable) noexcept;
-
-            static void SearchRoots(const GCGeneration *generation) noexcept;
 
             friend Isolate;
 

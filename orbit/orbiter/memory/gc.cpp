@@ -70,8 +70,6 @@ MSize GC::CollectRCQueue() noexcept {
 
             bytes += cursor->size;
 
-            // TODO: Call dtor and release memory
-
             this->Free(cursor);
 
             count += 1;
@@ -105,6 +103,11 @@ MSize GC::CollectRCQueue() noexcept {
 
 void GC::Free(GCHead *head) noexcept {
     const auto size = head->size;
+    auto *obj = GC_GET_OBJ(head);
+
+    // TODO: Call DTOR!
+
+    Release(O_GET_TYPE(obj));
 
     this->allocator_.free(head);
 
@@ -161,6 +164,34 @@ void GC::ScanVMRegisters() noexcept {
             auto *head = GC_GET_HEAD(obj);
             head->r_count += 1;
         }
+    }
+}
+
+void GC::SearchRoots(const GCGeneration *generation) noexcept {
+    for (auto *cursor = generation->list; cursor != nullptr; cursor = cursor->Next()) {
+        auto *obj = GC_GET_OBJ(cursor);
+
+        if (!cursor->IsVisited())
+            InitGCRefCount(cursor);
+
+        Trace(obj, false);
+    }
+}
+
+void GC::Sweep() noexcept {
+    std::unique_lock lock(this->context_.garbage_lock);
+
+    auto *cursor = this->context_.garbage;
+    this->context_.garbage = nullptr;
+
+    lock.unlock();
+
+    while (cursor != nullptr) {
+        auto *next = cursor->Next();
+
+        this->Free(cursor);
+
+        cursor = next;
     }
 }
 
@@ -233,6 +264,8 @@ void GC::TraceRoots(GCGeneration *generation, GCHead **unreachable) noexcept {
 void GC::Trashing(GCGeneration *nextgen, GCHead *unreachable) noexcept {
     GCHead *next;
 
+    std::unique_lock _(this->context_.garbage_lock);
+
     for (auto *cursor = unreachable; cursor != nullptr; cursor = next) {
         next = cursor->Next();
 
@@ -240,8 +273,7 @@ void GC::Trashing(GCGeneration *nextgen, GCHead *unreachable) noexcept {
 
         // Check if objects are really unreachable
         if (cursor->r_count == 0) {
-            // TODO: garbage lock
-            //HeadInsert()
+            HeadInsert(&this->context_.garbage, cursor);
 
             this->context_.tracked_count -= 1;
             this->context_.tracked_bytes -= cursor->size;
@@ -253,17 +285,6 @@ void GC::Trashing(GCGeneration *nextgen, GCHead *unreachable) noexcept {
 
         HeadInsert(&nextgen->list, cursor);
         nextgen->count += 1;
-    }
-}
-
-void GC::SearchRoots(const GCGeneration *generation) noexcept {
-    for (auto *cursor = generation->list; cursor != nullptr; cursor = cursor->Next()) {
-        auto *obj = GC_GET_OBJ(cursor);
-
-        if (!cursor->IsVisited())
-            InitGCRefCount(cursor);
-
-        Trace(obj, false);
     }
 }
 
@@ -419,6 +440,8 @@ void GC::ThresholdCollect() noexcept {
             }
         } else
             this->Collect();
+
+        this->Sweep();
     }
 
     auto rc_max_memory = this->max_heap_size_ - this->context_.tracked_bytes;
