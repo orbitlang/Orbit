@@ -32,6 +32,11 @@ namespace orbiter {
             Fiber **prev;
         } gc_set;
 
+        struct {
+            Fiber *next;
+            Fiber *prev;
+        } queue;
+
         /**
          * Returns the current thread-local Fiber instance.
          *
