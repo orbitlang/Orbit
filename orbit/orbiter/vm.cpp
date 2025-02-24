@@ -36,9 +36,11 @@ bool orbiter::VMStackInit(VMStack *vms, Isolate *isolate, MSize stackSize) noexc
     return true;
 }
 
-void *orbiter::eval(Fiber *fiber) {
+OObject *orbiter::eval(Fiber *fiber) {
     auto *regs = &fiber->vm.regs;
     auto *stack = &fiber->vm.stack;
+
+    fiber->vm.state = VMState::RUNNING;
 
 #define TARGET_OP(op)   case OPCode::op:
 #define CGOTO           continue

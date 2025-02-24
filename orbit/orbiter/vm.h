@@ -79,7 +79,7 @@ namespace orbiter {
 
     bool VMStackInit(VMStack *vms, Isolate *isolate, MSize stackSize) noexcept;
 
-    void *eval(struct Fiber *fiber);
+    datatype::OObject *eval(Fiber *fiber);
 }
 
 #endif // !ORBIT_ORBITER_VM_H_
