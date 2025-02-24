@@ -16,11 +16,13 @@
 #include <orbit/orbiter/memory/gc.h>
 
 #include <orbit/orbiter/isolate.h>
+#include <orbit/orbiter/fpool.h>
 
 using namespace orbiter;
 using namespace orbiter::datatype;
 
 Isolate::~Isolate() {
+    delete this->fpool_;
     delete this->gc;
 
     this->allocator_->Finalize();
@@ -47,6 +49,8 @@ Isolate *Isolate::New() {
     isolate->allocator_ = new stratum::Memory();
     if (!isolate->allocator_->Initialize())
         goto ERROR;
+
+    isolate->fpool_ = new FiberPool(isolate, -1, -1);
 
     isolate->gc = new memory::GC(isolate);
 

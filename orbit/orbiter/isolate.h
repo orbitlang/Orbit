@@ -18,6 +18,8 @@ namespace orbiter {
         friend class memory::IsolateAllocator;
 
     public:
+        class FiberPool *fpool_;
+
         datatype::TypeInfo *primitive[datatype::kInstanceTypeCount];
 
         memory::GC *gc;

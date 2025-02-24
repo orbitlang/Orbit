@@ -21,6 +21,8 @@ namespace orbiter {
 
         FiberError error;
 
+        Isolate *isolate;
+
         struct {
             datatype::Context *context;
             datatype::Module *module;
@@ -56,6 +58,14 @@ namespace orbiter {
          *         could not be created or initialized successfully.
          */
         static Fiber *New(Isolate *isolate, MSize stackSize) noexcept;
+
+        /**
+         * Deletes the provided Fiber instance, releasing associated resources. Behavior
+         * is undefined if an invalid Fiber instance is passed.
+         *
+         * @param fiber A pointer to the Fiber instance to be deleted.
+         */
+        static void Delete(Fiber *fiber) noexcept;
     };
 } // namespace orbiter
 

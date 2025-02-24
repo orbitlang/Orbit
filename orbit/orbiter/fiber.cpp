@@ -2,6 +2,8 @@
 //
 // Licensed under the Apache License v2.0
 
+#include <cassert>
+
 #include <orbit/orbiter/fiber.h>
 
 using namespace orbiter;
@@ -38,7 +40,17 @@ Fiber *Fiber::New(Isolate *isolate, MSize stackSize) noexcept {
 
         fiber->error.value_ = nullptr;
         fiber->error.r_value_ = &fiber->error.value_;
+
+        fiber->isolate = isolate;
     }
 
     return fiber;
+}
+
+void Fiber::Delete(Fiber *fiber) noexcept {
+    if (fiber == nullptr)
+        return;
+
+    // todo
+    assert(false);
 }
