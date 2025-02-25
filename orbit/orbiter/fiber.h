@@ -16,6 +16,12 @@ namespace orbiter {
         datatype::OObject **r_value_;
     };
 
+    struct FiberContext {
+        datatype::Context *context;
+        datatype::Module *module;
+        datatype::Code *code;
+    };
+
     struct Fiber {
         VMContext vm;
 
@@ -23,11 +29,7 @@ namespace orbiter {
 
         Isolate *isolate;
 
-        struct {
-            datatype::Context *context;
-            datatype::Module *module;
-            datatype::Code *code;
-        } context;
+        FiberContext context;
 
         struct {
             Fiber *next;
@@ -40,13 +42,23 @@ namespace orbiter {
         } queue;
 
         /**
+         * @brief Saves the current state of the Fiber onto its stack.
+         *
+         * Pushes the current Fiber's context and general-purpose registers onto the stack,
+         * ensuring enough stack space exists beforehand. Updates the stack pointer (SP) and base
+         * pointer (BP) registers. Increments reference counts for object values referenced by
+         * saved registers.
+         *
+         * @return True if the state was successfully saved onto the stack, otherwise false.
+         */
+        bool PushState() noexcept;
+
+        /**
          * @brief Returns the current thread-local Fiber instance.
          *
          * @return A pointer to the current Fiber instance if one exists, otherwise nullptr.
          */
         static Fiber *Current() noexcept;
-
-        static void SetCurrent(Fiber *fiber) noexcept;
 
         /**
          * @brief Creates a new Fiber instance associated with the provided Isolate.
@@ -70,6 +82,18 @@ namespace orbiter {
          * @param fiber A pointer to the Fiber instance to be deleted.
          */
         static void Delete(Fiber *fiber) noexcept;
+
+        /**
+         * @brief Restores the previously saved state of the Fiber from its stack.
+         *
+         * Copies the Fiber's context and general-purpose registers from the stack back into
+         * the respective fields. Validates the size of the data being restored to match the
+         * expected layout for a Fiber's context and registers. Decreases reference counts
+         * for object values referenced by restored registers, releasing resources as needed.
+         */
+        void PopState() noexcept;
+
+        static void SetCurrent(Fiber *fiber) noexcept;
     };
 } // namespace orbiter
 

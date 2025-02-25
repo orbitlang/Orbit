@@ -8,21 +8,22 @@
 
 using namespace orbiter;
 
-bool VMStack::Check(Isolate *isolate, MSize current, U32 slots) noexcept {
-    auto slots_size = ((MSize) slots) * sizeof(void *);
+bool VMStack::Check(Isolate *isolate, MSize current, MSize size) noexcept {
+    size = (size + (sizeof(void *) - 1)) & ~(sizeof(void *) - 1);
 
-    if (current + slots_size > this->capacity)
-        return this->Grow(isolate, slots);
+    if (current + size > this->capacity)
+        return this->Grow(isolate, size);
 
     return true;
 }
 
-bool VMStack::Grow(Isolate *isolate, U32 slots) noexcept {
-    auto increment = std::max(((MSize) slots) * sizeof(void *),
-                              (this->capacity * kStackGrowthFactor) / kStackGrowthScalingFactor);
+bool VMStack::Grow(Isolate *isolate, MSize size) noexcept {
+    size = (size + (sizeof(void *) - 1)) & ~(sizeof(void *) - 1);
+
+    auto increment = std::max(size, (this->capacity * kStackGrowthFactor) / kStackGrowthScalingFactor);
 
     if (this->capacity + increment >= this->limit) {
-        increment = ((MSize) slots) * sizeof(void *);
+        increment = size;
 
         if (this->capacity + increment >= this->limit)
             return false;

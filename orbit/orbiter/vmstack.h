@@ -35,34 +35,37 @@ namespace orbiter {
          */
         bool Init(Isolate *isolate, MSize size, MSize stack_limit) noexcept;
 
+
         /**
-         * @brief Checks if there is sufficient space in the stack to accommodate the specified number of slots.
+         * @brief Checks if there is sufficient space in the stack to accommodate the specified size.
          *
-         * If there isn't enough space, it attempts to grow the stack to fit the required slots.
+         * If there isn't enough space, it attempts to grow the stack to fit the required size.
+         * The provided size will automatically be rounded up to the nearest multiple of the slot size if necessary.
          *
          * @param isolate A pointer to the Isolate instance used for memory allocation during stack growth.
          * @param current The current usage of the stack, specified in bytes.
-         * @param slots The number of additional slots required in the stack.
+         * @param size The additional size in bytes required in the stack.
          *
          * @return true if there is enough space in the stack or if the stack was successfully grown;
          *         false if the stack growth failed.
          */
-        bool Check(Isolate *isolate, MSize current, U32 slots) noexcept;
+        bool Check(Isolate *isolate, MSize current, MSize size) noexcept;
 
         /**
-         * @brief Grows the virtual machine stack to accommodate additional slots.
+         * @brief Grows the virtual machine stack to accommodate additional data.
          *
          * This method attempts to resize the stack if the existing capacity is insufficient
-         * to allocate the requested number of slots. The growth is determined by a balance
-         * of the current capacity and predefined scaling factors.
+         * to allocate the requested size. The growth is determined by a balance
+         * of the current capacity and predefined scaling factors. The provided size
+         * will automatically be rounded up to the nearest multiple of the slot size if necessary.
          *
          * @param isolate A pointer to the Isolate instance used for memory allocation.
-         * @param slots   The number of slots to allocate beyond the current stack size.
+         * @param size    The additional size in bytes to allocate beyond the current stack size.
          *
-         * @return true if the stack was successfully grown to accommodate the requested slots;
+         * @return true if the stack was successfully grown to accommodate the requested size;
          *         false if the operation failed due to exceeding the memory limits or allocation failure.
          */
-        bool Grow(Isolate *isolate, U32 slots) noexcept;
+        bool Grow(Isolate *isolate, MSize size) noexcept;
     };
 } // namespace orbiter
 
