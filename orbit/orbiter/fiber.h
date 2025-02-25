@@ -93,7 +93,58 @@ namespace orbiter {
          */
         void PopState() noexcept;
 
+        /**
+         * @brief Resets the state of the current Fiber instance to its default values.
+         *
+         * Resets the Fiber's virtual machine (VM) registers by zeroing out their
+         * memory to ensure no residual data remains. Updates the VM state to
+         * VMState::RUNNABLE, marking the Fiber as ready to run. Clears any existing
+         * error state by setting the error value pointer to null and updating the
+         * reference pointer appropriately.
+         */
+        void Reset() noexcept {
+            memory::MemoryZero(&this->vm.regs, sizeof(Registers));
+
+            this->vm.state = VMState::RUNNABLE;
+
+            this->error.value_ = nullptr;
+            this->error.r_value_ = &this->error.value_;
+        }
+
+        /**
+         * @brief Updates the Fiber's execution context with the provided context, module, and code values.
+         *
+         * Associates the Fiber's internal context with the provided `Context`, `Module`,
+         * and `Code` objects, incrementing their reference counts as needed to ensure
+         * proper lifecycle management. Additionally, updates the instruction pointer
+         * register (IP) to point to the code's memory location.
+         *
+         * @param context A pointer to the Context object to associate with the Fiber.
+         * @param module A pointer to the Module object containing module-related data.
+         * @param code A pointer to the Code object containing executable code.
+         */
+        void SetContext(datatype::Context *context, datatype::Module *module, datatype::Code *code) noexcept {
+            this->context.context = O_INCREF(context);
+            this->context.module = O_VFY_INCREF(module);
+            this->context.code = O_INCREF(code);
+
+            this->vm.regs.IP.reg = (PtrSize) code->m_code;
+        }
+
         static void SetCurrent(Fiber *fiber) noexcept;
+
+        /**
+         * @brief Releases the Fiber's current execution context and associated resources.
+         *
+         * Calls the `Release` function on the Fiber's internal `context`, `module`, and `code`
+         * fields to properly decrement reference counts or free resources. Ensures the Fiber's
+         * execution context is unset and its associated data is cleaned up.
+         */
+        void UnsetContext() noexcept {
+            Release(&this->context.context);
+            Release(&this->context.module);
+            Release(&this->context.code);
+        }
     };
 } // namespace orbiter
 

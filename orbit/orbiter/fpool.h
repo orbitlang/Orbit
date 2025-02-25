@@ -35,8 +35,11 @@ namespace orbiter {
 
         Fiber *NewFiber() noexcept {
             auto *fiber = this->queue_.Dequeue();
+
             if (fiber == nullptr)
                 fiber = Fiber::New(this->isolate_, this->stack_size_, this->stack_limit_);
+            else
+                fiber->Reset();
 
             return fiber;
         }

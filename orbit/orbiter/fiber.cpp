@@ -61,12 +61,7 @@ Fiber *Fiber::New(Isolate *isolate, MSize stack_size, MSize stack_limit) noexcep
             return nullptr;
         }
 
-        memory::MemoryZero(&fiber->vm.regs, sizeof(Registers));
-
-        fiber->vm.state = VMState::RUNNABLE;
-
-        fiber->error.value_ = nullptr;
-        fiber->error.r_value_ = &fiber->error.value_;
+        fiber->Reset();
 
         fiber->isolate = isolate;
     }
