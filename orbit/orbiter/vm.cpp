@@ -46,15 +46,28 @@ CGOTO
     if (fiber->context.module != nullptr)
         module_slots = O_SLOT(fiber->context.module, O_GET_TYPE(fiber->context.module));
 
-    while (1) {
+    while (regs->IP.reg < (PtrSize) code->m_end) {
         const auto instr = FETCH;
 
         switch (FETCH_OP(instr)) {
             TARGET_OP(LDCST) {
-                break;
+                const auto dst = FETCH_R_DST(instr);
+                const auto flags = (LoadConstantMode) FETCH_R_SRC(instr);
+                const auto imm = FETCH_IMM(instr);
+
+                if (flags == LoadConstantMode::OFFSET)
+                    REG_N(dst) = (PtrSize) code->static_resources->objects[imm];
+                else if (flags == LoadConstantMode::TRUE)
+                    REG_N(dst) = kOddBallTRUE;
+                else if (flags == LoadConstantMode::FALSE)
+                    REG_N(dst) = kOddBallFALSE;
+                else if (flags == LoadConstantMode::NIL)
+                    REG_N(dst) = (PtrSize) kOddBallNIL;
+
+                DISPATCH;
             }
             TARGET_OP(LDIMM) {
-                const auto imm = instr & 0xFFFFu;
+                const auto imm = FETCH_IMM(instr);
                 const auto shift = (instr >> 16) & 0x0F;
                 const auto dst = FETCH_R_DST(instr);
 
@@ -114,5 +127,5 @@ CGOTO
         NEXT_IP;
     }
 
-    return nullptr;
+    return (OObject *) regs->RR.reg;
 }
