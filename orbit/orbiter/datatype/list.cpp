@@ -102,31 +102,38 @@ HList orbiter::datatype::ListNew(Isolate *isolate, MSize capacity) {
 
         list->objects = allocator.alloc<OObject *>(capacity * sizeof(void *));
         if (list->objects == nullptr) {
+            // TODO: Remove release
             Release(list);
 
             return {};
         }
     }
 
-    return HList(list);
+    O_GC_TRACK_RETURN(isolate, list, true);
 }
 
-HOObject orbiter::datatype::ListGet(List *list, bool *success, MSize index) {
+HOObject orbiter::datatype::ListGet(List *list, bool *success, MSSize index) {
     *success = false;
 
-    if (index < 0)
-        index = (MSize) list->length + index;
+    if (index < 0) {
+        const auto old = list->length;
+
+        index = (MSSize) old + index;
+
+        if (index > old)
+            return {};
+    }
 
     if (index >= 0 && index < list->length) {
         *success = true;
 
-        return HOObject(O_VFY_INCREF(list->objects[index]));
+        return HOObject(list->objects[index]);
     }
 
     return {};
 }
 
-TypeInfo *orbiter::datatype::ListTypeInit(Isolate *isolate) {
-    auto *number = MakeType(isolate, InstanceType::LIST, sizeof(List) - sizeof(OObject), 0, 0);
+HOType orbiter::datatype::ListTypeInit(Isolate *isolate) {
+    auto number = MakeType(isolate, InstanceType::LIST, sizeof(List) - sizeof(OObject), 0, 0);
     return number;
 }

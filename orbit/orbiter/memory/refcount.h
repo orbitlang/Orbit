@@ -53,8 +53,8 @@ namespace orbiter::memory {
     using RCObject = datatype::OObject *;
 
     enum class RCType {
-        INLINE = 0x8 | 0x2,
-        GC = 0x8 | 0x6
+        INLINE = 0x2,
+        GC = 0x6
     };
 
     /**

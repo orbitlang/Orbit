@@ -34,9 +34,9 @@ namespace orbiter::datatype {
      *
      * @param isolate Pointer to the Isolate in which the type is being created
      *
-     * @return Pointer to the newly created TypeInfo for the type, or nullptr if creation failed
+     * @return Handle to the newly created TypeInfo for the type, or an empty handle if creation failed
      */
-    TypeInfo *ModuleInit(Isolate *isolate);
+    HOType ModuleInit(Isolate *isolate);
 
     /**
      * @brief Create a new module type with specified properties and slots
@@ -51,9 +51,9 @@ namespace orbiter::datatype {
      * @param exported Number of exported properties the module contains
      * @param slots Number of additional slots allocated for the module
      *
-     * @return Pointer to the newly created module TypeInfo, or nullptr if creation failed
+     * @return Handle to the newly created module TypeInfo, or an empty handle if creation failed
      */
-    TypeInfo *ModuleTypeNew(Isolate *isolate, ORString *name, ORString *doc, U16 exported, U16 slots);
+    HOType ModuleTypeNew(Isolate *isolate, ORString *name, ORString *doc, U16 exported, U16 slots);
 
     /**
      * @brief Creates a new module with the given code and name
@@ -66,9 +66,9 @@ namespace orbiter::datatype {
      * @param code Pointer to the Code object which defines the structure and symbols for the module
      * @param name Pointer to the ORString object that specifies the name of the module
      *
-     * @return Pointer to the newly created TypeInfo object for the module, or nullptr if creation failed
+     * @return Handle to the newly created module TypeInfo, or an empty handle if creation failed
      */
-    TypeInfo *ModuleTypeNew(Code *code, ORString *name);
+    HOType ModuleTypeNew(Code *code, ORString *name);
 
     /**
      * @brief Set up additional features and properties for the specified type

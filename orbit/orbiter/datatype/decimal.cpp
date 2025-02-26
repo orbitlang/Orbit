@@ -17,7 +17,7 @@ HDecimal orbiter::datatype::DecimalNew(Isolate *isolate, DecimalUnderlying numbe
     if (decimal != nullptr)
         decimal->value = number;
 
-    return HDecimal(decimal);
+    O_GC_TRACK_RETURN(isolate, decimal, false);
 }
 
 HDecimal orbiter::datatype::DecimalNew(Isolate *isolate, const char *string) {
@@ -25,10 +25,10 @@ HDecimal orbiter::datatype::DecimalNew(Isolate *isolate, const char *string) {
     if (decimal != nullptr)
         decimal->value = std::strtold(string, nullptr);
 
-    return HDecimal(decimal);
+    O_GC_TRACK_RETURN(isolate, decimal, false);
 }
 
-TypeInfo *orbiter::datatype::DecimalTypeInit(Isolate *isolate) {
-    auto *decimal = MakeType(isolate, InstanceType::DECIMAL, 0, 0, 0);
+HOType orbiter::datatype::DecimalTypeInit(Isolate *isolate) {
+    auto decimal = MakeType(isolate, InstanceType::DECIMAL, 0, 0, 0);
     return decimal;
 }

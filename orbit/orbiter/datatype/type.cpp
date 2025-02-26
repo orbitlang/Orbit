@@ -45,8 +45,8 @@ const FunctionDef type_methods[] = {
     FUNCTIONDEF_SENTINEL
 };
 
-TypeInfo *orbiter::datatype::TypeInit(Isolate *isolate) {
-    auto *type = MakeType(isolate, nullptr, InstanceType::TYPE, 0, 4, 0);
+HOType orbiter::datatype::TypeInit(Isolate *isolate) {
+    auto type = MakeType(isolate, nullptr, InstanceType::TYPE, 0, 4, 0);
     return type;
 }
 

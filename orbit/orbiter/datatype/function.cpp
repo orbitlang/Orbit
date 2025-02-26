@@ -55,6 +55,7 @@ bool orbiter::datatype::FunctionTypeSetup(TypeInfo *self) {
 }
 
 Function *orbiter::datatype::FunctionNew(Isolate *isolate, const FunctionDef *def) {
+    // TODO: FIX THIS!
     auto kind = FunctionKind::NATIVE;
 
     if (def->method)
@@ -77,7 +78,7 @@ Function *orbiter::datatype::FunctionNew(Isolate *isolate, const FunctionDef *de
     return nullptr;
 }
 
-TypeInfo *orbiter::datatype::FunctionTypeInit(Isolate *isolate) {
-    auto *func = MakeType(isolate, InstanceType::FUNCTION, sizeof(Function) - sizeof(OObject), 0, 0);
+HOType orbiter::datatype::FunctionTypeInit(Isolate *isolate) {
+    auto func = MakeType(isolate, InstanceType::FUNCTION, sizeof(Function) - sizeof(OObject), 0, 0);
     return func;
 }

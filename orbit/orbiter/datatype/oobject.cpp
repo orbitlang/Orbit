@@ -74,6 +74,7 @@ bool orbiter::datatype::TIPropertyAdd(TypeInfo *type, const FunctionDef *bulk) {
             return false;
 
         if (!TIPropertyAdd(type, cursor->name, (OObject *) fn, {})) {
+            // TODO: Remove release
             Release(fn);
 
             return false;
@@ -143,11 +144,11 @@ PropertyDescriptor *orbiter::datatype::TIFindProperty(const TypeInfo *type, cons
     return prop;
 }
 
-TypeInfo *orbiter::datatype::MakeType(Isolate *isolate, TypeInfo *super, InstanceType type,
-                                      U8 headroom, U8 props, U8 slots) {
+HOType orbiter::datatype::MakeType(Isolate *isolate, TypeInfo *super, InstanceType type,
+                                   U8 headroom, U8 props, U8 slots) {
     auto *ti = (TypeInfo *) isolate->gc->AllocObject(sizeof(TypeInfo));
     if (ti == nullptr)
-        return nullptr;
+        return {};
 
     O_UNSAFE_GET_RC(ti) = (MSize) memory::RCType::INLINE;
     O_GET_HEAD(ti).type_ = nullptr;
@@ -177,8 +178,8 @@ TypeInfo *orbiter::datatype::MakeType(Isolate *isolate, TypeInfo *super, Instanc
     if (!TIPropertiesInit(isolate, ti, props)) {
         isolate->gc->Free((OObject *) ti);
 
-        return nullptr;
+        return {};
     }
 
-    return ti;
+    O_GC_TRACK_RETURN(isolate, ti, false);
 }

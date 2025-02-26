@@ -8,43 +8,40 @@
 using namespace orbiter::datatype;
 
 HModule orbiter::datatype::ModuleNew(TypeInfo *tp_module) {
+    auto *isolate = O_GET_ISOLATE(tp_module);
+
     assert(tp_module->i_type == InstanceType::MODULE);
 
-    auto *module = MakeGCObject<Module>(tp_module);
-    return HModule(module);
+    auto *module = MakeObject<Module>(tp_module);
+
+    O_GC_TRACK_RETURN(isolate, module, true);
 }
 
-TypeInfo *orbiter::datatype::ModuleInit(Isolate *isolate) {
-    auto *module = MakeType(isolate, InstanceType::MODULE, 0, 0, 0);
+HOType orbiter::datatype::ModuleInit(Isolate *isolate) {
+    auto module = MakeType(isolate, InstanceType::MODULE, 0, 0, 0);
     return module;
 }
 
-TypeInfo *orbiter::datatype::ModuleTypeNew(Isolate *isolate, ORString *name, ORString *doc, U16 exported, U16 slots) {
+HOType orbiter::datatype::ModuleTypeNew(Isolate *isolate, ORString *name, ORString *doc, U16 exported, U16 slots) {
     const auto total_props = exported + 2; // name + doc
 
-    auto *module = MakeTypeExtended(isolate, InstanceType::MODULE, 0, total_props, slots);
-    if (module != nullptr) {
-        if (!TIPropertyAdd(module, "__name__", (OObject *) name, PropertyFlag::IS_CONSTANT))
-            goto ERROR;
+    auto module = MakeTypeExtended(isolate, InstanceType::MODULE, 0, total_props, slots);
+    if (!module) {
+        if (!TIPropertyAdd(module.get(), "__name__", (OObject *) name, PropertyFlag::IS_CONSTANT))
+            return {};
 
-        if (!TIPropertyAdd(module, "__doc__", (OObject *) doc, PropertyFlag::IS_CONSTANT))
-            goto ERROR;
+        if (!TIPropertyAdd(module.get(), "__doc__", (OObject *) doc, PropertyFlag::IS_CONSTANT))
+            return {};
     }
 
     return module;
-
-ERROR:
-
-    Release(module);
-
-    return nullptr;
 }
 
-TypeInfo *orbiter::datatype::ModuleTypeNew(Code *code, ORString *name) {
+HOType orbiter::datatype::ModuleTypeNew(Code *code, ORString *name) {
     auto *isolate = O_GET_ISOLATE(code);
 
-    auto *module = ModuleTypeNew(isolate, name, nullptr, code->exported.length, code->slots_count);
-    if (module != nullptr) {
+    auto module = ModuleTypeNew(isolate, name, nullptr, code->exported.length, code->slots_count);
+    if (!module) {
         for (auto i = 0; i < code->exported.length; i++) {
             const auto *symbol = code->exported.symbols + i;
 
@@ -52,10 +49,8 @@ TypeInfo *orbiter::datatype::ModuleTypeNew(Code *code, ORString *name) {
             if (ENUMBITMASK_ISTRUE(symbol->flags, VariableFlags::CONSTANT))
                 pd = PropertyFlag::IS_CONSTANT;
 
-            if (!TIPropertyAdd(module, (OObject *) symbol->name, symbol->slot, pd)) {
-                Release(module);
-                return nullptr;
-            }
+            if (!TIPropertyAdd(module.get(), (OObject *) symbol->name, symbol->slot, pd))
+                return {};
         }
     }
 

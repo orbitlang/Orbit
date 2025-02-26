@@ -85,12 +85,12 @@ int orbiter::datatype::ORStringCompare(const ORString *left, const char *right, 
     return strncmp((const char *) STR_BUF(left), right, std::min(STR_LEN(left), length));
 }
 
-Handle<ORString> orbiter::datatype::ORStringIntern(Isolate *isolate, const unsigned char *string, MSize length) {
+HORString orbiter::datatype::ORStringIntern(Isolate *isolate, const unsigned char *string, MSize length) {
     // TODO: IMPL THIS!
     return ORStringNew(isolate, string, length);
 }
 
-Handle<ORString> orbiter::datatype::ORStringNew(Isolate *isolate, unsigned char *buffer, MSize length,
+HORString orbiter::datatype::ORStringNew(Isolate *isolate, unsigned char *buffer, MSize length,
                                                 MSize cp_length,
                                                 StringKind kind) {
     assert(buffer[length] == '\0');
@@ -102,10 +102,10 @@ Handle<ORString> orbiter::datatype::ORStringNew(Isolate *isolate, unsigned char 
         str->kind = kind;
     }
 
-    return Handle(str);
+    O_GC_TRACK_RETURN(isolate, str, false);
 }
 
-Handle<ORString> orbiter::datatype::ORStringNew(Isolate *isolate, const unsigned char *string, MSize length) {
+HORString orbiter::datatype::ORStringNew(Isolate *isolate, const unsigned char *string, MSize length) {
     StringBuilder builder(isolate);
     StringKind kind;
     MSize len;
@@ -128,7 +128,7 @@ Handle<ORString> orbiter::datatype::ORStringNew(Isolate *isolate, const unsigned
     return str;
 }
 
-Handle<ORString> orbiter::datatype::ORStringNewHoldBuffer(Isolate *isolate, unsigned char *string, MSize length) {
+HORString orbiter::datatype::ORStringNewHoldBuffer(Isolate *isolate, unsigned char *string, MSize length) {
     assert(string[length] == '\0');
 
     auto *str = MkStringContainer(isolate, length, false);
@@ -138,13 +138,14 @@ Handle<ORString> orbiter::datatype::ORStringNewHoldBuffer(Isolate *isolate, unsi
         if (!StringInitKind(str)) {
             str->buffer = nullptr;
 
+            // TODO: Remove release
             Release(str);
 
-            return Handle<ORString>(nullptr);
+            return {};
         }
     }
 
-    return Handle(str);
+    O_GC_TRACK_RETURN(isolate, str, false);
 }
 
 MSize orbiter::datatype::ORStringHash(ORString *string) {
@@ -160,7 +161,7 @@ MSize orbiter::datatype::ORStringHash(ORString *string) {
     return hash;
 }
 
-TypeInfo *orbiter::datatype::ORStringTypeInit(Isolate *isolate) {
-    auto *string = MakeType(isolate, InstanceType::STRING, sizeof(ORString) - sizeof(OObject), 0, 0);
+HOType orbiter::datatype::ORStringTypeInit(Isolate *isolate) {
+    auto string = MakeType(isolate, InstanceType::STRING, sizeof(ORString) - sizeof(OObject), 0, 0);
     return string;
 }

@@ -12,6 +12,102 @@
 #include <orbit/orbiter/datatype/obase.h>
 
 namespace orbiter::datatype {
+    template<typename T>
+    class Handle {
+        T *object_;
+
+    public:
+        Handle() noexcept: object_(nullptr) {
+        }
+
+        explicit Handle(T *object) noexcept: object_(O_VFY_INCREF(object)) {
+        }
+
+        Handle(Handle &&other) noexcept: object_(other.object_) {
+            other.object_ = nullptr;
+        }
+
+        Handle(const Handle &other) : object_(other.object_) {
+            O_VFY_INCREF(other.object_);
+        }
+
+        ~Handle() noexcept {
+            this->reset();
+        }
+
+        Handle &operator=(Handle &&other) noexcept {
+            if (this != &other) {
+                this->reset();
+
+                this->object_ = other.object_;
+                other.object_ = nullptr;
+            }
+
+            return *this;
+        }
+
+        template<typename U>
+        Handle &operator=(Handle<U> &&other) noexcept {
+            if (this->object_ != nullptr)
+                this->reset();
+
+            this->object_ = (T *) other.release();
+
+            return *this;
+        }
+
+        Handle &operator=(const Handle &other) {
+            if (this != &other) {
+                if (this->object_ != nullptr)
+                    this->reset();
+
+                this->object_ = O_VFY_INCREF(other.object_);
+            }
+
+            return *this;
+        }
+
+        T &operator*() const { return *this->object_; }
+
+        T *operator->() const noexcept { return this->object_; }
+
+        explicit operator bool() const noexcept { return this->object_ != nullptr; }
+
+        T *get() const noexcept { return this->object_; }
+
+        T *get_inc() const noexcept { return O_VFY_INCREF(this->object_); }
+
+        T *release() noexcept {
+            T *temp = this->object_;
+
+            this->object_ = nullptr;
+
+            return temp;
+        }
+
+        void reset() noexcept {
+            if (this->object_ != nullptr) {
+                Release(this->object_);
+                this->object_ = nullptr;
+            }
+        }
+
+        void reset(T *new_object) noexcept {
+            if (this->object_ != new_object) {
+                this->reset();
+
+                this->object_ = new_object;
+            }
+        }
+    };
+
+    using HOObject = Handle<OObject>;
+    using HOType = Handle<TypeInfo>;
+
+    // *****************************************************************************************************************
+    // OOBJECT API
+    // *****************************************************************************************************************
+
     bool Equal(const OObject *left, const OObject *right);
 
     /**
@@ -96,15 +192,7 @@ namespace orbiter::datatype {
      * @param object Pointer to the OObject to release
      */
     inline void Release(OObject *object) {
-        if (object == nullptr)
-            return;
-
-        if (O_IS_OBJECT(object)) {
-            uintptr_t counter;
-
-            if (O_GET_RC(object).DecStrong(&counter) && !RC_CHECK_IS_GCOBJ(counter))
-                O_GET_ISOLATE(object)->gc->MarkForCollection(object);
-        }
+        return; // TODO: stub
     }
 
     /**
@@ -152,7 +240,7 @@ namespace orbiter::datatype {
     T *MakeObject(TypeInfo *type) {
         auto *isolate = O_GET_ISOLATE(type);
 
-        auto *ret = (OObject *) isolate->gc->AllocObject(type->i_size);
+        auto *ret = isolate->gc->AllocObject(type->i_size);
         if (ret == nullptr)
             return nullptr;
 
@@ -177,30 +265,6 @@ namespace orbiter::datatype {
         return MakeObject<T>(isolate->primitive[(int) type]);
     }
 
-    template<typename T>
-    T *MakeGCObject(TypeInfo *type) {
-        auto *obj = MakeObject<T>(type);
-        if (obj != nullptr) {
-            O_UNSAFE_GET_RC(obj) = (MSize) memory::RCType::GC;
-
-            O_GET_ISOLATE(type)->gc->Track((OObject *) obj);
-        }
-
-        return obj;
-    }
-
-    template<typename T>
-    T *MakeGCObject(Isolate *isolate, InstanceType type) {
-        auto *obj = MakeObject<T>(isolate, type);
-        if (obj != nullptr) {
-            O_UNSAFE_GET_RC(obj) = (MSize) memory::RCType::GC;
-
-            isolate->gc->Track((OObject *) obj);
-        }
-
-        return obj;
-    }
-
     /**
      * @brief Create a new TypeInfo
      *
@@ -213,7 +277,7 @@ namespace orbiter::datatype {
      *
      * @return Pointer to the newly created TypeInfo
      */
-    TypeInfo *MakeType(Isolate *isolate, TypeInfo *super, InstanceType type, U8 headroom, U8 props, U8 slots);
+    HOType MakeType(Isolate *isolate, TypeInfo *super, InstanceType type, U8 headroom, U8 props, U8 slots);
 
     /**
      * @brief Create a new TypeInfo using the isolate's 'Type' type as superclass
@@ -226,7 +290,7 @@ namespace orbiter::datatype {
      *
      * @return Pointer to the newly created TypeInfo
      */
-    inline TypeInfo *MakeType(Isolate *isolate, InstanceType type, U8 headroom, U8 props, U8 slots) {
+    inline HOType MakeType(Isolate *isolate, InstanceType type, U8 headroom, U8 props, U8 slots) {
         return MakeType(isolate, isolate->primitive[(int) InstanceType::TYPE], type, headroom, props, slots);
     }
 
@@ -241,104 +305,9 @@ namespace orbiter::datatype {
      *
      * @return Pointer to the created TypeInfo.
      */
-    inline TypeInfo *MakeTypeExtended(Isolate *isolate, InstanceType type, U8 headroom, U8 props, U8 slots) {
+    inline HOType MakeTypeExtended(Isolate *isolate, InstanceType type, U8 headroom, U8 props, U8 slots) {
         return MakeType(isolate, isolate->primitive[(int) type], type, headroom, props, slots);
     }
-
-    // *****************************************************************************************************************
-    // HANDLE
-    // *****************************************************************************************************************
-
-    template<typename T>
-    class Handle {
-        T *object_;
-
-    public:
-        Handle() noexcept: object_(nullptr) {
-        }
-
-        explicit Handle(T *object) noexcept: object_(object) {
-        }
-
-        Handle(Handle &&other) noexcept: object_(other.object_) {
-            other.object_ = nullptr;
-        }
-
-        Handle(const Handle &other) : object_(other.object_) {
-            O_VFY_INCREF(other.object_);
-        }
-
-        ~Handle() noexcept {
-            this->reset();
-        }
-
-        Handle &operator=(Handle &&other) noexcept {
-            if (this != &other) {
-                this->reset();
-
-                this->object_ = other.object_;
-                other.object_ = nullptr;
-            }
-
-            return *this;
-        }
-
-        template<typename U>
-        Handle &operator=(Handle<U> &&other) noexcept {
-            if (this->object_ != nullptr)
-                this->reset();
-
-            this->object_ = (T *) other.release();
-
-            return *this;
-        }
-
-        Handle &operator=(const Handle &other) {
-            if (this != &other) {
-                if (this->object_ != nullptr)
-                    this->reset();
-
-                this->object_ = O_VFY_INCREF(other.object_);
-            }
-
-            return *this;
-        }
-
-        T &operator*() const { return *this->object_; }
-
-        T *operator->() const noexcept { return this->object_; }
-
-        explicit operator bool() const noexcept { return this->object_ != nullptr; }
-
-        T *get() const noexcept { return this->object_; }
-
-        T *get_inc() const noexcept { return O_VFY_INCREF(this->object_); }
-
-        T *release() noexcept {
-            T *temp = this->object_;
-
-            this->object_ = nullptr;
-
-            return temp;
-        }
-
-        void reset() noexcept {
-            if (this->object_ != nullptr) {
-                Release(this->object_);
-                this->object_ = nullptr;
-            }
-        }
-
-        void reset(T *new_object) noexcept {
-            if (this->object_ != new_object) {
-                this->reset();
-
-                this->object_ = new_object;
-            }
-        }
-    };
-
-    using HOObject = Handle<OObject>;
 }
 
 #endif // !ORBIT_ORBITER_DATATYPE_OOBJECT_H_

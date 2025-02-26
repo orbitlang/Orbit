@@ -30,10 +30,10 @@ Isolate::~Isolate() {
 }
 
 Isolate *Isolate::New() {
-#define INIT_TYPE(num, fn)                                              \
-    do {                                                                \
-        if((isolate->primitive[(int) num] = fn(isolate)) == nullptr)    \
-            goto ERROR;                                                 \
+#define INIT_TYPE(num, fn)                                                      \
+    do {                                                                        \
+        if((isolate->primitive[(int) num] = fn(isolate).get_inc()) == nullptr)  \
+            goto ERROR;                                                         \
     } while(0)
 
 #define SETUP_TYPE(num, fn)                             \

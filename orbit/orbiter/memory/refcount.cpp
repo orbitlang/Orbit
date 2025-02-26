@@ -136,8 +136,6 @@ bool RefCount::IncStrong() {
             return true;
         }
 
-        assert(RC_INLINE_GET_COUNT(desired) > 0);
-
         desired = RC_INLINE_INC(desired);
 
         if (RC_CHECK_INLINE_OVERFLOW(desired)) {

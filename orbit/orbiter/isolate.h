@@ -11,6 +11,14 @@
 
 #include <orbit/orbiter/memory/gc.h>
 
+#define O_GC_TRACK_RETURN(isolate, object, is_container)                \
+    do{                                                                 \
+            auto handle = Handle(object);                               \
+            if(object != nullptr) {                                     \
+                (isolate)->gc->Track((OObject *) object, is_container); \
+            }                                                           \
+            return handle; } while (0)
+
 namespace orbiter {
     class Isolate {
         stratum::Memory *allocator_;

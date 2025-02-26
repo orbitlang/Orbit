@@ -46,9 +46,9 @@ namespace orbiter::datatype {
      *
      * @param isolate Pointer to the Isolate in which the type is being created
      *
-     * @return Pointer to the newly created TypeInfo for the type, or nullptr if creation failed
+     * @return Handle to the newly created TypeInfo for the type, or an empty handle if creation failed
      */
-    TypeInfo *DecimalTypeInit(Isolate *isolate);
+    HOType DecimalTypeInit(Isolate *isolate);
 }
 
 #endif // !ORBIT_ORBITER_DATATYPE_DECIMAL_H_

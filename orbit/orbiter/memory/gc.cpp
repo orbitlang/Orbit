@@ -50,7 +50,7 @@ void GCIncRef(OObject *self) {
 // PRIVATE
 // *********************************************************************************************************************
 
-MSize GC::CollectRCQueue() noexcept {
+MSize GC::CollectRCQueue(int generation) noexcept {
     MSize count = 0;
     MSize bytes = 0;
 
@@ -61,7 +61,7 @@ MSize GC::CollectRCQueue() noexcept {
     rc_trashing = true;
 
     GCHead *next;
-    for (auto *cursor = this->context_.rc_list; cursor != nullptr; cursor = next) {
+    for (auto *cursor = this->context_.generations[generation].simple_objects; cursor != nullptr; cursor = next) {
         next = cursor->Next();
 
         // If the reference count is zero, the object is unused and not in VM registers
@@ -94,6 +94,8 @@ MSize GC::CollectRCQueue() noexcept {
     }
 
     rc_trashing = false;
+
+    this->context_.generations[generation].simple_count -= count;
 
     this->context_.rc_count -= count;
     this->context_.rc_bytes -= bytes;
@@ -384,26 +386,6 @@ void GC::AddFiber(Fiber *fiber) noexcept {
     this->fibers_ = fiber;
 }
 
-void GC::MarkForCollection(OObject *object) noexcept {
-    auto *head = GC_GET_HEAD(object);
-
-    if (rc_trashing) {
-        HeadInsert(&this->context_.rc_list, head);
-
-        this->context_.rc_count++;
-        this->context_.rc_bytes += head->size;
-
-        return;
-    }
-
-    std::unique_lock _(this->context_.rc_lock);
-
-    HeadInsert(&this->context_.rc_list, head);
-
-    this->context_.rc_count++;
-    this->context_.rc_bytes += head->size;
-}
-
 void GC::RemoveFiber(Fiber *fiber) noexcept {
     std::unique_lock _(this->context_.vm_lock);
 
@@ -450,23 +432,37 @@ void GC::ThresholdCollect() noexcept {
         && this->context_.rc_count < kGCRCThresholdElementsCount)
         return;
 
-    this->CollectRCQueue();
+    this->CollectRCQueue(0);
 
     this->running_.store(false, std::memory_order_relaxed);
 }
 
-void GC::Track(OObject *object) noexcept {
+void GC::Track(OObject *object, bool is_container) noexcept {
     auto *head = GC_GET_HEAD(object);
+
+    auto *generation = this->context_.generations;
+
+    if (is_container) {
+        std::unique_lock _(this->context_.rc_lock);
+
+        if (!head->IsTracked()) {
+            HeadInsert(&generation->simple_objects, head);
+            generation->simple_count += 1;
+
+            this->context_.rc_count += 1;
+            this->context_.rc_bytes += head->size;
+        }
+
+        return;
+    }
 
     std::unique_lock _(this->context_.track_lock);
 
     if (!head->IsTracked()) {
-        auto *generation = this->context_.generations;
-
         HeadInsert(&generation->list, head);
-        generation->count++;
+        generation->count += 1;
 
-        this->context_.tracked_count++;
+        this->context_.tracked_count += 1;
         this->context_.tracked_bytes += head->size;
     }
 }

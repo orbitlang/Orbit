@@ -94,7 +94,7 @@ namespace orbiter::datatype {
      * @param index Location from which to get the object.
      * @return Retrieved object on success, in case of error empty HOObject will be returned and success will be set to false.
      */
-    HOObject ListGet(List *list, bool *success, MSize index);
+    HOObject ListGet(List *list, bool *success, MSSize index);
 
     HList ListNew(Isolate *isolate, MSize capacity);
 
@@ -110,9 +110,9 @@ namespace orbiter::datatype {
      *
      * @param isolate Pointer to the Isolate in which the type is being created
      *
-     * @return Pointer to the newly created TypeInfo for the type, or nullptr if creation failed
+     * @return Handle to the newly created TypeInfo for the type, or an empty handle if creation failed
      */
-    TypeInfo *ListTypeInit(Isolate *isolate);
+    HOType ListTypeInit(Isolate *isolate);
 }
 
 #endif // !ORBIT_ORBITER_DATATYPE_LIST_H_

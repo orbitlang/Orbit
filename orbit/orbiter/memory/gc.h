@@ -89,8 +89,10 @@ namespace orbiter {
          */
         struct GCGeneration {
             GCHead *list;
+            GCHead *simple_objects;
 
             MSize count;
+            MSize simple_count;
 
             MSize collected;
             MSize uncollected;
@@ -135,7 +137,7 @@ namespace orbiter {
 
             GCHead *garbage = nullptr;
 
-            GCHead *rc_list = nullptr;
+            //GCHead *rc_list = nullptr;
 
             MSize rc_count = 0;
             MSize rc_bytes = 0;
@@ -188,7 +190,7 @@ namespace orbiter {
              *
              * @return The number of objects that were successfully collected during the process.
              */
-            MSize CollectRCQueue() noexcept;
+            MSize CollectRCQueue(int generation) noexcept;
 
             void Free(GCHead *head) noexcept;
 
@@ -252,17 +254,6 @@ namespace orbiter {
             }
 
             /**
-             * @brief Marks the specified object for garbage collection.
-             *
-             * This method adds the object to the reference-count-based collection list and updates
-             * internal tracking metrics. Thread-safety is ensured using appropriate locks when reference
-             * count trashing is not active.
-             *
-             * @param object The object to be marked for the garbage collection process.
-             */
-            void MarkForCollection(datatype::OObject *object) noexcept;
-
-            /**
              * @brief Removes the specified Fiber instance from the fiber tracking list in the garbage collector.
              *
              * This method ensures the safe removal of the Fiber instance from its internal doubly linked list,
@@ -292,13 +283,14 @@ namespace orbiter {
              *
              * This method ensures that the provided object is registered for tracking
              * in the current generation of objects monitored by the garbage collector.
-             * If the object is not yet tracked, it is added to the tracking list, and
-             * the corresponding generation's object count and tracked memory size are updated.
+             * The object is added to the appropriate list based on its type (container or simple).
              *
              * @param object A pointer to the object to be tracked. The object must be properly
              *               initialized and convertible to the expected type.
+             * @param is_container Indicates whether the object is a container (true) or a simple object (false).
+             *                   Container objects can hold references to other objects and require recursive tracing.
              */
-            void Track(datatype::OObject *object) noexcept;
+            void Track(datatype::OObject *object, bool is_container) noexcept;
         };
     }
 }

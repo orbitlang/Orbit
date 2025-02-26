@@ -98,13 +98,16 @@ namespace orbiter::datatype {
     Function *FunctionNew(Isolate *isolate, const FunctionDef *def);
 
     /**
-     * @brief Initialize the Function type
+     * @brief Initialize and create the specified type
      *
-     * @param isolate Pointer to the Isolate
+     * This function creates a new TypeInfo object representing the specific type.
+     * It sets up the basic structure and core properties of the type.
      *
-     * @return Pointer to the TypeInfo for the Function type
+     * @param isolate Pointer to the Isolate in which the type is being created
+     *
+     * @return Handle to the newly created TypeInfo for the type, or an empty handle if creation failed
      */
-    TypeInfo *FunctionTypeInit(Isolate *isolate);
+    HOType FunctionTypeInit(Isolate *isolate);
 }
 
 #define RUNTIME_FUNCTION(name, exported_name, doc, params)                                          \

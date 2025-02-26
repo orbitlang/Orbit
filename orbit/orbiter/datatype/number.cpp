@@ -24,7 +24,7 @@ HNumber orbiter::datatype::IntNew(Isolate *isolate, IntegerUnderlying value) {
 
     num->sint = value;
 
-    return HNumber(num);
+    O_GC_TRACK_RETURN(isolate, num, false);
 }
 
 HNumber orbiter::datatype::IntNew(Isolate *isolate, const char *string, int base) {
@@ -40,7 +40,7 @@ HNumber orbiter::datatype::UIntNew(Isolate *isolate, UIntegerUnderlying value) {
 
     num->uint = value;
 
-    return HNumber(num);
+    O_GC_TRACK_RETURN(isolate, num, false);
 }
 
 HNumber orbiter::datatype::UIntNew(Isolate *isolate, const char *string, int base) {
@@ -49,7 +49,7 @@ HNumber orbiter::datatype::UIntNew(Isolate *isolate, const char *string, int bas
     return UIntNew(isolate, num);
 }
 
-TypeInfo *orbiter::datatype::NumberTypeInit(Isolate *isolate) {
-    auto *number = MakeType(isolate, InstanceType::NUMBER, sizeof(Number) - sizeof(OObject), 0, 0);
+HOType orbiter::datatype::NumberTypeInit(Isolate *isolate) {
+    auto number = MakeType(isolate, InstanceType::NUMBER, sizeof(Number) - sizeof(OObject), 0, 0);
     return number;
 }

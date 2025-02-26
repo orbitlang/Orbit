@@ -18,9 +18,9 @@ namespace orbiter::datatype {
      *
      * @param isolate Pointer to the Isolate in which the type is being created
      *
-     * @return Pointer to the newly created TypeInfo for the type, or nullptr if creation failed
+     * @return Handle to the newly created TypeInfo for the type, or an empty handle if creation failed
      */
-    TypeInfo *TypeInit(Isolate *isolate);
+    HOType TypeInit(Isolate *isolate);
 
     /**
      * @brief Set up additional features and properties for the specified type

@@ -86,21 +86,24 @@ bool orbiter::datatype::ContextSetup(TypeInfo *self) {
     return true;
 }
 
-TypeInfo *orbiter::datatype::ContextInit(Isolate *isolate) {
-    auto *module = MakeType(isolate, InstanceType::CONTEXT, sizeof(Context) - sizeof(OObject), 0, 0);
-    return module;
-}
-
 HContext orbiter::datatype::ContextNew(Isolate *isolate) {
-    auto *context = MakeGCObject<Context>(isolate, InstanceType::CONTEXT);
+    auto *context = MakeObject<Context>(isolate, InstanceType::CONTEXT);
     if (context != nullptr) {
         new(&context->names)CtxHMap(isolate);
 
         if (!context->names.Initialize()) {
+            // TODO: Remove release
             Release(context);
             return {};
         }
+
+        O_GC_TRACK_RETURN(isolate, context, true);
     }
 
     return Handle(context);
+}
+
+HOType orbiter::datatype::ContextInit(Isolate *isolate) {
+    auto module = MakeType(isolate, InstanceType::CONTEXT, sizeof(Context) - sizeof(OObject), 0, 0);
+    return module;
 }

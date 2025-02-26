@@ -89,9 +89,10 @@ HAtom orbiter::datatype::AtomNew(Isolate *isolate, ORString *id) {
         O_INCREF(id);
         O_INCREF(atom);
 
-        return HAtom(atom);
+        O_GC_TRACK_RETURN(isolate, atom, false);
     }
 
+    // TODO: Remove release
     Release(atom);
 
     gat->FreeHEntry(entry);
@@ -99,7 +100,7 @@ HAtom orbiter::datatype::AtomNew(Isolate *isolate, ORString *id) {
     return {};
 }
 
-TypeInfo *orbiter::datatype::AtomTypeInit(Isolate *isolate) {
-    auto *atom = MakeType(isolate, InstanceType::ATOM, 0, 0, 1);
+HOType orbiter::datatype::AtomTypeInit(Isolate *isolate) {
+    auto atom = MakeType(isolate, InstanceType::ATOM, 0, 0, 1);
     return atom;
 }

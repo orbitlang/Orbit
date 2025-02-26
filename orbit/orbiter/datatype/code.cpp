@@ -30,10 +30,10 @@ HCode orbiter::datatype::CodeNew(Isolate *isolate, const unsigned char *m_code, 
         code->stack_size = stack_size;
     }
 
-    return HCode(code);
+    O_GC_TRACK_RETURN(isolate, code, false);
 }
 
-TypeInfo *orbiter::datatype::CodeTypeInit(Isolate *isolate) {
-    auto *code = MakeType(isolate, InstanceType::CODE, sizeof(Code) - sizeof(OObject), 0, 0);
+HOType orbiter::datatype::CodeTypeInit(Isolate *isolate) {
+    auto code = MakeType(isolate, InstanceType::CODE, sizeof(Code) - sizeof(OObject), 0, 0);
     return code;
 }
