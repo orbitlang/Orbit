@@ -6,7 +6,6 @@
 #define ORBIT_DATATYPE_H_
 
 #include <cstdint>
-#include <unistd.h>
 
 typedef unsigned char Byte;
 typedef unsigned char *Bytes;
@@ -22,9 +21,9 @@ typedef unsigned int U32;
 typedef long long I64;
 typedef unsigned long long U64;
 
-typedef U64 PtrSize;
-typedef U64 MSize;
-typedef ssize_t MSSize;
+typedef std::uintptr_t PtrSize;
+typedef PtrSize MSize;
+typedef std::intptr_t MSSize;
 
 #if SIZE_MAX == 0xFFFFFFFF
 typedef U16 PtrHalfSize;
