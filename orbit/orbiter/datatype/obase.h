@@ -145,16 +145,18 @@ namespace orbiter::datatype {
 #define O_SLOT(object, tp_info)             ((orbiter::datatype::OObject **) (O_CAST(object, tp_info, unsigned char) + (tp_info)->headroom))
 #define O_SLOT_COUNT(object, tp_info)       (((tp_info)->i_size - (tp_info)->offset - (tp_info)->headroom) / sizeof(void *))
 
-#define O_IS_SMI(object)                    ((MSize)object & 0x01u)
-#define O_IS_ODDBALL(object)                ((!O_IS_SMI(object)) && (((MSize)object & orbiter::datatype::kOddBallMask) == orbiter::datatype::kOddBallMask))
-#define O_IS_OBJECT(object)                 ((!O_IS_SMI(object)) && (((MSize)object & orbiter::datatype::kOddBallMask) != orbiter::datatype::kOddBallMask))
+#define O_IS_SMI(object)                    (((MSize)object & 0x01u) != 0)
+#define O_IS_ODDBALL(object)                ((object == nullptr) || ((!O_IS_SMI(object)) && (((MSize)object & orbiter::datatype::kOddBallMask) == orbiter::datatype::kOddBallMask)))
+#define O_IS_OBJECT(object)                 ((object != nullptr) && ((!O_IS_SMI(object)) && (((MSize)object & orbiter::datatype::kOddBallMask) != orbiter::datatype::kOddBallMask)))
 
 #define O_IS_FALSE(object)                  (O_IS_ODDBALL(object) && ((object & orbiter::datatype::kOddBallFALSE) == orbiter::datatype::kOddBallFALSE))
 #define O_IS_TRUE(object)                   (O_IS_ODDBALL(object) && ((object & orbiter::datatype::kOddBallTRUE) == orbiter::datatype::kOddBallTRUE))
 #define O_IS_NIL(object)                    (object == orbiter::datatype::kOddBallNIL)
 
-#define O_INCREF(object)                    (O_IS_OBJECT(object) && O_GET_RC(object).IncStrong(), object)
-#define O_VFY_INCREF(object)                ((object != nullptr && (O_IS_OBJECT(object) && O_GET_RC(object).IncStrong())), object)
+#define O_DECREF(object)                    (O_IS_OBJECT(object) ? (O_GET_RC(object).DecStrong(), object) : object)
+
+#define O_INCREF(object)                    (O_IS_OBJECT(object) ? (O_GET_RC(object).IncStrong(), object) : object)
+#define O_VFY_INCREF(object)                ((object != nullptr && O_IS_OBJECT(object)) ? (O_GET_RC(object).IncStrong(), object) : object)
 
 #define O_GET_SLOT_COUNT(type)              (((type->i_size) - sizeof(OObject)) / sizeof(MSize))
 }
