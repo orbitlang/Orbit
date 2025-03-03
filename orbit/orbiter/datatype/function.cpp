@@ -41,11 +41,11 @@ void FunSharedDel(orbiter::Isolate *isolate, FuncShared *shared) {
     if (shared->refs.fetch_sub(1) > 1)
         return;
 
-    Release(shared->name);
-    Release(shared->doc);
+    O_FAST_DECREF(shared->name);
+    O_FAST_DECREF(shared->doc);
 
     if (shared->IsInterpreted())
-        Release(shared->code);
+        O_FAST_DECREF(shared->code);
 
     orbiter::memory::IsolateAllocator(isolate).free(shared);
 }

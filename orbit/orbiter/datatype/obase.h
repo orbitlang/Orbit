@@ -153,9 +153,11 @@ namespace orbiter::datatype {
 #define O_IS_TRUE(object)                   (O_IS_ODDBALL(object) && ((object & orbiter::datatype::kOddBallTRUE) == orbiter::datatype::kOddBallTRUE))
 #define O_IS_NIL(object)                    (object == orbiter::datatype::kOddBallNIL)
 
-#define O_DECREF(object)                    (O_IS_OBJECT(object) ? (O_GET_RC(object).DecStrong(), object) : object)
+#define O_DECREF(object)                    (O_IS_OBJECT(object) ? (O_GET_RC(object).DecStrong(nullptr), object) : object)
+#define O_FAST_DECREF(object)               ((object != nullptr) ? (O_GET_RC(object).DecStrong(nullptr), object) : object)
 
 #define O_INCREF(object)                    (O_IS_OBJECT(object) ? (O_GET_RC(object).IncStrong(), object) : object)
+#define O_FAST_INCREF(object)               ((object != nullptr) ? (O_GET_RC(object).IncStrong(), object) : object)
 #define O_VFY_INCREF(object)                ((object != nullptr && O_IS_OBJECT(object)) ? (O_GET_RC(object).IncStrong(), object) : object)
 
 #define O_GET_SLOT_COUNT(type)              (((type->i_size) - sizeof(OObject)) / sizeof(MSize))

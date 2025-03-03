@@ -12,7 +12,7 @@ bool orbiter::datatype::ContextDefine(Context *context, ORString *name, OObject 
     context->names.Lookup(name, &entry);
 
     if (entry != nullptr) {
-        entry->value.value = Handle(O_VFY_INCREF(value));
+        entry->value.value = Handle(value);
         entry->value.detail = flags;
         return true;
     }
@@ -21,13 +21,15 @@ bool orbiter::datatype::ContextDefine(Context *context, ORString *name, OObject 
     if (entry == nullptr)
         return false;
 
-    entry->key = O_INCREF(name);
-    entry->value.value = Handle(O_VFY_INCREF(value));
+    entry->key = O_FAST_INCREF(name);
+    entry->value.value = Handle(value);
     entry->value.detail = flags;
 
     if (!context->names.Insert(entry)) {
-        Release(entry->key);
+        O_FAST_DECREF(entry->key);
+
         entry->value.value.reset();
+
         return false;
     }
 
@@ -77,7 +79,7 @@ bool orbiter::datatype::ContextSet(Context *context, ORString *name, OObject *va
         return false;
     }
 
-    entry->value.value = Handle(O_VFY_INCREF(value));
+    entry->value.value = Handle(value);
 
     return true;
 }
@@ -92,8 +94,8 @@ HContext orbiter::datatype::ContextNew(Isolate *isolate) {
         new(&context->names)CtxHMap(isolate);
 
         if (!context->names.Initialize()) {
-            // TODO: Remove release
-            Release(context);
+            isolate->gc->RawFree((OObject *) context, false);
+
             return {};
         }
 

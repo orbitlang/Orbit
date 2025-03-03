@@ -68,7 +68,7 @@ bool orbiter::datatype::ListInsert(List *list, OObject *object, MSize index) {
         return true;
     }
 
-    Release(list->objects[index]);
+    O_DECREF(list->objects[index]);
     list->objects[index] = O_VFY_INCREF(object);
 
     return true;
@@ -102,8 +102,7 @@ HList orbiter::datatype::ListNew(Isolate *isolate, MSize capacity) {
 
         list->objects = allocator.alloc<OObject *>(capacity * sizeof(void *));
         if (list->objects == nullptr) {
-            // TODO: Remove release
-            Release(list);
+            isolate->gc->RawFree((OObject *) list, false);
 
             return {};
         }

@@ -138,8 +138,7 @@ HORString orbiter::datatype::ORStringNewHoldBuffer(Isolate *isolate, unsigned ch
         if (!StringInitKind(str)) {
             str->buffer = nullptr;
 
-            // TODO: Remove release
-            Release(str);
+            isolate->gc->RawFree((OObject *) str, false);
 
             return {};
         }

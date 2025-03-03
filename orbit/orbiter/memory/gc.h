@@ -254,6 +254,29 @@ namespace orbiter {
             }
 
             /**
+             * @brief Performs a raw de-allocation of a previously allocated object.
+             *
+             * This function deallocates the memory associated with an object managed by the garbage collector.
+             * The provided object must not be actively tracked and must be manually de-initialized in its internal
+             * components unless the `dtor` parameter is set to true. If `dtor` is true, the destructor of the object
+             * will be called during this operation to allow proper resource cleanup. Otherwise, this method solely
+             * releases the memory allocated for the object.
+             *
+             * @param object A pointer to the garbage-collected object to be deallocated.
+             * @param dtor Indicates whether the destructor of the object should be called (true) or not (false).
+             */
+            void RawFree(datatype::OObject *object, bool dtor) noexcept {
+                const auto head = GC_GET_HEAD(object);
+                const auto size = head->size;
+
+                // TODO: if (dtor && O_GET_TYPE(object)->)
+
+                this->allocator_.free(head);
+
+                this->allocated_bytes_ -= size;
+            }
+
+            /**
              * @brief Removes the specified Fiber instance from the fiber tracking list in the garbage collector.
              *
              * This method ensures the safe removal of the Fiber instance from its internal doubly linked list,

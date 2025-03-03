@@ -22,8 +22,8 @@ bool AtomGATDtor(TypeInfo *self) {
     auto *gat = (GATMap *) self->aux.data;
 
     gat->Finalize([](const GATEntry *entry) {
-        Release(entry->key);
-        Release(entry->value);
+        O_FAST_DECREF(entry->key);
+        O_FAST_DECREF(entry->value);
     });
 
     orbiter::memory::IsolateAllocator allocator(self->isolate);
@@ -68,7 +68,7 @@ HAtom orbiter::datatype::AtomNew(Isolate *isolate, ORString *id) {
     assert(gat != nullptr);
 
     if (gat->Lookup(id, &entry))
-        return HAtom(O_INCREF(entry->value));
+        return HAtom(entry->value);
 
     if ((entry = gat->AllocHEntry()) == nullptr)
         return {};
@@ -84,16 +84,15 @@ HAtom orbiter::datatype::AtomNew(Isolate *isolate, ORString *id) {
     entry->value = atom;
 
     if (gat->Insert(entry)) {
-        atom->id = O_INCREF(id);
+        atom->id = O_FAST_INCREF(id);
 
-        O_INCREF(id);
-        O_INCREF(atom);
+        O_FAST_INCREF(id);
+        O_FAST_INCREF(atom);
 
         O_GC_TRACK_RETURN(isolate, atom, false);
     }
 
-    // TODO: Remove release
-    Release(atom);
+    isolate->gc->RawFree((OObject *) atom, false);
 
     gat->FreeHEntry(entry);
 
