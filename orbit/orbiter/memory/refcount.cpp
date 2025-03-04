@@ -29,7 +29,7 @@ SideTable *RefCount::AllocOrGetSideTable() {
 
     assert(obj->head_.type_ != nullptr);
 
-    const auto isolate = obj->head_.type_->isolate;
+    const auto isolate = O_GET_ISOLATE(obj);
 
     IsolateAllocator allocator(isolate);
     auto *side = allocator.alloc<SideTable>(sizeof(SideTable));

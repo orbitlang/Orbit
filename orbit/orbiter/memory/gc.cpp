@@ -354,15 +354,19 @@ OObject *GC::AllocObject(MSize size) noexcept {
 
     this->ThresholdCollect();
 
-    auto *obj = this->allocator_.alloc<GCHead>(allocate);
-    if (obj != nullptr) {
-        new(obj)GCHead();
+    auto *head = this->allocator_.alloc<GCHead>(allocate);
+    if (head != nullptr) {
+        new(head)GCHead();
 
-        obj->size = allocate;
+        head->size = allocate;
 
         this->allocated_bytes_ += allocate;
 
-        return GC_GET_OBJ(obj);
+        const auto obj = GC_GET_OBJ(head);
+
+        O_UNSAFE_GET_RC(obj) = (MSize) RCType::INLINE;
+
+        return obj;
     }
 
     return nullptr;

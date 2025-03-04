@@ -244,7 +244,6 @@ namespace orbiter::datatype {
         if (ret == nullptr)
             return nullptr;
 
-        O_UNSAFE_GET_RC(ret) = (MSize) memory::RCType::INLINE;
         O_GET_TYPE(ret) = O_INCREF(type);
 
         return (T *) ret;

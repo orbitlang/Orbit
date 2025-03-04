@@ -146,7 +146,6 @@ HOType orbiter::datatype::MakeType(Isolate *isolate, TypeInfo *super, InstanceTy
     if (ti == nullptr)
         return {};
 
-    O_UNSAFE_GET_RC(ti) = (MSize) memory::RCType::INLINE;
     O_GET_HEAD(ti).type_ = nullptr;
 
     U16 offset = sizeof(OObject);

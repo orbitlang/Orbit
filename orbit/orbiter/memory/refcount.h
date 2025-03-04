@@ -16,7 +16,7 @@
  *      |                                   |
  *      |                Inline flag ---+   |
  *      |                               |   |
- *      |             GC flag --+   |   |   |
+ *      |         GC flag(unused) --+   |   |
  *      |                           |   |   |
  *      v                           v   v   v
  *    +-+-+-----------------------+-+-+-+-+-+-+
@@ -24,6 +24,10 @@
  * +  +---+-----------------------+-+-+---+---+  +
  * |                                             |
  * +----------------+ uintptr_t +----------------+
+ *
+ * NOTE: The diagram illustrates how the memory layout is structured to store the tags
+ * required to identify the type of object. However, this version does not actively
+ * utilize the GC Flag, which remains part of the layout but is currently unused.
  */
 
 #define RC_GET_SIDETABLE(value)         ((SideTable *) (value & ~RCBitOffsets::GCMask))
@@ -36,8 +40,9 @@
 
 #define RC_CHECK_INLINE_OVERFLOW(value) (value & RCBitOffsets::StrongVFLAGMask)
 #define RC_CHECK_INLINE_ZERO(value)     ((value & RCBitOffsets::StrongMask) == 0)
+
+#define RC_CHECK_IS_SMI(value)          (value & RCBitOffsets::SMIMask)
 #define RC_CHECK_IS_GCOBJ(value)        (value & memory::RCBitOffsets::GCMask)
-#define RC_CHECK_IS_STATIC(value)       (value & RCBitOffsets::StaticMask)
 
 #define RC_SETBIT_GC(value)             (value | RCBitOffsets::GCMask)
 
@@ -53,8 +58,7 @@ namespace orbiter::memory {
     using RCObject = datatype::OObject *;
 
     enum class RCType {
-        INLINE = 0x2,
-        GC = 0x6
+        INLINE = 0x2
     };
 
     /**
@@ -94,6 +98,7 @@ namespace orbiter::memory {
 
         /**
          * @brief Increment strong references counter.
+         *
          * @return Returns true on overflow, otherwise false.
          */
         bool Increment() {
@@ -103,6 +108,7 @@ namespace orbiter::memory {
 
         /**
          * @brief Decrement strong references counter.
+         *
          * @return Returns true if there are no more strong references to the object, otherwise false.
          */
         bool Decrement() {
@@ -111,14 +117,8 @@ namespace orbiter::memory {
         }
 
         /**
-         * @brief Set the GC bit.
-         */
-        void SetGCBit() {
-            this->bits_ |= RCBitOffsets::GCMask;
-        }
-
-        /**
          * @brief Get strong references count.
+         *
          * @return Strong references count.
          */
         [[nodiscard]] uintptr_t GetStrong() const {
@@ -127,6 +127,7 @@ namespace orbiter::memory {
 
         /**
          * @brief Get the pointer to the SideTable.
+         *
          * @return Pointer to the SideTable.
          */
         [[nodiscard]] SideTable *GetSideTable() const {
@@ -135,18 +136,11 @@ namespace orbiter::memory {
 
         /**
          * @brief Check if the associated object has an inline counter.
+         *
          * @return True if the object has an inline counter, false otherwise.
          */
         [[nodiscard]] bool IsInlineCounter() const {
             return GET_FIELD(Inline);
-        }
-
-        /**
-         * @brief Check if the object is managed by the GC.
-         * @return True if the object is managed by the GC, false otherwise.
-         */
-        [[nodiscard]] bool IsGcObject() const {
-            return GET_FIELD(GC);
         }
 
 #undef SET_FIELD
@@ -174,18 +168,21 @@ namespace orbiter::memory {
 
         /**
          * @brief Release a strong reference.
+         *
          * @return True if the object no longer has strong references, false otherwise.
          */
         bool DecStrong(uintptr_t *out);
 
         /**
          * @brief Release a weak reference.
+         *
          * @return True if the object no longer has weak references, false otherwise.
          */
         bool DecWeak() const;
 
         /**
          * @brief Check if the object has the SideTable.
+         *
          * @return True if the object has the SideTable, false otherwise.
          */
         bool HaveSideTable() const;
@@ -202,6 +199,7 @@ namespace orbiter::memory {
 
         /**
          * @brief Check if the object is managed by the GC.
+         *
          * @return True if the object is managed by the GC, false otherwise.
          */
         bool IsGcObject() const {
@@ -229,12 +227,14 @@ namespace orbiter::memory {
 
         /**
          * @brief Get strong references count.
+         *
          * @return Strong references count.
          */
         uintptr_t GetStrongCount() const;
 
         /**
          * @brief Get weak references count.
+         *
          * @return weak references count.
          */
         uintptr_t GetWeakCount() const;
