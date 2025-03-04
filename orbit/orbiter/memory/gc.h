@@ -44,12 +44,17 @@ namespace orbiter {
             MSize r_count = 0;
             MSize size = 0;
 
-            [[nodiscard]] bool IsTracked() const {
-                return this->prev != nullptr;
+            [[nodiscard]] bool IsContainer() const {
+                return ((((uintptr_t) this->next) & GCBitOffsets::ContainerTypeMask) >>
+                        GCBitOffsets::ContainerTypeShift);
             }
 
             [[nodiscard]] bool IsFinalized() const {
                 return ((((uintptr_t) this->next) & GCBitOffsets::FinalizedMask) >> GCBitOffsets::FinalizedShift);
+            }
+
+            [[nodiscard]] bool IsTracked() const {
+                return this->prev != nullptr;
             }
 
             [[nodiscard]] bool IsVisited() const {
@@ -60,22 +65,24 @@ namespace orbiter {
                 return (GCHead *) (((uintptr_t) this->next) & GCBitOffsets::AddressMask);
             }
 
+            void SetContainerType() {
+                this->next = (GCHead *) ((uintptr_t) this->next | GCBitOffsets::ContainerTypeMask);
+            }
+
+            void SetFinalize(bool visited) {
+                this->next = (GCHead *) (visited
+                                             ? (uintptr_t) this->next | GCBitOffsets::FinalizedMask
+                                             : (uintptr_t) this->next & ~GCBitOffsets::FinalizedMask);
+            }
+
             void SetNext(GCHead *head) {
                 this->next = (GCHead *) (((uintptr_t) head) | ((uintptr_t) this->next & ~GCBitOffsets::AddressMask));
             }
 
-            void SetFinalize(bool visited) {
-                if (visited)
-                    this->next = (GCHead *) (((uintptr_t) this->next) | GCBitOffsets::FinalizedMask);
-                else
-                    this->next = (GCHead *) (((uintptr_t) this->next) & ~GCBitOffsets::FinalizedMask);
-            }
-
             void SetVisited(bool visited) {
-                if (visited)
-                    this->next = (GCHead *) (((uintptr_t) this->next) | GCBitOffsets::VisitedMask);
-                else
-                    this->next = (GCHead *) (((uintptr_t) this->next) & ~GCBitOffsets::VisitedMask);
+                this->next = (GCHead *) (visited
+                                             ? (uintptr_t) this->next | GCBitOffsets::VisitedMask
+                                             : (uintptr_t) this->next & ~GCBitOffsets::VisitedMask);
             }
         };
 
