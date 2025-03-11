@@ -6,14 +6,24 @@
 
 using namespace orbiter::datatype;
 
+void ContextTrace(const Context *self, GCTraceCallback callback, MSize epoch) {
+    // TODO: Sync?!
+    for (const auto *cursor = self->names.iter_begin; cursor != nullptr; cursor = cursor->iter_next) {
+        callback((OObject *) cursor->key, epoch);
+
+        callback(cursor->value.value, epoch);
+    }
+}
+
 bool orbiter::datatype::ContextDefine(Context *context, ORString *name, OObject *value, PropertyFlag flags) {
     CtxHEntry *entry;
 
     context->names.Lookup(name, &entry);
 
     if (entry != nullptr) {
-        entry->value.value = Handle(value);
+        entry->value.value = value;
         entry->value.detail = flags;
+
         return true;
     }
 
@@ -21,19 +31,11 @@ bool orbiter::datatype::ContextDefine(Context *context, ORString *name, OObject 
     if (entry == nullptr)
         return false;
 
-    entry->key = O_FAST_INCREF(name);
-    entry->value.value = Handle(value);
+    entry->key = name;
+    entry->value.value = value;
     entry->value.detail = flags;
 
-    if (!context->names.Insert(entry)) {
-        O_FAST_DECREF(entry->key);
-
-        entry->value.value.reset();
-
-        return false;
-    }
-
-    return true;
+    return context->names.Insert(entry);
 }
 
 bool orbiter::datatype::ContextDefine(Context *context, const char *name, OObject *value, PropertyFlag flags) {
@@ -42,7 +44,7 @@ bool orbiter::datatype::ContextDefine(Context *context, const char *name, OObjec
     return ContextDefine(context, oname.get(), value, flags);
 }
 
-bool orbiter::datatype::ContextLookup(const Context *context, ORString *name, OObject **out_value,
+bool orbiter::datatype::ContextLookup(const Context *context, ORString *name, HOObject &out_value,
                                       PropertyDetail *out_detail) {
     CtxHEntry *entry;
 
@@ -51,7 +53,7 @@ bool orbiter::datatype::ContextLookup(const Context *context, ORString *name, OO
         return false;
     }
 
-    *out_value = entry->value.value.get_inc();
+    out_value = Handle(entry->value.value);
 
     if (out_detail != nullptr)
         *out_detail = entry->value.detail;
@@ -59,14 +61,14 @@ bool orbiter::datatype::ContextLookup(const Context *context, ORString *name, OO
     return true;
 }
 
-bool orbiter::datatype::ContextLookup(const Context *context, const char *name, OObject **out_value,
+bool orbiter::datatype::ContextLookup(const Context *context, const char *name, HOObject &out_value,
                                       PropertyDetail *out_detail) {
     auto oname = ORStringNew(O_GET_ISOLATE(context), name);
 
     return ContextLookup(context, oname.get(), out_value, out_detail);
 }
 
-bool orbiter::datatype::ContextSet(Context *context, ORString *name, OObject *value) {
+bool orbiter::datatype::ContextSet(const Context *context, ORString *name, OObject *value) {
     CtxHEntry *entry;
 
     if (!context->names.Lookup(name, &entry)) {
@@ -79,12 +81,14 @@ bool orbiter::datatype::ContextSet(Context *context, ORString *name, OObject *va
         return false;
     }
 
-    entry->value.value = Handle(value);
+    entry->value.value = value;
 
     return true;
 }
 
 bool orbiter::datatype::ContextSetup(TypeInfo *self) {
+    self->trace = (TraceFn) ContextTrace;
+
     return true;
 }
 
@@ -106,6 +110,6 @@ HContext orbiter::datatype::ContextNew(Isolate *isolate) {
 }
 
 HOType orbiter::datatype::ContextInit(Isolate *isolate) {
-    auto module = MakeType(isolate, InstanceType::CONTEXT, sizeof(Context) - sizeof(OObject), 0, 0);
-    return module;
+    auto context = MakeType(isolate, InstanceType::CONTEXT, sizeof(Context) - sizeof(OObject), 0, 0);
+    return context;
 }

@@ -7,6 +7,10 @@
 
 using namespace orbiter::datatype;
 
+bool orbiter::datatype::ModuleSetup(TypeInfo *self) {
+    return true;
+}
+
 HModule orbiter::datatype::ModuleNew(TypeInfo *tp_module) {
     auto *isolate = O_GET_ISOLATE(tp_module);
 
@@ -55,8 +59,4 @@ HOType orbiter::datatype::ModuleTypeNew(Code *code, ORString *name) {
     }
 
     return module;
-}
-
-bool orbiter::datatype::ModuleSetup(TypeInfo *self) {
-    return true;
 }

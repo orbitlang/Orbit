@@ -234,7 +234,7 @@ void GC::Trace(OObject *object, MSize epoch) noexcept {
         }
 
         if (info->trace != nullptr)
-            info->trace(object, Trace);
+            info->trace(object, Trace, epoch);
 
         info = info->head_.type_;
     } while (info != nullptr);

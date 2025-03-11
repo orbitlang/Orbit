@@ -16,8 +16,8 @@ HCode orbiter::datatype::CodeNew(Isolate *isolate, const unsigned char *m_code, 
 
     if (code != nullptr) {
         code->codes = nullptr;
-        code->unknown_symbols = O_INCREF(unknown_symbols);
-        code->static_resources = O_INCREF(static_resources);
+        code->unknown_symbols = O_FAST_INCREF(unknown_symbols);
+        code->static_resources = O_FAST_INCREF(static_resources);
         code->doc = nullptr;
 
         code->exported.symbols = nullptr;

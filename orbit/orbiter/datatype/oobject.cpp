@@ -36,9 +36,9 @@ bool orbiter::datatype::TIPropertyAdd(TypeInfo *type, OObject *name, OObject *va
             if (property->name != nullptr)
                 tmp = *property;
 
-            property->name = O_INCREF(orname);
+            property->name = O_FAST_INCREF(orname);
 
-            property->value = value;
+            property->value = O_INCREF(value);
 
             property->detail = flags;
 

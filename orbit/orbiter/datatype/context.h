@@ -39,7 +39,7 @@ namespace orbiter::datatype {
 
     class PropertyStore {
     public:
-        Handle<OObject> value;
+        OObject *value;
 
         PropertyDetail detail;
     };
@@ -100,12 +100,12 @@ namespace orbiter::datatype {
      *
      * @param context Pointer to the Context object in which the lookup is performed
      * @param name The name of the property to search for, provided as an ORString
-     * @param out_value Pointer to an OObject pointer that receives the value of the found property
+     * @param out_value Reference to an HOObject that will contain the value of the found property, if successful
      * @param out_detail Pointer to a PropertyDetail structure that receives additional details of the property, if found
      *
      * @return true if the property was found and successfully retrieved, false otherwise
      */
-    bool ContextLookup(const Context *context, ORString *name, OObject **out_value, PropertyDetail *out_detail);
+    bool ContextLookup(const Context *context, ORString *name, HOObject &out_value, PropertyDetail *out_detail);
 
     /**
      * @brief Look up a property within a context by its name
@@ -115,12 +115,12 @@ namespace orbiter::datatype {
      *
      * @param context Pointer to the Context where the lookup will be performed
      * @param name The name of the property to look up
-     * @param out_value Output parameter that will hold the pointer to the found property value, if successful
+     * @param out_value Reference to an HOObject that will contain the value of the found property, if successful
      * @param out_detail Output parameter that will hold details about the found property
      *
      * @return true if the property is successfully found, false otherwise
      */
-    bool ContextLookup(const Context *context, const char *name, OObject **out_value, PropertyDetail *out_detail);
+    bool ContextLookup(const Context *context, const char *name, HOObject &out_value, PropertyDetail *out_detail);
 
     /**
      * @brief Updates the value associated with a given name in the specified context.
@@ -136,7 +136,7 @@ namespace orbiter::datatype {
      * @return true if the value was successfully updated, false if the name was not found
      *         or the entry is marked as constant.
      */
-    bool ContextSet(Context *context, ORString *name, OObject *value);
+    bool ContextSet(const Context *context, ORString *name, OObject *value);
 
     /**
      * @brief Set up additional features and properties for the specified type
