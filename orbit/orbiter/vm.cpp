@@ -28,6 +28,7 @@ CGOTO
 #define FETCH_OP(instr)         ((OPCode) (instr >> 24))
 
 #define NEXT_IP                 (regs->IP.reg += sizeof(MachineWord))
+#define JMP_TO(offset)          (regs->IP.reg = (PtrSize) code->m_code + offset)
 
 #define REGISTER(registers, n)  (*((PtrSize *) (((Register *) (registers)) + n)))
 
@@ -50,6 +51,22 @@ CGOTO
         const auto instr = FETCH;
 
         switch (FETCH_OP(instr)) {
+            TARGET_OP(EQ) {
+                const auto dst = FETCH_R_DST(instr);
+                const auto src_l = (instr >> 16) & 0xFu;
+                const auto src_r = (instr >> 12) & 0xFu;
+                const auto flags = (EqualityMode) ((instr >> 8) & 0xFu);
+                bool res;
+
+                if (flags == EqualityMode::NORMAL)
+                    res = Equal((const OObject *) REG_N(src_l), (const OObject *) REG_N(src_r));
+                else
+                    res = EqualStrict((const OObject *) REG_N(src_l), (const OObject *) REG_N(src_r));
+
+                REG_N(dst) = BOOL_TO_OBOOL(res);
+
+                DISPATCH;
+            }
             TARGET_OP(LDCST) {
                 const auto dst = FETCH_R_DST(instr);
                 const auto flags = (LoadConstantMode) FETCH_R_SRC(instr);
@@ -79,7 +96,8 @@ CGOTO
                 const auto value = REG_N(FETCH_R_SRC(instr));
                 const auto k_index = FETCH_IMM(instr);
 
-                ContextSet(fiber->context.context, (ORString *) code->unknown_symbols->objects[k_index],
+                ContextSet(fiber->context.context,
+                           (ORString *) code->unknown_symbols->objects[k_index],
                            (OObject *) value);
 
                 DISPATCH;
@@ -90,7 +108,7 @@ CGOTO
 
                 assert(module_slots != nullptr);
 
-                *(module_slots + slot) = O_INCREF((OObject *) value);
+                *(module_slots + slot) = (OObject *) value;
 
                 DISPATCH;
             }
@@ -104,21 +122,47 @@ CGOTO
 
                 DISPATCH;
             }
-            TARGET_OP(MOV) {
+            TARGET_OP(JEN) {
                 const auto src = FETCH_R_SRC(instr);
-                const auto dst = FETCH_R_DST(instr);
+                const auto offset = FETCH_IMM(instr);
 
-                REG_N(dst) = (PtrSize) O_INCREF((OObject*)REG_N(src));
+                if (REG_N(src) == (PtrSize) kOddBallNIL) {
+                    JMP_TO(offset);
+
+                    continue;
+                }
 
                 DISPATCH;
             }
-            TARGET_OP(MOWN) {
+            TARGET_OP(JF) {
                 const auto src = FETCH_R_SRC(instr);
+                const auto offset = FETCH_IMM(instr);
 
-                REG_N(FETCH_R_DST(instr)) = REG_N(src);
-                REG_N(src) = 0;
+                if (REG_N(src) == kOddBallFALSE) {
+                    JMP_TO(offset);
+
+                    continue;
+                }
 
                 DISPATCH;
+            }
+            TARGET_OP(JT) {
+                const auto src = FETCH_R_SRC(instr);
+                const auto offset = FETCH_IMM(instr);
+
+                if (REG_N(src) == kOddBallTRUE) {
+                    JMP_TO(offset);
+
+                    continue;
+                }
+
+                DISPATCH;
+            }
+            TARGET_OP(JMP) {
+                const auto offset = FETCH_IMM(instr);
+
+                JMP_TO(offset);
+                continue;
             }
             default:
                 DISPATCH;

@@ -22,8 +22,13 @@ namespace orbiter::datatype {
     constexpr auto kOddBallFALSE = 0x08u | kOddBallMask;
     constexpr auto kOddBallTRUE = 0x10u | kOddBallMask;
 
+#define BOOL_TO_OBOOL(value) ((value) ? kOddBallTRUE : kOddBallFALSE)
+#define OBOOL_TO_BOOL(value) ((value) == kOddBallTRUE)
+
     using DtorFn = bool (*)(OObject *);
-    using TraceFn = void (*)(OObject *self, void (*gc_callback)(OObject *, MSize));
+
+    using GCTraceCallback = void (*)(OObject *, MSize);
+    using TraceFn = void (*)(const OObject *self, GCTraceCallback callback, MSize epoch);
 
     using FunctionPtr = OObject *(*)(struct Function *, OObject **argv, OObject *kwargs, U16 argc);
 

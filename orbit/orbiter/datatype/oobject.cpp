@@ -13,6 +13,10 @@ bool orbiter::datatype::Equal(const OObject *left, const OObject *right) {
     return false;
 }
 
+bool orbiter::datatype::EqualStrict(const OObject *left, const OObject *right) {
+    return false;
+}
+
 bool orbiter::datatype::TIPropertyAdd(TypeInfo *type, const char *name, OObject *value, PropertyFlag flags) {
     auto orname = ORStringIntern(type->isolate, name);
     if (!orname)

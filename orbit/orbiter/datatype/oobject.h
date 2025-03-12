@@ -110,6 +110,8 @@ namespace orbiter::datatype {
 
     bool Equal(const OObject *left, const OObject *right);
 
+    bool EqualStrict(const OObject *left, const OObject *right);
+
     /**
      * @brief Add a property to a TypeInfo
      *
