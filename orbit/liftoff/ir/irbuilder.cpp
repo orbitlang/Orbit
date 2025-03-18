@@ -417,6 +417,8 @@ Instruction *IRBuilder::visitFunction(const parser::Function *node) {
     // params / ret addr / EBP / [locals] / [closure_ptr]
 
     auto f_flags = orbiter::LoadFuncFlags::SIMPLE;
+    if (node->async)
+        f_flags |= orbiter::LoadFuncFlags::ASYNC;
 
     this->builder_.IRContextNew(IRContextType::FUNCTION, 0, this->sym_t_->scope->GetLocalVariableCount());
 
