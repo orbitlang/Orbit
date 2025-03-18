@@ -16,6 +16,8 @@ namespace orbiter::datatype {
     class Handle {
         T *object_;
 
+        template<typename U> friend class Handle;
+
     public:
         Handle() noexcept: object_(nullptr) {
         }
@@ -23,7 +25,8 @@ namespace orbiter::datatype {
         explicit Handle(T *object) noexcept: object_(O_INCREF(object)) {
         }
 
-        Handle(Handle &&other) noexcept: object_(other.object_) {
+        template<typename U>
+        explicit Handle(Handle<U> &&other) noexcept: object_((T *) other.object_) {
             other.object_ = nullptr;
         }
 
