@@ -10,7 +10,7 @@
 #include <orbit/orbiter/isolate.h>
 
 #include <orbit/orbiter/datatype/oobject.h>
-#include <orbit/orbiter/datatype/orstring.h>
+#include <orbit/orbiter/datatype/code.h>
 
 namespace orbiter::datatype {
     enum class FunctionKind : U8 {
@@ -39,7 +39,7 @@ namespace orbiter::datatype {
 
         union {
             /// Pointer to Orbit code.
-            OObject *code; // TODO: Code obj
+            Code *code;
 
             /// Pointer to native code.
             FunctionPtr func;
@@ -98,6 +98,19 @@ namespace orbiter::datatype {
      * @return Pointer to the newly created Function
      */
     HFunction FunctionNew(Isolate *isolate, const FunctionDef *def);
+
+    /**
+     * @brief Create a new Function object
+     *
+     * This function initializes a new Function object with the specified code
+     * and kind. The kind determines the type of the function (e.g., async, method, ...).
+     *
+     * @param code Pointer to the Code object representing the function's implementation
+     * @param kind The kind of the function (async, method, etc.)
+     *
+     * @return Handle to the newly created Function object
+     */
+    HFunction FunctionNew(Code *code, FunctionKind kind);
 
     /**
      * @brief Initialize and create the specified type

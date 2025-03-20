@@ -8,11 +8,14 @@ using namespace orbiter::datatype;
 
 FuncShared *FunSharedNew(orbiter::Isolate *isolate, const char *name, const char *doc,
                          U16 arity, FunctionPtr func, FunctionKind kind) {
-    auto s_name = ORStringNew(isolate, name);
-    if (!s_name)
-        return nullptr;
-
+    Handle<ORString> s_name;
     Handle<ORString> s_doc;
+
+    if (name != nullptr) {
+        s_name = ORStringNew(isolate, name);
+        if (!s_name)
+            return nullptr;
+    }
 
     if (doc != nullptr) {
         s_doc = ORStringNew(isolate, doc);
@@ -67,6 +70,27 @@ HFunction orbiter::datatype::FunctionNew(Isolate *isolate, const FunctionDef *de
 
     auto *fn = MakeObject<Function>(isolate, InstanceType::FUNCTION);
 
+    if (fn != nullptr) {
+        fn->shared = f_shared;
+
+        O_GC_TRACK_RETURN(isolate, fn, false);
+    }
+
+    FunSharedDel(isolate, f_shared);
+
+    return {};
+}
+
+HFunction orbiter::datatype::FunctionNew(Code *code, FunctionKind kind) {
+    auto *isolate = O_GET_ISOLATE(code);
+
+    auto *f_shared = FunSharedNew(isolate, nullptr, nullptr, code->slots_count, nullptr, kind);
+    if (f_shared != nullptr) {
+        f_shared->doc = O_FAST_INCREF(code->doc);
+        f_shared->code = O_FAST_INCREF(code);
+    }
+
+    auto *fn = MakeObject<Function>(isolate, InstanceType::FUNCTION);
     if (fn != nullptr) {
         fn->shared = f_shared;
 
