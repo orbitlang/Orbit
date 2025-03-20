@@ -160,6 +160,26 @@ CGOTO
 
                 DISPATCH;
             }
+            TARGET_OP(SKLDR) {
+                const auto dst = FETCH_R_DST(instr);
+                const auto slot = FETCH_IMM(instr);
+
+                REG_N(dst) = (PtrSize) stack->stack[regs->BP.reg + slot];
+
+                DISPATCH;
+            }
+            TARGET_OP(SKSTR) {
+                const auto src = FETCH_R_SRC(instr);
+                const auto slot = FETCH_IMM(instr);
+                auto value = (OObject *) REG_N(src);
+
+                stack->stack[regs->BP.reg + slot] = (PtrSize) value;
+
+                if (O_IS_OBJECT(value))
+                    O_GET_RC(value).IncStrong();
+
+                DISPATCH;
+            }
             TARGET_OP(PUSH) {
                 const auto src = FETCH_R_SRC(instr);
                 auto value = (OObject *) REG_N(src);
