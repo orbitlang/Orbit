@@ -132,6 +132,7 @@ namespace orbiter {
 
         PUSH, // Push value onto stack:             OPCODE | 4 RESERVED | 4 SRC | 20 RESERVED
         POP, // Pop value from stack:               OPCODE | 4 DST | 20 RESERVED
+        POPN, // Pop N values from stack:           OPCODE | 8 RESERVED | 16 UNSIGNED OFFSET
 
         CLONEW, // Create new closure object:       OPCODE | 8 RESERVED | 16 UNSIGNED SLOTS
         CLOLDR, // Load from closure object:        OPCODE | 4 DST      | 4 FLAGS(ClosureLSMode) | 16 UNSIGNED OFFSET

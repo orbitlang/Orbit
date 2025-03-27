@@ -212,6 +212,7 @@ unsigned char *Codegen::EmitOpcodes(BasicBlock *block, unsigned char *m_code) {
                                                             ((ir::LoadStoreClosureWithOffsetInstr*)instr)->offset);
                 break;
             case orbiter::OPCode::ALLOCA:
+            case orbiter::OPCode::POPN:
                 *(orbiter::MachineWord *) m_code = EMIT_FO(instr->opcode,
                                                            ((ir::UnaryImmInstr*)instr)->flags,
                                                            ((ir::UnaryImmInstr*)instr)->imm);

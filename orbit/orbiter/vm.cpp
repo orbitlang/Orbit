@@ -263,7 +263,7 @@ CGOTO
                 }
 
                 *ACCESS_STACK_SP(0) = (PtrSize) value;
-                regs->SP.reg += sizeof(void *);
+                REG_SP += sizeof(void *);
 
                 if (O_IS_OBJECT(value))
                     O_GET_RC(value).IncStrong();
@@ -272,17 +272,31 @@ CGOTO
             }
             TARGET_OP(POP) {
                 const auto dst = FETCH_R_DST(instr);
-                const auto target = ACCESS_STACK_SP(0);
-                auto value = *((OObject **) target);
+                const auto target = (OObject **) ACCESS_STACK_SP(0);
+                auto value = *target;
 
-                *target = 0;
+                *target = nullptr;
 
-                regs->SP.reg -= sizeof(void *);
+                REG_SP -= sizeof(void *);
 
                 REG_N(dst) = (PtrSize) value;
 
-                if (O_IS_OBJECT(value))
-                    O_GET_RC(value).DecStrong(nullptr);
+                O_DECREF(value);
+
+                DISPATCH;
+            }
+            TARGET_OP(POPN) {
+                const auto target = (OObject **) ACCESS_STACK_SP(0);
+
+                REG_SP -= FETCH_IMM(instr) * sizeof(void *);
+
+                auto cursor = (OObject **) ACCESS_STACK_SP(0);
+
+                while (cursor < target) {
+                    O_DECREF(*cursor);
+
+                    cursor++;
+                }
 
                 DISPATCH;
             }
