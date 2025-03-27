@@ -15,6 +15,8 @@
 using namespace orbiter;
 using namespace orbiter::datatype;
 
+constexpr auto kSkOffset = sizeof(FiberContext) + (sizeof(void *) * 2);
+
 HOObject VMAdd(Isolate *isolate, PtrSize left, PtrSize right) {
     if (O_IS_SMI(left) && O_IS_SMI(right)) {
         left -= 1;
@@ -57,10 +59,15 @@ CGOTO
 #define REG_BP                  REG_N(14)
 #define REG_SP                  REG_N(15)
 
+#define REG_IP                  (regs->IP.reg)
+
 #define FETCH_R_DST(instr)      ((instr >> 20) & 0xFu)
 #define FETCH_R_SRC(instr)      ((instr >> 16) & 0xFu)
 #define FETCH_R_RSRC(instr)     ((instr >> 12) & 0xFu)
 #define FETCH_IMM(instr)        ((instr) & 0xFFFFu)
+
+#define ACCESS_STACK_BP(offset) ((PtrSize *)(stack->stack + (regs->BP.reg + (offset))))
+#define ACCESS_STACK_SP(offset) ((PtrSize *)(stack->stack + (regs->SP.reg + (offset))))
 
     auto *code = fiber->context.code;
 
@@ -96,6 +103,64 @@ CGOTO
                 REG_N(dst) = BOOL_TO_OBOOL(res);
 
                 DISPATCH;
+            }
+            TARGET_OP(RET) {
+                const auto src = FETCH_R_SRC(instr);
+
+                // FIXME: Cleanup local variables!
+
+                REG_RR = REG_N(src);
+
+                REG_BP -= sizeof(void *);
+                REG_IP = *ACCESS_STACK_BP(0) + sizeof(MachineWord);
+
+                REG_BP -= sizeof(void *);
+                REG_SP = REG_BP;
+
+                REG_BP = *ACCESS_STACK_SP(0);
+
+                REG_SP -= sizeof(FiberContext);
+                stratum::util::MemoryCopy(&fiber->context.context, stack->stack + regs->SP.reg, sizeof(FiberContext));
+
+                code = fiber->context.code;
+
+                // FIXME: Cleanup parameters!
+
+                continue;
+            }
+            TARGET_OP(CALL) {
+                const auto src = FETCH_R_SRC(instr);
+                const auto arity = FETCH_IMM(instr);
+
+                const auto func = (Function *) REG_N(src);
+
+                // FIXME: check space allocation before call, avoid check on ALLOCA!
+                if (!stack->Check(fiber->isolate, regs->SP.reg, sizeof(FiberContext))) {
+                    // TODO: ERROR;
+                }
+
+                // TODO: Check arity and parameters here
+
+                stratum::util::MemoryCopy(stack->stack + regs->SP.reg, &fiber->context.context, sizeof(FiberContext));
+                regs->SP.reg += sizeof(FiberContext);
+
+                fiber->context.context = O_FAST_INCREF(func->shared->context);
+                fiber->context.module = O_INCREF(func->shared->module);
+                fiber->context.code = O_FAST_INCREF(func->shared->code);
+
+                *ACCESS_STACK_SP(0) = REG_BP;
+                regs->SP.reg += sizeof(void *);
+
+                *ACCESS_STACK_SP(0) = REG_IP;
+                regs->SP.reg += sizeof(void *);
+
+                REG_BP = REG_SP;
+
+                code = func->shared->code;
+
+                REG_IP = (PtrSize) code->m_code;
+
+                continue;
             }
             TARGET_OP(LDCODE) {
                 const auto dst = FETCH_R_DST(instr);
@@ -162,21 +227,30 @@ CGOTO
             }
             TARGET_OP(SKLDR) {
                 const auto dst = FETCH_R_DST(instr);
-                const auto slot = FETCH_IMM(instr);
+                auto slot = ((short) FETCH_IMM(instr)) * (short) sizeof(void *);
 
-                REG_N(dst) = (PtrSize) stack->stack[regs->BP.reg + slot];
+                if (slot < 0)
+                    slot -= kSkOffset;
+
+                REG_N(dst) = *ACCESS_STACK_BP(slot);
 
                 DISPATCH;
             }
             TARGET_OP(SKSTR) {
                 const auto src = FETCH_R_SRC(instr);
-                const auto slot = FETCH_IMM(instr);
+                auto slot = ((short) FETCH_IMM(instr)) * (short) sizeof(void *);
                 auto value = (OObject *) REG_N(src);
 
-                stack->stack[regs->BP.reg + slot] = (PtrSize) value;
+                if (slot < 0)
+                    slot -= kSkOffset;
 
-                if (O_IS_OBJECT(value))
-                    O_GET_RC(value).IncStrong();
+                const auto target = (OObject **) ACCESS_STACK_BP(slot);
+
+                O_DECREF(*target);
+
+                *target = value;
+
+                O_INCREF(value);
 
                 DISPATCH;
             }
@@ -188,7 +262,7 @@ CGOTO
                     // TODO: Error!
                 }
 
-                stack->stack[regs->SP.reg] = (PtrSize) value;
+                *ACCESS_STACK_SP(0) = (PtrSize) value;
                 regs->SP.reg += sizeof(void *);
 
                 if (O_IS_OBJECT(value))
@@ -198,9 +272,10 @@ CGOTO
             }
             TARGET_OP(POP) {
                 const auto dst = FETCH_R_DST(instr);
-                auto value = (OObject *) stack->stack[regs->SP.reg];
+                const auto target = ACCESS_STACK_SP(0);
+                auto value = *((OObject **) target);
 
-                stack->stack[regs->SP.reg] = 0;
+                *target = 0;
 
                 regs->SP.reg -= sizeof(void *);
 

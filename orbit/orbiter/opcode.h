@@ -108,7 +108,7 @@ namespace orbiter {
         NEG, // Arithmetic negation (-value)
         NOT, // Logical NOT (!value)
 
-        // Format: OPCODE | 4 SRC | 20 RESERVED
+        // Format: OPCODE | 4 RESERVED | 4 SRC | 20 RESERVED
         PANIC, // Start panic
         RET, // Return instruction
         YLD, // Yield instruction
