@@ -119,7 +119,15 @@ Instruction *Builder::CreateJump(BasicBlock *destination) {
     return jmp;
 }
 
-Instruction *Builder::CreateStoreVariable(OPCode opcode, I16 offset, U8 flags, Instruction *value) {
+Instruction *Builder::CreateManip(const OPCode opcode, Instruction *target, Instruction *src, Instruction *src1) {
+    return  this->CreateInstruction<ManipInstruction>(opcode, target, src, src1);
+}
+
+Instruction *Builder::CreateManip(const OPCode opcode, Instruction *target, Instruction *src) {
+    return  this->CreateInstruction<ManipInstruction>(opcode, target, src);
+}
+
+Instruction *Builder::CreateStoreVariable(const OPCode opcode, I16 offset, U8 flags, Instruction *value) {
     auto *instr = this->CreateInstruction<OffsetInstruction>(opcode, offset, value);
 
     instr->flags = flags;

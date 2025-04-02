@@ -335,6 +335,60 @@ CGOTO
 
                 DISPATCH;
             }
+            TARGET_OP(NDICT) {
+                const auto dst = FETCH_R_DST(instr);
+                const auto imm = FETCH_IMM(instr);
+
+                // TODO: dict here
+                assert(false);
+
+                DISPATCH;
+            }
+            TARGET_OP(NLIST) {
+                const auto dst = FETCH_R_DST(instr);
+                const auto imm = FETCH_IMM(instr);
+
+                auto list = ListNew(fiber->isolate, imm);
+                if (!list) {
+                    // FIXME: Error!
+                }
+
+                REG_N(dst) = (PtrSize) list.get();
+
+                DISPATCH;
+            }
+            TARGET_OP(NSET){
+                const auto dst = FETCH_R_DST(instr);
+                const auto imm = FETCH_IMM(instr);
+
+                // TODO: Set here!
+                assert(false);
+
+                DISPATCH;
+            }
+            TARGET_OP(NTUPLE){
+                const auto dst = FETCH_R_DST(instr);
+                const auto imm = FETCH_IMM(instr);
+
+                // TODO: Tuple here!
+                assert(false);
+
+                DISPATCH;
+            }
+            TARGET_OP(ADDELEM) {
+                const auto dst = FETCH_R_DST(instr);
+                const auto src = FETCH_R_SRC(instr);
+                const auto value = FETCH_R_RSRC(instr);
+
+                auto *obj = (OObject *) REG_N(dst);
+
+                if (O_IS_TYPE(obj, InstanceType::LIST))
+                    ListAppend((List *) obj, (OObject *) REG_N(src));
+                else
+                    assert(false);
+
+                DISPATCH;
+            }
             TARGET_OP(JEN) {
                 const auto src = FETCH_R_SRC(instr);
                 const auto offset = FETCH_IMM(instr);

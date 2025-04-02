@@ -144,6 +144,13 @@ namespace orbiter {
 
         LDFUNC, // Create function from Code object:        OPCODE | 4 DST | 4 SRC | 4 FLAGS | 12 RESERVED
 
+        // Container object
+        NDICT, // Create new dict                           OPCODE | 4 DST | 4 RESERVED | 16 UNSIGNED OFFSET
+        NLIST, // Create new list                           OPCODE | 4 DST | 4 RESERVED | 16 UNSIGNED OFFSET
+        NSET, // Create new set                             OPCODE | 4 DST | 4 RESERVED | 16 UNSIGNED OFFSET
+        NTUPLE, // Create new tuple                         OPCODE | 4 DST | 4 RESERVED | 16 UNSIGNED OFFSET
+        ADDELEM, // Push value to container                 OPCODE | 4 DST (Container) | 4 SRC | 4 V_SRC | 12 RESERVED
+
         // Jump Instructions
         JEN, // Jump if nil:                        OPCODE | 4 RESERVED | 4 SRC | 16 OFFSET
         JF, // Jump if false:                       OPCODE | 4 RESERVED | 4 SRC | 16 OFFSET

@@ -138,6 +138,10 @@ namespace liftoff::ir {
 
         Instruction *CreateJump(BasicBlock *destination);
 
+        Instruction *CreateManip(orbiter::OPCode opcode, Instruction *target, Instruction *src, Instruction *src1);
+
+        Instruction *CreateManip(orbiter::OPCode opcode, Instruction *target, Instruction *src);
+
         Instruction *CreateStoreVariable(orbiter::OPCode opcode, I16 offset, U8 flags, Instruction *value);
 
         Instruction *CreateReturn(Instruction *s_reg, bool yield);

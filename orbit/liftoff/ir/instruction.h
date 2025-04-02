@@ -172,6 +172,26 @@ namespace liftoff::ir {
         }
     };
 
+    class ManipInstruction final : public PhysInstruction {
+        friend Builder;
+
+    public:
+        ManipInstruction(orbiter::OPCode opcode, Instruction *target, Instruction *src, Instruction *src1) noexcept: PhysInstruction(opcode, 3) {
+            this->SetOperand(0, target);
+            this->SetOperand(1, src);
+            this->SetOperand(2, src1);
+
+            this->assigned_reg = kDoNotAllocateReg;
+        }
+
+        ManipInstruction(orbiter::OPCode opcode, Instruction *target, Instruction *src) noexcept: PhysInstruction(opcode, 2) {
+            this->SetOperand(0, target);
+            this->SetOperand(1, src);
+
+            this->assigned_reg = kDoNotAllocateReg;
+        }
+    };
+
     class ReturnInstruction : PhysInstruction {
         friend Builder;
 

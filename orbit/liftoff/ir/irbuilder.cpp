@@ -506,8 +506,37 @@ Instruction *IRBuilder::visitLabel(const parser::Label *node) {
 }
 
 Instruction *IRBuilder::visitListExpression(parser::ListExpression *node) {
-    // TODO: Implement ListExpression visitation
-    return nullptr;
+    const auto elements = node->elements.size();
+
+    Instruction *container = nullptr;
+
+    if (node->node_type == parser::NodeType::DICT) {
+        assert(elements % 2 == 0);
+
+        container = this->builder_.CreateUnaryOp(orbiter::OPCode::NDICT, elements / 2);
+
+        for (auto i = 1; i < elements; i += 2) {
+            auto *key = this->visit(node->elements[i - 1].get());
+            auto *value = this->visit(node->elements[i].get());
+
+            this->builder_.CreateManip(orbiter::OPCode::ADDELEM, container, key, value);
+        }
+
+        return container;
+    }
+
+    if (node->node_type == parser::NodeType::LIST)
+        container = this->builder_.CreateUnaryOp(orbiter::OPCode::NLIST, elements);
+    else if (node->node_type == parser::NodeType::TUPLE)
+        container = this->builder_.CreateUnaryOp(orbiter::OPCode::NTUPLE, elements);
+
+    for (auto &element: node->elements) {
+        auto *value = this->visit(element.get());
+
+        this->builder_.CreateManip(orbiter::OPCode::ADDELEM, container, value);
+    }
+
+    return container;
 }
 
 Instruction *IRBuilder::visitLiteral(parser::Literal *node) {

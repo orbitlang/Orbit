@@ -54,12 +54,16 @@ using namespace liftoff::ir;
     (((U32)(opcode) << 24) | ((dst) << 20) | ((0) << 16) | (offset))
 
 // ============================================================================
-// Emit Macros with Destination, Source, and Flags
+// Emit Macros with Destination, Source [, and Flags]
 // ============================================================================
 
 // Emit macro with opcode, destination register, source register, and flags
-#define EMIT_DS(opcode, dst, src, flags) \
+#define EMIT_DSF(opcode, dst, src, flags) \
     (((U32)(opcode) << 24) | ((dst) << 20) | ((src) << 16) | ((flags) << 12))
+
+// Emit macro with opcode, destination register, source register
+#define EMIT_DS(opcode, dst, src) \
+(((U32)(opcode) << 24) | ((dst) << 20) | ((src) << 16) | 0)
 
 // ============================================================================
 // Emit Macros with Dual Source Variants
@@ -101,10 +105,10 @@ unsigned char *Codegen::EmitOpcodes(BasicBlock *block, unsigned char *m_code) {
                 break;
             case orbiter::OPCode::SHLR:
             case orbiter::OPCode::SHRR:
-                *(orbiter::MachineWord *) m_code = EMIT_DS(instr->opcode,
-                                                           instr->assigned_reg,
-                                                           ((Instruction*)instr->operands[0].value)->assigned_reg,
-                                                           ((ir::BinaryOpImmInstr*) instr)->flags);
+                *(orbiter::MachineWord *) m_code = EMIT_DSF(instr->opcode,
+                                                            instr->assigned_reg,
+                                                            ((Instruction*)instr->operands[0].value)->assigned_reg,
+                                                            ((ir::BinaryOpImmInstr*) instr)->flags);
                 break;
             case orbiter::OPCode::SHLI:
             case orbiter::OPCode::SHRI:
@@ -125,10 +129,10 @@ unsigned char *Codegen::EmitOpcodes(BasicBlock *block, unsigned char *m_code) {
             case orbiter::OPCode::MVN:
             case orbiter::OPCode::NEG:
             case orbiter::OPCode::NOT:
-                *(orbiter::MachineWord *) m_code = EMIT_DS(instr->opcode,
-                                                           instr->assigned_reg,
-                                                           ((Instruction*)instr->operands[0].value)->assigned_reg,
-                                                           0);
+                *(orbiter::MachineWord *) m_code = EMIT_DSF(instr->opcode,
+                                                            instr->assigned_reg,
+                                                            ((Instruction*)instr->operands[0].value)->assigned_reg,
+                                                            0);
                 break;
             case orbiter::OPCode::PANIC:
             case orbiter::OPCode::RET:
@@ -156,10 +160,10 @@ unsigned char *Codegen::EmitOpcodes(BasicBlock *block, unsigned char *m_code) {
                 break;
             case orbiter::OPCode::MOV:
             case orbiter::OPCode::MOWN:
-                *(orbiter::MachineWord *) m_code = EMIT_DS(instr->opcode,
-                                                           instr->assigned_reg,
-                                                           ((Instruction*)instr->operands[0].value)->assigned_reg,
-                                                           0);
+                *(orbiter::MachineWord *) m_code = EMIT_DSF(instr->opcode,
+                                                            instr->assigned_reg,
+                                                            ((Instruction*)instr->operands[0].value)->assigned_reg,
+                                                            0);
                 break;
             case orbiter::OPCode::NGBLV:
                 *(orbiter::MachineWord *) m_code = EMIT_FSO(instr->opcode,
@@ -176,6 +180,10 @@ unsigned char *Codegen::EmitOpcodes(BasicBlock *block, unsigned char *m_code) {
             case orbiter::OPCode::LDGBL:
             case orbiter::OPCode::LDGOFF:
             case orbiter::OPCode::SKLDR:
+            case orbiter::OPCode::NDICT:
+            case orbiter::OPCode::NLIST:
+            case orbiter::OPCode::NSET:
+            case orbiter::OPCode::NTUPLE:
                 *(orbiter::MachineWord *) m_code = EMIT_DO(instr->opcode,
                                                            instr->assigned_reg,
                                                            ((ir::OffsetInstruction *) instr)->offset & 0xFFFF);
@@ -218,10 +226,18 @@ unsigned char *Codegen::EmitOpcodes(BasicBlock *block, unsigned char *m_code) {
                                                            ((ir::UnaryImmInstr*)instr)->imm);
                 break;
             case orbiter::OPCode::LDFUNC:
-                *(orbiter::MachineWord *) m_code = EMIT_DS(instr->opcode,
-                                                           instr->assigned_reg,
-                                                           ((Instruction*)instr->operands[0].value)->assigned_reg,
-                                                           ((ir::UnaryOpInstr*)instr)->flags);
+                *(orbiter::MachineWord *) m_code = EMIT_DSF(instr->opcode,
+                                                            instr->assigned_reg,
+                                                            ((Instruction*)instr->operands[0].value)->assigned_reg,
+                                                            ((ir::UnaryOpInstr*)instr)->flags);
+                break;
+            case orbiter::OPCode::ADDELEM:
+                *(orbiter::MachineWord *) m_code = EMIT_DSS(instr->opcode,
+                                                            ((Instruction*)instr->operands[0].value)->assigned_reg,
+                                                            ((Instruction*)instr->operands[1].value)->assigned_reg,
+                                                            instr->num_ops > 2 ?
+                                                            ((Instruction*)instr->operands[2].value)->assigned_reg
+                                                            : 0);
                 break;
             case orbiter::OPCode::JEN:
             case orbiter::OPCode::JF:
