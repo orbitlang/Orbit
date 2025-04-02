@@ -1075,7 +1075,7 @@ ASTHandle<ASTNode *> Parser::ParseExpressionList(ASTHandle<ASTNode *> &left) {
 }
 
 ASTHandle<ASTNode *> Parser::ParseExprOrTuple() {
-    auto tuple = MakeListExpression(this->isolate_, TKCUR_LOC, NodeType::LIST);
+    auto tuple = MakeListExpression(this->isolate_, TKCUR_LOC, NodeType::TUPLE);
 
     this->Eat(true);
 
