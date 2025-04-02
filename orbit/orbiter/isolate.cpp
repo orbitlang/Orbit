@@ -12,6 +12,7 @@
 #include <orbit/orbiter/datatype/number.h>
 #include <orbit/orbiter/datatype/orstring.h>
 #include <orbit/orbiter/datatype/type.h>
+#include <orbit/orbiter/datatype/tuple.h>
 
 #include <orbit/orbiter/memory/gc.h>
 
@@ -65,6 +66,7 @@ Isolate *Isolate::New() {
     INIT_TYPE(InstanceType::MODULE, ModuleInit);
     INIT_TYPE(InstanceType::NUMBER, NumberTypeInit);
     INIT_TYPE(InstanceType::STRING, ORStringTypeInit);
+    INIT_TYPE(InstanceType::TUPLE, TupleTypeInit);
 
     // *****************************************************************************************************************
 
@@ -79,6 +81,7 @@ Isolate *Isolate::New() {
     SETUP_TYPE(InstanceType::MODULE, ModuleSetup);
     SETUP_TYPE(InstanceType::NUMBER, NumberTypeSetup);
     SETUP_TYPE(InstanceType::STRING, ORStringTypeSetup);
+    SETUP_TYPE(InstanceType::TUPLE, TupleTypeSetup);
 
     return isolate;
 

@@ -6,6 +6,7 @@
 
 #include <orbit/orbiter/datatype/function.h>
 #include <orbit/orbiter/datatype/number.h>
+#include <orbit/orbiter/datatype/tuple.h>
 
 #include <orbit/orbiter/opcode.h>
 #include <orbit/orbiter/fiber.h>
@@ -370,8 +371,12 @@ CGOTO
                 const auto dst = FETCH_R_DST(instr);
                 const auto imm = FETCH_IMM(instr);
 
-                // TODO: Tuple here!
-                assert(false);
+                auto tuple = TupleNew(fiber->isolate, imm);
+                if (!tuple) {
+                    // FIXME: Error!
+                }
+
+                REG_N(dst) = (PtrSize) tuple.get();
 
                 DISPATCH;
             }
@@ -384,6 +389,8 @@ CGOTO
 
                 if (O_IS_TYPE(obj, InstanceType::LIST))
                     ListAppend((List *) obj, (OObject *) REG_N(src));
+                else if (O_IS_TYPE(obj, InstanceType::TUPLE))
+                    TupleAppend((Tuple *) obj, (OObject *) REG_N(src));
                 else
                     assert(false);
 
