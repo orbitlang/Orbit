@@ -4,6 +4,7 @@
 
 #include <cassert>
 
+#include <orbit/orbiter/datatype/dict.h>
 #include <orbit/orbiter/datatype/function.h>
 #include <orbit/orbiter/datatype/number.h>
 #include <orbit/orbiter/datatype/tuple.h>
@@ -340,8 +341,12 @@ CGOTO
                 const auto dst = FETCH_R_DST(instr);
                 const auto imm = FETCH_IMM(instr);
 
-                // TODO: dict here
-                assert(false);
+                auto dict = DictNew(fiber->isolate);
+                if (!dict) {
+                    // FIXME: Error!
+                }
+
+                REG_N(dst) = (PtrSize) dict.get();
 
                 DISPATCH;
             }
@@ -358,7 +363,7 @@ CGOTO
 
                 DISPATCH;
             }
-            TARGET_OP(NSET){
+            TARGET_OP(NSET) {
                 const auto dst = FETCH_R_DST(instr);
                 const auto imm = FETCH_IMM(instr);
 
@@ -367,7 +372,7 @@ CGOTO
 
                 DISPATCH;
             }
-            TARGET_OP(NTUPLE){
+            TARGET_OP(NTUPLE) {
                 const auto dst = FETCH_R_DST(instr);
                 const auto imm = FETCH_IMM(instr);
 
@@ -387,7 +392,11 @@ CGOTO
 
                 auto *obj = (OObject *) REG_N(dst);
 
-                if (O_IS_TYPE(obj, InstanceType::LIST))
+                if (O_IS_TYPE(obj, InstanceType::DICT)) {
+                    if (!DictInsert((Dict *) obj, (OObject *) REG_N(src), (OObject *) REG_N(value))) {
+                        // FIXME: Error!
+                    }
+                } else if (O_IS_TYPE(obj, InstanceType::LIST))
                     ListAppend((List *) obj, (OObject *) REG_N(src));
                 else if (O_IS_TYPE(obj, InstanceType::TUPLE))
                     TupleAppend((Tuple *) obj, (OObject *) REG_N(src));
