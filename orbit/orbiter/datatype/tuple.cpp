@@ -52,7 +52,9 @@ Handle<Tuple> orbiter::datatype::TupleNew(Isolate *isolate, MSize count) {
         tuple->hash = 0;
     }
 
-    return Handle(tuple);
+    // Since tuple objects are immutable and their contents have their reference count incremented (IncRef),
+    // this is treated as a non-container object for garbage collection purposes
+    O_GC_TRACK_RETURN(isolate, tuple, false);
 }
 
 HOType orbiter::datatype::TupleTypeInit(Isolate *isolate) {
