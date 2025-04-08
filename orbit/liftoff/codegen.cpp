@@ -199,9 +199,7 @@ unsigned char *Codegen::EmitOpcodes(BasicBlock *block, unsigned char *m_code) {
                                                            0);
                 break;
             case orbiter::OPCode::POP:
-                *(orbiter::MachineWord *) m_code = EMIT_DO(instr->opcode,
-                                                           instr->assigned_reg,
-                                                           0);
+                *(orbiter::MachineWord *) m_code = EMIT_DO(instr->opcode, 0, 0);
                 break;
             case orbiter::OPCode::CLONEW:
                 *(orbiter::MachineWord *) m_code = EMIT_IMMEDIATE(instr->opcode,

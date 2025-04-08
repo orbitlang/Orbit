@@ -70,6 +70,7 @@ CGOTO
 
 #define ACCESS_STACK_BP(offset) ((PtrSize *)(stack->stack + (regs->BP.reg + (offset))))
 #define ACCESS_STACK_SP(offset) ((PtrSize *)(stack->stack + (regs->SP.reg + (offset))))
+#define LOAD_FROM_STACK         ACCESS_STACK_SP((-sizeof(void *)))
 
     auto *code = fiber->context.code;
 
@@ -273,15 +274,15 @@ CGOTO
                 DISPATCH;
             }
             TARGET_OP(POP) {
-                const auto dst = FETCH_R_DST(instr);
-                const auto target = (OObject **) ACCESS_STACK_SP(0);
+                // const auto dst = FETCH_R_DST(instr);
+                const auto target = (OObject **) LOAD_FROM_STACK;
                 auto value = *target;
 
                 *target = nullptr;
 
                 REG_SP -= sizeof(void *);
 
-                REG_N(dst) = (PtrSize) value;
+                // REG_N(dst) = (PtrSize) value;
 
                 O_DECREF(value);
 
@@ -322,13 +323,18 @@ CGOTO
             TARGET_OP(LDFUNC) {
                 const auto dst = FETCH_R_DST(instr);
                 const auto src = FETCH_R_SRC(instr);
-                const auto flags = (LoadFuncFlags) ((instr >> 12) & 0xFu);
+                const auto flags = (LoadFuncFlags) ((instr >> 12) & 0x3F);
+
                 auto fn_kind = (FunctionKind) 0;
+                Dict *defs = nullptr;
 
                 if (flags == LoadFuncFlags::ASYNC)
                     fn_kind = FunctionKind::ASYNC;
 
-                auto func = FunctionNew((Code *) REG_N(src), fn_kind);
+                if (ENUMBITMASK_ISTRUE(flags, LoadFuncFlags::DEF_ARGS))
+                    defs = (Dict *) *LOAD_FROM_STACK;
+
+                auto func = FunctionNew((Code *) REG_N(src), defs, fn_kind);
                 if (!func) {
                     // TODO: error!
                 }

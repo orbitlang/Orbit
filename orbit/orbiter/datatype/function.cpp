@@ -26,7 +26,7 @@ FuncShared *FunSharedNew(orbiter::Isolate *isolate, const char *name, const char
     }
 
     orbiter::memory::IsolateAllocator allocator(isolate);
-    auto *shared = allocator.alloc<FuncShared>(sizeof(FuncShared));
+    auto *shared = allocator.calloc<FuncShared>(sizeof(FuncShared));
     if (shared != nullptr) {
         shared->refs = 1;
 
@@ -48,6 +48,8 @@ void FunSharedDel(orbiter::Isolate *isolate, FuncShared *shared) {
 
     O_FAST_DECREF(shared->context);
     O_DECREF(shared->module);
+
+    O_DECREF(shared->defaults);
 
     O_FAST_DECREF(shared->name);
     O_FAST_DECREF(shared->doc);
@@ -86,13 +88,15 @@ HFunction orbiter::datatype::FunctionNew(Isolate *isolate, const FunctionDef *de
     return {};
 }
 
-HFunction orbiter::datatype::FunctionNew(Code *code, FunctionKind kind) {
+HFunction orbiter::datatype::FunctionNew(Code *code, Dict *defaults, FunctionKind kind) {
     auto *isolate = O_GET_ISOLATE(code);
 
     auto *f_shared = FunSharedNew(isolate, nullptr, nullptr, code->slots_count, nullptr, kind);
     if (f_shared != nullptr) {
         f_shared->doc = O_FAST_INCREF(code->doc);
         f_shared->code = O_FAST_INCREF(code);
+
+        f_shared->defaults = O_INCREF(defaults);
     }
 
     auto *fn = MakeObject<Function>(isolate, InstanceType::FUNCTION);

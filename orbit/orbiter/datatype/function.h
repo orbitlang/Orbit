@@ -11,6 +11,7 @@
 
 #include <orbit/orbiter/datatype/context.h>
 #include <orbit/orbiter/datatype/code.h>
+#include <orbit/orbiter/datatype/dict.h>
 #include <orbit/orbiter/datatype/module.h>
 
 namespace orbiter::datatype {
@@ -37,6 +38,9 @@ namespace orbiter::datatype {
 
         /// Pointer to the module associated with the function (if any).
         Module *module;
+
+        /// Pointer to default values for function parameters.
+        Dict *defaults;
 
         /// Name of the function
         ORString *name;
@@ -107,17 +111,18 @@ namespace orbiter::datatype {
     HFunction FunctionNew(Isolate *isolate, const FunctionDef *def);
 
     /**
-     * @brief Create a new Function object
+     * @brief Creates a new Function object with the specified code, defaults, and function kind.
      *
-     * This function initializes a new Function object with the specified code
-     * and kind. The kind determines the type of the function (e.g., async, method, ...).
+     * This constructor initializes a new shared function data object and associates
+     * it with the provided code and default values. It also sets up the function's
+     * execution context and module information.
      *
-     * @param code Pointer to the Code object representing the function's implementation
-     * @param kind The kind of the function (async, method, etc.)
-     *
-     * @return Handle to the newly created Function object
+     * @param code A pointer to the Code object representing the code for the function.
+     * @param defaults A pointer to the Dict object containing default argument values for the function.
+     * @param kind The type of function, defined by the FunctionKind enumeration.
+     * @return An HFunction handle representing the created Function object.
      */
-    HFunction FunctionNew(Code *code, FunctionKind kind);
+    HFunction FunctionNew(Code *code, Dict *defaults, FunctionKind kind);
 
     /**
      * @brief Initialize and create the specified type

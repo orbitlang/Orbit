@@ -89,7 +89,9 @@ namespace liftoff::ir {
 
         void CaptureParametersIntoClosure(const parser::Function *node);
 
-        void visitForInLoop(const parser::Loop *node);
+        void ProcessFunctionParams(const parser::Function *node, orbiter::LoadFuncFlags &f_flags);
+
+        void VisitForInLoop(const parser::Loop *node);
 
         void PutSyncExit(const JBlock *block);
 

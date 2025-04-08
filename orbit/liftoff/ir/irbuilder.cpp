@@ -413,12 +413,15 @@ Instruction *IRBuilder::visitDecorator(parser::Decorator *node) {
     return nullptr;
 }
 
+
 Instruction *IRBuilder::visitFunction(const parser::Function *node) {
-    // params / ret addr / EBP / [locals] / [closure_ptr]
+    // -> params -> EBP -> RET ADDR -> [locals] -> [closure_ptr]
 
     auto f_flags = orbiter::LoadFuncFlags::SIMPLE;
     if (node->async)
         f_flags |= orbiter::LoadFuncFlags::ASYNC;
+
+    this->ProcessFunctionParams(node, f_flags);
 
     if (!this->sym_t_->EnterScope(node->name))
         throw SymbolTableException();
@@ -446,10 +449,8 @@ Instruction *IRBuilder::visitFunction(const parser::Function *node) {
 
     this->visit(node->body);
 
-    if (!this->builder_.CheckIfLastInstructionIs(orbiter::OPCode::RET)) {
-        const auto nil = this->builder_.LoadNilValue();
-        this->builder_.CreateReturn(nil, false);
-    }
+    if (!this->builder_.CheckIfLastInstructionIs(orbiter::OPCode::RET))
+        this->builder_.CreateReturn(false);
 
     this->builder_.LeaveContext();
 
@@ -458,6 +459,9 @@ Instruction *IRBuilder::visitFunction(const parser::Function *node) {
     auto *res = this->builder_.LoadCodeObject(this->builder_.context->GetSubcontextCount() - 1);
 
     auto *func = this->builder_.LoadFunction(res, f_flags);
+
+    if (ENUMBITMASK_ISTRUE(f_flags, orbiter::LoadFuncFlags::DEF_ARGS))
+        this->builder_.StackPop(1);
 
     if (node->anon)
         return func;
@@ -559,7 +563,7 @@ Instruction *IRBuilder::visitLiteral(parser::Literal *node) {
 
 Instruction *IRBuilder::visitLoop(const parser::Loop *node) {
     if (node->node_type == parser::NodeType::FOR_IN) {
-        this->visitForInLoop(node);
+        this->VisitForInLoop(node);
 
         return nullptr;
     }
@@ -723,7 +727,42 @@ void IRBuilder::CaptureParametersIntoClosure(const parser::Function *node) {
     }
 }
 
-void IRBuilder::visitForInLoop(const parser::Loop *node) {
+void IRBuilder::ProcessFunctionParams(const parser::Function *node, orbiter::LoadFuncFlags &f_flags) {
+    Instruction *def_params = nullptr;
+
+    for (auto &param: node->params) {
+        if (param->node_type == parser::NodeType::PARAM)
+            continue;
+
+        if (param->node_type == parser::NodeType::NAMED_PARAM) {
+            if (def_params == nullptr)
+                def_params = this->builder_.CreateUnaryOp(orbiter::OPCode::NDICT, node->params.size());
+
+            const auto *named = (parser::Parameter *) param.get();
+
+            const auto offset = this->builder_.context->PushStaticValue((orbiter::datatype::OObject *) named->id);
+            const auto ld_const = this->builder_.LoadConstant(offset);
+
+            auto *value = named->value != nullptr ? this->visit(named->value) : this->builder_.LoadNilValue();
+
+            this->builder_.CreateManip(orbiter::OPCode::ADDELEM, def_params, ld_const, value);
+        }
+
+        if (param->node_type == parser::NodeType::KW_PARAM)
+            f_flags |= orbiter::LoadFuncFlags::KW_PARAMS;
+
+        if (param->node_type == parser::NodeType::REST_PARAM)
+            f_flags |= orbiter::LoadFuncFlags::REST_PARAMS;
+    }
+
+    if (def_params != nullptr) {
+        f_flags |= orbiter::LoadFuncFlags::DEF_ARGS;
+
+        this->builder_.StackPush(def_params);
+    }
+}
+
+void IRBuilder::VisitForInLoop(const parser::Loop *node) {
     const JBlock jb(&this->builder_, JBlockType::FOR_IN, nullptr);
 
     assert(false); // TODO: IMPL THIS!
