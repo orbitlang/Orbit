@@ -139,6 +139,10 @@ Instruction *Builder::CreateReturn(Instruction *s_reg, bool yield) {
     return this->CreateInstruction<ReturnInstruction>(s_reg, yield);
 }
 
+Instruction *Builder::CreateReturn(bool yield) {
+    return this->CreateInstruction<ReturnInstruction>(this->LoadNilValue(), yield);
+}
+
 Instruction *Builder::CreateUnaryOp(const OPCode opcode, Instruction *s_reg) {
     return this->CreateInstruction<UnaryOpInstr>(opcode, s_reg);
 }
@@ -183,7 +187,7 @@ Instruction *Builder::LoadFromOffset(const OPCode opcode, const I16 offset, U8 f
 }
 
 Instruction *Builder::StackPop(U16 slots) {
-    return slots > 0
+    return slots > 1
                ? (Instruction *) this->CreateInstruction<UnaryImmInstr>(OPCode::POPN, 0, slots)
                : (Instruction *) this->CreateInstruction<UnaryOpInstr>(OPCode::POP);
 }

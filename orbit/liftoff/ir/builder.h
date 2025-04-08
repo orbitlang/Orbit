@@ -146,6 +146,8 @@ namespace liftoff::ir {
 
         Instruction *CreateReturn(Instruction *s_reg, bool yield);
 
+        Instruction *CreateReturn(bool yield);
+
         Instruction *CreateUnaryOp(orbiter::OPCode opcode, Instruction *s_reg);
 
         Instruction *CreateUnaryOp(orbiter::OPCode opcode, U16 imm, U8 flags);
