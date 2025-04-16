@@ -200,7 +200,9 @@ namespace liftoff::ir {
             return this->CreateObject<OffsetInstruction>(orbiter::OPCode::SKSTR, offset, src);
         }
 
-        Instruction *StackPop(U16 slots);
+        Instruction *StackDiscard(U16 slots);
+
+        Instruction *StackPop();
 
         Instruction *StackPush(Instruction *s_reg);
 

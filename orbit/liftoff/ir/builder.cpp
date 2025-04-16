@@ -106,7 +106,7 @@ Instruction *Builder::CreateBranch(const OPCode opcode, Instruction *value, Basi
 Instruction *Builder::CreateCall(Instruction *src, U16 arguments) {
     auto *call = this->CreateInstruction<CallInstr>(src, arguments);
 
-    this->StackPop(arguments);
+    this->StackDiscard(arguments);
 
     return call;
 }
@@ -186,10 +186,12 @@ Instruction *Builder::LoadFromOffset(const OPCode opcode, const I16 offset, U8 f
     return instr;
 }
 
-Instruction *Builder::StackPop(U16 slots) {
-    return slots > 1
-               ? (Instruction *) this->CreateInstruction<UnaryImmInstr>(OPCode::POPN, 0, slots)
-               : (Instruction *) this->CreateInstruction<UnaryOpInstr>(OPCode::POP);
+Instruction *Builder::StackDiscard(U16 slots) {
+    return this->CreateInstruction<UnaryImmInstr>(OPCode::POPN, 0, slots);
+}
+
+Instruction *Builder::StackPop() {
+    return this->CreateInstruction<UnaryOpInstr>(OPCode::POP);
 }
 
 Instruction *Builder::StackPush(Instruction *s_reg) {

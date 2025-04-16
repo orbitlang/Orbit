@@ -274,7 +274,7 @@ CGOTO
                 DISPATCH;
             }
             TARGET_OP(POP) {
-                // const auto dst = FETCH_R_DST(instr);
+                const auto dst = FETCH_R_DST(instr);
                 const auto target = (OObject **) LOAD_FROM_STACK;
                 auto value = *target;
 
@@ -282,7 +282,7 @@ CGOTO
 
                 REG_SP -= sizeof(void *);
 
-                // REG_N(dst) = (PtrSize) value;
+                REG_N(dst) = (PtrSize) value;
 
                 O_DECREF(value);
 

@@ -461,7 +461,7 @@ Instruction *IRBuilder::visitFunction(const parser::Function *node) {
     auto *func = this->builder_.LoadFunction(res, f_flags);
 
     if (ENUMBITMASK_ISTRUE(f_flags, orbiter::LoadFuncFlags::DEF_ARGS))
-        this->builder_.StackPop(1);
+        this->builder_.StackDiscard(1);
 
     if (node->anon)
         return func;
