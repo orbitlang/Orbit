@@ -1159,25 +1159,25 @@ ASTHandle<ASTNode *> Parser::ParseFuncCall(ASTHandle<ASTNode *> &left) {
 
                 this->Eat(true);
 
-                auto binary = MakeParameter(this->isolate_, TKCUR_LOC, NodeType::NAMED_ARG);
+                auto named_param = MakeParameter(this->isolate_, TKCUR_LOC, NodeType::NAMED_ARG);
 
-                binary->id = id->value;
+                named_param->id = id->value;
 
                 id->value = nullptr;
 
-                binary->loc.start = id->loc.start;
+                named_param->loc.start = id->loc.start;
 
                 if (!this->Match(TokenType::COMMA, TokenType::RIGHT_ROUND)) {
-                    binary->value = this->ParseExpression(TokenType::COMMA).release();
+                    named_param->value = this->ParseExpression(TokenType::COMMA).release();
 
-                    binary->loc.end = binary->value->loc.end;
+                    named_param->loc.end = named_param->value->loc.end;
                 }
 
                 mode = 1;
 
-                end = binary->loc.end;
+                end = named_param->loc.end;
 
-                call->nargs.emplace_back(std::move(binary));
+                call->nargs.emplace_back(std::move(named_param));
             } else {
                 if (mode > 0)
                     throw ParserException(21);
