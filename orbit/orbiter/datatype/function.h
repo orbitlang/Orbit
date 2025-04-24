@@ -13,13 +13,15 @@
 #include <orbit/orbiter/datatype/code.h>
 #include <orbit/orbiter/datatype/dict.h>
 #include <orbit/orbiter/datatype/module.h>
+#include <orbit/orbiter/datatype/tuple.h>
 
 namespace orbiter::datatype {
     enum class FunctionKind : U8 {
         ASYNC = 0x1,
 
         METHOD = 0x1 << 1,
-        NATIVE = 0x1 << 2
+        NATIVE = 0x1 << 2,
+        REST = 0x1 << 3
     };
 }
 
@@ -80,6 +82,9 @@ namespace orbiter::datatype {
 
         /// Pointer to shared function data
         FuncShared *shared;
+
+        /// Tuple that contains values for partial application.
+        Tuple *currying;
     };
 
     using HFunction = Handle<Function>;
@@ -123,6 +128,22 @@ namespace orbiter::datatype {
      * @return An HFunction handle representing the created Function object.
      */
     HFunction FunctionNew(Code *code, Dict *defaults, FunctionKind kind);
+
+    /**
+     * @brief Creates a new function object with provided arguments and curried values.
+     *
+     * This function initializes a new function object by taking an existing function
+     * and an array of arguments. It applies argument currying, which is the process
+     * of partially applying a function by storing the provided arguments.
+     * The new function object shares the same shared data as the input function
+     * and increments its reference count.
+     *
+     * @param func Pointer to the existing function object to be used as a base.
+     * @param args Array of pointers to objects representing the arguments to be curried.
+     * @param argc The number of arguments provided in the `args` array.
+     * @return A handle to the newly created function object, or an empty handle if the creation fails.
+     */
+    HFunction FunctionNew(const Function *func, OObject **args, U16 argc);
 
     /**
      * @brief Initialize and create the specified type

@@ -80,6 +80,8 @@ HFunction orbiter::datatype::FunctionNew(Isolate *isolate, const FunctionDef *de
     if (fn != nullptr) {
         fn->shared = f_shared;
 
+        fn->currying = nullptr;
+
         O_GC_TRACK_RETURN(isolate, fn, false);
     }
 
@@ -108,10 +110,38 @@ HFunction orbiter::datatype::FunctionNew(Code *code, Dict *defaults, FunctionKin
         fn->shared->context = O_FAST_INCREF(fiber->context.context);
         fn->shared->module = O_INCREF(fiber->context.module);
 
+        fn->currying = nullptr;
+
         O_GC_TRACK_RETURN(isolate, fn, false);
     }
 
     FunSharedDel(isolate, f_shared);
+
+    return {};
+}
+
+HFunction orbiter::datatype::FunctionNew(const Function *func, OObject **args, U16 argc) {
+    auto *isolate = O_GET_ISOLATE(func);
+
+    auto currying = TupleNew(isolate, argc);
+
+    if (!currying)
+        return {};
+
+    const auto r_curring = currying.get();
+    for (auto i = 0; i < argc; i++)
+        TupleAppend(r_curring, args[i]);
+
+    auto *fn = MakeObject<Function>(isolate, InstanceType::FUNCTION);
+    if (fn != nullptr) {
+        fn->shared = func->shared;
+
+        fn->shared->refs.fetch_add(1);
+
+        fn->currying = currying.release();
+
+        O_GC_TRACK_RETURN(isolate, fn, false);
+    }
 
     return {};
 }
