@@ -21,7 +21,8 @@ namespace orbiter::datatype {
 
         METHOD = 0x1 << 1,
         NATIVE = 0x1 << 2,
-        REST = 0x1 << 3
+        REST = 0x1 << 3,
+        KWARGS = 0x1 << 4
     };
 }
 
@@ -42,7 +43,7 @@ namespace orbiter::datatype {
         Module *module;
 
         /// Pointer to default values for function parameters.
-        Dict *defaults;
+        Tuple *defaults;
 
         /// Name of the function
         ORString *name;
@@ -65,12 +66,30 @@ namespace orbiter::datatype {
         FunctionKind kind;
 
         /**
+         * @brief Checks whether the function has default arguments defined.
+         *
+         * @return true if the function has default arguments, false otherwise.
+         */
+        [[nodiscard]] bool HasDefaultArgs() const {
+            return this->defaults != nullptr;
+        }
+
+        /**
          * @brief Check if the function is interpreted
          *
          * @return true if the function is interpreted, false otherwise
          */
         [[nodiscard]] bool IsInterpreted() const {
             return ENUMBITMASK_ISFALSE(this->kind, FunctionKind::NATIVE);
+        }
+
+        /**
+         * @brief Determines if the function is variadic.
+         *
+         * @return true if the function is variadic, false otherwise.
+         */
+        [[nodiscard]] bool IsVariadic() const {
+            return ENUMBITMASK_ISFALSE(this->kind, FunctionKind::REST);
         }
     };
 
@@ -127,7 +146,7 @@ namespace orbiter::datatype {
      * @param kind The type of function, defined by the FunctionKind enumeration.
      * @return An HFunction handle representing the created Function object.
      */
-    HFunction FunctionNew(Code *code, Dict *defaults, FunctionKind kind);
+    HFunction FunctionNew(Code *code, Tuple *defaults, FunctionKind kind);
 
     /**
      * @brief Creates a new function object with provided arguments and curried values.

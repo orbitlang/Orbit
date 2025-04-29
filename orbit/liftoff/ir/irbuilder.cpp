@@ -393,6 +393,8 @@ Instruction *IRBuilder::visitCall(parser::Call *node) {
     auto *func = this->visit(node->left);
 
     Instruction *arg_value = nullptr;
+    Instruction *rest = nullptr;
+    Instruction *kwargs = nullptr;
 
     // Check partial apply (Currying evaluation)
     this->builder_.CreateUnaryOp(orbiter::OPCode::CHK_PARTIAL, func);
@@ -410,35 +412,27 @@ Instruction *IRBuilder::visitCall(parser::Call *node) {
         const auto r_narg = (parser::Parameter *) narg.get();
 
         if (nargs == nullptr)
-            nargs = this->builder_.CreateUnaryOp(orbiter::OPCode::NLIST, node->nargs.size());
+            nargs = this->builder_.CreateUnaryOp(orbiter::OPCode::NDICT, node->nargs.size());
 
-        const auto key_offset = this->builder_.context->PushStaticValue(
-            (orbiter::datatype::OObject *) r_narg->id);
+        const auto key_offset = this->builder_.context->PushStaticValue((orbiter::datatype::OObject *) r_narg->id);
+
         const auto key = this->builder_.LoadConstant(key_offset);
-        this->builder_.CreateManip(orbiter::OPCode::ADDELEM, nargs, key);
-
         const auto value = this->visit(r_narg->value);
-        this->builder_.CreateManip(orbiter::OPCode::ADDELEM, nargs, value);
+
+        this->builder_.CreateManip(orbiter::OPCode::ADDELEM, nargs, key, value);
     }
 
-    if (nargs != nullptr) {
-        this->builder_.StackPush(nargs);
-
+    if (nargs != nullptr)
         mode |= orbiter::CallMode::NARGS;
-    }
 
     if (node->rest != nullptr) {
-        auto *rest = this->visit(((parser::Unary *) node->rest)->value);
-
-        this->builder_.StackPush(rest);
+        rest = this->visit(((parser::Unary *) node->rest)->value);
 
         mode |= orbiter::CallMode::REST_ARG;
     }
 
     if (node->kwargs != nullptr) {
-        auto *kwargs = this->visit(((parser::Unary *) node->kwargs)->value);
-
-        this->builder_.StackPush(kwargs);
+        kwargs = this->visit(((parser::Unary *) node->kwargs)->value);
 
         mode |= orbiter::CallMode::KW_ARG;
     }
@@ -447,7 +441,18 @@ Instruction *IRBuilder::visitCall(parser::Call *node) {
     if ((int) mode > 1)
         mode &= ~orbiter::CallMode::FASTCALL;
 
-    return this->builder_.CreateCall(func, node->args.size(), mode);
+    const auto call = (CallInstr *) this->builder_.CreateCall(func, node->args.size(), mode);
+
+    if (nargs != nullptr)
+        call->SetNargs(nargs);
+
+    if (rest != nullptr)
+        call->SetRest(rest);
+
+    if (kwargs != nullptr)
+        call->SetKwargs(kwargs);
+
+    return call;
 }
 
 Instruction *IRBuilder::visitCatchBlock(parser::CatchBlock *node) {
@@ -472,12 +477,12 @@ Instruction *IRBuilder::visitFunction(const parser::Function *node) {
     if (node->async)
         f_flags |= orbiter::LoadFuncFlags::ASYNC;
 
-    this->ProcessFunctionParams(node, f_flags);
+    const auto params_count = this->ProcessFunctionParams(node, f_flags);
 
     if (!this->sym_t_->EnterScope(node->name))
         throw SymbolTableException();
 
-    this->builder_.IRContextNew(IRContextType::FUNCTION, node->params.size(),
+    this->builder_.IRContextNew(IRContextType::FUNCTION, params_count,
                                 this->sym_t_->scope->GetLocalVariableCount());
 
     // Alloc stack space for local variables
@@ -511,7 +516,7 @@ Instruction *IRBuilder::visitFunction(const parser::Function *node) {
 
     auto *func = this->builder_.LoadFunction(res, f_flags);
 
-    if (ENUMBITMASK_ISTRUE(f_flags, orbiter::LoadFuncFlags::DEF_ARGS))
+    if (ENUMBITMASK_ISTRUE(f_flags, orbiter::LoadFuncFlags::NPARAMS))
         this->builder_.StackDiscard(1);
 
     if (node->anon)
@@ -757,6 +762,57 @@ Instruction *IRBuilder::visitUnary(const parser::Unary *node) {
     return nullptr;
 }
 
+unsigned int IRBuilder::ProcessFunctionParams(const parser::Function *node, orbiter::LoadFuncFlags &f_flags) {
+    Instruction *def_params = nullptr;
+
+    int def_params_count = 0;
+    short remove_count = 0;
+
+    for (auto &param: node->params) {
+        if (param->node_type == parser::NodeType::PARAM)
+            continue;
+
+        if (param->node_type == parser::NodeType::NAMED_PARAM) {
+            if (def_params == nullptr)
+                def_params = this->builder_.CreateUnaryOp(orbiter::OPCode::NTUPLE, (U16) 0);
+
+            const auto *named = (parser::Parameter *) param.get();
+
+            const auto offset = this->builder_.context->PushStaticValue((orbiter::datatype::OObject *) named->id);
+            const auto ld_const = this->builder_.LoadConstant(offset);
+
+            auto *value = named->value != nullptr ? this->visit(named->value) : this->builder_.LoadNilValue();
+
+            this->builder_.CreateManip(orbiter::OPCode::ADDELEM, def_params, ld_const);
+            this->builder_.CreateManip(orbiter::OPCode::ADDELEM, def_params, value);
+
+            def_params_count += 1;
+        }
+
+        if (param->node_type == parser::NodeType::KW_PARAM) {
+            f_flags |= orbiter::LoadFuncFlags::KW_PARAMS;
+
+            remove_count += 1;
+        }
+
+        if (param->node_type == parser::NodeType::REST_PARAM) {
+            f_flags |= orbiter::LoadFuncFlags::REST_PARAMS;
+
+            remove_count += 1;
+        }
+    }
+
+    if (def_params != nullptr) {
+        ((UnaryImmInstr *) def_params)->imm = def_params_count * 2; // *2 because each param is composed by key/value
+
+        f_flags |= orbiter::LoadFuncFlags::NPARAMS;
+
+        this->builder_.StackPush(def_params);
+    }
+
+    return (node->params.size() - def_params_count) - remove_count;
+}
+
 void IRBuilder::CaptureParametersIntoClosure(const parser::Function *node) {
     // Traverse the parameter list and, if a parameter is an UPVALUE, store it in the closure object.
     // This ensures the parameter is accessible in the closure's scope.
@@ -775,41 +831,6 @@ void IRBuilder::CaptureParametersIntoClosure(const parser::Function *node) {
             const auto value = this->builder_.LoadFromStackOffset((I16) -p_offset);
             this->StoreVariable(sym, value, false);
         }
-    }
-}
-
-void IRBuilder::ProcessFunctionParams(const parser::Function *node, orbiter::LoadFuncFlags &f_flags) {
-    Instruction *def_params = nullptr;
-
-    for (auto &param: node->params) {
-        if (param->node_type == parser::NodeType::PARAM)
-            continue;
-
-        if (param->node_type == parser::NodeType::NAMED_PARAM) {
-            if (def_params == nullptr)
-                def_params = this->builder_.CreateUnaryOp(orbiter::OPCode::NDICT, node->params.size());
-
-            const auto *named = (parser::Parameter *) param.get();
-
-            const auto offset = this->builder_.context->PushStaticValue((orbiter::datatype::OObject *) named->id);
-            const auto ld_const = this->builder_.LoadConstant(offset);
-
-            auto *value = named->value != nullptr ? this->visit(named->value) : this->builder_.LoadNilValue();
-
-            this->builder_.CreateManip(orbiter::OPCode::ADDELEM, def_params, ld_const, value);
-        }
-
-        if (param->node_type == parser::NodeType::KW_PARAM)
-            f_flags |= orbiter::LoadFuncFlags::KW_PARAMS;
-
-        if (param->node_type == parser::NodeType::REST_PARAM)
-            f_flags |= orbiter::LoadFuncFlags::REST_PARAMS;
-    }
-
-    if (def_params != nullptr) {
-        f_flags |= orbiter::LoadFuncFlags::DEF_ARGS;
-
-        this->builder_.StackPush(def_params);
     }
 }
 

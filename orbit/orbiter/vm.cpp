@@ -36,6 +36,155 @@ HOObject VMAdd(Isolate *isolate, PtrSize left, PtrSize right) {
     return {};
 }
 
+int VMCall(Fiber *fiber, Function *func, unsigned short p_count, CallMode mode) {
+    auto *regs = &fiber->vm.regs;
+    auto *stack = &fiber->vm.stack;
+
+    const auto *fn_shared = func->shared;
+
+    auto *nargs = (Dict *) regs->r10.reg;
+    auto *rest = (List *) regs->r11.reg;
+    auto *kwargs = (Dict *) regs->r12.reg;
+
+    const auto arity = fn_shared->arity;
+
+    auto total_args = p_count;
+
+    const bool call_mode_is_nargs = ENUMBITMASK_ISTRUE(mode, CallMode::NARGS);
+    const bool call_mode_is_rest = ENUMBITMASK_ISTRUE(mode, CallMode::REST_ARG);
+    const bool call_mode_is_kwarg = ENUMBITMASK_ISTRUE(mode, CallMode::KW_ARG);
+
+    if (func->currying != nullptr)
+        total_args += func->currying->length;
+
+    // *****************************************************************************************************************
+    // * Check stack size
+    // *****************************************************************************************************************
+
+    auto stack_size_required = kSkOffset
+                               + func->shared->code->stack_size * sizeof(void *)
+                               + (arity * sizeof(void *))
+                               + (2 * sizeof(void *));
+
+    if (func->shared->HasDefaultArgs())
+        stack_size_required += (fn_shared->defaults->length / 2) * sizeof(void *);
+
+    if (!stack->Check(fiber->isolate, regs->SP.reg, stack_size_required)) {
+        // TODO: out of memory
+    }
+
+    // *****************************************************************************************************************
+    // * Check for partial application
+    // *****************************************************************************************************************
+
+    if (total_args < arity) {
+        const auto args_diff = arity - total_args;
+
+        if (!call_mode_is_rest || rest->length < args_diff) {
+            const auto args = (OObject **) ((fiber->vm.stack.stack + fiber->vm.regs.SP.reg)
+                                            - (total_args * sizeof(void *)));
+
+            regs->RR.reg = (PtrSize) FunctionNew(func, args, total_args).get();
+
+            return 2;
+        }
+
+        if (!func->shared->IsVariadic() && rest->length > args_diff) {
+            // FIXME: GO TO ERROR! TOO many args
+        }
+
+        // FIXME: Expand
+        for (auto i = 0; i < args_diff; i++) {
+            *((OObject **) (fiber->vm.stack.stack + fiber->vm.regs.SP.reg)) = O_INCREF(rest->objects[i]);
+            fiber->vm.regs.SP.reg += sizeof(void *);
+        }
+        // FIXME: EOL
+
+        if (func->shared->IsVariadic()) {
+            // TODO: Create a new array containing all the elements from the original one, excluding those already pushed onto the stack!
+        }
+    }
+    
+    auto total_args_with_rest = total_args;
+    if (call_mode_is_rest)
+        total_args_with_rest += rest->length;
+
+    if (total_args_with_rest > arity) {
+        if (!func->shared->IsVariadic()) {
+            // TODO: Too much args
+        }
+
+        // TODO: Construct the array and load it into R11. If the call is variadic, merge the new array with the original one and replace it.
+    }
+
+    // *****************************************************************************************************************
+    // * EXPAND NAMED/DEFAULT ARGUMENTS
+    // *****************************************************************************************************************
+
+    if (func->shared->HasDefaultArgs()) {
+        const auto defaults = func->shared->defaults;
+
+        for (auto i = 0; i < defaults->length; i += 2) {
+            HOObject out;
+
+            if (call_mode_is_nargs && DictLookup(nargs, defaults->objects[i], out)) {
+                fiber->vm.Push(out.get());
+
+                continue;
+            }
+
+            if (call_mode_is_kwarg && DictLookup(kwargs, defaults->objects[i], out)) {
+                fiber->vm.Push(out.get());
+
+                continue;
+            }
+
+            fiber->vm.Push(defaults->objects[i + 1]);
+        }
+    } else if (call_mode_is_nargs) {
+        // TODO: This function doesn't accept named args
+    }
+
+    // *****************************************************************************************************************
+    // * Check Rest args
+    // *****************************************************************************************************************
+
+    if (call_mode_is_rest)
+        fiber->vm.Push((OObject *) rest);
+
+    // *****************************************************************************************************************
+    // * Check KWArgs
+    // *****************************************************************************************************************
+
+    if (call_mode_is_kwarg) {
+        if (!ENUMBITMASK_ISTRUE(func->shared->kind, FunctionKind::KWARGS)) {
+            // TODO: error!
+        }
+
+        fiber->vm.Push((OObject *) kwargs);
+    }
+
+    // *****************************************************************************************************************
+    // * ADJUST STACK AND REGISTERS
+    // *****************************************************************************************************************
+
+    stratum::util::MemoryCopy(stack->stack + regs->SP.reg, &fiber->context.context, sizeof(FiberContext));
+    regs->SP.reg += sizeof(FiberContext);
+
+    fiber->context.context = O_FAST_INCREF(func->shared->context);
+    fiber->context.module = O_INCREF(func->shared->module);
+    fiber->context.code = O_FAST_INCREF(func->shared->code);
+
+    fiber->vm.Push(regs->BP.reg);
+    fiber->vm.Push(regs->IP.reg);
+
+    regs->BP.reg = regs->SP.reg;
+
+    regs->IP.reg = (PtrSize) func->shared->code->m_code;
+
+    return 1;
+}
+
 OObject *orbiter::eval(Fiber *fiber) {
     auto *regs = &fiber->vm.regs;
     auto *stack = &fiber->vm.stack;
@@ -143,33 +292,11 @@ CGOTO
 
                 const auto func = (Function *) REG_N(src);
 
-                if (!stack->Check(fiber->isolate, regs->SP.reg,
-                                  sizeof(FiberContext) + (func->shared->code->stack_size * sizeof(void *)))) {
-                    // TODO: ERROR;
-                }
+                const auto res = VMCall(fiber, func, p_count, flags);
+                if (res == 1)
+                    code = func->shared->code;
 
-                // TODO: Check arity and parameters here
-
-                stratum::util::MemoryCopy(stack->stack + regs->SP.reg, &fiber->context.context, sizeof(FiberContext));
-                regs->SP.reg += sizeof(FiberContext);
-
-                fiber->context.context = O_FAST_INCREF(func->shared->context);
-                fiber->context.module = O_INCREF(func->shared->module);
-                fiber->context.code = O_FAST_INCREF(func->shared->code);
-
-                *ACCESS_STACK_SP(0) = REG_BP;
-                regs->SP.reg += sizeof(void *);
-
-                *ACCESS_STACK_SP(0) = REG_IP;
-                regs->SP.reg += sizeof(void *);
-
-                REG_BP = REG_SP;
-
-                code = func->shared->code;
-
-                REG_IP = (PtrSize) code->m_code;
-
-                continue;
+                DISPATCH;
             }
             TARGET_OP(LDCODE) {
                 const auto dst = FETCH_R_DST(instr);
@@ -215,7 +342,8 @@ CGOTO
                 DISPATCH;
             }
             TARGET_OP(STGOFF) {
-                const auto value = REG_N(FETCH_R_SRC(instr));
+                const auto src = FETCH_R_SRC(instr);
+                const auto value = REG_N(src);
                 const auto slot = FETCH_IMM(instr);
 
                 assert(module_slots != nullptr);
@@ -332,13 +460,16 @@ CGOTO
                 const auto flags = (LoadFuncFlags) ((instr >> 12) & 0x3F);
 
                 auto fn_kind = (FunctionKind) 0;
-                Dict *defs = nullptr;
+                Tuple *defs = nullptr;
 
-                if (flags == LoadFuncFlags::ASYNC)
+                if (ENUMBITMASK_ISTRUE(flags, LoadFuncFlags::ASYNC))
                     fn_kind = FunctionKind::ASYNC;
 
-                if (ENUMBITMASK_ISTRUE(flags, LoadFuncFlags::DEF_ARGS))
-                    defs = (Dict *) *LOAD_FROM_STACK;
+                if (ENUMBITMASK_ISTRUE(flags, LoadFuncFlags::REST_PARAMS))
+                    fn_kind = FunctionKind::REST;
+
+                if (ENUMBITMASK_ISTRUE(flags, LoadFuncFlags::NPARAMS))
+                    defs = (Tuple *) *LOAD_FROM_STACK;
 
                 auto func = FunctionNew((Code *) REG_N(src), defs, fn_kind);
                 if (!func) {
@@ -460,7 +591,7 @@ CGOTO
                 continue;
             }
             default:
-            assert(false);
+                assert(false);
                 DISPATCH;
         }
 

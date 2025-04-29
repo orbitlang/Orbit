@@ -57,7 +57,7 @@ namespace orbiter {
 
         ASYNC = 0x1,
         CLOSURE = 0x2,
-        DEF_ARGS = 0x4,
+        NPARAMS = 0x4,
         KW_PARAMS = 0x8,
         REST_PARAMS = 0x10,
         GENERATOR = 0x20

@@ -14,6 +14,11 @@
 namespace liftoff::ir {
     using MachineSize = PtrSize;
 
+    constexpr auto kCallNArgsReg = 10;
+    constexpr auto kCallRestReg = 11;
+    constexpr auto kCallKWArgsReg = 12;
+    constexpr auto kReturnRegisterReg = 13;
+
     constexpr auto kUninitializedReg = -1;
     constexpr auto kDoNotAllocateReg = -2;
 
@@ -116,10 +121,31 @@ namespace liftoff::ir {
         U16 arguments = 0;
         orbiter::CallMode mode;
 
+        void SetKwargs(Instruction *instr) const {
+            instr->assigned_reg = kCallKWArgsReg;
+
+            this->SetOperand(3, instr);
+        }
+
+        void SetNargs(Instruction *instr) const {
+            instr->assigned_reg = kCallNArgsReg;
+
+            this->SetOperand(1, instr);
+        }
+
+        void SetRest(Instruction *instr) const {
+            instr->assigned_reg = kCallRestReg;
+
+            this->SetOperand(2, instr);
+        }
+
     protected:
-        explicit CallInstr(Instruction *src, U16 arguments, orbiter::CallMode mode) noexcept: PhysInstruction(orbiter::OPCode::CALL, 1),
-                                                                      arguments(arguments), mode(mode) {
+        explicit CallInstr(Instruction *src, U16 arguments, orbiter::CallMode mode) noexcept: PhysInstruction(
+                orbiter::OPCode::CALL, 4),
+            arguments(arguments), mode(mode) {
             this->SetOperand(0, src);
+
+            this->assigned_reg = kReturnRegisterReg;
         }
     };
 
@@ -177,7 +203,8 @@ namespace liftoff::ir {
         friend Builder;
 
     public:
-        ManipInstruction(orbiter::OPCode opcode, Instruction *target, Instruction *src, Instruction *src1) noexcept: PhysInstruction(opcode, 3) {
+        ManipInstruction(orbiter::OPCode opcode, Instruction *target, Instruction *src,
+                         Instruction *src1) noexcept: PhysInstruction(opcode, 3) {
             this->SetOperand(0, target);
             this->SetOperand(1, src);
             this->SetOperand(2, src1);
@@ -185,7 +212,8 @@ namespace liftoff::ir {
             this->assigned_reg = kDoNotAllocateReg;
         }
 
-        ManipInstruction(orbiter::OPCode opcode, Instruction *target, Instruction *src) noexcept: PhysInstruction(opcode, 2) {
+        ManipInstruction(orbiter::OPCode opcode, Instruction *target, Instruction *src) noexcept: PhysInstruction(
+            opcode, 2) {
             this->SetOperand(0, target);
             this->SetOperand(1, src);
 

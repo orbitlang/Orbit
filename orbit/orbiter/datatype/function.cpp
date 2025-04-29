@@ -90,7 +90,7 @@ HFunction orbiter::datatype::FunctionNew(Isolate *isolate, const FunctionDef *de
     return {};
 }
 
-HFunction orbiter::datatype::FunctionNew(Code *code, Dict *defaults, FunctionKind kind) {
+HFunction orbiter::datatype::FunctionNew(Code *code, Tuple *defaults, FunctionKind kind) {
     auto *isolate = O_GET_ISOLATE(code);
 
     auto *f_shared = FunSharedNew(isolate, nullptr, nullptr, code->slots_count, nullptr, kind);

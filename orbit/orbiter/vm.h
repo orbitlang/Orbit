@@ -62,6 +62,20 @@ namespace orbiter {
         VMStack stack;
 
         VMState state;
+
+        bool Push(datatype::OObject *value) {
+            *((datatype::OObject **) (this->stack.stack + this->regs.SP.reg)) = O_INCREF(value);
+            this->regs.SP.reg += sizeof(void *);
+
+            return true;
+        }
+
+        bool Push(PtrSize value) {
+            *((PtrSize*) (this->stack.stack + this->regs.SP.reg)) = value;
+            this->regs.SP.reg += sizeof(PtrSize);
+
+            return true;
+        }
     };
 
     datatype::OObject *eval(Fiber *fiber);

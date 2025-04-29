@@ -87,9 +87,9 @@ namespace liftoff::ir {
 
         Instruction *visitUnary(const parser::Unary *node);
 
-        void CaptureParametersIntoClosure(const parser::Function *node);
+        unsigned int ProcessFunctionParams(const parser::Function *node, orbiter::LoadFuncFlags &f_flags);
 
-        void ProcessFunctionParams(const parser::Function *node, orbiter::LoadFuncFlags &f_flags);
+        void CaptureParametersIntoClosure(const parser::Function *node);
 
         void VisitForInLoop(const parser::Loop *node);
 
