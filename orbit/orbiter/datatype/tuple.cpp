@@ -19,9 +19,6 @@ bool orbiter::datatype::TupleAppend(Tuple *tuple, OObject *item) {
     if (tuple->length == tuple->capacity)
         return false;
 
-    if (tuple->objects[tuple->length] != nullptr)
-        O_DECREF(tuple->objects[tuple->length]);
-
     tuple->objects[tuple->length] = O_INCREF(item);
 
     tuple->length += 1;
@@ -48,7 +45,8 @@ Handle<Tuple> orbiter::datatype::TupleNew(Isolate *isolate, MSize count) {
             return {};
         }
 
-        tuple->length = count;
+        tuple->capacity = count;
+        tuple->length = 0;
         tuple->hash = 0;
     }
 
