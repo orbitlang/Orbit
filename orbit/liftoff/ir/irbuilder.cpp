@@ -482,11 +482,10 @@ Instruction *IRBuilder::visitFunction(const parser::Function *node) {
     if (!this->sym_t_->EnterScope(node->name))
         throw SymbolTableException();
 
-    this->builder_.IRContextNew(IRContextType::FUNCTION, params_count,
-                                this->sym_t_->scope->GetLocalVariableCount());
+    this->builder_.IRContextNew(IRContextType::FUNCTION, params_count);
 
     // Alloc stack space for local variables
-    this->builder_.AllocStackSlots(this->builder_.context->stack_slots, orbiter::AllocaFlags::DEFAULT);
+    this->builder_.AllocStackSlots(this->sym_t_->scope->GetLocalVariableCount(), orbiter::AllocaFlags::DEFAULT);
 
     // Check if this function can create a lexical environment, if yes, allocate another slot in stack
     if (this->sym_t_->scope->ShouldCreateClosure()) {
@@ -863,7 +862,7 @@ IRCHandle IRBuilder::Generate(const parser::ASTHandle<parser::Module *> &module)
         this->sym_t_ = module->sym_t;
 
         // Create first context
-        this->builder_.IRContextNew(IRContextType::MODULE, this->sym_t_->scope->GetLocalVariableCount(), 0);
+        this->builder_.IRContextNew(IRContextType::MODULE, this->sym_t_->scope->GetLocalVariableCount());
 
         auto *context = this->builder_.context;
 

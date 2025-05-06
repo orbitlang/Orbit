@@ -74,7 +74,11 @@ bool Builder::CheckIfLastInstructionIs(OPCode opcode) const {
 
 
 Instruction *Builder::AllocStackSlots(U16 slots, AllocaFlags flags) {
-    return this->CreateInstruction<UnaryImmInstr>(OPCode::ALLOCA, (U8) flags, slots);
+    const auto res = this->CreateInstruction<UnaryImmInstr>(OPCode::ALLOCA, (U8) flags, slots);
+
+    this->context->stack_slots += slots;
+
+    return res;
 }
 
 Instruction *Builder::CreateBinaryOp(const OPCode opcode, Instruction *left, Instruction *right) {
@@ -210,7 +214,7 @@ PhiInstr *Builder::CreatePhi() {
     return this->CreateInstruction<PhiInstr>();
 }
 
-U16 Builder::IRContextNew(IRContextType type, U16 local_slots, U16 stack_slots) {
+U16 Builder::IRContextNew(IRContextType type, U16 local_slots) {
     auto *ictx = this->allocator_.alloc<IRContext>(sizeof(IRContext));
     if (ictx == nullptr)
         throw std::bad_alloc();
@@ -218,7 +222,6 @@ U16 Builder::IRContextNew(IRContextType type, U16 local_slots, U16 stack_slots) 
     new(ictx)IRContext(this->allocator_.GetIsolate(), type);
 
     ictx->local_slots = local_slots;
-    ictx->stack_slots = stack_slots;
 
     U16 r_id = 0;
 
