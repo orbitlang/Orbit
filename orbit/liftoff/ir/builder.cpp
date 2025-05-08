@@ -74,11 +74,45 @@ bool Builder::CheckIfLastInstructionIs(OPCode opcode) const {
 
 
 Instruction *Builder::AllocStackSlots(U16 slots, AllocaFlags flags) {
-    const auto res = this->CreateInstruction<UnaryImmInstr>(OPCode::ALLOCA, (U8) flags, slots);
+    const auto bb_entry = this->context->entry_;
+
+    UnaryImmInstr *alloca = nullptr;
+    UnaryImmInstr *last_alloca = nullptr;
+
+    if (bb_entry != nullptr) {
+        for (auto cursor = bb_entry->instr.head; cursor != nullptr; cursor = cursor->next) {
+            if (cursor->type() == ObjectType::INSTRUCTION) {
+                auto *instr = (PhysInstruction *) cursor;
+
+                if (instr->opcode == OPCode::ALLOCA) {
+                    last_alloca = (UnaryImmInstr *) instr;
+                    continue;
+                }
+
+                if (last_alloca != nullptr)
+                    break;
+            }
+        }
+
+        if (last_alloca != nullptr) {
+            if ((AllocaFlags) last_alloca->flags == flags) {
+                last_alloca->imm += slots;
+
+                return last_alloca;
+            }
+        }
+    }
+
+    alloca = this->CreateObject<UnaryImmInstr>(OPCode::ALLOCA, (U8) flags, slots);
+
+    if (last_alloca != nullptr)
+        IRContext::InsertInstructionAfter(last_alloca, alloca);
+    else
+        this->AddInstruction(alloca);
 
     this->context->stack_slots += slots;
 
-    return res;
+    return alloca;
 }
 
 Instruction *Builder::CreateBinaryOp(const OPCode opcode, Instruction *left, Instruction *right) {
