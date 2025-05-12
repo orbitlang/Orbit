@@ -59,7 +59,7 @@ using namespace liftoff::ir;
 
 // Emit macro with opcode, destination register, source register, and flags
 #define EMIT_DSF(opcode, dst, src, flags) \
-    (((U32)(opcode) << 24) | ((dst) << 20) | ((src) << 16) | ((flags) << 12))
+    (((U32)(opcode) << 24) | ((dst) << 20) | ((src) << 16) | ((flags) << 12) & 0xF)
 
 // Emit macro with opcode, destination register, source register
 #define EMIT_DS(opcode, dst, src) \
