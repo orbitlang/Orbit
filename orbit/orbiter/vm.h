@@ -8,7 +8,7 @@
 #include <orbit/orbiter/vmstack.h>
 
 namespace orbiter {
-    constexpr auto kGeneralPurposeRegistersCount = 13;
+    constexpr auto kGeneralPurposeRegistersCount = 14; // 13 + Return register
     constexpr auto kSpecialPurposeRegistersCount = 3;
     constexpr auto kInternalRegistersCount = 2;
 
