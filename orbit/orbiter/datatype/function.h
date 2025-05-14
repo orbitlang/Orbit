@@ -84,12 +84,21 @@ namespace orbiter::datatype {
         }
 
         /**
+         * @brief Checks whether the function accepts keyword arguments.
+         *
+         * @return true if the function accepts keyword arguments, false otherwise.
+         */
+        [[nodiscard]] bool IsKWargs() const {
+            return ENUMBITMASK_ISTRUE(this->kind, FunctionKind::KWARGS);
+        }
+
+        /**
          * @brief Determines if the function is variadic.
          *
          * @return true if the function is variadic, false otherwise.
          */
         [[nodiscard]] bool IsVariadic() const {
-            return ENUMBITMASK_ISFALSE(this->kind, FunctionKind::REST);
+            return ENUMBITMASK_ISTRUE(this->kind, FunctionKind::REST);
         }
     };
 
