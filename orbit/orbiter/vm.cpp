@@ -51,7 +51,7 @@ int VMCall(Fiber *fiber, Function *func, unsigned short p_count, CallMode mode) 
     auto total_args = p_count;
 
     const bool call_mode_is_nargs = ENUMBITMASK_ISTRUE(mode, CallMode::NARGS);
-    const bool call_mode_is_rest = ENUMBITMASK_ISTRUE(mode, CallMode::REST_ARG);
+    bool call_mode_is_rest = ENUMBITMASK_ISTRUE(mode, CallMode::REST_ARG);
     const bool call_mode_is_kwarg = ENUMBITMASK_ISTRUE(mode, CallMode::KW_ARG);
 
     if (func->currying != nullptr)
@@ -104,7 +104,7 @@ int VMCall(Fiber *fiber, Function *func, unsigned short p_count, CallMode mode) 
             // TODO: Create a new array containing all the elements from the original one, excluding those already pushed onto the stack!
         }
     }
-    
+
     auto total_args_with_rest = total_args;
     if (call_mode_is_rest)
         total_args_with_rest += rest->length;
@@ -115,6 +115,7 @@ int VMCall(Fiber *fiber, Function *func, unsigned short p_count, CallMode mode) 
         }
 
         // TODO: Construct the array and load it into R11. If the call is variadic, merge the new array with the original one and replace it.
+        call_mode_is_rest = true;
     }
 
     // *****************************************************************************************************************
@@ -151,6 +152,15 @@ int VMCall(Fiber *fiber, Function *func, unsigned short p_count, CallMode mode) 
 
     if (call_mode_is_rest)
         fiber->vm.Push((OObject *) rest);
+    else if (func->shared->IsVariadic()) {
+        auto list = ListNew(fiber->isolate, rest->length);
+        if (!list) {
+            // TODO: error
+            assert(false);
+        }
+
+        fiber->vm.Push((OObject *) list.get());
+    }
 
     // *****************************************************************************************************************
     // * Check KWArgs
@@ -162,6 +172,14 @@ int VMCall(Fiber *fiber, Function *func, unsigned short p_count, CallMode mode) 
         }
 
         fiber->vm.Push((OObject *) kwargs);
+    } else if (func->shared->IsKWargs()) {
+        auto dict = DictNew(fiber->isolate);
+        if (!dict) {
+            // TODO: error
+            assert(false);
+        }
+
+        fiber->vm.Push((OObject *) dict.get());
     }
 
     // *****************************************************************************************************************
