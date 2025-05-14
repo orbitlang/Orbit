@@ -240,10 +240,13 @@ namespace liftoff::ir {
         friend Builder;
 
     protected:
-        explicit ReturnInstruction(Instruction *instr, bool yield) : PhysInstruction(
-            yield ? orbiter::OPCode::YLD : orbiter::OPCode::RET, 1) {
+        explicit ReturnInstruction(Instruction *instr, U16 slots) : PhysInstruction(orbiter::OPCode::RET, 1),
+                                                                     slots(slots) {
             this->SetOperand(0, instr);
         }
+
+    public:
+        U16 slots = 0;
     };
 
     // UnaryOp immediate

@@ -144,7 +144,8 @@ Instruction *Builder::CreateBranch(const OPCode opcode, Instruction *value, Basi
 Instruction *Builder::CreateCall(Instruction *src, U16 arguments, CallMode mode) {
     auto *call = this->CreateInstruction<CallInstr>(src, arguments, mode);
 
-    this->StackDiscard(arguments);
+    // this->StackDiscard(arguments); Managed by callee
+    this->context->stack_push_count -= arguments;
 
     return call;
 }
@@ -173,12 +174,12 @@ Instruction *Builder::CreateStoreVariable(const OPCode opcode, I16 offset, U8 fl
     return instr;
 }
 
-Instruction *Builder::CreateReturn(Instruction *s_reg, bool yield) {
-    return this->CreateInstruction<ReturnInstruction>(s_reg, yield);
+Instruction *Builder::CreateReturn(Instruction *s_reg, U16 slots) {
+    return this->CreateInstruction<ReturnInstruction>(s_reg, slots);
 }
 
-Instruction *Builder::CreateReturn(bool yield) {
-    return this->CreateInstruction<ReturnInstruction>(this->LoadNilValue(), yield);
+Instruction *Builder::CreateReturn(U16 slots) {
+    return this->CreateInstruction<ReturnInstruction>(this->LoadNilValue(), slots);
 }
 
 Instruction *Builder::CreateUnaryOp(const OPCode opcode, Instruction *s_reg) {

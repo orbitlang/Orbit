@@ -153,7 +153,7 @@ int VMCall(Fiber *fiber, Function *func, unsigned short p_count, CallMode mode) 
     if (call_mode_is_rest)
         fiber->vm.Push((OObject *) rest);
     else if (func->shared->IsVariadic()) {
-        auto list = ListNew(fiber->isolate, rest->length);
+        auto list = ListNew(fiber->isolate, 0);
         if (!list) {
             // TODO: error
             assert(false);
@@ -277,8 +277,11 @@ CGOTO
             }
             TARGET_OP(RET) {
                 const auto src = FETCH_R_SRC(instr);
+                const auto pops = instr & 0xFFFF;
 
-                // FIXME: Cleanup local variables!
+                // Cleanup local variables
+                for (auto i = regs->BP.reg; i != regs->SP.reg; i += sizeof(void *))
+                    O_DECREF(*(OObject**)(stack->stack + i));
 
                 REG_RR = REG_N(src);
 
@@ -293,9 +296,13 @@ CGOTO
                 REG_SP -= sizeof(FiberContext);
                 stratum::util::MemoryCopy(&fiber->context.context, stack->stack + regs->SP.reg, sizeof(FiberContext));
 
-                code = fiber->context.code;
+                // Cleanup parameters
+                for (auto i = 0; i < pops; i++) {
+                    regs->SP.reg -= sizeof(void *);
+                    O_DECREF(*(OObject**)(stack->stack + regs->SP.reg));
+                }
 
-                // FIXME: Cleanup parameters!
+                code = fiber->context.code;
 
                 continue;
             }
@@ -311,8 +318,11 @@ CGOTO
                 const auto func = (Function *) REG_N(src);
 
                 const auto res = VMCall(fiber, func, p_count, flags);
-                if (res == 1)
+                if (res == 1) {
                     code = func->shared->code;
+
+                    continue;
+                }
 
                 DISPATCH;
             }

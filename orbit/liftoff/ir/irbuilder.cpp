@@ -506,8 +506,12 @@ Instruction *IRBuilder::visitFunction(const parser::Function *node) {
 
     this->visit(node->body);
 
-    if (!this->builder_.CheckIfLastInstructionIs(orbiter::OPCode::RET))
-        this->builder_.CreateReturn(false);
+    const auto cleanup_count = node->params.size();
+
+    if (this->builder_.CheckIfLastInstructionIs(orbiter::OPCode::RET))
+        ((ReturnInstruction *) this->builder_.context->current_->instr.tail)->slots = cleanup_count;
+    else
+        this->builder_.CreateReturn(cleanup_count);
 
     this->builder_.LeaveContext();
 
@@ -764,7 +768,7 @@ unsigned int IRBuilder::ProcessFunctionParams(const parser::Function *node, Inst
                                               orbiter::LoadFuncFlags &f_flags) {
     def_args = nullptr;
 
-    int def_params_count = 0;
+    short def_params_count = 0;
     short remove_count = 0;
 
     for (auto &param: node->params) {

@@ -47,7 +47,7 @@ using namespace liftoff::ir;
 
 // Emit macro with opcode, source register, and offset (flags set to 0)
 #define EMIT_SO(opcode, src, offset) \
-    (((U32)(opcode) << 24) | ((0) << 20) | ((src) << 16) | (offset))
+    (((U32)(opcode) << 24) | ((0) << 20) | ((src) << 16) | (offset & 0xFFFF))
 
 // Emit macro with opcode, destination register, and offset (source set to 0)
 #define EMIT_DO(opcode, dst, offset) \
@@ -143,7 +143,7 @@ unsigned char *Codegen::EmitOpcodes(BasicBlock *block, unsigned char *m_code) {
             case orbiter::OPCode::YLD:
                 *(orbiter::MachineWord *) m_code = EMIT_SO(instr->opcode,
                                                            ((Instruction*)instr->operands[0].value)->assigned_reg,
-                                                           0);
+                                                           ((ReturnInstruction*)instr)->slots);
                 break;
             case orbiter::OPCode::CALL:
                 *(orbiter::MachineWord *) m_code = EMIT_FSO(instr->opcode,

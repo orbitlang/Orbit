@@ -144,9 +144,9 @@ namespace liftoff::ir {
 
         Instruction *CreateStoreVariable(orbiter::OPCode opcode, I16 offset, U8 flags, Instruction *value);
 
-        Instruction *CreateReturn(Instruction *s_reg, bool yield);
+        Instruction *CreateReturn(Instruction *s_reg, U16 slots);
 
-        Instruction *CreateReturn(bool yield);
+        Instruction *CreateReturn(U16 slots);
 
         Instruction *CreateUnaryOp(orbiter::OPCode opcode, Instruction *s_reg);
 
