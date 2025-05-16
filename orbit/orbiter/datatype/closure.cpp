@@ -27,8 +27,11 @@ bool orbiter::datatype::ClosureTypeSetup(TypeInfo *self) {
 HClosure orbiter::datatype::ClosureNew(Isolate *isolate, U16 slots) {
     auto closure = MakeObject<Closure>(isolate, InstanceType::CLOSURE, slots * sizeof(void *));
 
-    if (closure != nullptr)
+    if (closure != nullptr) {
         closure->slots = slots;
+
+        stratum::util::MemoryZero(((unsigned char *) closure) + sizeof(Closure), slots * sizeof(void *));
+    }
 
     // This is treated as a non-container object for garbage collection purposes
     O_GC_TRACK_RETURN(isolate, closure, false);
