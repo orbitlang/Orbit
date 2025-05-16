@@ -9,6 +9,7 @@
 
 #include <orbit/orbiter/isolate.h>
 
+#include <orbit/orbiter/datatype/closure.h>
 #include <orbit/orbiter/datatype/context.h>
 #include <orbit/orbiter/datatype/code.h>
 #include <orbit/orbiter/datatype/dict.h>
@@ -111,6 +112,9 @@ namespace orbiter::datatype {
         /// Pointer to shared function data
         FuncShared *shared;
 
+        /// Pointer to the closure associated with the function.
+        Closure *closure;
+
         /// Tuple that contains values for partial application.
         Tuple *currying;
     };
@@ -144,18 +148,19 @@ namespace orbiter::datatype {
     HFunction FunctionNew(Isolate *isolate, const FunctionDef *def);
 
     /**
-     * @brief Creates a new Function object with the specified code, defaults, and function kind.
+     * @brief Creates a new Function object with the specified code, closure, defaults and function kind.
      *
      * This constructor initializes a new shared function data object and associates
      * it with the provided code and default values. It also sets up the function's
-     * execution context and module information.
+     * execution context, closure environment and module information.
      *
      * @param code A pointer to the Code object representing the code for the function.
-     * @param defaults A pointer to the Dict object containing default argument values for the function.
+     * @param closure A pointer to the Closure object containing the captured variables.
+     * @param defaults A pointer to the Tuple object containing default argument values.
      * @param kind The type of function, defined by the FunctionKind enumeration.
      * @return An HFunction handle representing the created Function object.
      */
-    HFunction FunctionNew(Code *code, Tuple *defaults, FunctionKind kind);
+    HFunction FunctionNew(Code *code, Closure *closure, Tuple *defaults, FunctionKind kind);
 
     /**
      * @brief Creates a new function object with provided arguments and curried values.

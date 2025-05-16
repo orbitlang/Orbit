@@ -90,7 +90,7 @@ HFunction orbiter::datatype::FunctionNew(Isolate *isolate, const FunctionDef *de
     return {};
 }
 
-HFunction orbiter::datatype::FunctionNew(Code *code, Tuple *defaults, FunctionKind kind) {
+HFunction orbiter::datatype::FunctionNew(Code *code, Closure *closure, Tuple *defaults, FunctionKind kind) {
     auto *isolate = O_GET_ISOLATE(code);
 
     auto *f_shared = FunSharedNew(isolate, nullptr, nullptr, code->slots_count, nullptr, kind);
@@ -106,10 +106,10 @@ HFunction orbiter::datatype::FunctionNew(Code *code, Tuple *defaults, FunctionKi
         const auto fiber = Fiber::Current();
 
         fn->shared = f_shared;
-
         fn->shared->context = O_FAST_INCREF(fiber->context.context);
         fn->shared->module = O_INCREF(fiber->context.module);
 
+        fn->closure = O_INCREF(closure);
         fn->currying = nullptr;
 
         O_GC_TRACK_RETURN(isolate, fn, false);

@@ -37,8 +37,8 @@ namespace orbiter {
     };
 
     enum class ClosureLSMode : U8 {
-        FUNC_SLOT = 0,
-        STACK
+        LOCALS_SLOT = 0,
+        PARAM_SLOT
     };
 
     enum class ComparisonMode : U8 {

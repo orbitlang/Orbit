@@ -184,6 +184,13 @@ int VMCall(Fiber *fiber, Function *func, unsigned short p_count, CallMode mode) 
     }
 
     // *****************************************************************************************************************
+    // * SETUP CLOSURE OBJECT (if any)
+    // *****************************************************************************************************************
+
+    if (func->closure != nullptr)
+        fiber->vm.Push((OObject *) func->closure);
+
+    // *****************************************************************************************************************
     // * ADJUST STACK AND REGISTERS
     // *****************************************************************************************************************
 
@@ -485,8 +492,15 @@ CGOTO
                 auto flags = FETCH_F_SRC(ClosureLSMode, instr);
                 auto slot = FETCH_IMM(instr);
 
+                Closure *closure = nullptr;
 
-                assert(false);
+                if (flags == ClosureLSMode::LOCALS_SLOT)
+                    closure = *(Closure **) (stack->stack + regs->BP.reg + (code->slots_count * sizeof(void *)));
+                else
+                    closure = *(Closure **) (stack->stack + (regs->BP.reg - (kSkOffset + sizeof(void*))));
+
+                REG_N(dst) = (PtrSize) ClosureGet(closure, slot).get();
+
                 DISPATCH;
             }
             TARGET_OP(CLOSTR) {
@@ -494,7 +508,15 @@ CGOTO
                 auto flags = FETCH_F_SRC(ClosureLSMode, instr);
                 auto slot = FETCH_IMM(instr);
 
-                assert(false);
+                Closure *closure = nullptr;
+
+                if (flags == ClosureLSMode::LOCALS_SLOT)
+                    closure = *(Closure **) (stack->stack + regs->BP.reg + (code->slots_count * sizeof(void *)));
+                else
+                    closure =  *(Closure **) (stack->stack + (regs->BP.reg - (kSkOffset + sizeof(void*))));
+
+                ClosureSet(closure, slot, (OObject *) REG_N(src));
+
                 DISPATCH;
             }
             TARGET_OP(ALLOCA) {
@@ -520,10 +542,14 @@ CGOTO
                 const auto flags = (LoadFuncFlags) ((instr >> 4) & 0xFF);
 
                 auto fn_kind = (FunctionKind) 0;
+                Closure *closure = nullptr;
                 Tuple *defs = nullptr;
 
                 if (ENUMBITMASK_ISTRUE(flags, LoadFuncFlags::ASYNC))
                     fn_kind = FunctionKind::ASYNC;
+
+                if (ENUMBITMASK_ISTRUE(flags, LoadFuncFlags::CLOSURE))
+                    closure = *(Closure **) (stack->stack + regs->BP.reg + (code->slots_count * sizeof(void *)));
 
                 if (ENUMBITMASK_ISTRUE(flags, LoadFuncFlags::REST_PARAMS))
                     fn_kind = FunctionKind::REST;
@@ -531,7 +557,7 @@ CGOTO
                 if (ENUMBITMASK_ISTRUE(flags, LoadFuncFlags::NPARAMS))
                     defs = (Tuple *) REG_N(FETCH_R_RSRC(instr));
 
-                auto func = FunctionNew((Code *) REG_N(src), defs, fn_kind);
+                auto func = FunctionNew((Code *) REG_N(src), closure, defs, fn_kind);
                 if (!func) {
                     // TODO: error!
                 }

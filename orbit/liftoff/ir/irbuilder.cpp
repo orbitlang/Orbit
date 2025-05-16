@@ -126,8 +126,8 @@ Instruction *IRBuilder::LoadVariable(const Symbol *symbol) {
 
     if (symbol->upvalue) {
         ret = this->builder_.LoadFromClosureAtOffset(offset, symbol->defining_scope == this->sym_t_->scope
-                                                                 ? orbiter::ClosureLSMode::STACK
-                                                                 : orbiter::ClosureLSMode::FUNC_SLOT);
+                                                                 ? orbiter::ClosureLSMode::LOCALS_SLOT
+                                                                 : orbiter::ClosureLSMode::PARAM_SLOT);
 
         goto EXIT;
     }
@@ -190,8 +190,8 @@ Instruction *IRBuilder::StoreVariable(const Symbol *symbol, Instruction *value, 
     if (symbol->upvalue) {
         this->builder_.StoreToClosureAtOffset(value, offset,
                                               symbol->defining_scope == this->sym_t_->scope
-                                                  ? orbiter::ClosureLSMode::STACK
-                                                  : orbiter::ClosureLSMode::FUNC_SLOT);
+                                                  ? orbiter::ClosureLSMode::LOCALS_SLOT
+                                                  : orbiter::ClosureLSMode::PARAM_SLOT);
 
         goto EXIT;
     }
@@ -501,12 +501,15 @@ Instruction *IRBuilder::visitFunction(const parser::Function *node) {
         this->CaptureParametersIntoClosure(node);
     }
 
-    if (this->sym_t_->scope->closure)
+    auto cleanup_count = node->params.size();
+
+    if (this->sym_t_->scope->closure) {
         f_flags = orbiter::LoadFuncFlags::CLOSURE;
 
-    this->visit(node->body);
+        cleanup_count += 1;
+    }
 
-    const auto cleanup_count = node->params.size();
+    this->visit(node->body);
 
     if (this->builder_.CheckIfLastInstructionIs(orbiter::OPCode::RET))
         ((ReturnInstruction *) this->builder_.context->current_->instr.tail)->slots = cleanup_count;
