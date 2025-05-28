@@ -159,6 +159,11 @@ void IRContext::AddActiveVar(const Symbol *symbol, Instruction *instr) {
 
 std::vector<LiveInterval> &IRContext::ComputeLiveIntervals() {
     for (auto *block = this->entry_; block != nullptr; block = block->next) {
+        for (auto *instr = block->instr.head; instr != nullptr; instr = instr->next)
+            instr->instr_offset = this->logical_counter_++;
+    }
+
+    for (auto *block = this->entry_; block != nullptr; block = block->next) {
         for (auto *instr = block->instr.head; instr != nullptr; instr = instr->next) {
             if (instr->use_list != nullptr) {
                 U32 end = 0;

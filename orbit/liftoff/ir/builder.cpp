@@ -14,10 +14,8 @@ BasicBlock *Builder::AddInstruction(Instruction *instruction) {
     if (bb == nullptr)
         bb = this->CreateAppendBasicBlock();
 
-    instruction->instr_offset = this->context->logical_counter_++;
     bb->AddInstruction(instruction);
 
-    bb->size += 4;
     this->context->program_size += 4;
 
     return bb;
@@ -72,7 +70,6 @@ bool Builder::CheckIfLastInstructionIs(OPCode opcode) const {
     return false;
 }
 
-
 Instruction *Builder::AllocStackSlots(U16 slots, AllocaFlags flags) {
     const auto bb_entry = this->context->entry_;
 
@@ -88,10 +85,9 @@ Instruction *Builder::AllocStackSlots(U16 slots, AllocaFlags flags) {
                     last_alloca = (UnaryImmInstr *) instr;
                     continue;
                 }
-
-                if (last_alloca != nullptr)
-                    break;
             }
+
+            break;
         }
 
         if (last_alloca != nullptr) {
@@ -105,10 +101,17 @@ Instruction *Builder::AllocStackSlots(U16 slots, AllocaFlags flags) {
 
     alloca = this->CreateObject<UnaryImmInstr>(OPCode::ALLOCA, (U8) flags, slots);
 
-    if (last_alloca != nullptr)
+    if (last_alloca == nullptr) {
+        if (bb_entry != nullptr) {
+            bb_entry->AddInstructionFirst(alloca);
+
+            this->context->program_size += 4;
+        }
+        else
+            this->AddInstruction(alloca);
+    } else
         IRContext::InsertInstructionAfter(last_alloca, alloca);
-    else
-        this->AddInstruction(alloca);
+
 
     this->context->stack_slots += slots;
 
@@ -206,7 +209,7 @@ Instruction *Builder::LoadFromStackOffset(I16 offset) {
     return this->LoadFromOffset(OPCode::SKLDR, offset, 0);
 }
 
-Instruction *Builder::LoadFunction(Instruction *src, Instruction* def_args, LoadFuncFlags flags) {
+Instruction *Builder::LoadFunction(Instruction *src, Instruction *def_args, LoadFuncFlags flags) {
     return this->CreateInstruction<LoadFunc>(src, def_args, flags);
 }
 

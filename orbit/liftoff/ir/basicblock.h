@@ -85,6 +85,8 @@ namespace liftoff::ir {
          * @param instr Pointer to the instruction to be added.
          */
         void AddInstruction(Instruction *instr) noexcept {
+            this->size += 4;
+
             if (this->instr.head == nullptr) {
                 this->instr.head = instr;
                 this->instr.tail = instr;
@@ -95,6 +97,20 @@ namespace liftoff::ir {
             instr->prev = this->instr.tail;
             this->instr.tail->next = instr;
             this->instr.tail = instr;
+        }
+
+        /**
+         * @brief Adds an instruction to the beginning of the instruction list in the basic block.
+         *
+         * @param instr Pointer to the `Instruction` object to be added to the start of the list.
+         */
+        void AddInstructionFirst(Instruction *instr) noexcept {
+            instr->next = this->instr.head;
+            this->instr.head->prev = instr;
+
+            this->instr.head = instr;
+
+            this->size += 4;
         }
 
         /**
