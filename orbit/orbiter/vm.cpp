@@ -364,7 +364,7 @@ CGOTO
                 const auto shift = (instr >> 16) & 0x0F;
                 const auto dst = FETCH_R_DST(instr);
 
-                REG_N(dst) = REG_N(dst) | (imm << (16 * shift));
+                REG_N(dst) = shift == 0 ? imm : REG_N(dst) | (imm << (16 * shift));
 
                 DISPATCH;
             }
