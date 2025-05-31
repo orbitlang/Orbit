@@ -13,15 +13,18 @@ LinearScan::LinearScan(IRContext *ir, U16 total_regs) noexcept : builder_(ir),
     assert(total_regs >= 2);
 
     for (auto i = total_regs - 1; i >= 0; --i)
-        this->free_registers_.push_back(static_cast<U16>(i));
+        this->free_registers_.insert(static_cast<U16>(i));
 
     this->stack_offset_ = ir->stack_slots;
 }
 
 U16 LinearScan::GetFreeStackSlot() {
     if (!this->free_stack_slot_.empty()) {
-        const auto slot = this->free_stack_slot_.back();
-        this->free_stack_slot_.pop_back();
+        const auto minSlot = this->free_stack_slot_.begin();
+
+        const auto slot = *minSlot;
+
+        this->free_stack_slot_.erase(minSlot);
 
         return slot;
     }
@@ -80,7 +83,7 @@ void LinearScan::ExpireOldIntervals(const U32 position) {
         const LiveInterval *interval = *it;
 
         if (interval->end < position) {
-            this->free_registers_.push_back(interval->instr->assigned_reg);
+            this->free_registers_.insert(interval->instr->assigned_reg);
 
             it = this->active_.erase(it);
 
@@ -96,7 +99,7 @@ void LinearScan::ExpireOldIntervals(const U32 position) {
 
         if (interval->end < position) {
             if (interval->instr->stack_slot > -1)
-                this->free_stack_slot_.push_back(interval->instr->stack_slot);
+                this->free_stack_slot_.insert(interval->instr->stack_slot);
 
             it = this->active_stack_.erase(it);
 
@@ -199,8 +202,9 @@ void LinearScan::Allocate() {
             continue;
         }
 
-        interval.instr->SetRegister((I16) this->free_registers_.back());
-        this->free_registers_.pop_back();
+        auto minReg = this->free_registers_.begin();
+        interval.instr->SetRegister((I16) *minReg);
+        this->free_registers_.erase(minReg);
 
         this->active_.insert(&interval);
     }

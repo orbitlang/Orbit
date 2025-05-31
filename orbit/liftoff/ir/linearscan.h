@@ -22,8 +22,8 @@ namespace liftoff::ir {
         std::set<LiveInterval*,IntervalEndComparator> active_;
         std::set<LiveInterval *> active_stack_;
 
-        std::vector<U16> free_registers_;
-        std::vector<U16> free_stack_slot_;
+        std::set<U16> free_registers_;
+        std::set<U16> free_stack_slot_;
 
         Builder builder_;
 
