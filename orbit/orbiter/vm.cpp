@@ -497,7 +497,7 @@ CGOTO
                 if (flags == ClosureLSMode::LOCALS_SLOT)
                     closure = *(Closure **) (stack->stack + regs->BP.reg + (code->slots_count * sizeof(void *)));
                 else
-                    closure = *(Closure **) (stack->stack + (regs->BP.reg - (kSkOffset + sizeof(void*))));
+                    closure = *(Closure **) (stack->stack + (regs->BP.reg - (kSkOffset + sizeof(void *))));
 
                 REG_N(dst) = (PtrSize) ClosureGet(closure, slot).get();
 
@@ -513,7 +513,7 @@ CGOTO
                 if (flags == ClosureLSMode::LOCALS_SLOT)
                     closure = *(Closure **) (stack->stack + regs->BP.reg + (code->slots_count * sizeof(void *)));
                 else
-                    closure =  *(Closure **) (stack->stack + (regs->BP.reg - (kSkOffset + sizeof(void*))));
+                    closure = *(Closure **) (stack->stack + (regs->BP.reg - (kSkOffset + sizeof(void *))));
 
                 ClosureSet(closure, slot, (OObject *) REG_N(src));
 
@@ -548,8 +548,10 @@ CGOTO
                 if (ENUMBITMASK_ISTRUE(flags, LoadFuncFlags::ASYNC))
                     fn_kind = FunctionKind::ASYNC;
 
-                if (ENUMBITMASK_ISTRUE(flags, LoadFuncFlags::CLOSURE))
+                if (ENUMBITMASK_ISTRUE(flags, LoadFuncFlags::A_CLOSURE))
                     closure = *(Closure **) (stack->stack + regs->BP.reg + (code->slots_count * sizeof(void *)));
+                else if (ENUMBITMASK_ISTRUE(flags, LoadFuncFlags::P_CLOSURE))
+                    closure = *(Closure **) (stack->stack + (regs->BP.reg - (kSkOffset + sizeof(void *))));
 
                 if (ENUMBITMASK_ISTRUE(flags, LoadFuncFlags::REST_PARAMS))
                     fn_kind = FunctionKind::REST;

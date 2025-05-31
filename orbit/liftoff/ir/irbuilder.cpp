@@ -504,7 +504,11 @@ Instruction *IRBuilder::visitFunction(const parser::Function *node) {
     auto cleanup_count = node->params.size();
 
     if (this->sym_t_->scope->closure) {
-        f_flags = orbiter::LoadFuncFlags::CLOSURE;
+        f_flags = orbiter::LoadFuncFlags::A_CLOSURE;
+
+        if (this->sym_t_->scope->back->type == ScopeType::FUNCTION
+            && this->sym_t_->scope->back->closure)
+            f_flags = orbiter::LoadFuncFlags::P_CLOSURE;
 
         cleanup_count += 1;
     }

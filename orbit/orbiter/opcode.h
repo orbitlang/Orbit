@@ -56,11 +56,12 @@ namespace orbiter {
         SIMPLE = 0,
 
         ASYNC = 0x1,
-        CLOSURE = 0x2,
-        NPARAMS = 0x4,
-        KW_PARAMS = 0x8,
-        REST_PARAMS = 0x10,
-        GENERATOR = 0x20
+        A_CLOSURE = 1 << 1,
+        P_CLOSURE = 1 << 2,
+        NPARAMS = 1 << 3,
+        KW_PARAMS = 1 << 4,
+        REST_PARAMS = 1 << 5,
+        GENERATOR = 1 << 6
     };
 
     enum class LoadConstantMode : U8 {
