@@ -460,8 +460,12 @@ void SymbolTable::LeaveScope(MSize offset, MSize line_end) noexcept {
     if (this->c_offset == &c_scope->closure_offset)
         this->c_offset = nullptr;
 
-    if (this->scope->type != ScopeType::MODULE)
+    if (this->scope->type != ScopeType::MODULE) {
         this->scope = c_scope->back;
+
+        if (this->scope->type == ScopeType::FUNCTION && this->scope->back->type == ScopeType::FUNCTION)
+            this->scope->closure = c_scope->closure;
+    }
 }
 
 void SymbolTable::LeaveScope() noexcept {

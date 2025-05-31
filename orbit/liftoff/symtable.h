@@ -86,8 +86,6 @@ namespace liftoff {
 
         SubScope *active = nullptr;
 
-        Scope *back = nullptr;
-
         unsigned short closure_offset = 0;
 
         unsigned short static_offset = 0;
@@ -104,6 +102,8 @@ namespace liftoff {
         friend class SymbolTable;
 
     public:
+        Scope *back = nullptr;
+
         ScopeType type = ScopeType::MODULE;
 
         MSize line_start = 0;
