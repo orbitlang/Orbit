@@ -917,6 +917,14 @@ ASTHandle<ASTNode *> Parser::ParseBlock(bool nested) {
         throw SymbolTableException();
 
     while (!this->Match(TokenType::RIGHT_BRACES)) {
+        if (this->context_->Check(ContextType::CLASS)) {
+            if (!this->Match(TokenType::KW_LET, TokenType::KW_VAR, TokenType::KW_FUNC))
+                throw ParserException(71);
+        } else if (this->context_->Check(ContextType::TRAIT)) {
+            if (!this->Match(TokenType::KW_LET, TokenType::KW_FUNC))
+                throw ParserException(72);
+        }
+
         block->statements.push_back(this->ParseStatement());
 
         if (!this->Match(TokenType::END_OF_LINE, TokenType::SEMICOLON, TokenType::RIGHT_BRACES))

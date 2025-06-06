@@ -82,7 +82,9 @@ namespace liftoff::parser {
         "Undefined label: break/continue refers to a non-existent or invalid label",
         "Invalid function declaration: function body is required. Only methods in traits and classes can be declared without a body (abstract methods). Regular functions must always have a body defined",
         "Invalid constant(let keyword) declaration: can only be used within class, trait, or module definitions",
-        "Unsupported syntax: the current implementation does not support this construction"
+        "Unsupported syntax: the current implementation does not support this construction",
+        "Invalid syntax within class definition: expected method, var/let declaration, or class-level statement",
+        "Invalid syntax within trait definition: expected method, let declaration, or trait-level statement"
     };
 
     class Context;
