@@ -396,9 +396,6 @@ Instruction *IRBuilder::visitCall(parser::Call *node) {
     Instruction *rest = nullptr;
     Instruction *kwargs = nullptr;
 
-    // Check partial apply (Currying evaluation)
-    this->builder_.CreateUnaryOp(orbiter::OPCode::CHK_PARTIAL, func);
-
     // Args
     for (const auto &arg: node->args) {
         arg_value = this->visit(arg.get());

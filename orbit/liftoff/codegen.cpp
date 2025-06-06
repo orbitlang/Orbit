@@ -267,7 +267,6 @@ unsigned char *Codegen::EmitOpcodes(BasicBlock *block, unsigned char *m_code) {
                                                             jmp->offset);
                 break;
             }
-            case orbiter::OPCode::CHK_PARTIAL:
             case orbiter::OPCode::SYNC_ENTER:
             case orbiter::OPCode::SYNC_EXIT:
                 *(orbiter::MachineWord *) m_code = EMIT_SO(instr->opcode,

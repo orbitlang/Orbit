@@ -123,7 +123,6 @@ namespace orbiter {
         RET, // Return instruction      OPCODE | 4 RESERVED | 4 SRC | 16 POP VALUES
         YLD, // Yield instruction       OPCODE | 4 RESERVED | 4 SRC | 16 RESERVED
 
-        CHK_PARTIAL, // Check if partial function before call: OPCODE | 4 RESERVED | 4 SRC (func) | 16 RESERVED
         CALL, // Call function: OPCODE | 4 FLAGS(CallMode) | 4 SRC | 16 ARITY
 
         // Load/Store Operations

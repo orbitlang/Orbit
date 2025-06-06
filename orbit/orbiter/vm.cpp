@@ -315,10 +315,6 @@ CGOTO
 
                 continue;
             }
-            TARGET_OP(CHK_PARTIAL) {
-                // TODO: IMPL
-                DISPATCH;
-            }
             TARGET_OP(CALL) {
                 const auto flags = FETCH_F_DST(CallMode, instr);
                 const auto src = FETCH_R_SRC(instr);
