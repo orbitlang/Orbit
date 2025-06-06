@@ -368,9 +368,11 @@ CGOTO
                 const auto value = REG_N(FETCH_R_SRC(instr));
                 const auto k_index = FETCH_IMM(instr);
 
-                ContextSet(fiber->context.context,
-                           (ORString *) code->unknown_symbols->objects[k_index],
-                           (OObject *) value);
+                if (!ContextSet(fiber->context.context,
+                                (ORString *) code->unknown_symbols->objects[k_index],
+                                (OObject *) value)) {
+                    // TODO: Error!
+                }
 
                 DISPATCH;
             }
@@ -382,6 +384,20 @@ CGOTO
                 assert(module_slots != nullptr);
 
                 *(module_slots + slot) = (OObject *) value;
+
+                DISPATCH;
+            }
+            TARGET_OP(LDGBL) {
+                const auto dst = FETCH_R_DST(instr);
+                const auto k_index = FETCH_IMM(instr);
+                HOObject out;
+
+                if (!ContextLookup(fiber->context.context, (ORString *) code->unknown_symbols->objects[k_index],
+                                   out, nullptr)) {
+                    // TODO: Error!
+                }
+
+                REG_N(dst) = (PtrSize) out.get();
 
                 DISPATCH;
             }
