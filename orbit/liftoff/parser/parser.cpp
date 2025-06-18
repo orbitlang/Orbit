@@ -92,8 +92,14 @@ int PeekPrecedence(TokenType token) {
 ASTHandle<ASTNode *> Parser::ParseClassTrait() {
     Context isolate(this, TKCUR_TYPE == TokenType::KW_CLASS ? ContextType::CLASS : ContextType::TRAIT);
 
-    auto ct = MakeConstruct(this->isolate_, TKCUR_LOC,
-                            TKCUR_TYPE == TokenType::KW_CLASS ? NodeType::CLASS : NodeType::TRAIT);
+    auto ct = MakeConstruct(this->isolate_,
+                            TKCUR_LOC,
+                            TKCUR_TYPE == TokenType::KW_CLASS
+                                ? NodeType::CLASS
+                                : NodeType::TRAIT);
+
+    const auto tk_s_offset = TKCUR_LOC.start.offset;
+    const auto tk_s_line = TKCUR_LOC.start.line;
 
     ct->doc = this->GetDocString().release();
 
@@ -103,7 +109,13 @@ ASTHandle<ASTNode *> Parser::ParseClassTrait() {
     if (ct->name == nullptr)
         throw DatatypeException();
 
-    if (!this->sym_t_->DeclareSymbolScope(ct->name, SymbolType::TRAIT, TKCUR_LOC.start.offset, TKCUR_LOC.start.line))
+    if (!this->sym_t_->DeclareSymbolScope(
+        ct->name,
+        ct->node_type == NodeType::CLASS
+            ? SymbolType::CLASS
+            : SymbolType::TRAIT,
+        tk_s_offset,
+        tk_s_line))
         throw SymbolTableException();
 
     this->Eat(true);
