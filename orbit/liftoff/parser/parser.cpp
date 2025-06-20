@@ -133,11 +133,9 @@ ASTHandle<ASTNode *> Parser::ParseClassTrait() {
         while (this->MatchEat(TokenType::PLUS, true));
     }
 
-    const auto old_pub = this->exports;
+    const auto old_pub = std::move(this->exports);
 
     try {
-        this->exports = ct->exports;
-
         ct->body = this->ParseBlock(false).release();
     } catch (...) {
         this->exports = old_pub;
@@ -146,6 +144,8 @@ ASTHandle<ASTNode *> Parser::ParseClassTrait() {
 
         throw;
     }
+
+    ct->exports = std::move(this->exports);
 
     this->exports = old_pub;
 
