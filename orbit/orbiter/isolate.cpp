@@ -3,6 +3,7 @@
 // Licensed under the Apache License v2.0
 
 #include <orbit/orbiter/datatype/atom.h>
+#include <orbit/orbiter/datatype/ctbuilder.h>
 #include <orbit/orbiter/datatype/closure.h>
 #include <orbit/orbiter/datatype/code.h>
 #include <orbit/orbiter/datatype/context.h>
@@ -60,6 +61,7 @@ Isolate *Isolate::New() {
     INIT_TYPE(InstanceType::TYPE, TypeInit);
 
     INIT_TYPE(InstanceType::ATOM, AtomTypeInit);
+    INIT_TYPE(InstanceType::CLASS, ClassTypeInit);
     INIT_TYPE(InstanceType::CLOSURE, ClosureTypeInit);
     INIT_TYPE(InstanceType::CODE, CodeTypeInit);
     INIT_TYPE(InstanceType::CONTEXT, ContextInit);
@@ -70,6 +72,7 @@ Isolate *Isolate::New() {
     INIT_TYPE(InstanceType::MODULE, ModuleInit);
     INIT_TYPE(InstanceType::NUMBER, NumberTypeInit);
     INIT_TYPE(InstanceType::STRING, ORStringTypeInit);
+    INIT_TYPE(InstanceType::TRAIT, TraitTypeInit);
     INIT_TYPE(InstanceType::TUPLE, TupleTypeInit);
 
     // *****************************************************************************************************************
@@ -77,6 +80,7 @@ Isolate *Isolate::New() {
     SETUP_TYPE(InstanceType::TYPE, TypeSetup);
 
     SETUP_TYPE(InstanceType::ATOM, AtomTypeSetup);
+    SETUP_TYPE(InstanceType::CLASS, ClassTypeSetup);
     SETUP_TYPE(InstanceType::CLOSURE, ClosureTypeSetup);
     SETUP_TYPE(InstanceType::CODE, CodeTypeSetup);
     SETUP_TYPE(InstanceType::CONTEXT, ContextSetup);
@@ -87,6 +91,7 @@ Isolate *Isolate::New() {
     SETUP_TYPE(InstanceType::MODULE, ModuleSetup);
     SETUP_TYPE(InstanceType::NUMBER, NumberTypeSetup);
     SETUP_TYPE(InstanceType::STRING, ORStringTypeSetup);
+    SETUP_TYPE(InstanceType::TRAIT, TraitTypeSetup);
     SETUP_TYPE(InstanceType::TUPLE, TupleTypeSetup);
 
     return isolate;

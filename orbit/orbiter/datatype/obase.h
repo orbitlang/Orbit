@@ -80,6 +80,7 @@ namespace orbiter::datatype {
 
         ATOM,
         BYTES,
+        CLASS,
         CLOSURE,
         CODE,
         CONTEXT,
@@ -93,10 +94,11 @@ namespace orbiter::datatype {
         OBJECT,
         SET,
         STRING,
+        TRAIT,
         TUPLE
     };
 
-    constexpr int kInstanceTypeCount = 17;
+    constexpr int kInstanceTypeCount = 19;
 
     using TypeInfoAUXDtor = bool (*)(struct TypeInfo *self);
 
