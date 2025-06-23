@@ -39,6 +39,8 @@ namespace orbiter::datatype {
 
         List *static_resources;
 
+        ORString *name;
+
         ORString *doc;
 
         U16 slots_count;
@@ -46,6 +48,11 @@ namespace orbiter::datatype {
         U16 stack_size;
 
         MSize hash;
+
+        void SetProps(ORString *name, ORString *doc) {
+            this->name = O_INCREF(name);
+            this->doc = O_INCREF(doc);
+        }
     };
 
     using HCode = Handle<Code>;
