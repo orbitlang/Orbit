@@ -105,6 +105,7 @@ NODES = {
             "async": "bool",
             "anon": "bool",
             "constant": "bool",
+            "method": "bool",
             "pub": "bool"
         }
     },

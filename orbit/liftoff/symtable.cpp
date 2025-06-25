@@ -167,7 +167,7 @@ Symbol *SymbolTable::SymbolNew(ORString *name, SymbolType type, MSize offset) no
     if (type != SymbolType::UNKNOWN) {
         if (type == SymbolType::PARAMETER)
             symbol->offset = this->scope->parameter_count++;
-        else if (type != SymbolType::VARIABLE)
+        else if (type == SymbolType::CONSTANT || type == SymbolType::CLASS || type == SymbolType::TRAIT)
             symbol->offset = this->scope->static_offset++;
     }
 
@@ -303,11 +303,18 @@ Symbol *SymbolTable::Lookup(ORString *name, MSize offset) noexcept {
 
     const auto *scope = this->scope;
 
+    /*
+     * Prevent looking up variables inside a class/trait scope unless 'self' is used.
+     * Search in class/trait scope only if the current scope is a class/trait,
+     * otherwise skip class/trait scopes while climbing the hierarchy.
+     */
+    const auto from_clazz = scope->type == ScopeType::CLASS || scope->type == ScopeType::TRAIT;
+
     while (scope != nullptr) {
         const auto *s_scope = scope->active;
         while (s_scope != nullptr) {
-            if (scope->type != ScopeType::CLASS
-                && scope->type != ScopeType::TRAIT
+            if ((from_clazz || (scope->type != ScopeType::CLASS
+                                && scope->type != ScopeType::TRAIT))
                 && s_scope->symbols.Lookup(name, &entry)) {
                 auto *sym = entry->value;
 
@@ -417,7 +424,9 @@ void SymbolTable::ComputeLocalVarOffset(const SubScope *s_scope) const noexcept 
             auto *value = cursor->value;
 
             while (value != nullptr) {
-                if ((value->type == SymbolType::VARIABLE || value->type == SymbolType::FUNC) && !value->anon)
+                if ((value->type == SymbolType::VARIABLE
+                     || value->type == SymbolType::FUNC
+                     || value->type == SymbolType::METHOD) && !value->anon)
                     value->offset = this->scope->local_variables++;
                 else if (value->type == SymbolType::UNKNOWN)
                     value->offset = this->scope->unknown_variables++;

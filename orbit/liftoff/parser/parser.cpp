@@ -1797,7 +1797,9 @@ ASTHandle<liftoff::parser::Function *> Parser::ParseFunction(const Position &sta
         func->anon = true;
     }
 
-    auto *sym = this->sym_t_->DeclareSymbolScope(func->name, SymbolType::FUNC, func->loc.start.offset,
+    auto *sym = this->sym_t_->DeclareSymbolScope(func->name,
+                                                 SymbolType::FUNC,
+                                                 func->loc.start.offset,
                                                  func->loc.start.line);
     if (sym == nullptr)
         throw SymbolTableException();
@@ -1827,8 +1829,13 @@ ASTHandle<liftoff::parser::Function *> Parser::ParseFunction(const Position &sta
     }
 
     if (!func->constant && (this->context_->CheckBack(ContextType::CLASS)
-                            || this->context_->CheckBack(ContextType::TRAIT)))
+                            || this->context_->CheckBack(ContextType::TRAIT))) {
         func->params.emplace_back(std::move(this->PushSelfParam(last_param)));
+
+        func->method = true;
+
+        sym->type = SymbolType::METHOD;
+    }
 
     this->IgnoreNewLineIF(TokenType::LEFT_BRACES);
 
