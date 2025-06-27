@@ -43,7 +43,7 @@ namespace liftoff::parser {
         "Missing semicolon: expected ';' after test expression",
         "Invalid for-in loop: expected 'in' keyword after loop variables",
         "Invalid yield statement: expected expression after 'yield'",
-        "Invalid yield usage: 'yield' can only be used inside functions",
+        "Invalid yield usage: 'yield' can only be used inside function/method",
         "Invalid try block: must have at least one catch or finally clause",
         "Invalid catch clause: expected @atom after catch",
         "Invalid label placement: labels cannot be stacked. Each label must be followed by a valid loop statement",
@@ -84,7 +84,12 @@ namespace liftoff::parser {
         "Invalid constant(let keyword) declaration: can only be used within class, trait, or module definitions",
         "Unsupported syntax: the current implementation does not support this construction",
         "Invalid syntax within class definition: expected method, var/let declaration, or class-level statement",
-        "Invalid syntax within trait definition: expected method, let declaration, or trait-level statement"
+        "Invalid syntax within trait definition: expected method, let declaration, or trait-level statement",
+        "Invalid init declaration: constructor body is required, expected '{' after parameter list",
+        "Invalid init declaration: expected '(' before parameter list",
+        "Invalid cleanup declaration: destructor body is required, expected '{' after 'cleanup'",
+        "Invalid cleanup declaration: destructor cannot have parameters, unexpected '(' after 'cleanup'",
+        "Invalid return statement: constructors and destructors cannot return a value"
     };
 
     class Context;
@@ -243,6 +248,8 @@ namespace liftoff::parser {
 
         [[nodiscard]] ASTHandle<ASTNode *> ParseBlock(bool nested);
 
+        [[nodiscard]] ASTHandle<ASTNode *> ParseCleanupInit(const scanner::Position &start, bool pub);
+
         [[nodiscard]] ASTHandle<ASTNode *> ParseDictSet();
 
         [[nodiscard]] ASTHandle<ASTNode *> ParseElvis(ASTHandle<ASTNode *> &left);
@@ -312,7 +319,7 @@ namespace liftoff::parser {
         void EatNL();
 
         void IgnoreNewLineIF(scanner::TokenType type);
-        
+
     public:
         /**
          * @brief Initialize the parser with a filename and the scanner.
@@ -335,7 +342,7 @@ namespace liftoff::parser {
          */
         ASTHandle<Module *> Parse() noexcept;
 
-        ParserError GetLastError()  noexcept;
+        ParserError GetLastError() noexcept;
     };
 }
 

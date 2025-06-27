@@ -107,7 +107,8 @@ NODES = {
             "constant": "bool",
             "method": "bool",
             "pub": "bool"
-        }
+        },
+        "node_type": ["CLEANUP", "FUNCTION", "INIT"]
     },
     "Identifier": {
         "fields": {

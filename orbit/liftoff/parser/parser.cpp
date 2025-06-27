@@ -930,7 +930,8 @@ ASTHandle<ASTNode *> Parser::ParseBlock(bool nested) {
 
     while (!this->Match(TokenType::RIGHT_BRACES)) {
         if (this->context_->Check(ContextType::CLASS)) {
-            if (!this->Match(TokenType::KW_FUNC, TokenType::KW_LET, TokenType::KW_PUB, TokenType::KW_VAR))
+            if (!this->Match(TokenType::KW_CLEANUP, TokenType::KW_FUNC, TokenType::KW_INIT,
+                             TokenType::KW_LET, TokenType::KW_PUB, TokenType::KW_VAR))
                 throw ParserException(71);
         } else if (this->context_->Check(ContextType::TRAIT)) {
             if (!this->Match(TokenType::KW_FUNC, TokenType::KW_LET, TokenType::KW_PUB))
@@ -956,6 +957,66 @@ ASTHandle<ASTNode *> Parser::ParseBlock(bool nested) {
     block->loc.end = TKCUR_START;
 
     return block;
+}
+
+ASTHandle<ASTNode *> Parser::ParseCleanupInit(const Position &start, bool pub) {
+    Context isolate(this, ContextType::CDTOR);
+
+    const auto tk_type = TKCUR_TYPE;
+    const auto loc = TKCUR_LOC;
+
+    auto func = MakeFunction(this->isolate_, TKCUR_LOC,
+                             tk_type == TokenType::KW_CLEANUP
+                                 ? NodeType::CLEANUP
+                                 : NodeType::INIT);
+
+    func->loc.start = start;
+
+    func->name = ORStringNew(this->isolate_, tk_type == TokenType::KW_CLEANUP ? "cleanup" : "init").release();
+    func->doc = this->GetDocString().release();
+
+    func->method = true;
+
+    this->Eat(true);
+
+    auto *sym = this->sym_t_->DeclareSymbolScope(func->name,
+                                                 SymbolType::METHOD,
+                                                 func->loc.start.offset,
+                                                 func->loc.start.line);
+    if (sym == nullptr)
+        throw SymbolTableException();
+
+    sym->access = pub ? AccessModifier::PUBLIC : AccessModifier::PRIVATE;
+
+    func->params.emplace_back(std::move(this->PushSelfParam(loc)));
+
+    if (tk_type == TokenType::KW_INIT) {
+        if (!this->Match(TokenType::LEFT_ROUND))
+            throw ParserException(74);
+
+        Loc last_param{};
+        auto params = this->ParseFuncParams(last_param);
+
+        func->params.insert(func->params.end(),
+                            std::make_move_iterator(params.begin()),
+                            std::make_move_iterator(params.end()));
+    } else {
+        if (this->Match(TokenType::LEFT_ROUND))
+            throw ParserException(76);
+    }
+
+    if (!this->Match(TokenType::LEFT_BRACES))
+        throw ParserException(tk_type == TokenType::KW_CLEANUP ? 75 : 73);
+
+    func->body = this->ParseBlock(false).release();
+    func->loc.end = func->body->loc.end;
+
+    this->sym_t_->LeaveScope(func->loc.end.offset, func->loc.end.line);
+
+    if (pub)
+        this->exports.emplace_back(func->name);
+
+    return func;
 }
 
 ASTHandle<ASTNode *> Parser::ParseDictSet() {
@@ -1119,7 +1180,7 @@ ASTHandle<ASTNode *> Parser::ParseExprOrTuple() {
 }
 
 ASTHandle<ASTNode *> Parser::ParseFunc() {
-    auto start = TKCUR_START;
+    const auto start = TKCUR_START;
 
     return this->ParseFunction(start, true, false);
 }
@@ -1598,6 +1659,9 @@ ASTHandle<ASTNode *> Parser::ParseStatement() {
             case TokenType::KW_CLASS:
             case TokenType::KW_TRAIT:
                 return this->ParseClassTrait();
+            case TokenType::KW_CLEANUP:
+            case TokenType::KW_INIT:
+                return this->ParseCleanupInit(start, pub);
             case TokenType::KW_DEFER:
                 return this->ParseDeferStatement();
             case TokenType::KW_FOR:
@@ -1633,6 +1697,9 @@ ASTHandle<ASTNode *> Parser::ParseStatement() {
                 this->Eat(false);
 
                 if (!this->Match(TokenType::END_OF_LINE, TokenType::END_OF_FILE, TokenType::SEMICOLON)) {
+                    if (this->context_->Check(ContextType::CDTOR))
+                        throw ParserException(77);
+
                     ret->value = this->ParseExpression(TokenType::WALRUS).release();
                     ret->loc.end = ret->value->loc.end;
                 } else if (ret->node_type == NodeType::YIELD)
@@ -1771,9 +1838,10 @@ ASTHandle<ASTNode *> Parser::ParseWalrus(ASTHandle<ASTNode *> &left) {
 
 ASTHandle<liftoff::parser::Function *> Parser::ParseFunction(const Position &start, bool inl, bool pub) {
     Context isolate(this, ContextType::FUNC);
-    Loc last_param{};
 
-    auto func = MakeFunction(this->isolate_, TKCUR_LOC);
+    const auto loc = TKCUR_LOC;
+
+    auto func = MakeFunction(this->isolate_, loc, NodeType::FUNCTION);
 
     func->loc.start = start;
 
@@ -1807,6 +1875,7 @@ ASTHandle<liftoff::parser::Function *> Parser::ParseFunction(const Position &sta
     sym->anon = inl;
     sym->access = pub ? AccessModifier::PUBLIC : AccessModifier::PRIVATE;
 
+    Loc last_param{};
     func->params = this->ParseFuncParams(last_param);
 
     if (this->Match(TokenType::COLON)) {
@@ -1830,7 +1899,7 @@ ASTHandle<liftoff::parser::Function *> Parser::ParseFunction(const Position &sta
 
     if (!func->constant && (this->context_->CheckBack(ContextType::CLASS)
                             || this->context_->CheckBack(ContextType::TRAIT))) {
-        func->params.emplace_back(std::move(this->PushSelfParam(last_param)));
+        func->params.emplace_back(std::move(this->PushSelfParam(loc)));
 
         func->method = true;
 

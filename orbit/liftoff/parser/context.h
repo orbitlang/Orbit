@@ -9,6 +9,7 @@
 
 namespace liftoff::parser {
     enum class ContextType {
+        CDTOR,
         CLASS,
         FUNC,
         LOOP,

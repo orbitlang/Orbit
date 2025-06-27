@@ -39,7 +39,9 @@ namespace liftoff::parser {
         CLASS,
         TRAIT,
         DECORATOR,
+        CLEANUP,
         FUNCTION,
+        INIT,
         IDENTIFIER,
         IMPORT,
         IMPORT_FROM,
@@ -424,7 +426,9 @@ namespace liftoff::parser {
                     ASTNodeCleanup(node->func);
                 break;
             }
-            case NodeType::FUNCTION: {
+            case NodeType::CLEANUP:
+            case NodeType::FUNCTION:
+            case NodeType::INIT: {
                 auto *node = (Function *) ast_node;
                 O_DECREF(node->name);
                 O_DECREF(node->doc);
@@ -629,7 +633,10 @@ namespace liftoff::parser {
                 case NodeType::TRAIT:
                     return static_cast<Derived *>(this)->visitConstruct((Construct *) node);
                 case NodeType::DECORATOR: return static_cast<Derived *>(this)->visitDecorator((Decorator *) node);
-                case NodeType::FUNCTION: return static_cast<Derived *>(this)->visitFunction((Function *) node);
+                case NodeType::CLEANUP:
+                case NodeType::FUNCTION:
+                case NodeType::INIT:
+                    return static_cast<Derived *>(this)->visitFunction((Function *) node);
                 case NodeType::IDENTIFIER: return static_cast<Derived *>(this)->visitIdentifier((Identifier *) node);
                 case NodeType::IMPORT:
                 case NodeType::IMPORT_FROM:
@@ -915,15 +922,17 @@ namespace liftoff::parser {
     }
 
 
-    inline ASTHandle<Function *> MakeFunction(orbiter::Isolate *isolate, const scanner::Loc &loc) {
+    inline ASTHandle<Function *> MakeFunction(orbiter::Isolate *isolate, const scanner::Loc &loc, NodeType node_type) {
         orbiter::memory::IsolateAllocator allocator(isolate);
+
+        assert(node_type == NodeType::CLEANUP || node_type == NodeType::FUNCTION || node_type == NodeType::INIT);
 
         auto *node = allocator.calloc<Function>(sizeof(Function));
         if (node == nullptr)
             throw DatatypeException();
 
         node->isolate = isolate;
-        node->node_type = NodeType::FUNCTION;
+        node->node_type = node_type;
         node->loc = loc;
 
         new(&node->params) std::vector<ASTHandle<ASTNode *> >();
