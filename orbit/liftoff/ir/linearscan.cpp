@@ -50,7 +50,7 @@ void LinearScan::AllocateSpecificRegister(LiveInterval &interval) {
         if ((*it)->instr->assigned_reg == interval.instr->assigned_reg) {
             LiveInterval *found = *it;
 
-            if(found->end == interval.start) {
+            if (found->end == interval.start) {
                 this->active_.erase(it);
 
                 this->active_.insert(&interval);
@@ -157,7 +157,7 @@ void LinearScan::SpillToStackAndReloadUses(Instruction *instruction) {
             instruction->stack_slot = (I16) this->GetFreeStackSlot();
 
         // Generate a load instruction to fetch the value from the stack slot
-        auto *load = this->builder_.GetLoadFromStackOffset(instruction->stack_slot);
+        auto *load = this->builder_.GetLoadFromStackOffset(instruction->stack_slot, kBaseStackPointerReg);
         load->assigned_reg = instruction->assigned_reg;
 
         // Insert the load instruction immediately before the target instruction
@@ -173,7 +173,7 @@ void LinearScan::SpillToStackAndReloadUses(Instruction *instruction) {
         return;
 
     // 3) Generate a store instruction to save the value to the specified stack slot
-    auto *store = this->builder_.GetStoreToStackOffset(instruction, instruction->stack_slot);
+    auto *store = this->builder_.GetStoreToStackOffset(instruction, kBaseStackPointerReg, instruction->stack_slot);
 
     // Insert the store instruction immediately after the current instruction
     IRContext::InsertInstructionAfter(instruction, store);

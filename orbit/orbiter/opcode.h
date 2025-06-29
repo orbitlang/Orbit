@@ -146,8 +146,9 @@ namespace orbiter {
         STGOFF, // Store value into global variable using offset:   OPCODE | 4 RESERVED | 4 SRC   | 16 UNSIGNED OFFSET
         LDGBL, // Load value from global variable using key:        OPCODE | 4 DST | 4 RESERVED   | 16 UNSIGNED OFFSET
         LDGOFF, // Load value from global variable using offset:    OPCODE | 4 DST | 4 RESERVED   | 16 UNSIGNED OFFSET
-        SKLDR, // Load from stack into register:                    OPCODE | 4 DST | 4 RESERVED   | 16 SIGNED OFFSET
-        SKSTR, // Store register into EBP+OFFSET                    OPCODE | 4 RESERVED | 4 SRC   | 16 SIGNED OFFSET
+
+        SKLDR, // Load from(EBP + OFFSET) stack into register:      OPCODE | 4 DST | 4 BASE_REG   | 16 SIGNED OFFSET
+        SKSTR, // Store register into EBP+OFFSET                    OPCODE | 4 BASE_REG | 4 SRC   | 16 SIGNED OFFSET
 
         PUSH, // Push value onto stack:             OPCODE | 4 RESERVED | 4 SRC | 20 RESERVED
         POP, // Pop value from stack:               OPCODE | 4 DST | 20 RESERVED

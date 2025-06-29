@@ -208,9 +208,10 @@ unsigned char *Codegen::EmitOpcodes(BasicBlock *block, unsigned char *m_code) {
             case orbiter::OPCode::LDGBL:
             case orbiter::OPCode::LDGOFF:
             case orbiter::OPCode::SKLDR:
-                *(orbiter::MachineWord *) m_code = EMIT_DO(instr->opcode,
-                                                           instr->assigned_reg,
-                                                           ((ir::OffsetInstruction *) instr)->offset & 0xFFFF);
+                *(orbiter::MachineWord *) m_code = EMIT_DSO(instr->opcode,
+                                                            instr->assigned_reg,
+                                                            ((ir::OffsetInstruction *) instr)->r_base,
+                                                            ((ir::OffsetInstruction *) instr)->offset & 0xFFFF);
                 break;
             case orbiter::OPCode::CLONEW:
             case orbiter::OPCode::NDICT:
@@ -222,9 +223,10 @@ unsigned char *Codegen::EmitOpcodes(BasicBlock *block, unsigned char *m_code) {
                                                            ((ir::UnaryImmInstr *) instr)->imm);
                 break;
             case orbiter::OPCode::SKSTR:
-                *(orbiter::MachineWord *) m_code = EMIT_SO(instr->opcode,
-                                                           ((Instruction*)instr->operands[0].value)->assigned_reg,
-                                                           (((ir::OffsetInstruction *) instr)->offset & 0xFFFF));
+                *(orbiter::MachineWord *) m_code = EMIT_DSO(instr->opcode,
+                                                            ((ir::OffsetInstruction *) instr)->r_base,
+                                                            ((Instruction*)instr->operands[0].value)->assigned_reg,
+                                                            (((ir::OffsetInstruction *) instr)->offset & 0xFFFF));
                 break;
             case orbiter::OPCode::PUSH:
                 *(orbiter::MachineWord *) m_code = EMIT_SO(instr->opcode,

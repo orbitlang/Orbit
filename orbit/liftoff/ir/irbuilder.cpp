@@ -135,7 +135,7 @@ Instruction *IRBuilder::LoadVariable(const Symbol *symbol) {
     if (symbol->type == SymbolType::UNKNOWN) {
         offset = (I16) this->builder_.context->PushUnknownProps(symbol->name);
 
-        ret = this->builder_.LoadFromOffset(orbiter::OPCode::LDGBL, offset, 0);
+        ret = this->builder_.LoadFromOffset(orbiter::OPCode::LDGBL, 0, offset, 0);
 
         goto EXIT;
     }
@@ -145,23 +145,23 @@ Instruction *IRBuilder::LoadVariable(const Symbol *symbol) {
         if (this->level_ == OptimizationLevel::OFF) {
             offset = (I16) this->builder_.context->PushUnknownProps(symbol->name);
 
-            ret = this->builder_.LoadFromOffset(orbiter::OPCode::LDGBL, offset, 0);
+            ret = this->builder_.LoadFromOffset(orbiter::OPCode::LDGBL, 0, offset, 0);
         } else
-            ret = this->builder_.LoadFromOffset(orbiter::OPCode::LDGOFF, offset, 0);
+            ret = this->builder_.LoadFromOffset(orbiter::OPCode::LDGOFF, 0, offset, 0);
 
         goto EXIT;
     }
 
     if (symbol->type == SymbolType::PARAMETER) {
         const auto params_count = (I16) this->sym_t_->scope->GetParameterCount();
-        const auto p_offset = params_count - offset;
+        const auto p_offset = (params_count - offset) + kStackPrologueOffset;
 
         assert(p_offset > 0);
 
         offset = (I16) -p_offset;
     }
 
-    ret = this->builder_.LoadFromStackOffset(offset);
+    ret = this->builder_.LoadFromStackOffset(kBaseStackPointerReg, offset);
 
 EXIT:
     this->builder_.context->current_->UseVar(symbol);
@@ -249,7 +249,7 @@ Instruction *IRBuilder::StoreVariable(const Symbol *symbol, Instruction *value, 
         offset = (I16) -p_offset;
     }
 
-    this->builder_.StoreToStackOffset(value, offset);
+    this->builder_.StoreToStackOffset(value, kBaseStackPointerReg, offset);
 
 EXIT:
     this->builder_.context->current_->DefVar(symbol);
@@ -584,7 +584,7 @@ Instruction *IRBuilder::visitFunction(const parser::Function *node) {
         const auto closure = this->builder_.CreateUnaryOp(orbiter::OPCode::CLONEW,
                                                           this->sym_t_->scope->GetClosureSize());
 
-        this->builder_.StoreToStackOffset(closure, (I16) node->params.size());
+        this->builder_.StoreToStackOffset(closure, kBaseStackPointerReg, (I16) node->params.size());
 
         this->CaptureParametersIntoClosure(node);
     }
@@ -916,11 +916,11 @@ void IRBuilder::CaptureParametersIntoClosure(const parser::Function *node) {
 
         if (sym->type == SymbolType::PARAMETER && sym->upvalue) {
             const auto params_count = (I16) this->sym_t_->scope->GetParameterCount();
-            const auto p_offset = params_count - sym->stack_offset;
+            const auto p_offset = (params_count - sym->stack_offset) + kStackPrologueOffset;
 
             assert(p_offset > 0);
 
-            const auto value = this->builder_.LoadFromStackOffset((I16) -p_offset);
+            const auto value = this->builder_.LoadFromStackOffset(kBaseStackPointerReg, (I16) -p_offset);
             this->StoreVariable(sym, value, false);
         }
     }

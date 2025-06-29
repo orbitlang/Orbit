@@ -11,6 +11,12 @@
 
 namespace liftoff::ir {
     /**
+     * This constant is paired with the one in vm.cpp, and they must always have the same size.
+     * The vm.cpp value is in bytes while this one is in slots, where: slots * sizeof(void*) = bytes
+     */
+    constexpr auto kStackPrologueOffset = 3 + 2; // FiberContext + BP + IP
+
+    /**
      * @brief Builder class for constructing Intermediate Representation (IR) instructions and basic blocks.
      *
      * The Builder class provides methods to create, append, and manipulate instructions, objects,
@@ -186,7 +192,7 @@ namespace liftoff::ir {
         Instruction *LoadExecCodeObject(U16 offset);
 
         Instruction *LoadExecLastCodeObject() {
-            return this->LoadLastCodeObject();
+            return this->LoadExecCodeObject(this->context->GetSubcontextCount() - 1);
         }
 
         Instruction *LoadFalseValue() {
@@ -196,7 +202,7 @@ namespace liftoff::ir {
 
         Instruction *LoadFromClosureAtOffset(I16 offset, orbiter::ClosureLSMode mode);
 
-        Instruction *LoadFromStackOffset(I16 offset);
+        Instruction *LoadFromStackOffset(U8 r_base, I16 offset);
 
         Instruction *LoadFunction(Instruction *src, Instruction *def_args, orbiter::LoadFuncFlags flags);
 
@@ -215,22 +221,26 @@ namespace liftoff::ir {
          *
          * @return Pointer to the created instruction.
          */
-        Instruction *LoadFromOffset(orbiter::OPCode opcode, I16 offset, U8 flags);
+        Instruction *LoadFromOffset(orbiter::OPCode opcode, U8 r_basem, I16 offset, U8 flags);
+
+        Instruction *LoadFromOffset(orbiter::OPCode opcode, I16 offset, U8 flags) {
+            return this->LoadFromOffset(opcode, 0, offset, flags);
+        }
 
         Instruction *LoadTrueValue() {
             return this->CreateInstruction<UnaryImmInstr>(orbiter::OPCode::LDCST, (U8) orbiter::LoadConstantMode::TRUE);
         }
 
-        Instruction *GetLoadFromStackOffset(I16 offset) {
+        Instruction *GetLoadFromStackOffset(U8 r_base, I16 offset) {
             this->context->program_size += 4;
 
-            return this->CreateObject<OffsetInstruction>(orbiter::OPCode::SKLDR, offset);
+            return this->CreateObject<OffsetInstruction>(orbiter::OPCode::SKLDR, r_base, offset);
         }
 
-        Instruction *GetStoreToStackOffset(Instruction *src, I16 offset) {
+        Instruction *GetStoreToStackOffset(Instruction *src, U8 r_base, I16 offset) {
             this->context->program_size += 4;
 
-            return this->CreateObject<OffsetInstruction>(orbiter::OPCode::SKSTR, offset, src);
+            return this->CreateObject<OffsetInstruction>(orbiter::OPCode::SKSTR, r_base, offset, src);
         }
 
         Instruction *StackDiscard(U16 slots);
@@ -241,7 +251,7 @@ namespace liftoff::ir {
 
         Instruction *StoreToClosureAtOffset(Instruction *src, I16 offset, orbiter::ClosureLSMode mode);
 
-        Instruction *StoreToStackOffset(Instruction *src, I16 offset);
+        Instruction *StoreToStackOffset(Instruction *src, U8 r_base, I16 offset);
 
         PhiInstr *CreatePhi();
 

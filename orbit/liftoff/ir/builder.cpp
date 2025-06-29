@@ -213,7 +213,7 @@ Instruction *Builder::CreateUnaryOp(const OPCode opcode, U16 imm, U8 flags) {
 }
 
 Instruction *Builder::LoadCodeObject(U16 offset) {
-    return this->CreateInstruction<OffsetInstruction>(OPCode::LDCODE, offset);
+    return this->CreateInstruction<OffsetInstruction>(OPCode::LDCODE,  offset);
 }
 
 Instruction *Builder::LoadConstant(U16 offset) {
@@ -241,8 +241,8 @@ Instruction *Builder::LoadFromClosureAtOffset(I16 offset, ClosureLSMode mode) {
     return this->CreateInstruction<LoadStoreClosureWithOffsetInstr>(OPCode::CLOLDR, offset, mode, nullptr);
 }
 
-Instruction *Builder::LoadFromStackOffset(I16 offset) {
-    return this->LoadFromOffset(OPCode::SKLDR, offset, 0);
+Instruction *Builder::LoadFromStackOffset(U8 r_base, I16 offset) {
+    return this->LoadFromOffset(OPCode::SKLDR, r_base, offset, 0);
 }
 
 Instruction *Builder::LoadFunction(Instruction *src, Instruction *def_args, LoadFuncFlags flags) {
@@ -256,7 +256,7 @@ Instruction *Builder::LoadImmediate(const MachineSize value) {
     return instr;
 }
 
-Instruction *Builder::LoadFromOffset(const OPCode opcode, const I16 offset, U8 flags) {
+Instruction *Builder::LoadFromOffset(const OPCode opcode, U8 r_base, const I16 offset, U8 flags) {
     const OffsetInstruction *last = nullptr;
 
     switch (opcode) {
@@ -274,11 +274,12 @@ Instruction *Builder::LoadFromOffset(const OPCode opcode, const I16 offset, U8 f
     }
 
     if (last != nullptr
+        && last->r_base == r_base
         && last->offset == offset
         && last->flags == flags)
         return (Instruction *) last->operands->value;
 
-    auto *instr = this->CreateInstruction<OffsetInstruction>(opcode, offset);
+    auto *instr = this->CreateInstruction<OffsetInstruction>(opcode, r_base, offset);
 
     instr->flags = flags;
 
@@ -313,8 +314,8 @@ Instruction *Builder::StoreToClosureAtOffset(Instruction *src, I16 offset, Closu
     return this->CreateInstruction<LoadStoreClosureWithOffsetInstr>(OPCode::CLOSTR, offset, mode, src);
 }
 
-Instruction *Builder::StoreToStackOffset(Instruction *src, I16 offset) {
-    return this->CreateInstruction<OffsetInstruction>(OPCode::SKSTR, offset, src);
+Instruction *Builder::StoreToStackOffset(Instruction *src, U8 r_base, I16 offset) {
+    return this->CreateInstruction<OffsetInstruction>(OPCode::SKSTR, r_base, offset, src);
 }
 
 PhiInstr *Builder::CreatePhi() {

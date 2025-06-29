@@ -6,7 +6,6 @@
 #define ORBIT_LIFTOFF_IR_LINEARSCAN_H_
 
 #include <set>
-#include <vector>
 
 #include <orbit/liftoff/ir/builder.h>
 #include <orbit/liftoff/ir/ircontext.h>

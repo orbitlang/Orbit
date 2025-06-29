@@ -19,7 +19,7 @@
 using namespace orbiter;
 using namespace orbiter::datatype;
 
-constexpr auto kSkOffset = sizeof(FiberContext) + (sizeof(void *) * 2);
+constexpr auto kStackPrologueOffset = sizeof(FiberContext) + (sizeof(void *) * 2);
 
 HOObject VMAdd(Isolate *isolate, PtrSize left, PtrSize right) {
     if (O_IS_SMI(left) && O_IS_SMI(right)) {
@@ -63,7 +63,7 @@ int VMCall(Fiber *fiber, Function *func, unsigned short p_count, CallMode mode) 
     // * Check stack size
     // *****************************************************************************************************************
 
-    auto stack_size_required = kSkOffset
+    auto stack_size_required = kStackPrologueOffset
                                + func->shared->code->stack_size * sizeof(void *)
                                + (arity * sizeof(void *))
                                + (2 * sizeof(void *));
@@ -504,25 +504,21 @@ CGOTO
                 DISPATCH;
             }
             TARGET_OP(SKLDR) {
+                const auto base = FETCH_R_SRC(instr);
                 const auto dst = FETCH_R_DST(instr);
                 auto slot = ((short) FETCH_IMM(instr)) * (short) sizeof(void *);
 
-                if (slot < 0)
-                    slot -= kSkOffset;
-
-                REG_N(dst) = *ACCESS_STACK_BP(slot);
+                REG_N(dst) = *((PtrSize *) (stack->stack + (REG_N(base) + slot)));
 
                 DISPATCH;
             }
             TARGET_OP(SKSTR) {
+                const auto base = FETCH_R_DST(instr);
                 const auto src = FETCH_R_SRC(instr);
                 auto slot = ((short) FETCH_IMM(instr)) * (short) sizeof(void *);
                 auto value = (OObject *) REG_N(src);
 
-                if (slot < 0)
-                    slot -= kSkOffset;
-
-                const auto target = (OObject **) ACCESS_STACK_BP(slot);
+                const auto target = (OObject **) (stack->stack + (REG_N(base) + slot));
 
                 O_DECREF(*target);
 
@@ -601,7 +597,7 @@ CGOTO
                 if (flags == ClosureLSMode::LOCALS_SLOT)
                     closure = *(Closure **) (stack->stack + regs->BP.reg + (code->slots_count * sizeof(void *)));
                 else
-                    closure = *(Closure **) (stack->stack + (regs->BP.reg - (kSkOffset + sizeof(void *))));
+                    closure = *(Closure **) (stack->stack + (regs->BP.reg - (kStackPrologueOffset + sizeof(void *))));
 
                 REG_N(dst) = (PtrSize) ClosureGet(closure, slot).get();
 
@@ -617,7 +613,7 @@ CGOTO
                 if (flags == ClosureLSMode::LOCALS_SLOT)
                     closure = *(Closure **) (stack->stack + regs->BP.reg + (code->slots_count * sizeof(void *)));
                 else
-                    closure = *(Closure **) (stack->stack + (regs->BP.reg - (kSkOffset + sizeof(void *))));
+                    closure = *(Closure **) (stack->stack + (regs->BP.reg - (kStackPrologueOffset + sizeof(void *))));
 
                 ClosureSet(closure, slot, (OObject *) REG_N(src));
 
@@ -655,7 +651,7 @@ CGOTO
                 if (ENUMBITMASK_ISTRUE(flags, LoadFuncFlags::A_CLOSURE))
                     closure = *(Closure **) (stack->stack + regs->BP.reg + (code->slots_count * sizeof(void *)));
                 else if (ENUMBITMASK_ISTRUE(flags, LoadFuncFlags::P_CLOSURE))
-                    closure = *(Closure **) (stack->stack + (regs->BP.reg - (kSkOffset + sizeof(void *))));
+                    closure = *(Closure **) (stack->stack + (regs->BP.reg - (kStackPrologueOffset + sizeof(void *))));
 
                 if (ENUMBITMASK_ISTRUE(flags, LoadFuncFlags::REST_PARAMS))
                     fn_kind = FunctionKind::REST;

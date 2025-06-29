@@ -18,6 +18,8 @@ namespace liftoff::ir {
     constexpr auto kCallRestReg = 11;
     constexpr auto kCallKWArgsReg = 12;
     constexpr auto kReturnRegisterReg = 13;
+    constexpr auto kBaseStackPointerReg = 14;
+    constexpr auto kStackPointerReg = 15;
 
     constexpr auto kUninitializedReg = -1;
     constexpr auto kDoNotAllocateReg = -2;
@@ -210,9 +212,14 @@ namespace liftoff::ir {
 
     public:
         U8 flags = 0;
+        U8 r_base = 0;
         I16 offset = 0;
 
         OffsetInstruction(orbiter::OPCode opcode, I16 offset) noexcept: PhysInstruction(opcode), offset(offset) {
+        }
+
+        OffsetInstruction(orbiter::OPCode opcode, U8 r_base, I16 offset) noexcept: PhysInstruction(opcode),
+            r_base(r_base), offset(offset) {
         }
 
         OffsetInstruction(orbiter::OPCode opcode, U8 flags, Instruction *src) noexcept: PhysInstruction(opcode, 1),
@@ -220,8 +227,9 @@ namespace liftoff::ir {
             this->SetOperand(0, src);
         }
 
-        OffsetInstruction(orbiter::OPCode opcode, I16 offset, Instruction *src) noexcept: PhysInstruction(opcode, 1),
-            offset(offset) {
+        OffsetInstruction(orbiter::OPCode opcode, U8 r_base, I16 offset,
+                          Instruction *src) noexcept: PhysInstruction(opcode, 1),
+                                                      r_base(r_base), offset(offset) {
             this->SetOperand(0, src);
         }
     };
