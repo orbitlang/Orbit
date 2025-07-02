@@ -815,7 +815,7 @@ ASTHandle<ASTNode *> Parser::ParseVarDecl(const Position &start, bool pub, bool 
 // EXPRESSIONS
 // *********************************************************************************************************************
 
-ASTHandle<ASTNode *> Parser::ParseAPST() {
+ASTHandle<ASTNode *> Parser::ParseANPST() {
     const auto start_pos = TKCUR_LOC.start;
     const auto tk_type = TKCUR_TYPE;
 
@@ -823,6 +823,9 @@ ASTHandle<ASTNode *> Parser::ParseAPST() {
     switch (tk_type) {
         case TokenType::KW_AWAIT:
             node_type = NodeType::AWAIT;
+            break;
+        case TokenType::KW_NEW:
+            node_type = NodeType::NEW;
             break;
         case TokenType::KW_PANIC:
             node_type = NodeType::PANIC;
@@ -847,7 +850,10 @@ ASTHandle<ASTNode *> Parser::ParseAPST() {
     if (node_type == NodeType::SPAWN && right->node_type != NodeType::CALL)
         throw ParserException(27);
 
-    auto &unary = (ASTHandle<Unary *> &) right;
+    if (node_type == NodeType::NEW && right->node_type != NodeType::CALL)
+        throw ParserException(78);
+
+    const auto &unary = (ASTHandle<Unary *> &) right;
     if (unary->node_type == NodeType::NIL_SAFE && unary->value->node_type == node_type) {
         unary->loc.start = start_pos;
 
@@ -2112,10 +2118,11 @@ Parser::NudMeth Parser::LookupNUD(TokenType token) noexcept {
 
         // Keywords that can start expressions
         case TokenType::KW_AWAIT:
+        case TokenType::KW_NEW:
         case TokenType::KW_PANIC:
         case TokenType::KW_SPAWN:
         case TokenType::KW_TRAP:
-            return &Parser::ParseAPST;
+            return &Parser::ParseANPST;
 
         case TokenType::KW_FUNC:
             return &Parser::ParseFunc;

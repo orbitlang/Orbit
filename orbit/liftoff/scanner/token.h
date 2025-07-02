@@ -112,6 +112,7 @@ namespace liftoff::scanner {
         KW_LOOP,
         KW_NAMESPACE,
         KW_NATIVE,
+        KW_NEW,
         KW_NOT,
         KW_OF,
         KW_PANIC,

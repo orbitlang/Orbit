@@ -63,11 +63,12 @@ key_value_pair = expression, ":", expression;
 dictionary = "{", [key_value_pair, {",", key_value_pair}], "}";
 
 (* Expressions *)
-expression = panic_expr | channel_send_expr | channel_receive_expr | await_expr | assignment_expr | ternary_expr | elvis_expr | nil_coalescing | binary_expr | unary_expr | postfix_expr | primary_expr | inline_function | trap_expr | spawn_expr;
+expression = panic_expr | channel_send_expr | channel_receive_expr | await_expr | assignment_expr | ternary_expr | elvis_expr | new_expr | nil_coalescing | binary_expr | unary_expr | postfix_expr | primary_expr | inline_function | trap_expr | spawn_expr;
 panic_expr = "panic", expression;
 assignment_expr = assignable, assignment_op, expression;
 ternary_expr = expression, "?", [expression, ":"], expression;
 elvis_expr = expression, "?:", expression;
+new_expr = "new", expression;
 nil_coalescing = expression, "??", expression;
 binary_expr = expression, binary_op, expression;
 unary_expr = unary_op, expression | channel_receive_expr;
@@ -217,7 +218,9 @@ trait_member = [pub_keyword], (const_declaration | trait_function_definition);
 class_definition = [doc_comment], "class", identifier, [class_inheritance], [trait_extension], class_body;
 class_inheritance = ":", class_trait_extension;
 class_body = "{", {class_member}, "}";
-class_member = [pub_keyword], ([weak_keyword], var_declaration | const_declaration | class_function_definition);
+class_init = [doc_comment], "init", "(", [parameter_list], ")", block_function;
+class_cleanup = [doc_comment], "cleanup", block_function;
+class_member = [pub_keyword], ([weak_keyword], var_declaration | const_declaration | class_function_definition | class_init | class_cleanup);
 
 class_trait_extension = identifier | identifier, {selector};
 

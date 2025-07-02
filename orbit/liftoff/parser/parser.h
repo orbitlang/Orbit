@@ -89,7 +89,8 @@ namespace liftoff::parser {
         "Invalid init declaration: expected '(' before parameter list",
         "Invalid cleanup declaration: destructor body is required, expected '{' after 'cleanup'",
         "Invalid cleanup declaration: destructor cannot have parameters, unexpected '(' after 'cleanup'",
-        "Invalid return statement: constructors and destructors cannot return a value"
+        "Invalid return statement: constructors and destructors cannot return a value",
+        "Invalid new expression: expected call",
     };
 
     class Context;
@@ -242,7 +243,7 @@ namespace liftoff::parser {
         // EXPRESSIONS
         // *************************************************************************************************************
 
-        [[nodiscard]] ASTHandle<ASTNode *> ParseAPST();
+        [[nodiscard]] ASTHandle<ASTNode *> ParseANPST();
 
         [[nodiscard]] ASTHandle<ASTNode *> ParseAssignment(ASTHandle<ASTNode *> &left);
 
