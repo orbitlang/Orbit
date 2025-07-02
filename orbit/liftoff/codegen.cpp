@@ -271,6 +271,12 @@ unsigned char *Codegen::EmitOpcodes(BasicBlock *block, unsigned char *m_code) {
                                                             ((Instruction*)instr->operands[2].value)->assigned_reg
                                                             : 0);
                 break;
+            case orbiter::OPCode::LDINIT:
+            case orbiter::OPCode::NOBJ:
+                *(orbiter::MachineWord *) m_code = EMIT_DS(instr->opcode,
+                                                           instr->assigned_reg,
+                                                           ((Instruction*)instr->operands[0].value)->assigned_reg);
+                break;
             case orbiter::OPCode::JEN:
             case orbiter::OPCode::JF:
             case orbiter::OPCode::JT: {

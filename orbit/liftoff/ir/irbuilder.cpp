@@ -101,6 +101,69 @@ Instruction *IRBuilder::BinaryOP(const parser::Binary *binary) {
     return this->builder_.CreateBinaryOpFlags(op_code, (U8) op_flags, left, right);
 }
 
+Instruction *IRBuilder::CreateCall(const parser::Call *node, Instruction *f_src) {
+    auto mode = orbiter::CallMode::FASTCALL;
+
+    Instruction *arg_value = nullptr;
+    Instruction *rest = nullptr;
+    Instruction *kwargs = nullptr;
+
+    // Args
+    for (const auto &arg: node->args) {
+        arg_value = this->visit(arg.get());
+
+        this->builder_.StackPush(arg_value);
+    }
+
+    // NArgs
+    Instruction *nargs = nullptr;
+    for (const auto &narg: node->nargs) {
+        const auto r_narg = (parser::Parameter *) narg.get();
+
+        if (nargs == nullptr)
+            nargs = this->builder_.CreateUnaryOp(orbiter::OPCode::NDICT, node->nargs.size());
+
+        const auto key_offset = this->builder_.context->PushStaticValue((orbiter::datatype::OObject *) r_narg->id);
+
+        const auto key = this->builder_.LoadConstant(key_offset);
+        const auto value = this->visit(r_narg->value);
+
+        this->builder_.CreateManip(orbiter::OPCode::ADDELEM, nargs, key, value);
+    }
+
+    if (nargs != nullptr)
+        mode |= orbiter::CallMode::NARGS;
+
+    if (node->rest != nullptr) {
+        rest = this->visit(((parser::Unary *) node->rest)->value);
+
+        mode |= orbiter::CallMode::REST_ARG;
+    }
+
+    if (node->kwargs != nullptr) {
+        kwargs = this->visit(((parser::Unary *) node->kwargs)->value);
+
+        mode |= orbiter::CallMode::KW_ARG;
+    }
+
+    // Cleanup flags
+    if ((int) mode > 1)
+        mode &= ~orbiter::CallMode::FASTCALL;
+
+    const auto call = (CallInstr *) this->builder_.CreateCallDetached(f_src, node->args.size(), mode);
+
+    if (nargs != nullptr)
+        call->SetNargs(nargs);
+
+    if (rest != nullptr)
+        call->SetRest(rest);
+
+    if (kwargs != nullptr)
+        call->SetKwargs(kwargs);
+
+    return call;
+}
+
 Instruction *IRBuilder::CreateJumpForElvisOrNil(const parser::Binary *binary, orbiter::OPCode opcode) {
     auto *left = this->visit(binary->left);
 
@@ -431,66 +494,13 @@ Instruction *IRBuilder::visitBranch(const parser::Branch *node) {
 }
 
 Instruction *IRBuilder::visitCall(parser::Call *node) {
-    auto mode = orbiter::CallMode::FASTCALL;
-
     auto *func = this->visit(node->left);
 
-    Instruction *arg_value = nullptr;
-    Instruction *rest = nullptr;
-    Instruction *kwargs = nullptr;
+    auto *call = this->CreateCall(node, func);
 
-    // Args
-    for (const auto &arg: node->args) {
-        arg_value = this->visit(arg.get());
+    this->builder_.AddInstruction(call);
 
-        this->builder_.StackPush(arg_value);
-    }
-
-    // NArgs
-    Instruction *nargs = nullptr;
-    for (const auto &narg: node->nargs) {
-        const auto r_narg = (parser::Parameter *) narg.get();
-
-        if (nargs == nullptr)
-            nargs = this->builder_.CreateUnaryOp(orbiter::OPCode::NDICT, node->nargs.size());
-
-        const auto key_offset = this->builder_.context->PushStaticValue((orbiter::datatype::OObject *) r_narg->id);
-
-        const auto key = this->builder_.LoadConstant(key_offset);
-        const auto value = this->visit(r_narg->value);
-
-        this->builder_.CreateManip(orbiter::OPCode::ADDELEM, nargs, key, value);
-    }
-
-    if (nargs != nullptr)
-        mode |= orbiter::CallMode::NARGS;
-
-    if (node->rest != nullptr) {
-        rest = this->visit(((parser::Unary *) node->rest)->value);
-
-        mode |= orbiter::CallMode::REST_ARG;
-    }
-
-    if (node->kwargs != nullptr) {
-        kwargs = this->visit(((parser::Unary *) node->kwargs)->value);
-
-        mode |= orbiter::CallMode::KW_ARG;
-    }
-
-    // Cleanup flags
-    if ((int) mode > 1)
-        mode &= ~orbiter::CallMode::FASTCALL;
-
-    const auto call = (CallInstr *) this->builder_.CreateCall(func, node->args.size(), mode);
-
-    if (nargs != nullptr)
-        call->SetNargs(nargs);
-
-    if (rest != nullptr)
-        call->SetRest(rest);
-
-    if (kwargs != nullptr)
-        call->SetKwargs(kwargs);
+    this->builder_.context->stack_push_count -= node->args.size();
 
     return call;
 }
@@ -790,6 +800,28 @@ Instruction *IRBuilder::visitNativeVariable(parser::NativeVariable *node) {
     return nullptr;
 }
 
+Instruction *IRBuilder::visitNew(const parser::Unary *node) {
+    const auto *func = (parser::Call *) node->value;
+    const auto self_idx = func->args.size() + 1;
+
+    auto *clazz = this->visit(func->left);
+
+    auto *ctor = this->builder_.CreateUnaryOp(orbiter::OPCode::LDINIT, clazz);
+    auto *call = this->CreateCall(func, ctor);
+
+    this->builder_.StackPush(this->builder_.LoadNilValue()); // Reserve stack space
+
+    auto *self = this->builder_.CreateUnaryOp(orbiter::OPCode::NOBJ, clazz);
+
+    this->builder_.StoreToStackOffset(self, kStackPointerReg, (I16) -self_idx);
+
+    this->builder_.AddInstruction(call);
+
+    this->builder_.context->stack_push_count -= self_idx;
+
+    return self;
+}
+
 Instruction *IRBuilder::visitParameter(parser::Parameter *node) {
     // TODO: Implement Parameter visitation
     return nullptr;
@@ -836,6 +868,9 @@ Instruction *IRBuilder::visitUnary(const parser::Unary *node) {
                 assert(false);
         }
     }
+
+    if (node->node_type == parser::NodeType::NEW)
+        return this->visitNew(node);
 
     if (node->node_type == parser::NodeType::PANIC) {
         value = this->visit(node->value);

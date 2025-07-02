@@ -72,15 +72,6 @@ namespace liftoff::ir {
         }
 
         /**
-         * @brief Adds an instruction to the current basic block.
-         *
-         * @param instruction The instruction to add.
-         *
-         * @return Pointer to the basic block.
-         */
-        BasicBlock *AddInstruction(Instruction *instruction);
-
-        /**
          * @brief Retrieves the last instruction with the specified opcode.
          *
          * This method searches the current basic block for the last instruction that matches
@@ -154,6 +145,8 @@ namespace liftoff::ir {
                                   BasicBlock *destination);
 
         Instruction *CreateCall(Instruction *src, U16 arguments, orbiter::CallMode mode);
+
+        Instruction *CreateCallDetached(Instruction *src, U16 arguments, orbiter::CallMode mode);
 
         Instruction *CreateJump(BasicBlock *destination);
 
@@ -256,6 +249,15 @@ namespace liftoff::ir {
         PhiInstr *CreatePhi();
 
         /**
+         * @brief Adds an instruction to the current basic block.
+         *
+         * @param instruction The instruction to add.
+         *
+         * @return Pointer to the basic block.
+         */
+        BasicBlock *AddInstruction(Instruction *instruction);
+
+        /**
          * @brief Creates a new intermediate representation (IR) context of the specified type.
          *
          * The method allocates memory for a new IR context, initializes it with the provided type,
@@ -271,12 +273,6 @@ namespace liftoff::ir {
          * @throws Any exception propagated from context management operations.
          */
         U16 IRContextNew(IRContextType type, U16 local_slots);
-
-        /*
-        Value *CreateImmediateValue(const U16 value) {
-            return this->CreateObject<Value>(value);
-        }
-        */
 
         /**
          * @brief Appends a basic block to the current context's linked list of blocks.

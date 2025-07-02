@@ -156,11 +156,16 @@ Instruction *Builder::CreateBranch(const OPCode opcode, Instruction *value, Basi
 }
 
 Instruction *Builder::CreateCall(Instruction *src, U16 arguments, CallMode mode) {
-    auto *call = this->CreateInstruction<CallInstr>(src, arguments, mode);
+    auto *call = this->CreateCallDetached(src, arguments, mode);
 
     // this->StackDiscard(arguments); Managed by callee
     this->context->stack_push_count -= arguments;
 
+    return call;
+}
+
+Instruction *Builder::CreateCallDetached(Instruction *src, U16 arguments, CallMode mode) {
+    auto *call = this->CreateObject<CallInstr>(src, arguments, mode);
     return call;
 }
 
@@ -213,7 +218,7 @@ Instruction *Builder::CreateUnaryOp(const OPCode opcode, U16 imm, U8 flags) {
 }
 
 Instruction *Builder::LoadCodeObject(U16 offset) {
-    return this->CreateInstruction<OffsetInstruction>(OPCode::LDCODE,  offset);
+    return this->CreateInstruction<OffsetInstruction>(OPCode::LDCODE, offset);
 }
 
 Instruction *Builder::LoadConstant(U16 offset) {

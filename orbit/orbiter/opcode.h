@@ -165,15 +165,16 @@ namespace orbiter {
         LDFUNC, // Create function from Code object:    OPCODE | 4 DST | 4 SRC_CODE | 4 SRC_DARGS | 8 FLAGS | 4 RESERVED
 
         // Container object
-        NDICT, // Create new dict                       OPCODE | 4 DST | 4 RESERVED | 16 UNSIGNED OFFSET
-        NLIST, // Create new list                       OPCODE | 4 DST | 4 RESERVED | 16 UNSIGNED OFFSET
-        NSET, // Create new set                         OPCODE | 4 DST | 4 RESERVED | 16 UNSIGNED OFFSET
-        NTUPLE, // Create new tuple                     OPCODE | 4 DST | 4 RESERVED | 16 UNSIGNED OFFSET
-        ADDELEM, // Push value to container             OPCODE | 4 DST (Container) | 4 SRC | 4 V_SRC | 12 RESERVED
+        NDICT, // Create new dict                   OPCODE | 4 DST | 4 RESERVED | 16 UNSIGNED OFFSET
+        NLIST, // Create new list                   OPCODE | 4 DST | 4 RESERVED | 16 UNSIGNED OFFSET
+        NSET, // Create new set                     OPCODE | 4 DST | 4 RESERVED | 16 UNSIGNED OFFSET
+        NTUPLE, // Create new tuple                 OPCODE | 4 DST | 4 RESERVED | 16 UNSIGNED OFFSET
+        ADDELEM, // Push value to container         OPCODE | 4 DST (Container) | 4 SRC | 4 V_SRC | 12 RESERVED
 
         // Class/Trait
-        MKCLZ,
-        // Create new class                      OPCODE | 4 DST | 4 Flags(ClassFlags) | 8 RESERVED | 8 IMPLs COUNT
+        LDINIT, // Load class initializer           OPCODE | 4 DST | 4 SRC | 16 UNSIGNED OFFSET
+        MKCLZ, // Create new class                  OPCODE | 4 DST | 4 Flags(ClassFlags) | 8 RESERVED | 8 IMPLs COUNT
+        NOBJ, // Create new object                  OPCODE | 4 DST | 4 SRC(Class type)   | 16 UNSIGNED OFFSET
 
         // Jump Instructions
         JEN, // Jump if nil:                        OPCODE | 4 RESERVED | 4 SRC | 16 OFFSET

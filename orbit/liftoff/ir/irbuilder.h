@@ -29,6 +29,8 @@ namespace liftoff::ir {
 
         Instruction *BinaryOP(const parser::Binary *binary);
 
+        Instruction *CreateCall(const parser::Call *node, Instruction *f_src);
+
         Instruction *CreateJumpForElvisOrNil(const parser::Binary *binary, orbiter::OPCode opcode);
 
         Instruction *LoadVariable(const Symbol *symbol);
@@ -78,6 +80,8 @@ namespace liftoff::ir {
         Instruction *visitNativeParameter(parser::NativeParameter *node);
 
         Instruction *visitNativeVariable(parser::NativeVariable *node);
+
+        Instruction *visitNew(const parser::Unary *node);
 
         Instruction *visitParameter(parser::Parameter *node);
 
