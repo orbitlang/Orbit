@@ -271,6 +271,7 @@ Symbol *SymbolTable::DeclareSymbolScope(ORString *name, SymbolType type, MSize o
             scope->type = ScopeType::TRAIT;
             break;
         case SymbolType::FUNC:
+        case SymbolType::METHOD:
             scope->type = ScopeType::FUNCTION;
             break;
         case SymbolType::MODULE:
