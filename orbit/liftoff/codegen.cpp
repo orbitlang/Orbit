@@ -185,7 +185,7 @@ unsigned char *Codegen::EmitOpcodes(BasicBlock *block, unsigned char *m_code) {
                                                             ((Instruction*)instr->operands[0].value)->assigned_reg,
                                                             0);
                 break;
-            case orbiter::OPCode::STPROP:
+            case orbiter::OPCode::SETPROP:
                 *(orbiter::MachineWord *) m_code = EMIT_DSO(instr->opcode,
                                                             ((ManipTypeInstruction*)instr->operands[0].value)->
                                                             assigned_reg,

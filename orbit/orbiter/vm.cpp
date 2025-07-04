@@ -418,7 +418,7 @@ CGOTO
 
                 DISPATCH;
             }
-            TARGET_OP(STPROP) {
+            TARGET_OP(SETPROP) {
                 const auto dst = FETCH_R_DST(instr);
                 const auto src = FETCH_R_SRC(instr);
                 const auto offset = FETCH_IMM(instr);

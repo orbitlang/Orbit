@@ -140,12 +140,12 @@ namespace orbiter {
         MOV, // Copy value between registers:       OPCODE | 4 DST | 4 SRC       | 16 RESERVED
         MOWN, // Move value between registers:      OPCODE | 4 DST | 4 SRC       | 16 RESERVED (Move ownership)
 
-        STPROP, // Set type property:               OPCODE | 4 DST (TypeInfo) | 4 SRC | 4 V_SRC | 12 OFFSET
+        SETPROP, // Set type property:               OPCODE | 4 DST (TypeInfo) | 4 SRC | 4 V_SRC | 12 OFFSET
 
-        NGBLV, // Create new module variable:                       OPCODE | 4 FLAGS    | 4 SRC   | 16 UNSIGNED OFFSET
-        STGBL, // Store value into global variable using key:       OPCODE | 4 RESERVED | 4 SRC   | 16 UNSIGNED OFFSET
+        NGBLV, // Create new context variable:                      OPCODE | 4 FLAGS    | 4 SRC   | 16 KEY OFFSET
+        STGBL, // Store value into global variable using key:       OPCODE | 4 RESERVED | 4 SRC   | 16 KEY OFFSET
         STGOFF, // Store value into global variable using offset:   OPCODE | 4 RESERVED | 4 SRC   | 16 UNSIGNED OFFSET
-        LDGBL, // Load value from global variable using key:        OPCODE | 4 DST | 4 RESERVED   | 16 UNSIGNED OFFSET
+        LDGBL, // Load value from global variable using key:        OPCODE | 4 DST | 4 RESERVED   | 16 KEY OFFSET
         LDGOFF, // Load value from global variable using offset:    OPCODE | 4 DST | 4 RESERVED   | 16 UNSIGNED OFFSET
 
         SKLDR, // Load from(EBP + OFFSET) stack into register:      OPCODE | 4 DST | 4 BASE_REG   | 16 SIGNED OFFSET

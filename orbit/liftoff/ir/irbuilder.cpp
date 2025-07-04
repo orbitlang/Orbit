@@ -258,7 +258,7 @@ Instruction *IRBuilder::StoreVariable(const Symbol *symbol, Instruction *value, 
 
         offset = (I16) this->builder_.context->PushUnknownProps(symbol->name);
 
-        this->builder_.CreateManipType(orbiter::OPCode::STPROP, this->ct_active_->tp_ptr, value, offset);
+        this->builder_.CreateManipType(orbiter::OPCode::SETPROP, this->ct_active_->tp_ptr, value, offset);
 
         return value;
     }
@@ -345,7 +345,7 @@ Instruction *IRBuilder::visitAssignment(parser::Assignment *node) {
                                                           : orbiter::VariableFlags::CONSTANT);
 
             const auto offset = (I16) this->builder_.context->PushUnknownProps(sym->name);
-            this->builder_.CreateManipType(orbiter::OPCode::STPROP, this->ct_active_->tp_ptr, value, offset);
+            this->builder_.CreateManipType(orbiter::OPCode::SETPROP, this->ct_active_->tp_ptr, value, offset);
 
             return value;
         }
