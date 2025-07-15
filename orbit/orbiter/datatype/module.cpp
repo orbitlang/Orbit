@@ -30,7 +30,7 @@ HOType orbiter::datatype::ModuleTypeNew(Isolate *isolate, ORString *name, ORStri
     const auto total_props = exported + 2; // name + doc
 
     auto module = MakeTypeExtended(isolate, InstanceType::MODULE, 0, total_props, slots);
-    if (!module) {
+    if (module) {
         if (!TIPropertyAdd(module.get(), "__name__", (OObject *) name, PropertyFlag::IS_CONSTANT))
             return {};
 
@@ -45,7 +45,7 @@ HOType orbiter::datatype::ModuleTypeNew(Code *code, ORString *name) {
     auto *isolate = O_GET_ISOLATE(code);
 
     auto module = ModuleTypeNew(isolate, name, nullptr, code->exported.length, code->slots_count);
-    if (!module) {
+    if (module) {
         for (auto i = 0; i < code->exported.length; i++) {
             const auto *symbol = code->exported.symbols + i;
 
