@@ -43,15 +43,16 @@ namespace liftoff::ir {
         }
 
         void DeleteUse(Use *u) noexcept {
-            if (this->use_list == u) {
-                this->use_list = nullptr;
+            Use *prev = nullptr;
 
-                return;
-            }
-
-            auto *prev = this->use_list;
-            for (auto cur = this->use_list->next; cur != nullptr; cur = cur->next) {
+            for (auto cur = this->use_list; cur != nullptr; cur = cur->next) {
                 if (cur == u) {
+                    if (prev == nullptr) {
+                        this->use_list = nullptr;
+
+                        return;
+                    }
+
                     prev->next = cur->next;
 
                     break;
@@ -92,6 +93,13 @@ namespace liftoff::ir {
         const U32 num_ops = 0;
 
         virtual ~Object() {
+            if (this->num_ops > 0 && this->operands != nullptr) {
+                for (int i = 0; i < this->num_ops; ++i) {
+                    if (this->operands[i].value != nullptr)
+                        this->operands[i].value->DeleteUse(this->operands + i);
+                }
+            }
+
             delete[] this->operands;
         }
 
