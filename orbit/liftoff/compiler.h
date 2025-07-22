@@ -13,7 +13,10 @@
 namespace liftoff {
     class Compiler {
         orbiter::Isolate *isolate_;
+
         OptimizationLevel level_;
+
+        bool is_module_;
 
         orbiter::datatype::HList BuildCodesList(ir::IRContext *ir);
 
@@ -21,7 +24,10 @@ namespace liftoff {
 
     public:
         explicit Compiler(orbiter::Isolate *isolate,
-                          OptimizationLevel level) noexcept: isolate_(isolate), level_(level) {
+                          const OptimizationLevel level,
+                          const bool is_module) noexcept: isolate_(isolate),
+                                                          level_(level),
+                                                          is_module_(is_module) {
         }
 
         orbiter::datatype::HCode Compile(const char *filename, scanner::Scanner &scanner);

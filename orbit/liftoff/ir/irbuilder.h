@@ -23,6 +23,8 @@ namespace liftoff::ir {
 
         OptimizationLevel level_;
 
+        bool is_module_;
+
         friend class ASTVisitor;
 
         friend class CTContext;
@@ -111,9 +113,12 @@ namespace liftoff::ir {
         void PutSyncExit(const JBlock *block);
 
     public:
-        explicit IRBuilder(orbiter::Isolate *isolate, OptimizationLevel level) noexcept: builder_(isolate),
-            isolate_(isolate),
-            level_(level) {
+        explicit IRBuilder(orbiter::Isolate *isolate,
+                           const OptimizationLevel level,
+                           const bool is_module) noexcept: builder_(isolate),
+                                                           isolate_(isolate),
+                                                           level_(level),
+                                                           is_module_(is_module) {
         }
 
         [[nodiscard]] IRCHandle Generate(const parser::ASTHandle<parser::Module *> &module) noexcept;

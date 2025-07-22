@@ -73,7 +73,7 @@ bool IRContext::ComputeLiveness() const {
 }
 
 Instruction *IRContext::GetLastActiveVariableLoad(const Symbol *symbol) {
-    auto instr = this->active_regs_.find(symbol);
+    const auto instr = this->active_regs_.find(symbol);
 
     if (instr != this->active_regs_.end())
         return instr->second;

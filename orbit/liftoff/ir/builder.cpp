@@ -171,7 +171,7 @@ Instruction *Builder::CreateManipType(const OPCode opcode, Instruction *target, 
 }
 
 Instruction *Builder::CreateStoreVariable(const OPCode opcode, I16 offset, U8 flags, Instruction *value) {
-    auto *instr = this->CreateInstruction<OffsetInstruction>(opcode, offset, value);
+    auto *instr = this->CreateInstruction<OffsetInstruction>(opcode, 0, offset, value);
 
     instr->flags = flags;
 

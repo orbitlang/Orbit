@@ -102,6 +102,8 @@ namespace liftoff {
 
         unsigned short local_variables = 0;
 
+        unsigned short global_offset = 0;
+
         unsigned short unknown_variables = 0;
 
         explicit Scope(orbiter::Isolate *isolate, MSize line_start) : sub_scope(isolate), line_start(line_start) {

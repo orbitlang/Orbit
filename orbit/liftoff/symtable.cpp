@@ -321,6 +321,9 @@ Symbol *SymbolTable::Lookup(ORString *name, MSize offset, bool class_prop) noexc
                 && s_scope->symbols.Lookup(name, &entry)) {
                 auto *sym = entry->value;
 
+                if (from_clazz)
+                    return sym;
+
                 if (sym->next != nullptr && sym->next->decl_offset <= offset)
                     sym = sym->next;
 
@@ -431,7 +434,16 @@ void SymbolTable::ComputeLocalVarOffset(const SubScope *s_scope) const noexcept 
                      || value->type == SymbolType::FUNC
                      || value->type == SymbolType::METHOD) && ENUMBITMASK_ISFALSE(value->flags, SymbolFlags::ANON))
                     value->offset = this->scope->local_variables++;
-                else if (value->type == SymbolType::UNKNOWN)
+
+                if (value->type != SymbolType::LABEL
+                    && value->type != SymbolType::MODULE
+                    && value->type != SymbolType::PARAMETER
+                    && value->type != SymbolType::UNKNOWN) {
+                    if (value->defining_scope->type != ScopeType::CLASS)
+                        value->offset = this->scope->global_offset++;
+                }
+
+                if (value->type == SymbolType::UNKNOWN)
                     value->offset = this->scope->unknown_variables++;
 
                 value = value->next;

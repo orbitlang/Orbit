@@ -243,11 +243,6 @@ namespace liftoff::ir {
             r_base(r_base), offset(offset) {
         }
 
-        OffsetInstruction(orbiter::OPCode opcode, U8 flags, Instruction *src) noexcept: PhysInstruction(opcode, 1),
-            flags(flags) {
-            this->SetOperand(0, src);
-        }
-
         OffsetInstruction(orbiter::OPCode opcode, U8 r_base, I16 offset,
                           Instruction *src) noexcept: PhysInstruction(opcode, 1),
                                                       r_base(r_base), offset(offset) {

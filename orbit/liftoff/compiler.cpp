@@ -78,7 +78,7 @@ orbiter::datatype::HCode Compiler::Compile(const char *filename, scanner::Scanne
         assert(false);
     }
 
-    IRBuilder builder(this->isolate_, this->level_);
+    IRBuilder builder(this->isolate_, this->level_, this->is_module_);
 
     const auto ir = builder.Generate(ast);
     if (!ir)
