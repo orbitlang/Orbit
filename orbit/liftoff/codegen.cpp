@@ -215,7 +215,7 @@ unsigned char *Codegen::EmitOpcodes(BasicBlock *block, unsigned char *m_code) {
                 *(orbiter::MachineWord *) m_code = EMIT_DSO(instr->opcode,
                                                             instr->assigned_reg,
                                                             ((ir::OffsetInstruction *) instr)->r_base,
-                                                            ((ir::OffsetInstruction *) instr)->offset & 0xFFFF);
+                                                            ((ir::OffsetInstruction *) instr)->offset);
                 break;
             case orbiter::OPCode::CLONEW:
             case orbiter::OPCode::NDICT:

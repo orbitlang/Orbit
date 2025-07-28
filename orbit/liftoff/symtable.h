@@ -131,7 +131,7 @@ namespace liftoff {
         }
 
         [[nodiscard]] U16 GetLocalVariableCount() const {
-            return this->local_variables;
+            return this->global_offset > 0 ? this->global_offset : this->local_variables;
         }
 
         [[nodiscard]] U16 GetParameterCount() const {

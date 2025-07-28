@@ -184,7 +184,10 @@ Instruction *IRBuilder::LoadParameter(const Symbol *symbol) {
     assert(symbol->type == SymbolType::PARAMETER);
 
     const auto params_count = (I16) this->sym_t_->scope->GetParameterCount();
-    const auto p_offset = (params_count - symbol->stack_offset) + kStackPrologueOffset;
+    const auto sym_offset = (I16) ENUMBITMASK_ISTRUE(symbol->flags, SymbolFlags::UPVALUE)
+                                ? symbol->stack_offset
+                                : symbol->offset;
+    const auto p_offset = (params_count - sym_offset) + kStackPrologueOffset;
 
     assert(p_offset > 0);
 
@@ -891,13 +894,12 @@ Instruction *IRBuilder::visitNew(const parser::Unary *node) {
     auto *clazz = this->visit(func->left);
 
     auto *ctor = this->builder_.CreateUnaryOp(orbiter::OPCode::LDINIT, clazz);
-    auto *call = (CallInstr *) this->CreateCall(func, ctor);
-
-    this->builder_.StackPush(this->builder_.LoadNilValue()); // Reserve stack space
 
     auto *self = this->builder_.CreateUnaryOp(orbiter::OPCode::NOBJ, clazz);
 
-    this->builder_.StoreToStackOffset(self, kStackPointerReg, (I16) -self_idx);
+    this->builder_.StackPush(self);
+
+    auto *call = (CallInstr *) this->CreateCall(func, ctor);
 
     call->arguments += 1;
 
