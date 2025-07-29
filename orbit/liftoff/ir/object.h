@@ -38,8 +38,18 @@ namespace liftoff::ir {
         const ObjectType objType_;
 
         void AddUse(Use *u) noexcept {
-            u->next = this->use_list;
-            this->use_list = u;
+            if (this->use_list == nullptr) {
+                this->use_list = u;
+
+                return;
+            }
+
+            // Preserve the order in which values are added
+            auto *cursor = this->use_list;
+            while (cursor->next != nullptr)
+                cursor = cursor->next;
+
+            cursor->next = u;
         }
 
         void DeleteUse(Use *u) noexcept {
@@ -48,12 +58,15 @@ namespace liftoff::ir {
             for (auto cur = this->use_list; cur != nullptr; cur = cur->next) {
                 if (cur == u) {
                     if (prev == nullptr) {
+                        cur->next = nullptr;
+
                         this->use_list = nullptr;
 
                         return;
                     }
 
                     prev->next = cur->next;
+                    cur->next = nullptr;
 
                     break;
                 }
