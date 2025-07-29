@@ -20,7 +20,7 @@ namespace liftoff::ir {
      * It contains a list of instructions and tracks variable definitions
      * and usages within the block.
      */
-    class BasicBlock : public Object {
+    class BasicBlock final : public Object {
         /// Represents the set of variables defined within a basic block.
         std::unordered_set<const Symbol *> def_;
 
@@ -85,7 +85,9 @@ namespace liftoff::ir {
          * @param instr Pointer to the instruction to be added.
          */
         void AddInstruction(Instruction *instr) noexcept {
+            instr->basic_block = this;
             this->size += 4;
+
 
             if (this->instr.head == nullptr) {
                 this->instr.head = instr;
@@ -100,11 +102,59 @@ namespace liftoff::ir {
         }
 
         /**
+         * @brief Adds an instruction after a specified instruction within a basic block.
+         *
+         * Updates the pointers of the given instructions appropriately to ensure
+         * they are correctly linked in the control flow graph. Adjusts the size
+         * of the basic block to account for the added instruction.
+         *
+         * @param instr The existing instruction after which the new instruction is to be added.
+         * @param after The new instruction to be inserted after the specified instruction.
+         */
+        void AddInstructionAfter(Instruction *instr, Instruction *after) noexcept {
+            after->next = instr->next;
+            after->prev = instr;
+
+            if (instr->next != nullptr)
+                instr->next->prev = after;
+
+            instr->next = after;
+
+            this->size += 4;
+        }
+
+        /**
+         * @brief Inserts an instruction before another instruction in the instruction list of a basic block.
+         *
+         * This method updates the doubly linked list of instructions within the basic block to insert
+         * the specified `before` instruction immediately before the given `instr` instruction. The method
+         * also updates the size of the basic block.
+         *
+         * @param instr Pointer to the existing `Instruction` object before which the new instruction
+         * will be inserted.
+         * @param before Pointer to the `Instruction` object to be inserted before `instr`.
+         */
+        void AddInstructionBefore(Instruction *instr, Instruction *before) noexcept {
+            before->next = instr;
+            before->prev = instr->prev;
+
+            assert(instr->prev!=nullptr);
+
+            instr->prev->next = before;
+
+            instr->prev = before;
+
+            this->size += 4;
+        }
+
+        /**
          * @brief Adds an instruction to the beginning of the instruction list in the basic block.
          *
          * @param instr Pointer to the `Instruction` object to be added to the start of the list.
          */
         void AddInstructionFirst(Instruction *instr) noexcept {
+            instr->basic_block = this;
+
             instr->next = this->instr.head;
             this->instr.head->prev = instr;
 

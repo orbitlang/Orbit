@@ -396,7 +396,7 @@ namespace liftoff::ir {
          *                     must already exist in the instruction list.
          * @param after The instruction to be inserted after the specified `instruction`.
          */
-        static void InsertInstructionAfter(Instruction *instruction, Instruction *after) noexcept;
+        void InsertInstructionAfter(Instruction *instruction, Instruction *after) noexcept;
 
         /**
          * @brief Inserts a new instruction before a specified instruction in the instruction list.
@@ -408,7 +408,7 @@ namespace liftoff::ir {
          *                     must already exist in the instruction list.
          * @param before The instruction to be inserted before the specified `instruction`.
          */
-        static void InsertInstructionBefore(Instruction *instruction, Instruction *before) noexcept;
+        void InsertInstructionBefore(Instruction *instruction, Instruction *before) noexcept;
 
         /**
          * @brief Invalidates a specific active variable or clears all active variables in the

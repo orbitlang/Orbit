@@ -233,7 +233,11 @@ namespace liftoff::ir {
 
         Instruction *StackDiscard(U16 slots);
 
+        Instruction *GetStackPop();
+
         Instruction *StackPop();
+
+        Instruction *GetStackPush(Instruction *s_reg);
 
         Instruction *StackPush(Instruction *s_reg);
 

@@ -159,6 +159,13 @@ U16 IRContext::PushSubContext(IRContext *context) {
     return this->sub.count++;
 }
 
+void IRContext::AddActiveVar(const Symbol *symbol, Instruction *instr) {
+    if (ENUMBITMASK_ISTRUE(symbol->flags, SymbolFlags::UPVALUE))
+        return;
+
+    this->active_regs_.insert({symbol, instr});
+}
+
 void IRContext::RemoveFromObjList(Object *obj) noexcept {
     auto *next = obj->memory_.next;
     auto *prev = obj->memory_.prev;
@@ -178,19 +185,7 @@ void IRContext::RemoveFromObjList(Object *obj) noexcept {
     prev->memory_.next = next;
 }
 
-void IRContext::AddActiveVar(const Symbol *symbol, Instruction *instr) {
-    if (ENUMBITMASK_ISTRUE(symbol->flags, SymbolFlags::UPVALUE))
-        return;
-
-    this->active_regs_.insert({symbol, instr});
-}
-
 std::vector<LiveInterval> &IRContext::ComputeLiveIntervals() {
-    for (const auto *block = this->entry_; block != nullptr; block = block->next) {
-        for (auto *instr = block->instr.head; instr != nullptr; instr = instr->next)
-            instr->instr_offset = this->logical_counter_++;
-    }
-
     for (const auto *block = this->entry_; block != nullptr; block = block->next) {
         for (auto *instr = block->instr.head; instr != nullptr; instr = instr->next) {
             if (instr->use_list != nullptr) {
@@ -201,9 +196,9 @@ std::vector<LiveInterval> &IRContext::ComputeLiveIntervals() {
                         && use->user->type() != ObjectType::VIRT_INSTRUCTION)
                         continue;
 
-                    const auto *u_instr = (Instruction *) use->user;
-                    if (u_instr->instr_offset > end)
-                        end = u_instr->instr_offset;
+                    const auto *i_user = (Instruction *) use->user;
+                    if (i_user->instr_offset > end)
+                        end = i_user->instr_offset;
                 }
 
                 this->live_intervals_.emplace_back(instr, instr->instr_offset, end);
@@ -215,24 +210,15 @@ std::vector<LiveInterval> &IRContext::ComputeLiveIntervals() {
 }
 
 void IRContext::InsertInstructionAfter(Instruction *instruction, Instruction *after) noexcept {
-    after->next = instruction->next;
-    after->prev = instruction;
+    instruction->basic_block->AddInstructionAfter(instruction, after);
 
-    if (instruction->next != nullptr)
-        instruction->next->prev = after;
-
-    instruction->next = after;
+    this->program_size += 4;
 }
 
 void IRContext::InsertInstructionBefore(Instruction *instruction, Instruction *before) noexcept {
-    before->next = instruction;
-    before->prev = instruction->prev;
+    instruction->basic_block->AddInstructionBefore(instruction, before);
 
-    assert(instruction->prev!=nullptr);
-
-    instruction->prev->next = before;
-
-    instruction->prev = before;
+    this->program_size += 4;
 }
 
 void IRContext::InvalidateActiveVar(const Symbol *symbol) {

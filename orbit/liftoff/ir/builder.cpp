@@ -102,7 +102,7 @@ Instruction *Builder::AllocStackSlots(U16 slots, AllocaFlags flags) {
         } else
             this->AddInstruction(alloca);
     } else
-        IRContext::InsertInstructionAfter(last_alloca, alloca);
+        this->context->InsertInstructionAfter(last_alloca, alloca);
 
 
     this->context->stack_slots += slots;
@@ -287,10 +287,25 @@ Instruction *Builder::StackDiscard(U16 slots) {
     return this->CreateInstruction<UnaryImmInstr>(OPCode::POPN, 0, slots);
 }
 
+Instruction *Builder::GetStackPop() {
+    this->context->stack_push_count -= 1;
+
+    return this->CreateObject<UnaryOpInstr>(OPCode::POP);
+}
+
 Instruction *Builder::StackPop() {
     this->context->stack_push_count -= 1;
 
     return this->CreateInstruction<UnaryOpInstr>(OPCode::POP);
+}
+
+Instruction *Builder::GetStackPush(Instruction *s_reg) {
+    this->context->stack_push_count += 1;
+
+    if (this->context->stack_push_count > this->context->stack_push_max)
+        this->context->stack_push_max = this->context->stack_push_count;
+
+    return this->CreateObject<UnaryOpInstr>(OPCode::PUSH, s_reg);
 }
 
 Instruction *Builder::StackPush(Instruction *s_reg) {

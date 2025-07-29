@@ -49,10 +49,7 @@ orbiter::datatype::HCode Compiler::Compile(IRContext *ir) {
     // Step 1: Optimization
     // TODO: Implement optimization phase here...
 
-    // Step 2: Perform Liveness Analysis
-    ir->ComputeLiveIntervals();
-
-    // Step 3-4: Allocate Registers / Phi resolution
+    // Step 2-3-4: Perform Liveness Analysis -> Allocate Registers -> Phi resolution
     LinearScan(ir, orbiter::kGeneralPurposeRegistersCount).Allocate();
 
     // Step 5: Generate machine code
