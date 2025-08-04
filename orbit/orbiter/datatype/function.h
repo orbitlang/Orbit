@@ -48,6 +48,9 @@ namespace orbiter::datatype {
         /// Pointer to default values for function parameters.
         Tuple *defaults;
 
+        /// Pointer to the TypeInfo structure that represents the owning type of the function.
+        TypeInfo *owner_type;
+
         /// Name of the function
         ORString *name;
 

@@ -208,6 +208,7 @@ int VMCall(Fiber *fiber, Function *func, unsigned short p_count, CallMode mode) 
     fiber->context.context = O_FAST_INCREF(func->shared->context);
     fiber->context.module = O_INCREF(func->shared->module);
     fiber->context.code = O_FAST_INCREF(func->shared->code);
+    fiber->context.func = O_FAST_INCREF(func);
 
     fiber->vm.Push(regs->BP.reg);
     fiber->vm.Push(regs->IP.reg);
@@ -258,6 +259,7 @@ CGOTO
 #define LOAD_FROM_STACK         ACCESS_STACK_SP((-sizeof(void *)))
 
     auto *code = fiber->context.code;
+    auto *this_func = fiber->context.func;
 
     OObject **module_slots = nullptr;
     if (fiber->context.module != nullptr)
@@ -320,6 +322,7 @@ CGOTO
                 }
 
                 code = fiber->context.code;
+                this_func = fiber->context.func;
 
                 continue;
             }
@@ -360,6 +363,7 @@ CGOTO
                 const auto res = VMCall(fiber, func, p_count, flags);
                 if (res == 1) {
                     code = func->shared->code;
+                    this_func = fiber->context.func;
 
                     continue;
                 }
@@ -426,7 +430,7 @@ CGOTO
                 const auto src = FETCH_R_SRC(instr);
                 const auto offset = FETCH_IMM(instr);
 
-                const auto *tp = (TypeInfo *) REG_N(dst);
+                auto *tp = (TypeInfo *) REG_N(dst);
                 const auto *key = (ORString *) code->unknown_symbols->objects[offset];
                 auto *value = (OObject *) REG_N(src);
 
@@ -437,6 +441,9 @@ CGOTO
                 }
 
                 assert(prop->value==nullptr);
+
+                if (O_IS_TYPE(value, InstanceType::FUNCTION) && ((Function *) value)->shared->IsMethod())
+                    ((Function *) value)->shared->owner_type = O_FAST_INCREF(tp);
 
                 prop->value = O_INCREF(value);
 
@@ -757,9 +764,9 @@ CGOTO
                 const auto flags = (LoadObjectPropFlags) FETCH_R_RSRC(instr);
                 const auto offset = instr & 0xFFF;
 
-                const auto *slot = O_SLOT(src, O_GET_TYPE(src));
-
                 if (flags == LoadObjectPropFlags::INLINE) {
+                    auto *slot = O_SLOT(src, this_func->shared->owner_type);
+
                     REG_N(dst) = (PtrSize) slot[offset];
 
                     DISPATCH;
@@ -775,10 +782,13 @@ CGOTO
 
                 // FIXME: Check security permission
 
-                if (ENUMBITMASK_ISFALSE(prop->detail, PropertyFlag::IN_OBJECT))
-                    REG_N(dst) = (PtrSize) prop->value;
-                else
+                if (ENUMBITMASK_ISTRUE(prop->detail, PropertyFlag::IN_OBJECT)) {
+                    auto *slot = O_SLOT(src, this_func->shared->owner_type);
+
                     REG_N(dst) = (PtrSize) slot[(PtrSize) prop->value];
+                } else
+                    REG_N(dst) = (PtrSize) prop->value;
+
 
                 DISPATCH;
             }
@@ -788,9 +798,9 @@ CGOTO
                 const auto flags = (LoadObjectPropFlags) FETCH_R_RSRC(instr);
                 const auto offset = instr & 0xFFF;
 
-                auto *slot = O_SLOT(obj, O_GET_TYPE(obj));
-
                 if (flags == LoadObjectPropFlags::INLINE) {
+                    auto *slot = O_SLOT(obj, this_func->shared->owner_type);
+
                     slot[offset] = value;
 
                     DISPATCH;

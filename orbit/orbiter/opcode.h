@@ -33,7 +33,9 @@ namespace orbiter {
 
         KW_ARG = 1,
         NARGS = 1 << 1,
-        REST_ARG = 1 << 2
+        REST_ARG = 1 << 2,
+
+        METHOD = 1 << 3
     };
 
     enum class ClassFlags : U8 {

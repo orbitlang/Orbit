@@ -14,7 +14,7 @@ namespace liftoff::ir {
      * This constant is paired with the one in vm.cpp, and they must always have the same size.
      * The vm.cpp value is in bytes while this one is in slots, where: slots * sizeof(void*) = bytes
      */
-    constexpr auto kStackPrologueOffset = 3 + 2; // FiberContext + BP + IP
+    constexpr auto kStackPrologueOffset = 4 + 2; // FiberContext + BP + IP
 
     /**
      * @brief Builder class for constructing Intermediate Representation (IR) instructions and basic blocks.

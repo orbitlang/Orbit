@@ -13,15 +13,19 @@
 #include <orbit/orbiter/vm.h>
 
 namespace orbiter {
-    struct FiberError {
-        datatype::OObject *value_;
+    class FiberError {
         datatype::OObject **r_value_;
+
+        friend Fiber;
+    public:
+        datatype::OObject *value_;
     };
 
     struct FiberContext {
         datatype::Context *context;
         datatype::Module *module;
         datatype::Code *code;
+        datatype::Function *func;
     };
 
     struct Fiber {
@@ -131,6 +135,7 @@ namespace orbiter {
             this->context.context = O_FAST_INCREF(context);
             this->context.module = O_FAST_INCREF(module);
             this->context.code = O_FAST_INCREF(code);
+            this->context.func = nullptr;
 
             this->vm.regs.IP.reg = (PtrSize) code->m_code;
         }
