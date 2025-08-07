@@ -81,7 +81,9 @@ namespace orbiter {
 
     enum class LoadObjectPropFlags : U8 {
         INLINE = 0,
-        KEY = 1
+        KEY = 1,
+
+        SUPER = 1 << 1
     };
 
     enum class MembershipFlags : U8 {
@@ -209,6 +211,8 @@ ENUMBITMASK_ENABLE(orbiter::CallMode);
 ENUMBITMASK_ENABLE(orbiter::ComparisonMode);
 
 ENUMBITMASK_ENABLE(orbiter::LoadFuncFlags);
+
+ENUMBITMASK_ENABLE(orbiter::LoadObjectPropFlags);
 
 ENUMBITMASK_ENABLE(orbiter::VariableFlags);
 

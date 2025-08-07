@@ -198,7 +198,7 @@ namespace liftoff::ir {
             return this->CreateInstruction<UnaryImmInstr>(orbiter::OPCode::LDCST, (U8) orbiter::LoadConstantMode::NIL);
         }
 
-        Instruction *LoadObjectProp(Instruction *src, U16 offset, bool as_key);
+        Instruction *LoadObjectProp(Instruction *src, U16 offset, bool as_key, bool super);
 
         /**
          * @brief Loads or stores using the specified opcode and offset.

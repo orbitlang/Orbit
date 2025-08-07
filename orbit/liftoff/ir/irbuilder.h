@@ -133,6 +133,8 @@ namespace liftoff::ir {
 
         std::vector<parser::Assignment *> properties;
 
+        bool extends_type = false;
+
         friend class IRBuilder;
 
     public:

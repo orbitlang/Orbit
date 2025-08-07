@@ -121,6 +121,7 @@ int VMCall(Fiber *fiber, Function *func, unsigned short p_count, CallMode mode) 
     if (total_args_with_rest > arity) {
         if (!func->shared->IsVariadic()) {
             // TODO: Too much args
+            assert(false);
         }
 
         // TODO: Construct the array and load it into R11. If the call is variadic, merge the new array with the original one and replace it.
@@ -764,7 +765,7 @@ CGOTO
                 const auto flags = (LoadObjectPropFlags) FETCH_R_RSRC(instr);
                 const auto offset = instr & 0xFFF;
 
-                if (flags == LoadObjectPropFlags::INLINE) {
+                if (((int) flags & 1) == (int) LoadObjectPropFlags::INLINE) {
                     auto *slot = O_SLOT(src, this_func->shared->owner_type);
 
                     REG_N(dst) = (PtrSize) slot[offset];
@@ -773,8 +774,12 @@ CGOTO
                 }
 
                 const auto *key = (ORString *) code->unknown_symbols->objects[offset];
+                PropertyDescriptor *prop = nullptr;
 
-                auto prop = TIFindProperty(O_GET_TYPE(src), (const char *) key->buffer);
+                if (ENUMBITMASK_ISTRUE(flags, LoadObjectPropFlags::SUPER))
+                    prop = TIFindProperty(O_GET_TYPE(O_GET_TYPE(src)), (const char *) key->buffer);
+                else
+                    prop = TIFindProperty(O_GET_TYPE(src), (const char *) key->buffer);
                 if (prop == nullptr) {
                     // FIXME ERROR
                     assert(false);

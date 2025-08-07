@@ -354,6 +354,24 @@ namespace liftoff::ir {
         U16 PushUnknownProps(orbiter::datatype::ORString *id);
 
         /**
+         * @brief Adds an unknown property identifier to the internal list of unknown names.
+         *
+         * This method appends the given property identifier to a managed list of unknown
+         * property names within the IRContext instance. If the property already exists
+         * in the list, its index is returned. If the identifier does not exist, it is
+         * appended to the list, and the index of this newly added identifier is returned.
+         *
+         * The list is lazily initialized upon the first invocation of this method. If the
+         * list allocation or appending operation fails, a `std::bad_alloc` exception is thrown.
+         *
+         * @param id The identifier associated with the unknown properties to be pushed.
+         *           This must be a null-terminated string.
+         * @return The index of the property identifier in the list of unknown names as an unsigned short (U16).
+         * @throws std::bad_alloc If memory allocation fails during list initialization or appending.
+         */
+        U16 PushUnknownProps(const char *id);
+
+        /**
          * @brief Adds a static value to the internal list of static values managed by the IRContext
          * instance.
          *

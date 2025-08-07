@@ -118,6 +118,14 @@ U16 IRContext::PushUnknownProps(orbiter::datatype::ORString *id) {
     return this->unknown_names->length - 1;
 }
 
+U16 IRContext::PushUnknownProps(const char *id) {
+    auto o_id = orbiter::datatype::ORStringNew(this->isolate_, id);
+    if (!o_id)
+        throw std::bad_alloc();
+
+    return this->PushUnknownProps(o_id.get());
+}
+
 U16 IRContext::PushStaticValue(orbiter::datatype::OObject *value) {
     if (!this->static_values) {
         this->static_values = orbiter::datatype::ListNew(this->isolate_);

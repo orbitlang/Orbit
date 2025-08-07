@@ -242,10 +242,13 @@ Instruction *Builder::LoadImmediate(const MachineSize value) {
     return instr;
 }
 
-Instruction *Builder::LoadObjectProp(Instruction *src, U16 offset, bool as_key) {
-    return this->CreateInstruction<LSObjectProp>(OPCode::LDOBJP, src, offset, as_key
-                                                                                  ? LoadObjectPropFlags::KEY
-                                                                                  : LoadObjectPropFlags::INLINE);
+Instruction *Builder::LoadObjectProp(Instruction *src, U16 offset, bool as_key, bool super) {
+    const auto flags = (as_key
+                            ? LoadObjectPropFlags::KEY
+                            : LoadObjectPropFlags::INLINE)
+                       | (super ? LoadObjectPropFlags::SUPER : (LoadObjectPropFlags) 0);
+
+    return this->CreateInstruction<LSObjectProp>(OPCode::LDOBJP, src, offset, flags);
 }
 
 Instruction *Builder::LoadFromOffset(const OPCode opcode, U8 r_base, const I16 offset, U8 flags) {

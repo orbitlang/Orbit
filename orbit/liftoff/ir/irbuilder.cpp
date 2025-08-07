@@ -618,7 +618,10 @@ Instruction *IRBuilder::visitConstruct(const parser::Construct *node) {
 
         this->builder_.StackDiscard((node->ext == nullptr ? 0 : 1) + node->impl.size());
 
-        CTContext _(this, clazz);
+        CTContext context(this, clazz);
+
+        if (node->ext)
+            context.extends_type = true;
 
         this->visit(node->body);
 
@@ -680,6 +683,21 @@ Instruction *IRBuilder::visitFunction(const parser::Function *node) {
         auto *self = this->LoadSelfParam(node->loc.end.offset);
         Instruction *load_nil = nullptr;
         Instruction *value = nullptr;
+
+        // Load super
+        if (this->ct_active_->extends_type && ENUMBITMASK_ISTRUE(node->symbol->flags, SymbolFlags::SYNTETIC)) {
+            const auto offset = (I16) this->builder_.context->PushUnknownProps("init");
+
+            auto *s_init = this->builder_.LoadObjectProp(self, offset, true, true);
+
+            this->builder_.StackPush(self);
+
+            auto *call = this->builder_.CreateCallDetached(s_init, 1, orbiter::CallMode::METHOD);
+
+            this->builder_.AddInstruction(call);
+
+            this->builder_.StackDiscard(1);
+        }
 
         for (const auto &var: this->ct_active_->properties) {
             const auto *sym = ((parser::Identifier *) var->name)->symbol;
@@ -926,6 +944,7 @@ Instruction *IRBuilder::visitNew(const parser::Unary *node) {
 
     auto *call = (CallInstr *) this->CreateCall(func, ctor);
 
+    call->mode |= orbiter::CallMode::METHOD;
     call->arguments += 1;
 
     this->builder_.AddInstruction(call);
@@ -947,24 +966,29 @@ Instruction *IRBuilder::visitSelector(parser::Selector *node) {
 
     const auto *key = (parser::Identifier *) node->right;
 
+    bool super = false;
+
     assert(key->node_type == parser::NodeType::IDENTIFIER);
 
     if (node->left->node_type == parser::NodeType::IDENTIFIER) {
         const auto *obj_base = (parser::Identifier *) node->left;
 
-        if (ENUMBITMASK_ISTRUE(obj_base->symbol->flags, SymbolFlags::SELF)) {
+        if (obj_base->kind == scanner::TokenType::SELF) {
             const auto *sym = this->sym_t_->Lookup(key->value, key->loc.start.offset, true);
             if (sym == nullptr)
                 throw SymbolTableException();
 
             if (sym->type != SymbolType::CONSTANT)
-                return this->builder_.LoadObjectProp(base, sym->offset, false);
+                return this->builder_.LoadObjectProp(base, sym->offset, false, false);
         }
+
+        if (obj_base->kind == scanner::TokenType::SUPER)
+            super = true;
     }
 
     const auto offset = (I16) this->builder_.context->PushUnknownProps(key->value);
 
-    return this->builder_.LoadObjectProp(base, offset, true);
+    return this->builder_.LoadObjectProp(base, offset, true, super);
 }
 
 Instruction *IRBuilder::visitSubscript(parser::Subscript *node) {
