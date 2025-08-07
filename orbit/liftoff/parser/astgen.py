@@ -101,6 +101,7 @@ NODES = {
             "params": "std::vector<ASTHandle<ASTNode*>>",
             "body": "ASTNode*",
             "ret_type": "ASTNode*",
+            "symbol": "Symbol*",
             "async": "bool",
             "anon": "bool",
             "constant": "bool",
@@ -112,7 +113,8 @@ NODES = {
     "Identifier": {
         "fields": {
             "symbol": "Symbol*",
-            "value": "orbiter::datatype::ORString*"
+            "value": "orbiter::datatype::ORString*",
+            "kind": "scanner::TokenType"
         }
     },
     "Import": {

@@ -96,7 +96,7 @@ ASTHandle<ASTNode *> Parser::InjectInit(Loc loc) const {
 
     func->loc.start = loc.start;
 
-    func->name = ORStringNew(this->isolate_, "init").release();
+    func->name = ORStringNew(this->isolate_, kInitMethodName).release();
     func->body = MakeBlock(this->isolate_, loc).release();
 
     func->method = true;
@@ -110,6 +110,8 @@ ASTHandle<ASTNode *> Parser::InjectInit(Loc loc) const {
     sym->flags = SymbolFlags::SYNTETIC;
 
     func->params.emplace_back(std::move(this->PushSelfParam(loc)));
+
+    func->symbol = sym;
 
     this->sym_t_->LeaveScope(loc.end.offset, loc.end.line);
 
@@ -167,11 +169,7 @@ ASTHandle<ASTNode *> Parser::ParseClassTrait() {
 
         ct->loc.end = ct->body->loc.end;
 
-        if (ct->node_type == NodeType::CLASS && this->sym_t_->Lookup("init", ct->loc.end.offset) == nullptr) {
-            auto *ct_block = (Block *) ct->body;
-
-            ct_block->statements.emplace_back(std::move(this->InjectInit(ct->loc)));
-        }
+        this->ClassCheck(ct.get());
     } catch (...) {
         this->exports = old_pub;
 
@@ -1011,7 +1009,7 @@ ASTHandle<ASTNode *> Parser::ParseCleanupInit(const Position &start, bool pub) {
 
     func->loc.start = start;
 
-    func->name = ORStringNew(this->isolate_, tk_type == TokenType::KW_CLEANUP ? "cleanup" : "init").release();
+    func->name = ORStringNew(this->isolate_, tk_type == TokenType::KW_CLEANUP ? kCleanupMethodName : kInitMethodName).release();
     func->doc = this->GetDocString().release();
 
     func->method = true;
@@ -1047,6 +1045,7 @@ ASTHandle<ASTNode *> Parser::ParseCleanupInit(const Position &start, bool pub) {
     if (!this->Match(TokenType::LEFT_BRACES))
         throw ParserException(tk_type == TokenType::KW_CLEANUP ? 75 : 73);
 
+    func->symbol = sym;
     func->body = this->ParseBlock(false).release();
     func->loc.end = func->body->loc.end;
 
@@ -1321,11 +1320,28 @@ ASTHandle<ASTNode *> Parser::ParseIdentifier() {
     if (!id_name)
         throw DatatypeException();
 
-    auto *sym = this->sym_t_->LookupInsert(id_name.get(), TKCUR_START.offset);
-    if (!sym)
-        throw SymbolTableException();
+    Symbol *sym = nullptr;
 
     auto id = MakeIdentifier(this->isolate_, TKCUR_LOC);
+
+    id->kind = TokenType::IDENTIFIER;
+
+    if (this->Match(TokenType::SUPER)) {
+        if (!this->context_->CheckExt(ContextType::CLASS) && !this->context_->CheckExt(ContextType::TRAIT))
+            throw ParserException(79);
+
+        sym = this->sym_t_->LookupInsert("self", TKCUR_START.offset);
+
+        id->kind = TokenType::SUPER;
+    } else if (this->Match(TokenType::SELF)) {
+        sym = this->sym_t_->LookupInsert(id_name.get(), TKCUR_START.offset);
+
+        id->kind = TokenType::SELF;
+    } else
+        sym = this->sym_t_->LookupInsert(id_name.get(), TKCUR_START.offset);
+
+    if (!sym)
+        throw SymbolTableException();
 
     id->symbol = sym;
     id->value = id_name.release();
@@ -1535,7 +1551,7 @@ ASTHandle<ASTNode *> Parser::ParseMemberAccess(ASTHandle<ASTNode *> &left) {
 
     this->Eat(true);
 
-    if (!this->Match(TokenType::IDENTIFIER))
+    if (!this->Match(TokenType::IDENTIFIER, TokenType::KW_INIT, TokenType::KW_CLEANUP))
         throw ParserException(0);
 
     auto id_name = ORStringNew(this->isolate_, this->tkcur_.buffer, this->tkcur_.length);
@@ -1960,6 +1976,8 @@ ASTHandle<liftoff::parser::Function *> Parser::ParseFunction(const Position &sta
         func->loc.end = TKCUR_START;
     }
 
+    func->symbol = sym;
+
     this->sym_t_->LeaveScope(func->loc.end.offset, func->loc.end.line);
 
     if (pub && !func->anon)
@@ -2144,6 +2162,7 @@ Parser::NudMeth Parser::LookupNUD(TokenType token) noexcept {
         // Identifiers and self
         case TokenType::IDENTIFIER:
         case TokenType::SELF:
+        case TokenType::SUPER:
             return &Parser::ParseIdentifier;
 
         // Grouping and composite types
@@ -2200,6 +2219,48 @@ void Parser::AdjustInlineExport(const Assignment *decl, bool pub, bool weak) {
             }
         }
     }
+}
+
+void Parser::ClassCheck(const Construct *clazz) const {
+    auto *ct_block = (Block *) clazz->body;
+
+    if (clazz->node_type != NodeType::CLASS)
+        return;
+
+    // Find init method in class body
+    const Function *init = nullptr;
+
+    for (const auto &stmt: ct_block->statements) {
+        if (stmt->node_type == NodeType::INIT) {
+            init = (Function *) stmt.get();
+
+            break;
+        }
+    }
+
+    if (init != nullptr && clazz->ext != nullptr) {
+        // Check if super.init is the first statement in constructor
+        const auto *init_body = (Block *) init->body;
+
+        if (init_body->statements.empty())
+            throw ParserException(80);
+
+        const auto *call = (Call *) init_body->statements.front().get();
+        const auto *stmt = (Selector *) call->left;
+
+        if (call->node_type != NodeType::CALL
+            || stmt->node_type != NodeType::SELECTOR
+            || stmt->left->node_type != NodeType::IDENTIFIER
+            || ((Identifier *) stmt->left)->kind != TokenType::SUPER
+            || stmt->right->node_type != NodeType::IDENTIFIER
+            || ORStringCompare(((Identifier *) stmt->right)->value, kInitMethodName) != 0
+        )
+            throw ParserException(80);
+    }
+
+    // Inject a synthetic constructor if no init method is defined
+    if (init == nullptr)
+        ct_block->statements.emplace_back(std::move(this->InjectInit(clazz->loc)));
 }
 
 void Parser::Eat(bool ignore_nl) {

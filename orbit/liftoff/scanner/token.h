@@ -18,6 +18,7 @@ namespace liftoff::scanner {
         // Identifiers
         IDENTIFIER,
         SELF,
+        SUPER,
 
         // Datatypes
         DATATYPE_BEGIN,

@@ -91,7 +91,12 @@ namespace liftoff::parser {
         "Invalid cleanup declaration: destructor cannot have parameters, unexpected '(' after 'cleanup'",
         "Invalid return statement: constructors and destructors cannot return a value",
         "Invalid new expression: expected call",
+        "Invalid self/super usage: can only be used within class or trait methods",
+        "Invalid constructor: first statement in derived class constructor must be super.init(...)"
     };
+
+    constexpr auto kInitMethodName = "init";
+    constexpr auto kCleanupMethodName = "cleanup";
 
     class Context;
 
@@ -316,6 +321,8 @@ namespace liftoff::parser {
         [[nodiscard]] orbiter::datatype::HORString MakeFuncName() const;
 
         void AdjustInlineExport(const Assignment *decl, bool pub, bool weak);
+
+        void ClassCheck(const Construct *clazz) const;
 
         void Eat(bool ignore_nl);
 

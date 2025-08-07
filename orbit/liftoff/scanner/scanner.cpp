@@ -76,6 +76,7 @@ constexpr KwToken kw2tktype[] = {
     {"return", TokenType::KW_RETURN},
     {"self", TokenType::SELF},
     {"spawn", TokenType::KW_SPAWN},
+    {"super", TokenType::SUPER},
     {"switch", TokenType::KW_SWITCH},
     {"sync", TokenType::KW_SYNC},
     {"trait", TokenType::KW_TRAIT},
