@@ -189,6 +189,7 @@ namespace orbiter {
         STOBJP,
         // Store object property    OPCODE | 4 DST(Object) | 4 SRC_R(value) | 4 SRC_L(LoadObjectPropFlags) | 12 UNSIGNED OFFSET
         MKCLZ, // Create new class                  OPCODE | 4 DST | 4 Flags(ClassFlags) | 8 RESERVED | 8 IMPLs COUNT
+        MKTRT, // Create new trait                  OPCODE | 4 DST | 12 RESERVED         | 8 IMPLs COUNT
         NOBJ, // Create new object                  OPCODE | 4 DST | 4 SRC(Class type)   | 16 UNSIGNED OFFSET
 
         // Jump Instructions

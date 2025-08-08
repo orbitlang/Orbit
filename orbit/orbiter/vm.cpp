@@ -820,19 +820,30 @@ CGOTO
                 const auto flags = FETCH_F_SRC(ClassFlags, instr);
                 const auto impls = FETCH_IMM(instr);
 
-                auto sk_start = impls;
-
                 auto clazz = ClassTypeNew(code,
                                           flags == ClassFlags::EXTEND
-                                              ? (TypeInfo *) *ACCESS_STACK_SP(-((sk_start+1) * sizeof(void*)))
+                                              ? (TypeInfo *) *ACCESS_STACK_SP(-((impls+1) * sizeof(void*)))
                                               : nullptr,
-                                          (TypeInfo **) ACCESS_STACK_SP(-(sk_start * sizeof(void*))),
-                                          sk_start);
+                                          (TypeInfo **) ACCESS_STACK_SP(-(impls * sizeof(void*))),
+                                          impls);
                 if (!clazz) {
                     // FIXME: Error!
                 }
 
                 REG_N(dst) = (PtrSize) clazz.get();
+
+                DISPATCH;
+            }
+            TARGET_OP(MKTRT) {
+                const auto dst = FETCH_R_DST(instr);
+                const auto impls = FETCH_IMM(instr);
+
+                auto trait = TraitTypeNew(code, (TypeInfo **) ACCESS_STACK_SP(-(impls * sizeof(void*))), impls);
+                if (!trait) {
+                    // FIXME: Error!
+                }
+
+                REG_N(dst) = (PtrSize) trait.get();
 
                 DISPATCH;
             }

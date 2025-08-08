@@ -177,6 +177,7 @@ unsigned char *Codegen::EmitOpcodes(BasicBlock *block, unsigned char *m_code) {
             case orbiter::OPCode::LDCST:
             case orbiter::OPCode::LDIMM:
             case orbiter::OPCode::MKCLZ:
+            case orbiter::OPCode::MKTRT:
                 *(orbiter::MachineWord *) m_code = EMIT_DFI(instr->opcode,
                                                             instr->assigned_reg,
                                                             ((ir::UnaryImmInstr *) instr)->flags, // Shift for LDCST

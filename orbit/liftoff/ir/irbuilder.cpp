@@ -309,7 +309,7 @@ Instruction *IRBuilder::StoreVariable(const Symbol *symbol, Instruction *value, 
         // since variables are not managed this way. (Yes, functions and methods are treated as constants)
         v_flags |= orbiter::VariableFlags::CONSTANT;
 
-        if (symbol->type != SymbolType::CONSTANT) {
+        if (symbol->type != SymbolType::CONSTANT && symbol->defining_scope->type == ScopeType::CLASS) {
             v_flags |= orbiter::VariableFlags::CP_INLINE;
 
             this->builder_.context->local_slots += 1;
@@ -627,7 +627,15 @@ Instruction *IRBuilder::visitConstruct(const parser::Construct *node) {
 
         this->builder_.CreateReturnSub(clazz);
     } else {
-        assert(false);
+        const auto trait = this->builder_.CreateUnaryOp(orbiter::OPCode::MKTRT, node->impl.size());
+
+        this->builder_.StackDiscard(node->impl.size());
+
+        CTContext _(this, trait);
+
+        this->visit(node->body);
+
+        this->builder_.CreateReturnSub(trait);
     }
 
     this->builder_.context->name = orbiter::datatype::HORString(node->name);
@@ -737,6 +745,8 @@ Instruction *IRBuilder::visitFunction(const parser::Function *node) {
 
         cleanup_count += 1;
     }
+
+    // TODO: No body function
 
     this->visit(node->body);
 
@@ -973,7 +983,7 @@ Instruction *IRBuilder::visitSelector(parser::Selector *node) {
     if (node->left->node_type == parser::NodeType::IDENTIFIER) {
         const auto *obj_base = (parser::Identifier *) node->left;
 
-        if (obj_base->kind == scanner::TokenType::SELF) {
+        if (obj_base->kind == scanner::TokenType::SELF && obj_base->symbol->defining_scope->type == ScopeType::CLASS) {
             const auto *sym = this->sym_t_->Lookup(key->value, key->loc.start.offset, true);
             if (sym == nullptr)
                 throw SymbolTableException();
