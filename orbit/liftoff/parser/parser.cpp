@@ -1942,6 +1942,9 @@ ASTHandle<liftoff::parser::Function *> Parser::ParseFunction(const Position &sta
         throw ParserException(70);
     }
 
+    this->IgnoreNewLineIF(TokenType::KW_ASYNC);
+    this->IgnoreNewLineIF(TokenType::KW_CONST);
+
     while (TKCUR_TYPE > TokenType::KEYWORD_BEGIN && TKCUR_TYPE < TokenType::KEYWORD_END) {
         if (this->MatchEat(TokenType::KW_ASYNC, true))
             func->async = true;
@@ -2095,7 +2098,7 @@ std::vector<ASTHandle<ASTNode *> > Parser::ParseFuncParams(Loc &last_param) {
 
     last_param = TKCUR_LOC;
 
-    if (!this->MatchEat(TokenType::RIGHT_ROUND, true))
+    if (!this->MatchEat(TokenType::RIGHT_ROUND, false))
         throw ParserException(12);
 
     return std::move(params);
@@ -2297,9 +2300,9 @@ void Parser::EatNL() {
 }
 
 void Parser::IgnoreNewLineIF(TokenType type) {
-    const scanner::Token *peek;
+    const Token *peek;
 
-    if (this->tkcur_.type != scanner::TokenType::END_OF_LINE)
+    if (this->tkcur_.type != TokenType::END_OF_LINE)
         return;
 
     if (!this->scanner_.PeekToken(&peek))
