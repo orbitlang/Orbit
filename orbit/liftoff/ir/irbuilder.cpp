@@ -2,6 +2,8 @@
 //
 // Licensed under the Apache License v2.0
 
+#include <orbit/liftoff/parser/parser.h>
+
 #include <orbit/liftoff/ir/irbuilder.h>
 
 using namespace liftoff;
@@ -694,7 +696,7 @@ Instruction *IRBuilder::visitFunction(const parser::Function *node) {
 
         // Load super
         if (this->ct_active_->extends_type && ENUMBITMASK_ISTRUE(node->symbol->flags, SymbolFlags::SYNTETIC)) {
-            const auto offset = (I16) this->builder_.context->PushUnknownProps("init");
+            const auto offset = (I16) this->builder_.context->PushUnknownProps(parser::kInitMethodName);
 
             auto *s_init = this->builder_.LoadObjectProp(self, offset, true, true);
 
@@ -746,9 +748,11 @@ Instruction *IRBuilder::visitFunction(const parser::Function *node) {
         cleanup_count += 1;
     }
 
-    // TODO: No body function
-
-    this->visit(node->body);
+    if (node->body == nullptr) {
+        // FIXME: impl this
+        assert(false);
+    } else
+        this->visit(node->body);
 
     if (ENUMBITMASK_ISTRUE(f_flags, orbiter::LoadFuncFlags::METHOD))
         cleanup_count -= 1;
@@ -983,7 +987,9 @@ Instruction *IRBuilder::visitSelector(parser::Selector *node) {
     if (node->left->node_type == parser::NodeType::IDENTIFIER) {
         const auto *obj_base = (parser::Identifier *) node->left;
 
-        if (obj_base->kind == scanner::TokenType::SELF && obj_base->symbol->defining_scope->type == ScopeType::CLASS) {
+        if (obj_base->kind == scanner::TokenType::SELF
+            && this->ct_active_ != nullptr
+            && ((PhysInstruction *) this->ct_active_->tp_ptr)->opcode == orbiter::OPCode::MKCLZ) {
             const auto *sym = this->sym_t_->Lookup(key->value, key->loc.start.offset, true);
             if (sym == nullptr)
                 throw SymbolTableException();
