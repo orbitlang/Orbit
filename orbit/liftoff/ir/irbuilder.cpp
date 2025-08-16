@@ -991,10 +991,8 @@ Instruction *IRBuilder::visitSelector(parser::Selector *node) {
             && this->ct_active_ != nullptr
             && ((PhysInstruction *) this->ct_active_->tp_ptr)->opcode == orbiter::OPCode::MKCLZ) {
             const auto *sym = this->sym_t_->Lookup(key->value, key->loc.start.offset, true);
-            if (sym == nullptr)
-                throw SymbolTableException();
 
-            if (sym->type != SymbolType::CONSTANT)
+            if (sym != nullptr && sym->type != SymbolType::CONSTANT)
                 return this->builder_.LoadObjectProp(base, sym->offset, false, false);
         }
 
