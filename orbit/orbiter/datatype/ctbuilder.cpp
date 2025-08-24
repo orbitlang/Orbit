@@ -4,6 +4,8 @@
 
 #include <cassert>
 
+#include <orbit/orbiter/datatype/c3/c3.h>
+
 #include <orbit/orbiter/datatype/ctbuilder.h>
 
 using namespace orbiter::datatype;
@@ -113,7 +115,7 @@ HOType orbiter::datatype::ClassTypeInit(Isolate *isolate) {
     return clazz;
 }
 
-HOType orbiter::datatype::ClassTypeNew(const Code *code, TypeInfo *super, TypeInfo **traits, U16 traits_count) {
+HOType orbiter::datatype::ClassTypeNew(const Code *code, TypeInfo *super, TypeInfo **traits, const U16 traits_count) {
     const auto isolate = O_GET_ISOLATE(code);
     HOType clazz{};
 
@@ -128,7 +130,9 @@ HOType orbiter::datatype::ClassTypeNew(const Code *code, TypeInfo *super, TypeIn
     if (!PushProperties(clazz.get(), code->exported.symbols, code->exported.length))
         return {};
 
-    // FIXME: traits
+    linearization::C3 c3(clazz.get());
+    if (!c3.BuildMRO(traits, traits_count))
+        return {};
 
     clazz->aux.dtor = ClassBlueprintDtor;
 
@@ -140,12 +144,16 @@ HOType orbiter::datatype::TraitTypeInit(Isolate *isolate) {
     return clazz;
 }
 
-HOType orbiter::datatype::TraitTypeNew(const Code *code, TypeInfo **traits, U16 traits_count) {
+HOType orbiter::datatype::TraitTypeNew(const Code *code, TypeInfo **traits, const U16 traits_count) {
     const auto isolate = O_GET_ISOLATE(code);
 
     auto trait = MakeTypeExtended(isolate, InstanceType::TRAIT, 0, code->exported.length, 0);
     if (trait) {
         if (!PushProperties(trait.get(), code->exported.symbols, code->exported.length))
+            return {};
+
+        linearization::C3 c3(trait.get());
+        if (!c3.BuildMRO(traits, traits_count))
             return {};
     }
 

@@ -110,16 +110,19 @@ namespace orbiter::datatype {
     struct TypeInfo {
         OROBJ_HEAD;
 
-        /* Size of the object represented by this datatype (used for memory allocation) */
+        /// Size of the object represented by this datatype (used for memory allocation)
         U16 i_size;
 
         U16 offset;
 
-        /* Additional headroom space */
+        /// Additional headroom space
         U8 headroom;
 
-        /* Instance type (enum defining various object types in Orbit) */
+        /// Instance type (enum defining various object types in Orbit)
         InstanceType i_type;
+
+        /// Trait Method Resolution Order
+        OObject *mro;
 
         Isolate *isolate;
 

@@ -135,12 +135,22 @@ PropertyDescriptor *orbiter::datatype::TIFindLocalProperty(const TypeInfo *type,
 }
 
 PropertyDescriptor *orbiter::datatype::TIFindProperty(const TypeInfo *type, const char *name) {
-    auto *prop = TIFindLocalProperty(type, name);
-
-    type = O_GET_TYPE(type);
+    PropertyDescriptor *prop = nullptr;
 
     while (prop == nullptr && type != nullptr) {
+        // First search in local properties of current type
         prop = TIFindLocalProperty(type, name);
+
+        // Then search in traits if present, using Method Resolution Order (MRO)
+        if (prop == nullptr && type->mro != nullptr) {
+            const auto *mro = (Tuple *) type->mro;
+
+            // Iterate through all traits in MRO order until property is found
+            for (auto i = 0; i < mro->length && prop == nullptr; i++)
+                prop = TIFindLocalProperty((TypeInfo *) mro->objects[i], name);
+        }
+
+        // If not found, continue search in parent class
         type = O_GET_TYPE(type);
     }
 
@@ -168,6 +178,7 @@ HOType orbiter::datatype::MakeType(Isolate *isolate, TypeInfo *super, InstanceTy
 
     ti->headroom = headroom;
 
+    ti->mro = nullptr;
     ti->isolate = isolate;
     ti->trace = nullptr;
 
