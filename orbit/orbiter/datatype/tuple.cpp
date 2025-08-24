@@ -32,7 +32,12 @@ bool orbiter::datatype::TupleTypeSetup(TypeInfo *self) {
     return true;
 }
 
-Handle<Tuple> orbiter::datatype::TupleNew(Isolate *isolate, MSize count) {
+HOType orbiter::datatype::TupleTypeInit(Isolate *isolate) {
+    auto tuple = MakeType(isolate, InstanceType::TUPLE, sizeof(Tuple) - sizeof(OObject), 0, 0);
+    return tuple;
+}
+
+HTuple orbiter::datatype::TupleNew(Isolate *isolate, MSize count) {
     auto *tuple = MakeObject<Tuple>(isolate, InstanceType::TUPLE);
 
     if (tuple != nullptr) {
@@ -55,7 +60,23 @@ Handle<Tuple> orbiter::datatype::TupleNew(Isolate *isolate, MSize count) {
     O_GC_TRACK_RETURN(isolate, tuple, false);
 }
 
-HOType orbiter::datatype::TupleTypeInit(Isolate *isolate) {
-    auto tuple = MakeType(isolate, InstanceType::TUPLE, sizeof(Tuple) - sizeof(OObject), 0, 0);
-    return tuple;
+HTuple orbiter::datatype::TupleNewFromList(HList &list) {
+    auto *isolate = O_GET_ISOLATE(list);
+
+    auto *tuple = MakeObject<Tuple>(isolate, InstanceType::TUPLE);
+
+    if (tuple != nullptr) {
+        tuple->objects = list->objects;
+        tuple->capacity = list->capacity;
+        tuple->length = list->length;
+        tuple->hash = 0;
+
+        list->objects = nullptr;
+        list->capacity = 0;
+        list->length = 0;
+
+        list.reset();
+    }
+
+    O_GC_TRACK_RETURN(isolate, tuple, false);
 }

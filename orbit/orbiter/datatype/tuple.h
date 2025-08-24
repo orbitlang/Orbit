@@ -9,6 +9,8 @@
 
 #include <orbit/orbiter/datatype/oobject.h>
 
+#include <orbit/orbiter/datatype/list.h>
+
 namespace orbiter::datatype {
     struct Tuple {
         OROBJ_HEAD;
@@ -21,6 +23,8 @@ namespace orbiter::datatype {
 
         MSize hash;
     };
+
+    using HTuple = Handle<Tuple>;
 
     /**
      * @brief Adds an item to the specified tuple
@@ -86,7 +90,27 @@ namespace orbiter::datatype {
      * @return A Handle to the newly created Tuple object if allocation is successful,
      *         or an empty Handle if any part of the creation process fails
      */
-    Handle<Tuple> TupleNew(Isolate *isolate, MSize count);
+    HTuple TupleNew(Isolate *isolate, MSize count);
+
+
+    /**
+     * @brief Creates a new Tuple object from the given list of objects
+     *
+     * This function initializes a Tuple object using the properties from the provided
+     * HList instance. The new Tuple will inherit the objects, capacity, and length of the
+     * original list, while the HList's internal data will be reset. The Tuple is returned
+     * as a handle (HTuple) for further usage.
+     *
+     * The function ensures proper memory management by transferring ownership of the list's
+     * content to the newly created Tuple and resetting the list state.
+     *
+     * @warning This is a convenience function, using this function incorrectly causes an IMMEDIATE CRASH.
+     *
+     * @param list Reference to the HList object used to create the Tuple
+     *
+     * @return A handle to the newly created Tuple object, or nullptr if initialization fails
+     */
+    HTuple TupleNewFromList(HList &list);
 }
 
 #endif // !ORBIT_ORBITER_DATATYPE_TUPLE_H_
