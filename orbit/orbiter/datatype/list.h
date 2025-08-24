@@ -68,6 +68,18 @@ namespace orbiter::datatype {
     bool ListAppend(List *list, const List *other);
 
     /**
+     * @brief Extends the contents of a list by appending elements from another container object
+     *
+     * This function adds the elements of a given object to the specified list.
+     *
+     * @param list Pointer to the target list that will be extended
+     * @param other Pointer to the source object (either a list or a tuple) whose elements will be appended
+     *
+     * @return true if the extension operation was successful, false otherwise
+     */
+    bool ListExtend(List *list, OObject *other);
+
+    /**
     * @brief Insert element into the list.
     *
     * @param list List object.
@@ -75,7 +87,7 @@ namespace orbiter::datatype {
     * @param index Location to insert the object.
     * @return True on success, in case of error false will be returned and the panic state will be set.
     */
-    bool ListInsert(List *list, OObject *object, MSize index);
+    bool ListInsert(List *list, OObject *object, MSSize index);
 
     /**
      * @brief Prepend object to the list.
@@ -96,8 +108,30 @@ namespace orbiter::datatype {
      */
     HOObject ListGet(List *list, bool *success, MSSize index);
 
+    /**
+     * @brief Creates a new list instance with the specified capacity
+     *
+     * This function initializes a new list object in the provided isolate with a given capacity.
+     * The list is allocated and configured to hold an array of objects, with all metadata initialized.
+     * If the specified capacity is greater than 0, memory allocation for the object's array is performed.
+     *
+     * @param isolate Pointer to the Isolate where the list will be created
+     * @param capacity Intended capacity of the list, determining the number of entries it can initially hold
+     *
+     * @return A handle to the newly created list if successful, or an empty handle if creation or memory allocation fails
+     */
     HList ListNew(Isolate *isolate, MSize capacity);
 
+    /**
+     * @brief Creates a new list with an initial capacity.
+     *
+     * This function initializes a new list using the provided isolate and sets its
+     * capacity to the default initial size.
+     *
+     * @param isolate Pointer to the Isolate instance used for creating the list.
+     *
+     * @return A newly created list with the default initial capacity.
+     */
     inline HList ListNew(Isolate *isolate) {
         return ListNew(isolate, kListInitialCapacity);
     }
@@ -113,6 +147,21 @@ namespace orbiter::datatype {
      * @return Handle to the newly created TypeInfo for the type, or an empty handle if creation failed
      */
     HOType ListTypeInit(Isolate *isolate);
+
+    /**
+     * @brief Removes an element from a list at the specified index
+     *
+     * This function deletes an element from the input list at the given index
+     * and shifts subsequent elements to maintain the list's continuity.
+     * If the index is negative, it is treated as an offset from the end of the list.
+     *
+     * If the index is out of range (either too large or too small), the function
+     * returns without altering the list.
+     *
+     * @param list Pointer to the List object from which an element is to be removed
+     * @param index Index of the element to remove, can be negative to indicate an offset from the end
+     */
+    void ListRemove(List *list, MSSize index);
 }
 
 #endif // !ORBIT_ORBITER_DATATYPE_LIST_H_

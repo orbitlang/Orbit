@@ -2,6 +2,9 @@
 //
 // Licensed under the Apache License v2.0
 
+#include <cassert>
+
+#include <orbit/orbiter/datatype/tuple.h>
 #include <orbit/orbiter/datatype/list.h>
 
 using namespace orbiter::datatype;
@@ -49,7 +52,7 @@ bool orbiter::datatype::ListAppend(List *list, OObject *object) {
     if (!ListCheckSize(list, 1))
         return false;
 
-    list->objects[list->length++] = object;
+    list->objects[list->length++] = O_INCREF(object);
 
     return true;
 }
@@ -62,25 +65,47 @@ bool orbiter::datatype::ListAppend(List *list, const List *other) {
         return false;
 
     for (MSize i = 0; i < other->length; i++)
-        list->objects[list->length++] = other->objects[i];
+        list->objects[list->length++] = O_INCREF(other->objects[i]);
 
     return true;
 }
 
-bool orbiter::datatype::ListInsert(List *list, OObject *object, MSize index) {
+bool orbiter::datatype::ListExtend(List *list, OObject *other) {
+    if (O_IS_TYPE(other, InstanceType::LIST))
+        return ListAppend(list, other);
+
+    if (O_IS_TYPE(other, InstanceType::TUPLE)) {
+        auto **objects =  ((Tuple *) other)->objects;
+        const auto count = ((Tuple *) other)->length;
+
+        if (!ListCheckSize(list, count))
+            return false;
+
+        for (auto i=0;i<count;i++)
+            list->objects[list->length + i] = O_INCREF(objects[i]);
+
+        list->length += count;
+
+        return true;
+    }
+
+    assert(false);
+}
+
+bool orbiter::datatype::ListInsert(List *list, OObject *object, MSSize index) {
     if (index < 0)
-        index = ((MSize) list->length) + index;
+        index = ((MSSize) list->length) + index;
 
     if (index > list->length) {
         if (!ListCheckSize(list, 1))
             return false;
 
-        list->objects[list->length++] = object;
+        list->objects[list->length++] = O_INCREF(object);
 
         return true;
     }
 
-    list->objects[index] = object;
+    list->objects[index] = O_INCREF(object);
 
     return true;
 }
@@ -92,7 +117,7 @@ bool orbiter::datatype::ListPrepend(List *list, OObject *object) {
     for (MSize i = list->length; i > 0; i--)
         list->objects[i] = list->objects[i - 1];
 
-    list->objects[0] = object;
+    list->objects[0] = O_INCREF(object);
 
     list->length++;
 
@@ -146,4 +171,20 @@ HOObject orbiter::datatype::ListGet(List *list, bool *success, MSSize index) {
 HOType orbiter::datatype::ListTypeInit(Isolate *isolate) {
     auto list = MakeType(isolate, InstanceType::LIST, sizeof(List) - sizeof(OObject), 0, 0);
     return list;
+}
+
+void orbiter::datatype::ListRemove(List *list, MSSize index) {
+    if (index < 0)
+        index = ((MSSize) list->length) + index;
+
+    if (index >= list->length)
+        return;
+
+    O_DECREF(list->objects[index]);
+
+    // Move items back
+    for (auto i = index + 1; i < list->length; i++)
+        list->objects[i - 1] = list->objects[i];
+
+    list->length--;
 }
