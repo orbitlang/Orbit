@@ -690,13 +690,15 @@ Instruction *IRBuilder::visitFunction(const parser::Function *node) {
 
     // Load default value for constructor
     if (node->node_type == parser::NodeType::INIT) {
-        auto *self = this->LoadSelfParam(node->loc.end.offset);
+        Instruction *self = nullptr;
         Instruction *load_nil = nullptr;
         Instruction *value = nullptr;
 
         // Load super
         if (this->ct_active_->extends_type && ENUMBITMASK_ISTRUE(node->symbol->flags, SymbolFlags::SYNTETIC)) {
             const auto offset = (I16) this->builder_.context->PushUnknownProps(parser::kInitMethodName);
+
+            self = this->LoadSelfParam(node->loc.end.offset);
 
             auto *s_init = this->builder_.LoadObjectProp(self, offset, true, true);
 
@@ -719,6 +721,9 @@ Instruction *IRBuilder::visitFunction(const parser::Function *node) {
                 value = load_nil;
             } else
                 value = this->visit(var->value);
+
+            if (self == nullptr)
+                self = this->LoadSelfParam(node->loc.end.offset);
 
             this->builder_.StoreObjectProp(self, value, sym->offset, false);
         }
