@@ -73,6 +73,7 @@ constexpr KwToken kw2tktype[] = {
     {"of", TokenType::KW_OF},
     {"panic", TokenType::KW_PANIC},
     {"pub", TokenType::KW_PUB},
+    {"prot", TokenType::KW_PROT},
     {"return", TokenType::KW_RETURN},
     {"self", TokenType::SELF},
     {"spawn", TokenType::KW_SPAWN},
@@ -954,12 +955,12 @@ const char *Scanner::GetStatusMessage() const {
 }
 
 Scanner::Scanner(orbiter::Isolate *isolate, FILE *fd, const char *ps1, const char *ps2,
-                 int buf_size) noexcept: isolate_(isolate),
-                                         prompt_(ps1),
-                                         next_prompt_(ps2),
-                                         fd_(fd),
-                                         sbuf_(isolate),
-                                         ibuf_(isolate, buf_size) {
+                 int buf_size) noexcept : isolate_(isolate),
+                                          prompt_(ps1),
+                                          next_prompt_(ps2),
+                                          fd_(fd),
+                                          sbuf_(isolate),
+                                          ibuf_(isolate, buf_size) {
     assert(buf_size > 0);
 
     this->promptfn_ = DefaultPrompt;

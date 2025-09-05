@@ -118,6 +118,7 @@ namespace liftoff::scanner {
         KW_OF,
         KW_PANIC,
         KW_PUB,
+        KW_PROT,
         KW_RETURN,
         KW_YIELD,
         KW_SPAWN,

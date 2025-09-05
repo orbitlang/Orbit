@@ -56,9 +56,10 @@ namespace orbiter::datatype {
 
         IS_CONSTANT = 0x01 << 1,
         IS_WEAK = 0x01 << 2,
-        IS_PUBLIC = 0x01 << 3,
+        IS_PROTECTED = 0x01 << 3,
+        IS_PUBLIC = 0x01 << 4,
 
-        DUP_INLINE = 0x01 << 4
+        DUP_INLINE = 0x01 << 5
     };
 
     struct PropertyDescriptor {
@@ -78,6 +79,7 @@ namespace orbiter::datatype {
     struct {                                                            \
         orbiter::memory::RefCount ref_count_;                           \
         struct TypeInfo *type_;                                         \
+        bool is_instance;                                               \
     } head_
 
     enum class InstanceType {

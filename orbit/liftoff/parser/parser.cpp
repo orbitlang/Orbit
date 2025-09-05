@@ -270,7 +270,7 @@ ASTHandle<ASTNode *> Parser::ParseForInStatement() {
 
     if (this->Match(TokenType::KW_VAR)) {
         constexpr Position end{};
-        forIn->init = this->ParseVarDecl(end, false, false, false, true).release();
+        forIn->init = this->ParseVarDecl(end, AccessModifier::PRIVATE, false, false, true).release();
     } else {
         std::vector<ASTHandle<ASTNode *> > ids;
 
@@ -766,7 +766,8 @@ ASTHandle<ASTNode *> Parser::ParseTryCatchFinally() {
     return tryb;
 }
 
-ASTHandle<ASTNode *> Parser::ParseVarDecl(const Position &start, bool pub, bool constant, bool weak, bool decl_only) {
+ASTHandle<ASTNode *> Parser::ParseVarDecl(const Position &start, AccessModifier access, bool constant, bool weak,
+                                          bool decl_only) {
     std::vector<ASTHandle<ASTNode *> > identifiers;
 
     if (constant && (!this->context_->Check(ContextType::CLASS)
@@ -784,7 +785,7 @@ ASTHandle<ASTNode *> Parser::ParseVarDecl(const Position &start, bool pub, bool 
         if (!id_str)
             throw DatatypeException();
 
-        if (pub)
+        if (access != AccessModifier::PRIVATE)
             this->exports.push_back(id_str);
 
         auto sym = this->sym_t_->Declare(id_str.get(), constant ? SymbolType::CONSTANT : SymbolType::VARIABLE,
@@ -792,7 +793,7 @@ ASTHandle<ASTNode *> Parser::ParseVarDecl(const Position &start, bool pub, bool 
         if (sym == nullptr)
             throw SymbolTableException();
 
-        sym->access = pub ? AccessModifier::PUBLIC : AccessModifier::PRIVATE;
+        sym->access = access;
 
         sym->tdz = true;
 
@@ -980,10 +981,10 @@ ASTHandle<ASTNode *> Parser::ParseBlock(bool nested) {
     while (!this->Match(TokenType::RIGHT_BRACES)) {
         if (this->context_->Check(ContextType::CLASS)) {
             if (!this->Match(TokenType::KW_CLEANUP, TokenType::KW_FUNC, TokenType::KW_INIT,
-                             TokenType::KW_LET, TokenType::KW_PUB, TokenType::KW_VAR))
+                             TokenType::KW_LET, TokenType::KW_PUB, TokenType::KW_PROT, TokenType::KW_VAR))
                 throw ParserException(71);
         } else if (this->context_->Check(ContextType::TRAIT)) {
-            if (!this->Match(TokenType::KW_FUNC, TokenType::KW_LET, TokenType::KW_PUB))
+            if (!this->Match(TokenType::KW_FUNC, TokenType::KW_LET, TokenType::KW_PUB, TokenType::KW_PROT))
                 throw ParserException(72);
         }
 
@@ -1008,7 +1009,7 @@ ASTHandle<ASTNode *> Parser::ParseBlock(bool nested) {
     return block;
 }
 
-ASTHandle<ASTNode *> Parser::ParseCleanupInit(const Position &start, bool pub) {
+ASTHandle<ASTNode *> Parser::ParseCleanupInit(const Position &start, const AccessModifier access) {
     Context isolate(this, ContextType::CDTOR);
 
     const auto tk_type = TKCUR_TYPE;
@@ -1036,7 +1037,7 @@ ASTHandle<ASTNode *> Parser::ParseCleanupInit(const Position &start, bool pub) {
     if (sym == nullptr)
         throw SymbolTableException();
 
-    sym->access = pub ? AccessModifier::PUBLIC : AccessModifier::PRIVATE;
+    sym->access = access;
 
     func->params.emplace_back(std::move(this->PushSelfParam(loc)));
 
@@ -1064,7 +1065,7 @@ ASTHandle<ASTNode *> Parser::ParseCleanupInit(const Position &start, bool pub) {
 
     this->sym_t_->LeaveScope(func->loc.end.offset, func->loc.end.line);
 
-    if (pub)
+    if (access != AccessModifier::PRIVATE)
         this->exports.emplace_back(func->name);
 
     return func;
@@ -1233,7 +1234,7 @@ ASTHandle<ASTNode *> Parser::ParseExprOrTuple() {
 ASTHandle<ASTNode *> Parser::ParseFunc() {
     const auto start = TKCUR_START;
 
-    return this->ParseFunction(start, true, false);
+    return this->ParseFunction(start, true, AccessModifier::PRIVATE);
 }
 
 ASTHandle<ASTNode *> Parser::ParseFuncCall(ASTHandle<ASTNode *> &left) {
@@ -1673,12 +1674,21 @@ ASTHandle<ASTNode *> Parser::ParseStatement() {
     ASTHandle<ASTNode *> label;
 
     auto start = TKCUR_START;
-    bool pub = false;
+    auto access = AccessModifier::PRIVATE;
     bool weak = false;
 
-    while (this->Match(TokenType::KW_PUB, TokenType::KW_WEAK)) {
+    while (this->Match(TokenType::KW_PUB, TokenType::KW_PROT, TokenType::KW_WEAK)) {
         if (this->MatchEat(TokenType::KW_PUB, true)) {
-            pub = true;
+            access = AccessModifier::PUBLIC;
+
+            continue;
+        }
+
+        if (this->MatchEat(TokenType::KW_PROT, true)) {
+            if (!this->context_->Check(ContextType::CLASS) && !this->context_->Check(ContextType::TRAIT))
+                throw ParserException(81);
+
+            access = AccessModifier::PROTECTED;
 
             continue;
         }
@@ -1729,14 +1739,14 @@ ASTHandle<ASTNode *> Parser::ParseStatement() {
                 return this->ParseClassTrait();
             case TokenType::KW_CLEANUP:
             case TokenType::KW_INIT:
-                return this->ParseCleanupInit(start, pub);
+                return this->ParseCleanupInit(start, access);
             case TokenType::KW_DEFER:
                 return this->ParseDeferStatement();
             case TokenType::KW_FOR:
                 stmt = this->ParseForInStatement();
                 break;
             case TokenType::KW_FUNC: {
-                stmt = this->ParseFunction(start, false, pub);
+                stmt = this->ParseFunction(start, false, access);
                 break;
             }
             case TokenType::KW_IF:
@@ -1744,7 +1754,7 @@ ASTHandle<ASTNode *> Parser::ParseStatement() {
             case TokenType::KW_IMPORT:
                 return this->ParseImportStatement();
             case TokenType::KW_LET:
-                return this->ParseVarDecl(start, pub, true, false, false);
+                return this->ParseVarDecl(start, access, true, false, false);
             case TokenType::KW_LOOP:
                 stmt = this->ParseLoopStatement();
                 break;
@@ -1780,7 +1790,7 @@ ASTHandle<ASTNode *> Parser::ParseStatement() {
             case TokenType::KW_TRY:
                 return this->ParseTryCatchFinally();
             case TokenType::KW_VAR:
-                return this->ParseVarDecl(start, pub, false, weak, false);
+                return this->ParseVarDecl(start, access, false, weak, false);
             default:
                 stmt = this->ParseExpression();
         }
@@ -1826,7 +1836,7 @@ ASTHandle<ASTNode *> Parser::ParseStatement() {
     }
 
     if (stmt->node_type == NodeType::VAR_DECLARATION || stmt->node_type == NodeType::VAR_DECLARATIONS)
-        this->AdjustInlineExport((Assignment *) stmt.get(), pub, weak);
+        this->AdjustInlineExport((Assignment *) stmt.get(), access, weak);
 
     return stmt;
 }
@@ -1904,7 +1914,7 @@ ASTHandle<ASTNode *> Parser::ParseWalrus(ASTHandle<ASTNode *> &left) {
     return decl;
 }
 
-ASTHandle<liftoff::parser::Function *> Parser::ParseFunction(const Position &start, bool inl, bool pub) {
+ASTHandle<liftoff::parser::Function *> Parser::ParseFunction(const Position &start, bool inl, AccessModifier access) {
     Context isolate(this, ContextType::FUNC);
 
     const auto loc = TKCUR_LOC;
@@ -1943,7 +1953,7 @@ ASTHandle<liftoff::parser::Function *> Parser::ParseFunction(const Position &sta
     if (inl)
         sym->flags |= SymbolFlags::ANON;
 
-    sym->access = pub ? AccessModifier::PUBLIC : AccessModifier::PRIVATE;
+    sym->access = access;
 
     Loc last_param{};
     func->params = this->ParseFuncParams(last_param);
@@ -1996,7 +2006,7 @@ ASTHandle<liftoff::parser::Function *> Parser::ParseFunction(const Position &sta
 
     this->sym_t_->LeaveScope(func->loc.end.offset, func->loc.end.line);
 
-    if (pub && !func->anon)
+    if (access != AccessModifier::PRIVATE && !func->anon)
         this->exports.emplace_back(func->name);
 
     return func;
@@ -2213,11 +2223,11 @@ HORString Parser::MakeFuncName() const {
     return ORStringNew(this->isolate_, buffer);
 }
 
-void Parser::AdjustInlineExport(const Assignment *decl, bool pub, bool weak) {
+void Parser::AdjustInlineExport(const Assignment *decl, AccessModifier access, bool weak) {
     if (!decl->inl)
         return;
 
-    if (pub) {
+    if (access == AccessModifier::PUBLIC) {
         if (decl->node_type == NodeType::VAR_DECLARATION) {
             const auto *id = (const Identifier *) decl->name;
 

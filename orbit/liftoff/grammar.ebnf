@@ -3,7 +3,7 @@
     Licensed under the Apache License v2.0
 
     syntax: ISO-14977 EBNF
-    version: 2.1
+    version: 2.2
 *)
 
 (* Basic elements *)
@@ -213,14 +213,14 @@ defer_statement = "defer", expression;
 trait_definition = [doc_comment], "trait", identifier, [trait_extension], trait_body;
 trait_extension = "impl", class_trait_extension, {"+", class_trait_extension};
 trait_body = "{", {trait_member}, "}";
-trait_member = [pub_keyword], (const_declaration | trait_function_definition);
+trait_member = [(pub_keyword | prot_keyword)], (const_declaration | trait_function_definition);
 
 class_definition = [doc_comment], "class", identifier, [class_inheritance], [trait_extension], class_body;
 class_inheritance = ":", class_trait_extension;
 class_body = "{", {class_member}, "}";
 class_init = [doc_comment], "init", "(", [parameter_list], ")", block_function;
 class_cleanup = [doc_comment], "cleanup", block_function;
-class_member = [pub_keyword], ([weak_keyword], var_declaration | const_declaration | class_function_definition | class_init | class_cleanup);
+class_member = [(pub_keyword | prot_keyword)], ([weak_keyword], var_declaration | const_declaration | class_function_definition | class_init | class_cleanup);
 
 class_trait_extension = identifier | identifier, {selector};
 
@@ -230,6 +230,7 @@ block_function = "{", {function_level_statement}, "}";
 expression_list = expression, {",", expression};
 identifier_list = identifier, {",", identifier};
 pub_keyword = "pub";
+prot_keyword = "prot";
 async_keyword = "async";
 const_keyword = "const";
 weak_keyword = "weak";

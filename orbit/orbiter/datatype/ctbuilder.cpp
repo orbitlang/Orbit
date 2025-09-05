@@ -63,6 +63,8 @@ bool PushProperties(TypeInfo *type, const ExportedSymbol *exported, const U16 le
 
         if (ENUMBITMASK_ISTRUE(symbol->flags, orbiter::VariableFlags::PUBLIC))
             pf = PropertyFlag::IS_PUBLIC;
+        else if (ENUMBITMASK_ISTRUE(symbol->flags, orbiter::VariableFlags::PROTECTED))
+            pf = PropertyFlag::IS_PROTECTED;
 
         if (ENUMBITMASK_ISTRUE(symbol->flags, orbiter::VariableFlags::CP_INLINE))
             pf |= PropertyFlag::DUP_INLINE;

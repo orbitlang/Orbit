@@ -17,6 +17,37 @@ bool orbiter::datatype::EqualStrict(const OObject *left, const OObject *right) {
     return false;
 }
 
+bool orbiter::datatype::IsTypeExtends(const TypeInfo *type, const TypeInfo *target) {
+    if (type == nullptr || target == nullptr)
+        return false;
+
+    if (type == target)
+        return true;
+
+    auto *cursor = type;
+
+    if (cursor->mro != nullptr) {
+        const auto *mro = (Tuple *) cursor->mro;
+
+        for (auto i = 0; i < mro->length; i++) {
+            if (mro->objects[i] == (OObject *) target) {
+                cursor = target;
+
+                break;
+            }
+        }
+    }
+
+    while (cursor != nullptr) {
+        if (cursor == target)
+            break;
+
+        cursor = O_GET_TYPE(cursor);
+    }
+
+    return cursor != nullptr;
+}
+
 bool orbiter::datatype::TIPropertyAdd(TypeInfo *type, const char *name, OObject *value, U16 slot, PropertyFlag flags) {
     auto orname = ORStringIntern(type->isolate, name);
     if (!orname)
@@ -134,7 +165,8 @@ PropertyDescriptor *orbiter::datatype::TIFindLocalProperty(const TypeInfo *type,
     return nullptr;
 }
 
-PropertyDescriptor *orbiter::datatype::TIFindProperty(const TypeInfo *type, const char *name) {
+PropertyDescriptor *orbiter::datatype::TIFindProperty(const TypeInfo *type, const TypeInfo **out_type,
+                                                      const char *name) {
     PropertyDescriptor *prop = nullptr;
 
     while (prop == nullptr && type != nullptr) {
@@ -150,6 +182,9 @@ PropertyDescriptor *orbiter::datatype::TIFindProperty(const TypeInfo *type, cons
                 prop = TIFindLocalProperty((TypeInfo *) mro->objects[i], name);
         }
 
+        if (out_type != nullptr && prop != nullptr)
+            *out_type = type;
+
         // If not found, continue search in parent class
         type = O_GET_TYPE(type);
     }
@@ -164,6 +199,7 @@ HOType orbiter::datatype::MakeType(Isolate *isolate, TypeInfo *super, InstanceTy
         return {};
 
     O_GET_HEAD(ti).type_ = nullptr;
+    O_GET_HEAD(ti).is_instance = false;
 
     U16 offset = sizeof(OObject);
     if (super != nullptr) {

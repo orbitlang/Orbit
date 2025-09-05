@@ -117,6 +117,16 @@ namespace orbiter::datatype {
     bool EqualStrict(const OObject *left, const OObject *right);
 
     /**
+     * @brief Checks if a type inherits or extends from a target type
+     *
+     * @param type Pointer to the TypeInfo representing the type to check
+     * @param target Pointer to the TypeInfo representing the target type
+     *
+     * @return true if the type extends or inherits from the target type, false otherwise
+     */
+    bool IsTypeExtends(const TypeInfo *type, const TypeInfo *target);
+
+    /**
      * @brief Add a property to a TypeInfo
      *
      * @param type Pointer to the TypeInfo
@@ -225,21 +235,20 @@ namespace orbiter::datatype {
     PropertyDescriptor *TIFindLocalProperty(const TypeInfo *type, const char *name);
 
     /**
-     * @brief Find a property in a TypeInfo or its superclasses
+     * @brief Searches for a property with the specified name within the given type and its hierarchy
      *
-     * @param type Pointer to the TypeInfo to search
-     * @param name Name of the property to find
+     * This method looks for a property with the specified name within the provided type. If the property
+     * is not found in the current type, it continues the search in the type's traits (using the method
+     * resolution order, MRO) or the type's parent class. If the property is found, the method can also
+     * optionally return the type in which the property is explicitly located.
      *
-     * @return Pointer to the PropertyDescriptor if found, nullptr otherwise
+     * @param type Pointer to the TypeInfo representing the type to search in
+     * @param out_type Optional pointer to a TypeInfo pointer to store the actual type where the property is found
+     * @param name The name of the property to search for
+     *
+     * @return A pointer to the PropertyDescriptor representing the property if found, or nullptr otherwise
      */
-    PropertyDescriptor *TIFindProperty(const TypeInfo *type, const char *name);
-
-    inline PropertyDescriptor *TIFindSuperProperty(const TypeInfo *type, const char *name) {
-        if (O_GET_TYPE(type) != nullptr)
-            return TIFindProperty(O_GET_TYPE(type), name);
-
-        return nullptr;
-    }
+    PropertyDescriptor *TIFindProperty(const TypeInfo *type, const TypeInfo **out_type, const char *name);
 
     /**
      * @brief Creates and allocates a new object of the specified type with optional overallocation.
@@ -258,7 +267,8 @@ namespace orbiter::datatype {
         if (ret == nullptr)
             return nullptr;
 
-        O_GET_TYPE(ret) = O_INCREF(type);
+        O_GET_HEAD(ret).type_ = O_INCREF(type);
+        O_GET_HEAD(ret).is_instance = true;
 
         return (T *) ret;
     }
@@ -348,6 +358,21 @@ namespace orbiter::datatype {
      */
     inline HOType MakeTypeExtended(Isolate *isolate, InstanceType type, U8 headroom, U8 props, U8 slots) {
         return MakeType(isolate, isolate->primitive[(int) type], type, headroom, props, slots);
+    }
+
+    /**
+     * @brief Retrieves the TypeInfo of an object
+     *
+     * @param object Pointer to the OObject from which the TypeInfo is to be retrieved
+     *
+     * @return Pointer to the TypeInfo of the object. Returns the object's type if it is an instance;
+     * casts the object itself to TypeInfo otherwise.
+     */
+    inline TypeInfo *GetTypeInfoFromObject(const OObject *object) {
+        if (O_GET_HEAD(object).is_instance)
+            return O_GET_TYPE(object);
+
+        return (TypeInfo *) object;
     }
 }
 

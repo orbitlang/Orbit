@@ -92,7 +92,8 @@ namespace liftoff::parser {
         "Invalid return statement: constructors and destructors cannot return a value",
         "Invalid new expression: expected call",
         "Invalid self/super usage: can only be used within class or trait methods",
-        "Invalid constructor: first statement in derived class constructor must be super.init(...)"
+        "Invalid constructor: first statement in derived class constructor must be super.init(...)",
+        "Invalid 'prot' usage: can only be used within class/trait definitions"
     };
 
     constexpr auto kInitMethodName = "init";
@@ -243,7 +244,7 @@ namespace liftoff::parser {
 
         [[nodiscard]] ASTHandle<ASTNode *> ParseTryCatchFinally();
 
-        [[nodiscard]] ASTHandle<ASTNode *> ParseVarDecl(const scanner::Position &start, bool pub, bool constant,
+        [[nodiscard]] ASTHandle<ASTNode *> ParseVarDecl(const scanner::Position &start, AccessModifier access, bool constant,
                                                         bool weak, bool decl_only);
 
         // *************************************************************************************************************
@@ -256,7 +257,7 @@ namespace liftoff::parser {
 
         [[nodiscard]] ASTHandle<ASTNode *> ParseBlock(bool nested);
 
-        [[nodiscard]] ASTHandle<ASTNode *> ParseCleanupInit(const scanner::Position &start, bool pub);
+        [[nodiscard]] ASTHandle<ASTNode *> ParseCleanupInit(const scanner::Position &start, AccessModifier access);
 
         [[nodiscard]] ASTHandle<ASTNode *> ParseDictSet();
 
@@ -304,7 +305,7 @@ namespace liftoff::parser {
 
         [[nodiscard]] ASTHandle<ASTNode *> ParseWalrus(ASTHandle<ASTNode *> &left);
 
-        [[nodiscard]] ASTHandle<Function *> ParseFunction(const scanner::Position &start, bool inl, bool pub);
+        [[nodiscard]] ASTHandle<Function *> ParseFunction(const scanner::Position &start, bool inl, AccessModifier access);
 
         [[nodiscard]] ASTHandle<Parameter *> ParseParameter(const scanner::Position &start, NodeType type);
 
@@ -320,7 +321,7 @@ namespace liftoff::parser {
 
         [[nodiscard]] orbiter::datatype::HORString MakeFuncName() const;
 
-        void AdjustInlineExport(const Assignment *decl, bool pub, bool weak);
+        void AdjustInlineExport(const Assignment *decl, AccessModifier access, bool weak);
 
         void ClassCheck(const Construct *clazz) const;
 

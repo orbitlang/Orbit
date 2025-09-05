@@ -272,6 +272,8 @@ Instruction *IRBuilder::StoreVariable(const Symbol *symbol, Instruction *value, 
 
     if (symbol->access == AccessModifier::PUBLIC)
         v_flags |= orbiter::VariableFlags::PUBLIC;
+    else if (symbol->access == AccessModifier::PROTECTED)
+        v_flags |= orbiter::VariableFlags::PROTECTED;
 
     // *** UNKNOWN ***
     if (symbol->type == SymbolType::UNKNOWN) {
@@ -294,7 +296,7 @@ Instruction *IRBuilder::StoreVariable(const Symbol *symbol, Instruction *value, 
             offset = (I16) this->builder_.context->PushUnknownProps(symbol->name);
             this->builder_.CreateStoreVariable(orbiter::OPCode::STGBL, offset, 0, value);
         } else {
-            if (decl && symbol->access == AccessModifier::PUBLIC)
+            if (decl && (symbol->access == AccessModifier::PUBLIC || symbol->access == AccessModifier::PROTECTED))
                 this->builder_.context->ExportSymbol(symbol, v_flags);
 
             this->builder_.CreateStoreVariable(orbiter::OPCode::STGOFF, offset, 0, value);
@@ -404,10 +406,14 @@ Instruction *IRBuilder::visitAssignment(parser::Assignment *node) {
         }
 
         if (sym->type == SymbolType::VARIABLE && sym->defining_scope->type != ScopeType::TRAIT) {
-            this->builder_.context->ExportSymbol(sym, sym->access == AccessModifier::PUBLIC
-                                                          ? (orbiter::VariableFlags::VARIABLE |
-                                                             orbiter::VariableFlags::PUBLIC)
-                                                          : orbiter::VariableFlags::VARIABLE);
+            auto v_flags = orbiter::VariableFlags::VARIABLE;
+
+            if (sym->access == AccessModifier::PUBLIC)
+                v_flags |= orbiter::VariableFlags::PUBLIC;
+            else if (sym->access == AccessModifier::PROTECTED)
+                v_flags |= orbiter::VariableFlags::PROTECTED;
+
+            this->builder_.context->ExportSymbol(sym, v_flags);
 
             this->ct_active_->properties.emplace_back(node);
 

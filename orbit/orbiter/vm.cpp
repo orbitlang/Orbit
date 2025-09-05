@@ -56,15 +56,27 @@ int VMCall(Fiber *fiber, Function *func, unsigned short p_count, CallMode mode) 
     bool call_mode_is_rest = ENUMBITMASK_ISTRUE(mode, CallMode::REST_ARG);
     const bool call_mode_is_kwarg = ENUMBITMASK_ISTRUE(mode, CallMode::KW_ARG);
 
-    if (ENUMBITMASK_ISTRUE(mode, CallMode::METHOD) && !func->shared->IsMethod())
-        total_args -= 1;
+    // *****************************************************************************************************************
+    // * Check method information
+    // *****************************************************************************************************************
 
-    if (func->currying != nullptr)
-        total_args += func->currying->length;
+    if (ENUMBITMASK_ISTRUE(mode, CallMode::METHOD)) {
+        if (func->shared->IsMethod()) {
+            // Check object is instance
+            const auto args = *((OObject **) ((fiber->vm.stack.stack + fiber->vm.regs.SP.reg)
+                                              - (total_args * sizeof(void *))));
+            if (!O_GET_HEAD(args).is_instance)
+                assert(false); // FIXME: error!
+        } else
+            total_args -= 1;
+    }
 
     // *****************************************************************************************************************
     // * Check stack size
     // *****************************************************************************************************************
+
+    if (func->currying != nullptr)
+        total_args += func->currying->length;
 
     auto stack_size_required = kStackPrologueOffset
                                + func->shared->code->stack_size * sizeof(void *)
@@ -212,6 +224,76 @@ int VMCall(Fiber *fiber, Function *func, unsigned short p_count, CallMode mode) 
     regs->IP.reg = (PtrSize) func->shared->code->m_code;
 
     return 1;
+}
+
+OObject *LoadFromObjectProp(const Fiber *fiber, OObject *obj, const LoadObjectPropFlags flags, const U16 offset) {
+    const auto *code = fiber->context.code;
+    const auto *type = GetTypeInfoFromObject(obj);
+
+    const auto *key = (ORString *) code->unknown_symbols->objects[offset];
+    const PropertyDescriptor *prop = nullptr;
+
+    if (ENUMBITMASK_ISTRUE(flags, LoadObjectPropFlags::SUPER))
+        type = O_GET_TYPE(type);
+
+    const TypeInfo *target_type = nullptr;
+    prop = TIFindProperty(type, &target_type, (const char *) key->buffer);
+    if (prop == nullptr) {
+        // FIXME ERROR
+        assert(false);
+    }
+
+    if (ENUMBITMASK_ISFALSE(prop->detail, PropertyFlag::IS_PUBLIC)) {
+        if (fiber->context.func == nullptr
+            || fiber->context.func->shared->owner_type == nullptr
+            || ENUMBITMASK_ISFALSE(prop->detail, PropertyFlag::IS_PROTECTED)
+            || !IsTypeExtends(type, fiber->context.func->shared->owner_type))
+            assert(false); // FIXME
+    }
+
+    if (ENUMBITMASK_ISTRUE(prop->detail, PropertyFlag::IN_OBJECT)) {
+        const auto *slot = O_SLOT(obj, target_type);
+
+        return slot[prop->slot];
+    }
+
+    return prop->value;
+}
+
+void StoreToObjectProp(const Fiber *fiber, OObject *obj, OObject *value,
+                       const LoadObjectPropFlags flags, const U16 offset) {
+    const auto *code = fiber->context.code;
+    const auto *type = GetTypeInfoFromObject(obj);
+
+    const auto *key = (ORString *) code->unknown_symbols->objects[offset];
+    const PropertyDescriptor *prop = nullptr;
+
+    if (ENUMBITMASK_ISTRUE(flags, LoadObjectPropFlags::SUPER))
+        type = O_GET_TYPE(type);
+
+    const TypeInfo *target_type = nullptr;
+    prop = TIFindProperty(type, &target_type, (const char *) key->buffer);
+    if (prop == nullptr) {
+        // FIXME ERROR
+        assert(false);
+    }
+
+    if (ENUMBITMASK_ISFALSE(prop->detail, PropertyFlag::IS_PUBLIC)) {
+        if (fiber->context.func == nullptr
+            || fiber->context.func->shared->owner_type == nullptr
+            || ENUMBITMASK_ISFALSE(prop->detail, PropertyFlag::IS_PROTECTED)
+            || !IsTypeExtends(type, fiber->context.func->shared->owner_type))
+            assert(false); // FIXME
+    }
+
+    if (ENUMBITMASK_ISTRUE(prop->detail, PropertyFlag::IS_CONSTANT))
+        assert(false);
+
+    if (ENUMBITMASK_ISTRUE(prop->detail, PropertyFlag::IN_OBJECT)) {
+        auto *slot = O_SLOT(obj, target_type);
+
+        slot[prop->slot] = value;
+    }
 }
 
 OObject *orbiter::eval(Fiber *fiber) {
@@ -436,7 +518,9 @@ CGOTO
 
                 assert(prop->value==nullptr);
 
-                if (O_IS_TYPE(value, InstanceType::FUNCTION) && ((Function *) value)->shared->IsMethod())
+                if (O_IS_OBJECT(value)
+                    && O_IS_TYPE(value, InstanceType::FUNCTION)
+                    && ((Function *) value)->shared->IsMethod())
                     ((Function *) value)->shared->owner_type = O_FAST_INCREF(tp);
 
                 prop->value = O_INCREF(value);
@@ -751,6 +835,7 @@ CGOTO
                 const auto flags = (LoadObjectPropFlags) FETCH_R_RSRC(instr);
                 const auto offset = instr & 0xFFF;
 
+                // Fast path
                 if (((int) flags & 1) == (int) LoadObjectPropFlags::INLINE) {
                     auto *slot = O_SLOT(src, this_func->shared->owner_type);
 
@@ -759,27 +844,7 @@ CGOTO
                     DISPATCH;
                 }
 
-                const auto *key = (ORString *) code->unknown_symbols->objects[offset];
-                PropertyDescriptor *prop = nullptr;
-
-                if (ENUMBITMASK_ISTRUE(flags, LoadObjectPropFlags::SUPER))
-                    prop = TIFindProperty(O_GET_TYPE(O_GET_TYPE(src)), (const char *) key->buffer);
-                else
-                    prop = TIFindProperty(O_GET_TYPE(src), (const char *) key->buffer);
-                if (prop == nullptr) {
-                    // FIXME ERROR
-                    assert(false);
-                }
-
-                // FIXME: Check security permission
-
-                if (ENUMBITMASK_ISTRUE(prop->detail, PropertyFlag::IN_OBJECT)) {
-                    auto *slot = O_SLOT(src, this_func->shared->owner_type);
-
-                    REG_N(dst) = (PtrSize) slot[prop->slot];
-                } else
-                    REG_N(dst) = (PtrSize) prop->value;
-
+                REG_N(dst) = (PtrSize) LoadFromObjectProp(fiber, src, flags, offset);
 
                 DISPATCH;
             }
@@ -789,6 +854,7 @@ CGOTO
                 const auto flags = (LoadObjectPropFlags) FETCH_R_RSRC(instr);
                 const auto offset = instr & 0xFFF;
 
+                // Fast path
                 if (flags == LoadObjectPropFlags::INLINE) {
                     auto *slot = O_SLOT(obj, this_func->shared->owner_type);
 
@@ -797,7 +863,7 @@ CGOTO
                     DISPATCH;
                 }
 
-                assert(false);
+                StoreToObjectProp(fiber, obj, value, flags, offset);
 
                 DISPATCH;
             }

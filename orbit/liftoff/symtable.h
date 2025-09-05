@@ -56,6 +56,7 @@ namespace liftoff {
 
     enum class AccessModifier {
         PRIVATE,
+        PROTECTED,
         PUBLIC
     };
 

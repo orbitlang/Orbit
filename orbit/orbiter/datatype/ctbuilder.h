@@ -12,13 +12,11 @@ namespace orbiter::datatype {
     struct Class {
         OROBJ_HEAD;
     };
-
     using HClass = Handle<Class>;
 
     struct Trait {
         OROBJ_HEAD;
     };
-
     using HTrait = Handle<Trait>;
 
     /**
