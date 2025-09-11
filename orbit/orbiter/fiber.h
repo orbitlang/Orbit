@@ -8,6 +8,7 @@
 #include <cassert>
 
 #include <orbit/orbiter/datatype/context.h>
+#include <orbit/orbiter/datatype/function.h>
 #include <orbit/orbiter/datatype/module.h>
 
 #include <orbit/orbiter/vm.h>

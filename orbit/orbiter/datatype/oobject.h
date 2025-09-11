@@ -181,14 +181,25 @@ namespace orbiter::datatype {
     }
 
     /**
-     * @brief Add multiple properties(functions/methods) to a TypeInfo from a bulk definition
+     * @brief Add multiple properties (functions/methods) to a TypeInfo from a bulk definition
      *
      * @param type Pointer to the TypeInfo
      * @param bulk Pointer to the FunctionDef array containing bulk property definitions
+     * @param flags Additional flags about the properties
      *
      * @return true if properties were added successfully, false otherwise
      */
-    bool TIPropertyAdd(TypeInfo *type, const FunctionDef *bulk);
+    bool TIPropertyAdd(TypeInfo *type, const struct FunctionDef *bulk, PropertyFlag flags);
+
+    /**
+     * @brief Add multiple (instance) properties to a TypeInfo from a bulk definition
+     *
+     * @param type Pointer to the TypeInfo
+     * @param bulk Pointer to the OPropertyEntry array containing bulk property definitions
+     *
+     * @return true if properties were added successfully, false otherwise
+     */
+    bool TIPropertyAdd(TypeInfo *type, const OPropertyEntry *bulk);
 
     /**
      * @brief Initialize properties for a TypeInfo

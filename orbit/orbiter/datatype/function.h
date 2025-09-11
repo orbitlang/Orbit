@@ -32,6 +32,33 @@ namespace orbiter::datatype {
 ENUMBITMASK_ENABLE(orbiter::datatype::FunctionKind);
 
 namespace orbiter::datatype {
+    using FunctionPtr = HOObject (*)(struct Function *, OObject **argv, OObject *rest, OObject *kwargs, U16 argc);
+
+    struct FunctionDef {
+        /// Name of native function (this name will be exposed to Orbit)
+        const char *name;
+
+        /// Documentation of native function (this doc will be exposed to Orbit)
+        const char *doc;
+
+        /// Pointer to native code
+        FunctionPtr func;
+
+        /// Arity
+        U16 params;
+
+        /// Export as a method or a static function?
+        bool method;
+
+        /// Accepts variadic arguments?
+        bool varargs;
+
+        /// Accepts keyword arguments?
+        bool kwargs;
+    };
+
+#define FUNCTIONDEF_SENTINEL {nullptr, nullptr, nullptr, 0, false}
+
     /**
      * @brief Structure representing shared function data
      */
@@ -215,14 +242,14 @@ namespace orbiter::datatype {
     HOType FunctionTypeInit(Isolate *isolate);
 }
 
-#define RUNTIME_FUNCTION(name, exported_name, doc, params)                                          \
-OObject *name##_fn(orbiter::datatype::Function *_func, OObject **argv, OObject *kwargs, U16 argc);  \
-const FunctionDef name = {#exported_name, doc, name##_fn, params, false};                           \
-OObject *name##_fn(orbiter::datatype::Function *_func, OObject **argv, OObject *kwargs, U16 argc)
+#define RUNTIME_FUNCTION(name, exported_name, doc, params, varargs, _kwargs)                                        \
+HOObject name##_fn(orbiter::datatype::Function *_func, OObject **argv, OObject *rest, OObject *kwargs, U16 argc);   \
+const FunctionDef name = {#exported_name, doc, name##_fn, params, false, varargs, _kwargs};                         \
+HOObject name##_fn(orbiter::datatype::Function *_func, OObject **argv, OObject *rest, OObject *kwargs, U16 argc)
 
-#define RUNTIME_METHOD(name, exported_name, doc, params)                                            \
-OObject *name##_fn(orbiter::datatype::Function *_func, OObject **argv, OObject *kwargs, U16 argc);  \
-const FunctionDef name = {#exported_name, doc, name##_fn, params, true};                            \
-OObject *name##_fn(orbiter::datatype::Function *_func, OObject **argv, OObject *kwargs, U16 argc)
+#define RUNTIME_METHOD(name, exported_name, doc, params, varargs, _kwargs)                                          \
+HOObject name##_fn(orbiter::datatype::Function *_func, OObject **argv, OObject *rest, OObject *kwargs, U16 argc);   \
+const FunctionDef name = {#exported_name, doc, name##_fn, params, true, varargs, _kwargs};                          \
+HOObject name##_fn(orbiter::datatype::Function *_func, OObject **argv, OObject *rest, OObject *kwargs, U16 argc)
 
 #endif // !ORBIT_ORBITER_DATATYPE_FUNCTION_H_

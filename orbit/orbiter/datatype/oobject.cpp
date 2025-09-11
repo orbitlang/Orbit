@@ -104,14 +104,29 @@ bool orbiter::datatype::TIPropertyAdd(TypeInfo *type, OObject *name, OObject *va
     return true;
 }
 
-bool orbiter::datatype::TIPropertyAdd(TypeInfo *type, const FunctionDef *bulk) {
+bool orbiter::datatype::TIPropertyAdd(TypeInfo *type, const FunctionDef *bulk, PropertyFlag flags) {
+    flags &= ~PropertyFlag::IN_OBJECT; // Clear IN_OBJECT flag since it's not applicable in this context
+
     for (auto *cursor = bulk; cursor->name != nullptr; cursor++) {
         auto fn = FunctionNew(type->isolate, cursor);
         if (!fn)
             return false;
 
-        if (!TIPropertyAdd(type, cursor->name, (OObject *) fn.get(), 0, {}))
+        if (!TIPropertyAdd(type, cursor->name, (OObject *) fn.get(), 0, flags))
             return false;
+    }
+
+    return true;
+}
+
+bool orbiter::datatype::TIPropertyAdd(TypeInfo *type, const OPropertyEntry *bulk) {
+    if (bulk != nullptr) {
+        for (auto *cursor = bulk; cursor->name != nullptr; cursor++) {
+            const auto flags = bulk->details | PropertyFlag::IN_OBJECT;
+
+            if (!TIPropertyAdd(type, cursor->name, nullptr, bulk->slot, flags))
+                return false;
+        }
     }
 
     return true;

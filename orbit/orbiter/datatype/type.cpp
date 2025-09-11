@@ -11,30 +11,30 @@ using namespace orbiter::datatype;
 
 RUNTIME_METHOD(type_hash, hash,
                "Return hash value of an object if it has one.",
-               0) {
+               0, false, false) {
     // TODO: IMPL
-    return nullptr;
+    return {};
 }
 
 RUNTIME_METHOD(type_id, id,
                "Returns a unique integer identifier for an object. "
                "This identifier remains constant throughout the object's lifetime.",
-               0) {
+               0,false, false) {
     // TODO: IMPL
-    return nullptr;
+    return {};
 }
 
 RUNTIME_METHOD(type_repr, repr,
                "Return a string containing a printable representation of an object.",
-               0) {
+               0,false, false) {
     // TODO: IMPL
-    return nullptr;
+    return {};
 }
 
 RUNTIME_METHOD(type_str, str, "Return a string version of an object.",
-               0) {
+               0,false,false) {
     // TODO: IMPL
-    return nullptr;
+    return {};
 }
 
 const FunctionDef type_methods[] = {
@@ -53,5 +53,5 @@ HOType orbiter::datatype::TypeInit(Isolate *isolate) {
 bool orbiter::datatype::TypeSetup(TypeInfo *self) {
     assert(self != nullptr);
 
-    return TIPropertyAdd(self, type_methods);
+    return TIPropertyAdd(self, type_methods, PropertyFlag::IS_PUBLIC);
 }

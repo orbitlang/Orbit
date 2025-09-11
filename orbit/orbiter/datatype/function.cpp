@@ -71,6 +71,12 @@ HFunction orbiter::datatype::FunctionNew(Isolate *isolate, const FunctionDef *de
     if (def->method)
         kind |= FunctionKind::METHOD;
 
+    if (def->varargs)
+        kind |= FunctionKind::REST;
+
+    if (def->kwargs)
+        kind |= FunctionKind::KWARGS;
+
     auto *f_shared = FunSharedNew(isolate, def->name, def->doc, def->params, def->func, kind);
     if (f_shared == nullptr)
         return {};

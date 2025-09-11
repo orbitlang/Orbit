@@ -31,26 +31,6 @@ namespace orbiter::datatype {
     using GCTraceCallback = void (*)(OObject *, MSize);
     using TraceFn = void (*)(const OObject *self, GCTraceCallback callback, MSize epoch);
 
-    using FunctionPtr = OObject *(*)(struct Function *, OObject **argv, OObject *kwargs, U16 argc);
-
-    struct FunctionDef {
-        /* Name of native function (this name will be exposed to Orbit) */
-        const char *name;
-
-        /* Documentation of native function (this doc will be exposed to Orbit) */
-        const char *doc;
-
-        /* Pointer to native code */
-        FunctionPtr func;
-
-        U16 params;
-
-        /* Export as a method or a static function? */
-        bool method;
-    };
-
-#define FUNCTIONDEF_SENTINEL {nullptr, nullptr, nullptr, 0, false}
-
     enum class PropertyFlag:U8 {
         IN_OBJECT = 0x01,
 
@@ -73,6 +53,18 @@ namespace orbiter::datatype {
 
         /// Additional details about the property
         PropertyFlag detail;
+    };
+
+#define OPROPERTY_ENTRY(name, offset, details)  {name, offset, details}
+#define OPROPERTY_SENTINEL                      {nullptr, 0, PropertyFlag::IN_OBJECT}
+    struct OPropertyEntry {
+        const char *name;
+
+        /// Represents the index for a specific property within an object
+        U16 slot;
+
+        /// Additional details about the property
+        PropertyFlag details;
     };
 
 #define OROBJ_HEAD                                                      \
