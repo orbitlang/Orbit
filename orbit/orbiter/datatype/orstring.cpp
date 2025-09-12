@@ -90,6 +90,34 @@ int orbiter::datatype::ORStringCompare(const char *left, const ORString *right, 
     return strncmp(left, (const char *) STR_BUF(right), std::min(STR_LEN(right), length));
 }
 
+HORString orbiter::datatype::ORStringFormat(Isolate *isolate, const char *format, ...) {
+    va_list args;
+
+    va_start(args, format);
+    auto str = ORStringFormat(isolate, format, args);
+    va_end(args);
+
+    return str;
+}
+
+HORString orbiter::datatype::ORStringFormat(Isolate *isolate, const char *format, va_list args) {
+    va_list args2;
+
+    va_copy(args2, args);
+    const int size = vsnprintf(nullptr, 0, format, args2);
+    va_end(args2);
+
+    auto *str = MkStringContainer(isolate, size, true);
+    if (str == nullptr)
+        return {};
+
+    vsnprintf((char *) STR_BUF(str), size + 1, format, args);
+    str->cp_length = size;
+    str->kind = StringKind::ASCII;
+
+    O_GC_TRACK_RETURN(isolate, str, false);
+}
+
 HORString orbiter::datatype::ORStringIntern(Isolate *isolate, const unsigned char *string, MSize length) {
     // TODO: IMPL THIS!
     return ORStringNew(isolate, string, length);

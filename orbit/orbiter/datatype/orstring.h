@@ -137,7 +137,7 @@ namespace orbiter::datatype {
     }
 
     /**
-     * @brief Compares two ORString objects for equality.
+     * @brief Compares two ORString objects for equality
      *
      * This function determines whether two ORString objects are equal
      * by comparing their contents using the ORStringCompare function.
@@ -150,6 +150,31 @@ namespace orbiter::datatype {
     inline bool ORStringEqual(const ORString *left, const ORString *right) {
         return ORStringCompare(left, right) == 0;
     }
+
+    /**
+     * @brief Formats a string with specified arguments and returns it as an ORString handle
+     *
+     *
+     * @param isolate Pointer to the Isolate instance associated with this operation
+     * @param format The format string that defines how the output string is constructed
+     * @param ... Variadic arguments to be formatted according to the format string
+     *
+     * @return A handle to an ORString containing the formatted string. If the operation fails,
+     *         an empty handle is returned.
+     */
+    HORString ORStringFormat(Isolate *isolate, const char *format, ...);
+
+    /**
+     * @brief Formats a string with variable arguments and returns an ORString handle
+     *
+     * @param isolate Pointer to the Isolate in which the string will be created and tracked
+     * @param format A C-style format string specifying the formatting options
+     * @param args A va_list of arguments to be formatted based on the format string
+     *
+     * @return A handle to an ORString containing the formatted string. If the operation fails,
+     *         an empty handle is returned.
+     */
+    HORString ORStringFormat(Isolate *isolate, const char *format, va_list args);
 
     /**
      * @brief Creates an exact copy of a String object in the String pool and return it
