@@ -75,19 +75,41 @@ bool orbiter::datatype::ORStringTypeSetup(TypeInfo *self) {
 
 int orbiter::datatype::ORStringCompare(const ORString *left, const ORString *right) {
     if (left != right && right != nullptr) {
-        return strncmp((const char *) STR_BUF(left), (const char *) STR_BUF(right),
-                       std::min(STR_LEN(left), STR_LEN(right)));
+        const auto compare = strncmp((const char *) STR_BUF(left),
+                                     (const char *) STR_BUF(right),
+                                     std::min(STR_LEN(left),STR_LEN(right)));
+
+        if (compare == 0) {
+            if (STR_LEN(left) < STR_LEN(right)) return -1;
+            if (STR_LEN(left) > STR_LEN(right)) return 1;
+        }
+
+        return compare;
     }
 
     return 0;
 }
 
 int orbiter::datatype::ORStringCompare(const ORString *left, const char *right, MSize length) {
-    return strncmp((const char *) STR_BUF(left), right, std::min(STR_LEN(left), length));
+    const auto compare = strncmp((const char *) STR_BUF(left), right, std::min(STR_LEN(left), length));
+
+    if (compare == 0) {
+        if (STR_LEN(left) < length) return -1;
+        if (STR_LEN(left) > length) return 1;
+    }
+
+    return compare;
 }
 
 int orbiter::datatype::ORStringCompare(const char *left, const ORString *right, MSize length) {
-    return strncmp(left, (const char *) STR_BUF(right), std::min(STR_LEN(right), length));
+    const auto compare = strncmp(left, (const char *) STR_BUF(right), std::min(STR_LEN(right), length));
+
+    if (compare == 0) {
+        if (length < STR_LEN(right)) return -1;
+        if (length > STR_LEN(right)) return 1;
+    }
+
+    return compare;
 }
 
 HORString orbiter::datatype::ORStringFormat(Isolate *isolate, const char *format, ...) {
