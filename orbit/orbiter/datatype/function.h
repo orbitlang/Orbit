@@ -244,12 +244,12 @@ namespace orbiter::datatype {
 
 #define RUNTIME_FUNCTION(name, exported_name, doc, params, varargs, _kwargs)                                        \
 HOObject name##_fn(orbiter::datatype::Function *_func, OObject **argv, OObject *rest, OObject *kwargs, U16 argc);   \
-const FunctionDef name = {#exported_name, doc, name##_fn, params, false, varargs, _kwargs};                         \
+constexpr FunctionDef name = {#exported_name, doc, name##_fn, params, false, varargs, _kwargs};                     \
 HOObject name##_fn(orbiter::datatype::Function *_func, OObject **argv, OObject *rest, OObject *kwargs, U16 argc)
 
 #define RUNTIME_METHOD(name, exported_name, doc, params, varargs, _kwargs)                                          \
 HOObject name##_fn(orbiter::datatype::Function *_func, OObject **argv, OObject *rest, OObject *kwargs, U16 argc);   \
-const FunctionDef name = {#exported_name, doc, name##_fn, params, true, varargs, _kwargs};                          \
+constexpr FunctionDef name = {#exported_name, doc, name##_fn, params, true, varargs, _kwargs};                      \
 HOObject name##_fn(orbiter::datatype::Function *_func, OObject **argv, OObject *rest, OObject *kwargs, U16 argc)
 
 #endif // !ORBIT_ORBITER_DATATYPE_FUNCTION_H_
