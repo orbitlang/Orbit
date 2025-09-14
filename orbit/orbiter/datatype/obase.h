@@ -78,6 +78,7 @@ namespace orbiter::datatype {
         TYPE,
 
         ATOM,
+        BOOLEAN,
         BYTES,
         CLASS,
         CLOSURE,
@@ -85,10 +86,12 @@ namespace orbiter::datatype {
         CONTEXT,
         DECIMAL,
         DICT,
+        ERROR,
         FUNCTION,
         LIST,
         MODULE,
         NAMESPACE,
+        NIL,
         NUMBER,
         OBJECT,
         SET,
@@ -97,7 +100,32 @@ namespace orbiter::datatype {
         TUPLE
     };
 
-    constexpr int kInstanceTypeCount = 19;
+    constexpr const char* InstanceTypeNames[] = {
+        "Type",
+        "Atom",
+        "Boolean",
+        "Bytes",
+        "Class",
+        "Closure",
+        "Code",
+        "Context",
+        "Decimal",
+        "Dict",
+        "Error",
+        "Function",
+        "List",
+        "Module",
+        "Namespace",
+        "Nil",
+        "Number",
+        "Object",
+        "Set",
+        "String",
+        "Trait",
+        "Tuple"
+    };
+
+    constexpr int kInstanceTypeCount = 22;
 
     using TypeInfoAUXDtor = bool (*)(struct TypeInfo *self);
 

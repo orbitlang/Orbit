@@ -247,3 +247,37 @@ HOType orbiter::datatype::MakeType(Isolate *isolate, TypeInfo *super, InstanceTy
 
     O_GC_TRACK_RETURN(isolate, ti, false);
 }
+
+U32 orbiter::datatype::GetTypeName(const OObject *object, char *out_str, U32 out_size) {
+    U32 length = 0;
+    InstanceType type;
+
+    if (!O_IS_OBJECT(object)) {
+        if (object == nullptr)
+            type = InstanceType::NIL;
+        else if (O_IS_SMI(object))
+            type = InstanceType::NUMBER;
+        else
+            type = InstanceType::BOOLEAN;
+    } else {
+        type = O_GET_TYPE(object)->i_type;
+
+        if (type == InstanceType::CLASS) {
+            /// FIXME: return name of class here
+            /// length = ....
+            assert(false);
+        }
+    }
+
+    if (length == 0)
+        length = (U32) strlen(InstanceTypeNames[(int) type]);
+
+    if (out_str != nullptr) {
+        const auto min_length = std::min(length, out_size);
+
+        memory::MemoryCopy(out_str, InstanceTypeNames[(int) type], min_length);
+        out_str[min_length] = '\0';
+    }
+
+    return length;
+}

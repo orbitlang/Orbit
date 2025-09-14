@@ -212,28 +212,51 @@ namespace orbiter::datatype {
      */
     bool TIPropertiesInit(Isolate *isolate, TypeInfo *type, U8 n);
 
+    /**
+     * @brief Create a new TypeInfo
+     *
+     * @param isolate Pointer to the Isolate
+     * @param super Pointer to the superclass TypeInfo (can be nullptr)
+     * @param type Instance type of the new TypeInfo
+     * @param headroom Additional headroom space
+     * @param props Number of properties
+     * @param slots Number of slots
+     *
+     * @return Pointer to the newly created TypeInfo
+     */
+    HOType MakeType(Isolate *isolate, TypeInfo *super, InstanceType type, U8 headroom, U8 props, U8 slots);
+
+    /**
+     * @brief Create a new TypeInfo using the isolate's 'Type' type as superclass
+     *
+     * @param isolate Pointer to the Isolate
+     * @param type Instance type of the new TypeInfo
+     * @param headroom Additional headroom space
+     * @param props Number of properties
+     * @param slots Number of slots
+     *
+     * @return Pointer to the newly created TypeInfo
+     */
+    inline HOType MakeType(Isolate *isolate, InstanceType type, U8 headroom, U8 props, U8 slots) {
+        return MakeType(isolate, isolate->primitive[(int) InstanceType::TYPE], type, headroom, props, slots);
+    }
+
+    /**
+     * @brief Create a new TypeInfo that extend a base TypeInfo.
+     *
+     * @param isolate Pointer to the Isolate instance managing the process.
+     * @param type Instance type to specify the type information.
+     * @param headroom The headroom size to allocate for the type.
+     * @param props Number of properties associated with the type.
+     * @param slots Number of slots used in the type definition.
+     *
+     * @return Pointer to the created TypeInfo.
+     */
+    inline HOType MakeTypeExtended(Isolate *isolate, InstanceType type, U8 headroom, U8 props, U8 slots) {
+        return MakeType(isolate, isolate->primitive[(int) type], type, headroom, props, slots);
+    }
+
     MSize Hash(const OObject *obj);
-
-    /**
-     * @brief Release an OObject
-     *
-     * @param object Pointer to the OObject to release
-     */
-    inline void Release(OObject *object) {
-        return; // TODO: stub
-    }
-
-    /**
-     * @brief Release an object of any type (template specialization)
-     *
-     * @tparam T Type of the object to release
-     *
-     * @param t Pointer to the object to release
-     */
-    template<typename T>
-    void Release(T *t) {
-        Release((OObject *) t);
-    }
 
     /**
      * @brief Find a local property in a TypeInfo
@@ -328,50 +351,6 @@ namespace orbiter::datatype {
     }
 
     /**
-     * @brief Create a new TypeInfo
-     *
-     * @param isolate Pointer to the Isolate
-     * @param super Pointer to the superclass TypeInfo (can be nullptr)
-     * @param type Instance type of the new TypeInfo
-     * @param headroom Additional headroom space
-     * @param props Number of properties
-     * @param slots Number of slots
-     *
-     * @return Pointer to the newly created TypeInfo
-     */
-    HOType MakeType(Isolate *isolate, TypeInfo *super, InstanceType type, U8 headroom, U8 props, U8 slots);
-
-    /**
-     * @brief Create a new TypeInfo using the isolate's 'Type' type as superclass
-     *
-     * @param isolate Pointer to the Isolate
-     * @param type Instance type of the new TypeInfo
-     * @param headroom Additional headroom space
-     * @param props Number of properties
-     * @param slots Number of slots
-     *
-     * @return Pointer to the newly created TypeInfo
-     */
-    inline HOType MakeType(Isolate *isolate, InstanceType type, U8 headroom, U8 props, U8 slots) {
-        return MakeType(isolate, isolate->primitive[(int) InstanceType::TYPE], type, headroom, props, slots);
-    }
-
-    /**
-     * @brief Create a new TypeInfo that extend a base TypeInfo.
-     *
-     * @param isolate Pointer to the Isolate instance managing the process.
-     * @param type Instance type to specify the type information.
-     * @param headroom The headroom size to allocate for the type.
-     * @param props Number of properties associated with the type.
-     * @param slots Number of slots used in the type definition.
-     *
-     * @return Pointer to the created TypeInfo.
-     */
-    inline HOType MakeTypeExtended(Isolate *isolate, InstanceType type, U8 headroom, U8 props, U8 slots) {
-        return MakeType(isolate, isolate->primitive[(int) type], type, headroom, props, slots);
-    }
-
-    /**
      * @brief Retrieves the TypeInfo of an object
      *
      * @param object Pointer to the OObject from which the TypeInfo is to be retrieved
@@ -384,6 +363,29 @@ namespace orbiter::datatype {
             return O_GET_TYPE(object);
 
         return (TypeInfo *) object;
+    }
+
+    U32 GetTypeName(const OObject *object, char *out_str, U32 out_size);
+
+    /**
+     * @brief Release an OObject
+     *
+     * @param object Pointer to the OObject to release
+     */
+    inline void Release(OObject *object) {
+        return; // TODO: stub
+    }
+
+    /**
+     * @brief Release an object of any type (template specialization)
+     *
+     * @tparam T Type of the object to release
+     *
+     * @param t Pointer to the object to release
+     */
+    template<typename T>
+    void Release(T *t) {
+        Release((OObject *) t);
     }
 }
 

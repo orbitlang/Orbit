@@ -9,6 +9,7 @@
 #include <orbit/orbiter/datatype/context.h>
 #include <orbit/orbiter/datatype/decimal.h>
 #include <orbit/orbiter/datatype/dict.h>
+#include <orbit/orbiter/datatype/error.h>
 #include <orbit/orbiter/datatype/function.h>
 #include <orbit/orbiter/datatype/list.h>
 #include <orbit/orbiter/datatype/module.h>
@@ -67,6 +68,7 @@ Isolate *Isolate::New() {
     INIT_TYPE(InstanceType::CONTEXT, ContextInit);
     INIT_TYPE(InstanceType::DECIMAL, DecimalTypeInit);
     INIT_TYPE(InstanceType::DICT, DictTypeInit);
+    INIT_TYPE(InstanceType::ERROR, ErrorTypeInit);
     INIT_TYPE(InstanceType::FUNCTION, FunctionTypeInit);
     INIT_TYPE(InstanceType::LIST, ListTypeInit);
     INIT_TYPE(InstanceType::MODULE, ModuleInit);
@@ -86,6 +88,7 @@ Isolate *Isolate::New() {
     SETUP_TYPE(InstanceType::CONTEXT, ContextSetup);
     SETUP_TYPE(InstanceType::DECIMAL, DecimalTypeSetup);
     SETUP_TYPE(InstanceType::DICT, DictTypeSetup);
+    SETUP_TYPE(InstanceType::ERROR, ErrorTypeSetup);
     SETUP_TYPE(InstanceType::FUNCTION, FunctionTypeSetup);
     SETUP_TYPE(InstanceType::LIST, ListTypeSetup);
     SETUP_TYPE(InstanceType::MODULE, ModuleSetup);
