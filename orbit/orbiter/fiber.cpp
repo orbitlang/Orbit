@@ -63,6 +63,7 @@ Fiber *Fiber::New(Isolate *isolate, MSize stack_size, MSize stack_limit) noexcep
         fiber->Reset();
 
         fiber->isolate = isolate;
+        fiber->panic_cache = nullptr;
     }
 
     return fiber;
@@ -74,6 +75,47 @@ void Fiber::Delete(Fiber *fiber) noexcept {
 
     // todo
     assert(false);
+}
+
+void Fiber::DiscardPanic() noexcept {
+    if (*this->panic.r_current_ == nullptr)
+        return;
+
+    auto *chain = *this->panic.r_current_;
+    while (chain != nullptr) {
+        O_FAST_DECREF(chain->error);
+
+        chain->error = nullptr;
+
+        auto *prev = chain->prev;
+
+        chain->prev = this->panic_cache;
+        this->panic_cache = chain;
+
+        chain = prev;
+    }
+
+    *this->panic.r_current_ = nullptr;
+}
+
+void Fiber::Panic(datatype::OObject *error) noexcept {
+    struct Panic *p = nullptr;
+
+    if (this->panic_cache == nullptr) {
+        memory::IsolateAllocator allocator(this->isolate);
+
+        p = allocator.alloc<struct Panic>(sizeof(struct Panic));
+        if (p == nullptr)
+            return;
+    } else {
+        p = this->panic_cache;
+        this->panic_cache = this->panic_cache->prev;
+    }
+
+    p->prev = *this->panic.r_current_;
+    p->error = O_FAST_INCREF(error);
+
+    *this->panic.r_current_ = p;
 }
 
 void Fiber::PopState() noexcept {

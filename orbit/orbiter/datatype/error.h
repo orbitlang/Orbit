@@ -77,6 +77,20 @@ namespace orbiter::datatype {
      * @return Handle to the newly created TypeInfo for the type, or an empty handle if creation failed
      */
     HOType ErrorTypeInit(Isolate *isolate);
+
+    /**
+     * @brief Sets an error for the current execution context
+     *
+     * This function creates a new error object based on the provided kind, details, and formatted message,
+     * and marks the current fiber as panicked using that error object.
+     *
+     * @param isolate Pointer to the current Isolate object managing the execution context
+     * @param kind A string describing the category or type of the error
+     * @param details Pointer to an OObject that includes additional context or details about the error
+     * @param format A format string for constructing the error message
+     * @param ... Additional arguments matching the format string to include in the error message
+     */
+    void ErrorSet(Isolate *isolate, const char *kind, OObject *details, const char *format, ...);
 }
 
 #endif // !ORBIT_ORBITER_DATATYPE_ERROR_H_

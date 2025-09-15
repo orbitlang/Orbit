@@ -2,6 +2,8 @@
 //
 // Licensed under the Apache License v2.0
 
+#include <orbit/orbiter/fiber.h>
+
 #include <orbit/orbiter/datatype/function.h>
 #include <orbit/orbiter/datatype/pcheck.h>
 
@@ -61,6 +63,20 @@ bool ErrorDtor(Error *self) {
     return true;
 }
 
+HError ErrorNewVA(orbiter::Isolate *isolate, const char *kind, OObject *details, const char *format, va_list args) {
+    const auto atom = AtomNew(isolate, kind);
+    if (!atom)
+        return {};
+
+    const auto reason = ORStringFormat(isolate, format, args);
+    va_end(args);
+
+    if (!reason)
+        return {};
+
+    return ErrorNew(isolate, atom.get(), reason.get(), details);
+}
+
 bool orbiter::datatype::ErrorTypeSetup(TypeInfo *self) {
     self->dtor = (DtorFn) ErrorDtor;
 
@@ -73,7 +89,7 @@ bool orbiter::datatype::ErrorTypeSetup(TypeInfo *self) {
 HError orbiter::datatype::ErrorNew(Isolate *isolate, Atom *kind, ORString *reason, OObject *details) {
     const auto error = MakeObject<Error>(isolate, InstanceType::ERROR);
     if (error != nullptr) {
-        error->kind = O_FAST_DECREF(kind);
+        error->kind = O_FAST_INCREF(kind);
         error->reason = O_INCREF(reason);
         error->details = O_INCREF(details);
     }
@@ -84,21 +100,25 @@ HError orbiter::datatype::ErrorNew(Isolate *isolate, Atom *kind, ORString *reaso
 HError orbiter::datatype::ErrorNew(Isolate *isolate, const char *kind, OObject *details, const char *format, ...) {
     va_list args;
 
-    const auto atom = AtomNew(isolate, kind);
-    if (!atom)
-        return {};
-
     va_start(args, format);
-    const auto reason = ORStringFormat(isolate, format, args);
-    va_end(args);
 
-    if (!reason)
-        return {};
-
-    return ErrorNew(isolate, atom.get(), reason.get(), details);
+    return ErrorNewVA(isolate, kind, details, format, args);
 }
 
 HOType orbiter::datatype::ErrorTypeInit(Isolate *isolate) {
-    auto error = MakeType(isolate, InstanceType::ERROR, 0, 4, 0);
+    auto error = MakeType(isolate, InstanceType::ERROR, 0, 4, 3);
     return error;
+}
+
+void orbiter::datatype::ErrorSet(Isolate *isolate, const char *kind, OObject *details, const char *format, ...) {
+    va_list args;
+
+    va_start(args, format);
+
+    const auto error = ErrorNewVA(isolate, kind, details, format, args);
+    if (!error)
+        return;
+
+    const auto fiber = Fiber::Current();
+    fiber->Panic((OObject *) error.get());
 }

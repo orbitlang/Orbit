@@ -59,32 +59,28 @@ bool orbiter::datatype::CheckParameter(const Parameter *parameters, OObject **ar
 
             if (!cursor->optional) {
                 GetTypeName(value, type_name, sizeof(type_name));
+                ErrorSet(isolate,
+                         ValueError::Details[ValueError::Reason::ID],
+                         nullptr,
+                         ValueError::Details[ValueError::Reason::PARAMETER],
+                         type_name,
+                         cursor->name,
+                         index);
 
-                auto tmp = ErrorNew(isolate,
-                                    ValueError::Details[ValueError::Reason::ID],
-                                    nullptr,
-                                    ValueError::Details[ValueError::Reason::PARAMETER],
-                                    type_name,
-                                    cursor->name,
-                                    index);
-
-                assert(false); // FIXME
                 return false;
             }
         }
 
         if (!ok) {
             GetTypeName(value, type_name, sizeof(type_name));
+            ErrorSet(isolate,
+                     TypeError::Details[TypeError::Reason::ID],
+                     nullptr,
+                     TypeError::Details[TypeError::Reason::PARAMETER],
+                     type_name,
+                     cursor->name,
+                     index);
 
-            auto tmp = ErrorNew(isolate,
-                                TypeError::Details[TypeError::Reason::ID],
-                                nullptr,
-                                TypeError::Details[TypeError::Reason::PARAMETER],
-                                type_name,
-                                cursor->name,
-                                index);
-
-            assert(false); // FIXME
             return false;
         }
 

@@ -14,12 +14,23 @@
 #include <orbit/orbiter/vm.h>
 
 namespace orbiter {
-    class FiberError {
-        datatype::OObject **r_value_;
+    struct Panic {
+        Panic *prev;
+
+        datatype::OObject *error;
+
+        [[nodiscard]] bool ISAborted() const {
+            return this->prev != nullptr;
+        }
+    };
+
+    class FiberPanic {
+        Panic **r_current_;
 
         friend Fiber;
+
     public:
-        datatype::OObject *value_;
+        Panic *current_;
     };
 
     struct FiberContext {
@@ -32,11 +43,13 @@ namespace orbiter {
     struct Fiber {
         VMContext vm;
 
-        FiberError error;
+        FiberContext context;
+
+        FiberPanic panic;
 
         Isolate *isolate;
 
-        FiberContext context;
+        Panic *panic_cache;
 
         struct {
             Fiber *next;
@@ -90,6 +103,10 @@ namespace orbiter {
          */
         static void Delete(Fiber *fiber) noexcept;
 
+        void DiscardPanic() noexcept;
+
+        void Panic(datatype::OObject *error) noexcept;
+
         /**
          * @brief Restores the previously saved state of the Fiber from its stack.
          *
@@ -114,8 +131,8 @@ namespace orbiter {
 
             this->vm.state = VMState::RUNNABLE;
 
-            this->error.value_ = nullptr;
-            this->error.r_value_ = &this->error.value_;
+            this->panic.current_ = nullptr;
+            this->panic.r_current_ = &this->panic.current_;
         }
 
         /**
