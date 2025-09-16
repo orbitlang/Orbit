@@ -28,6 +28,7 @@ namespace orbiter {
         Panic **r_current_;
 
         friend Fiber;
+        friend class TryCatch;
 
     public:
         Panic *current_;
