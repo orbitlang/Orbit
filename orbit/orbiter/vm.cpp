@@ -38,7 +38,7 @@ HOObject VMAdd(Isolate *isolate, PtrSize left, PtrSize right) {
     return {};
 }
 
-int VMCall(Fiber *fiber, Function *func, unsigned short p_count, CallMode mode) {
+int VMCall(Fiber *fiber, Function *func, unsigned short p_count, const CallMode mode) {
     auto *regs = &fiber->vm.regs;
     auto *stack = &fiber->vm.stack;
 
@@ -47,6 +47,7 @@ int VMCall(Fiber *fiber, Function *func, unsigned short p_count, CallMode mode) 
     const auto *nargs = (Dict *) regs->r10.reg;
     auto *rest = (List *) regs->r11.reg;
     auto *kwargs = (Dict *) regs->r12.reg;
+    auto old_sp = regs->SP.reg - (p_count * sizeof(void *));
 
     const auto arity = fn_shared->arity;
 
@@ -69,6 +70,8 @@ int VMCall(Fiber *fiber, Function *func, unsigned short p_count, CallMode mode) 
                 assert(false); // FIXME: error!
         } else
             total_args -= 1;
+
+        old_sp += sizeof(void *);
     }
 
     // *****************************************************************************************************************
@@ -78,10 +81,12 @@ int VMCall(Fiber *fiber, Function *func, unsigned short p_count, CallMode mode) 
     if (func->currying != nullptr)
         total_args += func->currying->length;
 
-    auto stack_size_required = kStackPrologueOffset
-                               + func->shared->code->stack_size * sizeof(void *)
-                               + (arity * sizeof(void *))
-                               + (2 * sizeof(void *));
+    U32 stack_size_required = 0;
+
+    if (func->shared->IsInterpreted())
+        stack_size_required = kStackPrologueOffset
+                              + (func->shared->code->stack_size * sizeof(void *))
+                              + (2 * sizeof(void *));
 
     if (func->shared->HasDefaultArgs())
         stack_size_required += (fn_shared->defaults->length / 2) * sizeof(void *);
@@ -195,7 +200,7 @@ int VMCall(Fiber *fiber, Function *func, unsigned short p_count, CallMode mode) 
 
         fiber->vm.Push((OObject *) kwargs);
     } else if (func->shared->IsKWargs()) {
-        auto dict = DictNew(fiber->isolate);
+        const auto dict = DictNew(fiber->isolate);
         if (!dict) {
             // TODO: error
             assert(false);
@@ -207,6 +212,22 @@ int VMCall(Fiber *fiber, Function *func, unsigned short p_count, CallMode mode) 
     // *****************************************************************************************************************
     // * ADJUST STACK AND REGISTERS
     // *****************************************************************************************************************
+
+    if (!func->shared->IsInterpreted()) {
+        auto **args = (OObject **) (stack->stack + (regs->SP.reg - (total_args_with_rest * sizeof(void *))));
+
+        const auto result = func->shared->func(func, args, args[total_args], args[total_args + 1], total_args);
+
+        regs->RR.reg = (PtrSize) result.get();
+
+        // Cleanup native call
+        while (regs->SP.reg > old_sp) {
+            regs->SP.reg -= sizeof(void *);
+            O_DECREF(*(OObject**)(stack->stack + regs->SP.reg));
+        }
+
+        return 0;
+    }
 
     stratum::util::MemoryCopy(stack->stack + regs->SP.reg, &fiber->context.context, sizeof(FiberContext));
     regs->SP.reg += sizeof(FiberContext);
