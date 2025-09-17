@@ -24,7 +24,8 @@ Creates an error instance using the provided atom identifier to categorize the e
 @return New error object
 
 @panic OOMError When insufficient memory is available for error object allocation
-@panic InvalidArgumentError When atom parameter is null or message parameter is invalid
+@panic ValueError When nil is passed to a non-optional parameter
+@panic TypeError When one of the passed parameters has an invalid type
 )DOC", 3, false, false) {
     PCHECK_ENTRIES(params,
                    PCHECK_DEF("kind", false, InstanceType::ATOM),
