@@ -93,6 +93,8 @@ namespace liftoff::ir {
 
         Instruction *visitParameter(parser::Parameter *node);
 
+        Instruction *visitReturn(const parser::Unary *unary);
+
         Instruction *visitSelector(parser::Selector *node);
 
         Instruction *visitSubscript(parser::Subscript *node);

@@ -197,7 +197,7 @@ ASTHandle<ASTNode *> Parser::ParseDecorator() {
             auto left = this->ParseExpression(TokenType::ASTERISK);
 
             if (left->node_type != NodeType::CALL) {
-                auto call = MakeCall(this->isolate_, left->loc);
+                auto call = MakeCall(this->isolate_, left->loc, NodeType::CALL);
 
                 call->left = left.release();
 
@@ -245,17 +245,19 @@ ASTHandle<ASTNode *> Parser::ParseExtImpl() {
 }
 
 ASTHandle<ASTNode *> Parser::ParseDeferStatement() {
-    auto defer = MakeUnary(this->isolate_, TKCUR_LOC, NodeType::DEFER);
+    const auto start = TKCUR_START;
 
     this->Eat(true);
 
-    defer->value = this->ParseExpression(TokenType::COMMA).release();
-    defer->loc.end = defer->value->loc.end;
-
-    if (defer->value->node_type != NodeType::CALL)
+    auto call = this->ParseExpression(TokenType::COMMA);
+    if (call->node_type != NodeType::CALL)
         throw ParserException(26);
 
-    return defer;
+    call->loc.start = start;
+
+    call->node_type = NodeType::DEFER;
+
+    return call;
 }
 
 ASTHandle<ASTNode *> Parser::ParseForInStatement() {
@@ -1238,7 +1240,7 @@ ASTHandle<ASTNode *> Parser::ParseFunc() {
 }
 
 ASTHandle<ASTNode *> Parser::ParseFuncCall(ASTHandle<ASTNode *> &left) {
-    auto call = MakeCall(this->isolate_, TKCUR_LOC);
+    auto call = MakeCall(this->isolate_, TKCUR_LOC, NodeType::CALL);
 
     call->left = left.release();
     call->loc.start = call->left->loc.start;
@@ -1616,7 +1618,7 @@ ASTHandle<ASTNode *> Parser::ParsePipeline(ASTHandle<ASTNode *> &left) {
         return right;
     }
 
-    auto call = MakeCall(this->isolate_, TKCUR_LOC);
+    auto call = MakeCall(this->isolate_, TKCUR_LOC, NodeType::CALL);
 
     call->loc.start = left->loc.start;
     call->loc.end = right->loc.end;

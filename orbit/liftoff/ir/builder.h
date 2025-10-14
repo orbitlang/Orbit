@@ -139,7 +139,7 @@ namespace liftoff::ir {
 
         Instruction *CreateCall(Instruction *src, U16 arguments, orbiter::CallMode mode);
 
-        Instruction *CreateCallDetached(Instruction *src, U16 arguments, orbiter::CallMode mode);
+        Instruction *CreateCallDetached(orbiter::OPCode opcode, Instruction *src, U16 arguments, orbiter::CallMode mode);
 
         Instruction *CreateJump(BasicBlock *destination);
 
@@ -161,8 +161,12 @@ namespace liftoff::ir {
 
         Instruction *CreateUnaryOp(orbiter::OPCode opcode, U16 imm, U8 flags);
 
-        Instruction *CreateUnaryOp(orbiter::OPCode opcode, U16 imm) {
+        Instruction *CreateUnaryOp(const orbiter::OPCode opcode, const U16 imm) {
             return this->CreateUnaryOp(opcode, imm, 0);
+        }
+
+        Instruction *CreateUnaryOp(const orbiter::OPCode opcode) {
+            return this->CreateUnaryOp(opcode, 0, 0);
         }
 
         Instruction *LoadCodeObject(U16 offset);
@@ -190,7 +194,7 @@ namespace liftoff::ir {
 
         Instruction *LoadFromClosureAtOffset(I16 offset);
 
-        Instruction *LoadFromStackOffset(U8 r_base, I16 offset);
+        Instruction *LoadFromStackOffset(U8 r_base, I16 offset, bool force_load);
 
         Instruction *LoadFunction(Instruction *src, Instruction *def_args, orbiter::LoadFuncFlags flags);
 

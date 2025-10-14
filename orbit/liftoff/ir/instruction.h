@@ -146,9 +146,9 @@ namespace liftoff::ir {
         }
 
     protected:
-        explicit CallInstr(Instruction *src, U16 arguments, orbiter::CallMode mode) noexcept : PhysInstruction(
-                orbiter::OPCode::CALL, 4),
-            arguments(arguments), mode(mode) {
+        explicit CallInstr(orbiter::OPCode opcode, Instruction *src, const U16 arguments,
+                           const orbiter::CallMode mode) noexcept : PhysInstruction(opcode, 4),
+                                                                    arguments(arguments), mode(mode) {
             this->SetOperand(0, src);
 
             this->assigned_reg = kReturnRegisterReg;

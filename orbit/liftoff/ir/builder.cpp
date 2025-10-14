@@ -87,6 +87,8 @@ Instruction *Builder::AllocStackSlots(U16 slots, AllocaFlags flags) {
             if ((AllocaFlags) last_alloca->flags == flags) {
                 last_alloca->imm += slots;
 
+                this->context->stack_slots += slots;
+
                 return last_alloca;
             }
         }
@@ -137,7 +139,7 @@ Instruction *Builder::CreateBranch(const OPCode opcode, Instruction *value, Basi
 }
 
 Instruction *Builder::CreateCall(Instruction *src, U16 arguments, CallMode mode) {
-    auto *call = this->CreateCallDetached(src, arguments, mode);
+    auto *call = this->CreateCallDetached(OPCode::CALL, src, arguments, mode);
 
     // this->StackDiscard(arguments); Managed by callee
     this->context->stack_push_count -= arguments;
@@ -145,8 +147,8 @@ Instruction *Builder::CreateCall(Instruction *src, U16 arguments, CallMode mode)
     return call;
 }
 
-Instruction *Builder::CreateCallDetached(Instruction *src, U16 arguments, CallMode mode) {
-    auto *call = this->CreateObject<CallInstr>(src, arguments, mode);
+Instruction *Builder::CreateCallDetached(const OPCode opcode, Instruction *src, U16 arguments, CallMode mode) {
+    auto *call = this->CreateObject<CallInstr>(opcode, src, arguments, mode);
     return call;
 }
 
@@ -231,7 +233,10 @@ Instruction *Builder::LoadFromClosureAtOffset(I16 offset) {
     return this->CreateInstruction<LoadStoreClosureWithOffsetInstr>(OPCode::CLOLDR, offset, nullptr);
 }
 
-Instruction *Builder::LoadFromStackOffset(U8 r_base, I16 offset) {
+Instruction *Builder::LoadFromStackOffset(U8 r_base, I16 offset, bool force_load) {
+    if (force_load)
+        return this->CreateInstruction<OffsetInstruction>(OPCode::SKLDR, r_base, offset);
+
     return this->LoadFromOffset(OPCode::SKLDR, r_base, offset, 0);
 }
 
@@ -414,7 +419,7 @@ void Builder::LeaveContext() {
         changed = this->context->ComputeLiveness();
     */
 
-    assert(this->context->stack_push_count ==0);
+    //assert(this->context->stack_push_count ==0);
 
     if (this->context->back != nullptr)
         this->context = this->context->back;

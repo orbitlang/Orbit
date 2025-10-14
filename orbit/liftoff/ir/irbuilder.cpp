@@ -104,11 +104,22 @@ Instruction *IRBuilder::BinaryOP(const parser::Binary *binary) {
 }
 
 Instruction *IRBuilder::CreateCall(const parser::Call *node, Instruction *f_src) {
+    auto opcode = orbiter::OPCode::CALL;
     auto mode = orbiter::CallMode::FASTCALL;
 
     Instruction *arg_value = nullptr;
     Instruction *rest = nullptr;
     Instruction *kwargs = nullptr;
+
+    if (node->node_type == parser::NodeType::DEFER) {
+        if (!this->builder_.context->deferred) {
+            this->builder_.AllocStackSlots(1, orbiter::AllocaFlags::ZERO_INIT);
+
+            this->builder_.context->deferred = true;
+        }
+
+        opcode = orbiter::OPCode::DEFER;
+    }
 
     // Args
     for (const auto &arg: node->args) {
@@ -152,7 +163,7 @@ Instruction *IRBuilder::CreateCall(const parser::Call *node, Instruction *f_src)
     if ((int) mode > 1)
         mode &= ~orbiter::CallMode::FASTCALL;
 
-    const auto call = (CallInstr *) this->builder_.CreateCallDetached(f_src, node->args.size(), mode);
+    const auto call = (CallInstr *) this->builder_.CreateCallDetached(opcode, f_src, node->args.size(), mode);
 
     if (nargs != nullptr)
         call->SetNargs(nargs);
@@ -193,7 +204,7 @@ Instruction *IRBuilder::LoadParameter(const Symbol *symbol) {
 
     assert(p_offset > 0);
 
-    return this->builder_.LoadFromStackOffset(kBaseStackPointerReg, (I16) -p_offset);
+    return this->builder_.LoadFromStackOffset(kBaseStackPointerReg, (I16) -p_offset, false);
 }
 
 Instruction *IRBuilder::LoadSelfParam(MSize offset) {
@@ -247,7 +258,7 @@ Instruction *IRBuilder::LoadVariable(const Symbol *symbol) {
         goto EXIT;
     }
 
-    ret = this->builder_.LoadFromStackOffset(kBaseStackPointerReg, offset);
+    ret = this->builder_.LoadFromStackOffset(kBaseStackPointerReg, offset, false);
 
 EXIT:
     this->builder_.context->current_->UseVar(symbol);
@@ -586,7 +597,10 @@ Instruction *IRBuilder::visitCallPrepend(const parser::Call *node, Instruction *
 
         call->arguments += p_count + 1;
 
-        this->builder_.StackDiscard(1);
+        // In case of defer, the stack must not be cleaned up but maintained since function execution
+        // is postponed. Therefore, the stack needs to remain intact until the function is fully executed
+        if (node->node_type != parser::NodeType::DEFER)
+            this->builder_.StackDiscard(1);
 
         return call;
     }
@@ -752,7 +766,7 @@ Instruction *IRBuilder::visitFunction(const parser::Function *node) {
 
             this->builder_.StackPush(self);
 
-            auto *call = this->builder_.CreateCallDetached(s_init, 1, orbiter::CallMode::METHOD);
+            auto *call = this->builder_.CreateCallDetached(orbiter::OPCode::CALL, s_init, 1, orbiter::CallMode::METHOD);
 
             this->builder_.AddInstruction(call);
 
@@ -1022,6 +1036,28 @@ Instruction *IRBuilder::visitParameter(parser::Parameter *node) {
     return nullptr;
 }
 
+Instruction *IRBuilder::visitReturn(const parser::Unary *unary) {
+    auto *value = unary->value != nullptr ? this->visit(unary->value) : this->builder_.LoadNilValue();
+    auto pops_slot = 0;
+
+    if (this->sym_t_->scope->type == ScopeType::FUNCTION || this->sym_t_->scope->type == ScopeType::GENERATOR)
+        pops_slot = this->sym_t_->scope->GetParameterCount();
+
+    if (this->builder_.context->deferred) {
+        const auto tmp_ret = (I16) (this->builder_.context->stack_slots - 1);
+
+        this->builder_.StoreToStackOffset(value, kBaseStackPointerReg, tmp_ret);
+
+        this->builder_.CreateUnaryOp(orbiter::OPCode::EXECDEFER);
+
+        value = this->builder_.LoadFromStackOffset(kBaseStackPointerReg, tmp_ret, true);
+
+        return this->builder_.CreateReturn(value, pops_slot);
+    }
+
+    return this->builder_.CreateReturn(value, pops_slot);
+}
+
 Instruction *IRBuilder::visitSelector(parser::Selector *node) {
     auto *base = this->visit(node->left);
 
@@ -1103,13 +1139,10 @@ Instruction *IRBuilder::visitUnary(const parser::Unary *node) {
         return this->builder_.CreateUnaryOp(orbiter::OPCode::PANIC, value);
     }
 
-    value = node->value != nullptr ? this->visit(node->value) : this->builder_.LoadNilValue();
-
     if (node->node_type == parser::NodeType::RETURN)
-        return this->builder_.CreateReturn(value, false);
+        return this->visitReturn(node);
 
-    if (node->node_type == parser::NodeType::YIELD)
-        return this->builder_.CreateReturn(value, true);
+    // TODO: yield
 
     assert(false);
 

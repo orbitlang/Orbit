@@ -135,6 +135,8 @@ namespace orbiter {
         YLD, // Yield instruction           OPCODE | 4 RESERVED | 4 SRC | 16 RESERVED
 
         CALL, // Call function:                     OPCODE | 4 FLAGS(CallMode) | 4 SRC | 16 ARITY
+        DEFER, // Defer function:                   OPCODE | 4 FLAGS(CallMode) | 4 SRC | 16 ARITY
+        EXECDEFER, // Execute deferred functions:    OPCODE | 24 RESERVED
         EXECSUB, // Execute code object directly:    OPCODE | 4 RESERVED        | 4 SRC | 16 RESERVED
 
         // Load/Store Operations

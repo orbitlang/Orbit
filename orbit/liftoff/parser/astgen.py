@@ -69,7 +69,8 @@ NODES = {
             "nargs": "std::vector<ASTHandle<ASTNode*>>",
             "rest": "ASTNode*",
             "kwargs": "ASTNode*"
-        }
+        },
+        "node_type": ["CALL", "DEFER", "SPAWN"]
     },
     "CatchBlock": {
         "fields": {
@@ -247,8 +248,8 @@ NODES = {
             "token_type": "scanner::TokenType",
             "value": "ASTNode*"
         },
-        "node_type": ["AWAIT", "CHAN_RECV", "DEFER", "ELLIPSIS", "KW_ARG", "NEW", "NIL_SAFE", "PANIC", "RETURN",
-                      "SPAWN", "TRAP", "UNARY", "UPDATE", "YIELD"]
+        "node_type": ["AWAIT", "CHAN_RECV", "ELLIPSIS", "KW_ARG", "NEW", "NIL_SAFE", "PANIC", "RETURN",
+                      "TRAP", "UNARY", "UPDATE", "YIELD"]
     }
 }
 

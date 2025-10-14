@@ -13,6 +13,10 @@ using namespace liftoff::ir;
 // General Purpose Emit Macros
 // ============================================================================
 
+// Emit macro with only opcode
+#define EMIT_OP(opcode) \
+    (((U32)(opcode) << 24))
+
 // Emit macro with opcode and immediate value
 #define EMIT_IMMEDIATE(opcode, imm) \
     (((U32)(opcode) << 24) | (imm))
@@ -159,10 +163,14 @@ unsigned char *Codegen::EmitOpcodes(BasicBlock *block, unsigned char *m_code) {
                                                            0);
                 break;
             case orbiter::OPCode::CALL:
+            case orbiter::OPCode::DEFER:
                 *(orbiter::MachineWord *) m_code = EMIT_FSO(instr->opcode,
                                                             (U8)((ir::CallInstr*)instr)->mode,
                                                             ((Instruction*)instr->operands[0].value)->assigned_reg,
                                                             ((ir::CallInstr*)instr)->arguments);
+                break;
+            case orbiter::OPCode::EXECDEFER:
+                *(orbiter::MachineWord *) m_code = EMIT_OP(instr->opcode);
                 break;
             case orbiter::OPCode::EXECSUB:
                 *(orbiter::MachineWord *) m_code = EMIT_SO(instr->opcode,
