@@ -870,6 +870,8 @@ ASTHandle<ASTNode *> Parser::ParseANPST() {
         case TokenType::KW_AWAIT:
             node_type = NodeType::AWAIT;
             break;
+        case TokenType::KW_DEFER:
+            return this->ParseDeferStatement();
         case TokenType::KW_NEW:
             node_type = NodeType::NEW;
             break;
@@ -1916,7 +1918,7 @@ ASTHandle<ASTNode *> Parser::ParseWalrus(ASTHandle<ASTNode *> &left) {
     return decl;
 }
 
-ASTHandle<liftoff::parser::Function *> Parser::ParseFunction(const Position &start, bool inl, AccessModifier access) {
+ASTHandle<Function *> Parser::ParseFunction(const Position &start, bool inl, AccessModifier access) {
     Context isolate(this, ContextType::FUNC);
 
     const auto loc = TKCUR_LOC;
@@ -1957,8 +1959,20 @@ ASTHandle<liftoff::parser::Function *> Parser::ParseFunction(const Position &sta
 
     sym->access = access;
 
+    if (!func->constant && (this->context_->CheckBack(ContextType::CLASS)
+                            || this->context_->CheckBack(ContextType::TRAIT))) {
+        func->params.emplace_back(std::move(this->PushSelfParam(loc)));
+
+        func->method = true;
+
+        sym->type = SymbolType::METHOD;
+    }
+
     Loc last_param{};
-    func->params = this->ParseFuncParams(last_param);
+    auto params = this->ParseFuncParams(last_param);
+    func->params.insert(func->params.end(),
+                        std::make_move_iterator(params.begin()),
+                        std::make_move_iterator(params.end()));
 
     if (this->Match(TokenType::COLON)) {
         // TODO: parse ret_type
@@ -1980,15 +1994,6 @@ ASTHandle<liftoff::parser::Function *> Parser::ParseFunction(const Position &sta
             func->constant = true;
         } else
             throw ParserException(0);
-    }
-
-    if (!func->constant && (this->context_->CheckBack(ContextType::CLASS)
-                            || this->context_->CheckBack(ContextType::TRAIT))) {
-        func->params.emplace_back(std::move(this->PushSelfParam(loc)));
-
-        func->method = true;
-
-        sym->type = SymbolType::METHOD;
     }
 
     this->IgnoreNewLineIF(TokenType::LEFT_BRACES);
@@ -2203,6 +2208,7 @@ Parser::NudMeth Parser::LookupNUD(TokenType token) noexcept {
 
         // Keywords that can start expressions
         case TokenType::KW_AWAIT:
+        case TokenType::KW_DEFER:
         case TokenType::KW_NEW:
         case TokenType::KW_PANIC:
         case TokenType::KW_SPAWN:
