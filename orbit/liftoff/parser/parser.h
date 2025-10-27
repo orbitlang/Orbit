@@ -93,7 +93,9 @@ namespace liftoff::parser {
         "Invalid new expression: expected call",
         "Invalid self/super usage: can only be used within class or trait methods",
         "Invalid constructor: first statement in derived class constructor must be super.init(...)",
-        "Invalid 'prot' usage: can only be used within class/trait definitions"
+        "Invalid 'prot' usage: can only be used within class/trait definitions",
+        "Invalid assignment: cannot assign non-assignable expression (e.g., defer, panic, spawn)",
+        "Invalid expression: non-value expression (e.g., defer, panic, spawn) cannot be used in value context (e.g., tuple, function argument, binary operation)"
     };
 
     constexpr auto kInitMethodName = "init";
@@ -197,7 +199,21 @@ namespace liftoff::parser {
             return true;
         }
 
-        bool MatchEat(scanner::TokenType type, bool ignore_nl) {
+        [[nodiscard]] bool CheckAssignable(ASTNode *node) {
+            do {
+                if (node->node_type == NodeType::NIL_SAFE)
+                    node = ((Unary *) node)->value;
+
+                if (node->node_type == NodeType::DEFER
+                    || node->node_type == NodeType::PANIC
+                    || node->node_type == NodeType::SPAWN)
+                    return false;
+            } while (node->node_type == NodeType::NIL_SAFE);
+
+            return true;
+        }
+
+        [[nodiscard]] bool MatchEat(const scanner::TokenType type, const bool ignore_nl) {
             if (ignore_nl && this->tkcur_.type == scanner::TokenType::END_OF_LINE)
                 this->Eat(true);
 
@@ -210,7 +226,7 @@ namespace liftoff::parser {
             return false;
         }
 
-        [[nodiscard]] bool TokenInRange(scanner::TokenType begin, scanner::TokenType end) const noexcept {
+        [[nodiscard]] bool TokenInRange(const scanner::TokenType begin, const scanner::TokenType end) const noexcept {
             return this->tkcur_.type > begin && this->tkcur_.type < end;
         }
 
@@ -244,7 +260,8 @@ namespace liftoff::parser {
 
         [[nodiscard]] ASTHandle<ASTNode *> ParseTryCatchFinally();
 
-        [[nodiscard]] ASTHandle<ASTNode *> ParseVarDecl(const scanner::Position &start, AccessModifier access, bool constant,
+        [[nodiscard]] ASTHandle<ASTNode *> ParseVarDecl(const scanner::Position &start, AccessModifier access,
+                                                        bool constant,
                                                         bool weak, bool decl_only);
 
         // *************************************************************************************************************
@@ -305,7 +322,8 @@ namespace liftoff::parser {
 
         [[nodiscard]] ASTHandle<ASTNode *> ParseWalrus(ASTHandle<ASTNode *> &left);
 
-        [[nodiscard]] ASTHandle<Function *> ParseFunction(const scanner::Position &start, bool inl, AccessModifier access);
+        [[nodiscard]] ASTHandle<Function *> ParseFunction(const scanner::Position &start, bool inl,
+                                                          AccessModifier access);
 
         [[nodiscard]] ASTHandle<Parameter *> ParseParameter(const scanner::Position &start, NodeType type);
 
@@ -338,7 +356,7 @@ namespace liftoff::parser {
          * @param filename Source code name.
          * @param scanner Reference to Scanner.
          */
-        Parser(orbiter::Isolate *isolate, const char *filename, scanner::Scanner &scanner) noexcept: isolate_(isolate),
+        Parser(orbiter::Isolate *isolate, const char *filename, scanner::Scanner &scanner) noexcept : isolate_(isolate),
             filename_(filename), scanner_(scanner) {
         }
 

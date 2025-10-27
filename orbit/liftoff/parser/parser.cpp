@@ -827,6 +827,8 @@ ASTHandle<ASTNode *> Parser::ParseVarDecl(const Position &start, AccessModifier 
                 throw ParserException(0);
 
             expr = this->ParseExpression(TokenType::WALRUS);
+            if (!this->CheckAssignable(expr.get()))
+                throw ParserException(82);
 
             decl->loc.end = expr->loc.end;
         } else if (constant)
@@ -961,6 +963,8 @@ ASTHandle<ASTNode *> Parser::ParseAssignment(ASTHandle<ASTNode *> &left) {
     }
 
     auto expr = this->ParseExpression(tk_type);
+    if (!this->CheckAssignable(expr.get()))
+        throw ParserException(82);
 
     auto assign = MakeAssignment(this->isolate_, TKCUR_LOC, node_type);
 
@@ -1095,7 +1099,11 @@ ASTHandle<ASTNode *> Parser::ParseDictSet() {
     }
 
     do {
-        elements.push_back(this->ParseExpression(TokenType::COMMA));
+        auto key = this->ParseExpression(TokenType::COMMA);
+        if (!this->CheckAssignable(key.get()))
+            throw ParserException(83);
+
+        elements.push_back(std::move(key));
 
         if (this->MatchEat(TokenType::COLON, true)) {
             if (node_type == NodeType::SET)
@@ -1105,7 +1113,11 @@ ASTHandle<ASTNode *> Parser::ParseDictSet() {
 
             this->EatNL();
 
-            elements.push_back(this->ParseExpression(TokenType::COMMA));
+            auto value = this->ParseExpression(TokenType::COMMA);
+            if (!this->CheckAssignable(value.get()))
+                throw ParserException(83);
+
+            elements.push_back(std::move(value));
 
             continue;
         }
@@ -1191,6 +1203,9 @@ ASTHandle<ASTNode *> Parser::ParseExpressionList(ASTHandle<ASTNode *> &left) {
 
     this->Eat(false);
 
+    if (!this->CheckAssignable(left.get()))
+        throw ParserException(83);
+
     list->elements.emplace_back(left.release());
 
     Position end;
@@ -1198,6 +1213,8 @@ ASTHandle<ASTNode *> Parser::ParseExpressionList(ASTHandle<ASTNode *> &left) {
         this->EatNL();
 
         auto expr = this->ParseExpression(TokenType::COMMA);
+        if (!this->CheckAssignable(expr.get()))
+            throw ParserException(83);
 
         end = expr->loc.end;
 
@@ -1220,7 +1237,11 @@ ASTHandle<ASTNode *> Parser::ParseExprOrTuple() {
         do {
             this->EatNL();
 
-            tuple->elements.push_back(this->ParseExpression(TokenType::COMMA));
+            auto item = this->ParseExpression(TokenType::COMMA);
+            if (!this->CheckAssignable(item.get()))
+                throw ParserException(83);
+
+            tuple->elements.push_back(std::move(item));
         } while (this->MatchEat(TokenType::COMMA, true));
     }
 
@@ -1479,7 +1500,11 @@ ASTHandle<ASTNode *> Parser::ParseList() {
         do {
             this->EatNL();
 
-            list->elements.push_back(this->ParseExpression(TokenType::COMMA));
+            auto item = this->ParseExpression(TokenType::COMMA);
+            if (!this->CheckAssignable(item.get()))
+                throw ParserException(83);
+
+            list->elements.push_back(std::move(item));
         } while (this->MatchEat(TokenType::COMMA, true));
     }
 
@@ -1903,6 +1928,9 @@ ASTHandle<ASTNode *> Parser::ParseWalrus(ASTHandle<ASTNode *> &left) {
     decl->name = left.release();
 
     decl->value = this->ParseExpression(TokenType::WALRUS).release();
+    if (!this->CheckAssignable(decl->value))
+        throw ParserException(82);
+
     decl->loc.end = decl->value->loc.end;
     decl->inl = true;
 
