@@ -421,7 +421,7 @@ void Builder::LeaveContext() {
         changed = this->context->ComputeLiveness();
     */
 
-    //assert(this->context->stack_push_count ==0);
+    assert(this->context->stack_push_count ==0);
 
     if (this->context->back != nullptr)
         this->context = this->context->back;
