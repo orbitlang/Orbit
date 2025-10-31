@@ -32,12 +32,12 @@ namespace orbiter {
         Fiber *tail_ = nullptr;
 
         U32 count_ = 0;
-        U32 max_ = 0;
+        U32 max_;
 
     public:
         //FiberQueue() noexcept = default;
 
-        explicit FiberQueue(U32 max_length) noexcept: max_(max_length) {
+        explicit FiberQueue(const U32 max_length) noexcept: max_(max_length) {
         }
 
         ~FiberQueue() {
