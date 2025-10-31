@@ -22,12 +22,14 @@
 #include <orbit/orbiter/memory/gc.h>
 
 #include <orbit/orbiter/isolate.h>
+#include <orbit/orbiter/defer.h>
 #include <orbit/orbiter/fpool.h>
 
 using namespace orbiter;
 using namespace orbiter::datatype;
 
 Isolate::~Isolate() {
+    delete this->dpool_;
     delete this->fpool_;
     delete this->gc;
 
@@ -56,6 +58,7 @@ Isolate *Isolate::New() {
     if (!isolate->allocator_->Initialize())
         goto ERROR;
 
+    isolate->dpool_ = new DeferPool(isolate);
     isolate->fpool_ = new FiberPool(isolate, -1, -1, -1);
 
     isolate->gc = new memory::GC(isolate);

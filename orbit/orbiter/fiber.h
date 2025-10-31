@@ -11,6 +11,7 @@
 #include <orbit/orbiter/datatype/function.h>
 #include <orbit/orbiter/datatype/module.h>
 
+#include <orbit/orbiter/defer.h>
 #include <orbit/orbiter/vm.h>
 
 namespace orbiter {
@@ -47,6 +48,8 @@ namespace orbiter {
         FiberContext context;
 
         FiberPanic panic;
+
+        DeferStack defer_stack;
 
         Isolate *isolate;
 

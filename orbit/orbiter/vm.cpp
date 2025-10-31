@@ -23,6 +23,72 @@ using namespace orbiter::datatype;
 
 constexpr auto kStackPrologueOffset = sizeof(FiberContext) + (sizeof(void *) * 2);
 
+// *** Prototypes
+
+void CallNative(Function *func, Registers *regs, const VMStack *stack, U16 argc);
+
+// EOF ***
+
+bool ExecDefer(Fiber *fiber) {
+    auto *regs = &fiber->vm.regs;
+    const auto *stack = &fiber->vm.stack;
+
+    while (true) {
+        auto *defer = fiber->defer_stack.Pop(regs->BP.reg);
+        if (defer == nullptr)
+            return false;
+
+        auto *func = defer->func;
+
+        if (!defer->func->shared->IsInterpreted()) {
+            CallNative(func, regs, stack, defer->argc);
+
+            fiber->isolate->dpool_->DeleteDefer(defer);
+
+            continue;
+        }
+
+        fiber->context.context = O_FAST_INCREF(defer->func->shared->context);
+        fiber->context.module = O_INCREF(defer->func->shared->module);
+        fiber->context.code = O_FAST_INCREF(defer->func->shared->code);
+        fiber->context.func = O_FAST_INCREF(defer->func);
+
+        *((PtrSize *) (stack->stack + (defer->SP - sizeof(void *)))) = regs->IP.reg - sizeof(MachineWord);
+
+        regs->r10.reg = defer->r10;
+        regs->r11.reg = defer->r11;
+        regs->r12.reg = defer->r12;
+
+        regs->BP.reg = defer->SP;
+
+        regs->IP.reg = (PtrSize) func->shared->code->m_code;
+
+        fiber->isolate->dpool_->DeleteDefer(defer);
+
+        return true;
+    }
+}
+
+bool Call(Fiber *fiber, Function *func, const unsigned short total_args) {
+    auto *regs = &fiber->vm.regs;
+
+    if (!func->shared->IsInterpreted()) {
+        CallNative(func, regs, &fiber->vm.stack, total_args);
+
+        return false;
+    }
+
+    regs->BP.reg = regs->SP.reg;
+    regs->IP.reg = (PtrSize) func->shared->code->m_code;
+
+    fiber->context.context = O_FAST_INCREF(func->shared->context);
+    fiber->context.module = O_INCREF(func->shared->module);
+    fiber->context.code = O_FAST_INCREF(func->shared->code);
+    fiber->context.func = O_FAST_INCREF(func);
+
+    return true;
+}
+
 HOObject VMAdd(Isolate *isolate, PtrSize left, PtrSize right) {
     if (O_IS_SMI(left) && O_IS_SMI(right)) {
         left -= 1;
@@ -40,7 +106,7 @@ HOObject VMAdd(Isolate *isolate, PtrSize left, PtrSize right) {
     return {};
 }
 
-int VMCall(Fiber *fiber, Function *func, unsigned short p_count, const CallMode mode, bool setup_only) {
+int CallInit(Fiber *fiber, const Function *func, unsigned short p_count, const CallMode mode) {
     auto *regs = &fiber->vm.regs;
     auto *stack = &fiber->vm.stack;
 
@@ -49,15 +115,14 @@ int VMCall(Fiber *fiber, Function *func, unsigned short p_count, const CallMode 
     const auto *nargs = (Dict *) regs->r10.reg;
     auto *rest = (List *) regs->r11.reg;
     auto *kwargs = (Dict *) regs->r12.reg;
-    auto old_sp = regs->SP.reg - (p_count * sizeof(void *));
 
     const auto arity = fn_shared->arity;
 
     auto total_args = p_count;
 
+    const bool call_mode_is_kwarg = ENUMBITMASK_ISTRUE(mode, CallMode::KW_ARG);
     const bool call_mode_is_nargs = ENUMBITMASK_ISTRUE(mode, CallMode::NARGS);
     bool call_mode_is_rest = ENUMBITMASK_ISTRUE(mode, CallMode::REST_ARG);
-    const bool call_mode_is_kwarg = ENUMBITMASK_ISTRUE(mode, CallMode::KW_ARG);
 
     // *****************************************************************************************************************
     // * Check method information
@@ -72,8 +137,6 @@ int VMCall(Fiber *fiber, Function *func, unsigned short p_count, const CallMode 
                 assert(false); // FIXME: error!
         } else
             total_args -= 1;
-
-        old_sp += sizeof(void *);
     }
 
     // *****************************************************************************************************************
@@ -211,44 +274,15 @@ int VMCall(Fiber *fiber, Function *func, unsigned short p_count, const CallMode 
         fiber->vm.Push((OObject *) dict.get());
     }
 
-    // *****************************************************************************************************************
-    // * ADJUST STACK AND REGISTERS
-    // *****************************************************************************************************************
+    if (func->shared->IsInterpreted()) {
+        stratum::util::MemoryCopy(stack->stack + regs->SP.reg, &fiber->context.context, sizeof(FiberContext));
+        regs->SP.reg += sizeof(FiberContext);
 
-    if (!func->shared->IsInterpreted()) {
-        auto **args = (OObject **) (stack->stack + (regs->SP.reg - (total_args_with_rest * sizeof(void *))));
-
-        const auto result = func->shared->func(func, args, args[total_args], args[total_args + 1], total_args);
-
-        regs->RR.reg = (PtrSize) result.get();
-
-        // Cleanup native call
-        while (regs->SP.reg > old_sp) {
-            regs->SP.reg -= sizeof(void *);
-            O_DECREF(*(OObject**)(stack->stack + regs->SP.reg));
-        }
-
-        return 0;
+        fiber->vm.Push(regs->BP.reg);
+        fiber->vm.Push(regs->IP.reg);
     }
 
-    stratum::util::MemoryCopy(stack->stack + regs->SP.reg, &fiber->context.context, sizeof(FiberContext));
-    regs->SP.reg += sizeof(FiberContext);
-
-    fiber->vm.Push(regs->BP.reg);
-    fiber->vm.Push(regs->IP.reg);
-
-    if (setup_only)
-        return 1;
-
-    regs->BP.reg = regs->SP.reg;
-    regs->IP.reg = (PtrSize) func->shared->code->m_code;
-
-    fiber->context.context = O_FAST_INCREF(func->shared->context);
-    fiber->context.module = O_INCREF(func->shared->module);
-    fiber->context.code = O_FAST_INCREF(func->shared->code);
-    fiber->context.func = O_FAST_INCREF(func);
-
-    return 1;
+    return total_args;
 }
 
 OObject *LoadFromObjectProp(const Fiber *fiber, OObject *obj, const LoadObjectPropFlags flags, const U16 offset) {
@@ -283,6 +317,21 @@ OObject *LoadFromObjectProp(const Fiber *fiber, OObject *obj, const LoadObjectPr
     }
 
     return prop->value;
+}
+
+void CallNative(Function *func, Registers *regs, const VMStack *stack, const U16 argc) {
+    auto **args = (OObject **) (stack->stack + (regs->SP.reg - (argc * sizeof(void *))));
+    const auto old_sp = regs->SP.reg - (argc * sizeof(void *));
+
+    const auto result = func->shared->func(func, args, args[argc], args[argc + 1], argc);
+
+    regs->RR.reg = (PtrSize) result.get();
+
+    // Cleanup native call
+    while (regs->SP.reg > old_sp) {
+        regs->SP.reg -= sizeof(void *);
+        O_DECREF(*(OObject**)(stack->stack + regs->SP.reg));
+    }
 }
 
 void StoreToObjectProp(const Fiber *fiber, OObject *obj, OObject *value,
@@ -481,10 +530,51 @@ CGOTO
 
                 const auto func = (Function *) REG_N(src);
 
-                const auto res = VMCall(fiber, func, p_count, flags, false);
-                if (res == 1) {
+                const auto res = CallInit(fiber, func, p_count, flags);
+                if (res < 0)
+                    goto ERROR;
+
+                if (Call(fiber, func, res)) {
                     code = func->shared->code;
                     this_func = fiber->context.func;
+
+                    continue;
+                }
+
+                DISPATCH;
+            }
+            TARGET_OP(DEFER) {
+                const auto flags = FETCH_F_DST(CallMode, instr);
+                const auto src = FETCH_R_SRC(instr);
+                const auto p_count = FETCH_IMM(instr);
+
+                const auto func = (Function *) REG_N(src);
+
+                const auto res = CallInit(fiber, func, p_count, flags);
+                if (res < 0)
+                    goto ERROR;
+
+                auto *defer = fiber->isolate->dpool_->NewDefer();
+                if (defer == nullptr)
+                    goto ERROR;
+
+                defer->func = O_FAST_INCREF(func);
+
+                defer->argc = res;
+
+                defer->r10 = regs->r10.reg;
+                defer->r11 = regs->r11.reg;
+                defer->r12 = regs->r12.reg;
+                defer->SP = regs->SP.reg;
+
+                fiber->defer_stack.Push(defer, REG_BP);
+
+                DISPATCH;
+            }
+            TARGET_OP(EXECDEFER) {
+                if (ExecDefer(fiber)) {
+                    this_func = fiber->context.func;
+                    code = this_func->shared->code;
 
                     continue;
                 }

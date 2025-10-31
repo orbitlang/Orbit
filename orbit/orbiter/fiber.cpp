@@ -57,8 +57,11 @@ Fiber *Fiber::New(Isolate *isolate, MSize stack_size, MSize stack_limit) noexcep
     if (fiber != nullptr) {
         if (!fiber->vm.stack.Init(isolate, stack_size, stack_limit)) {
             allocator.free(fiber);
+
             return nullptr;
         }
+
+        new(&fiber->defer_stack)DeferStack();
 
         fiber->Reset();
 

@@ -30,6 +30,7 @@ namespace orbiter {
         friend class memory::IsolateAllocator;
 
     public:
+        class DeferPool *dpool_;
         class FiberPool *fpool_;
 
         datatype::TypeInfo *primitive[datatype::kInstanceTypeCount];
