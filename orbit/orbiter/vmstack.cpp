@@ -8,11 +8,26 @@
 
 using namespace orbiter;
 
-bool VMStack::Check(Isolate *isolate, MSize current, MSize size) noexcept {
+bool VMStack::Check(Isolate *isolate, const MSize current, MSize size) noexcept {
     size = (size + (sizeof(void *) - 1)) & ~(sizeof(void *) - 1);
 
     if (current + size > this->capacity)
         return this->Grow(isolate, size);
+
+    return true;
+}
+
+bool VMStack::Init(Isolate *isolate, const MSize size, const MSize stack_limit) noexcept {
+    memory::IsolateAllocator allocator(isolate);
+
+    assert(stack_limit > size);
+
+    this->stack = allocator.alloc<Byte>(size);
+    if (this->stack == nullptr)
+        return false;
+
+    this->capacity = size;
+    this->limit = stack_limit;
 
     return true;
 }
@@ -40,17 +55,8 @@ bool VMStack::Grow(Isolate *isolate, MSize size) noexcept {
     return true;
 }
 
-bool VMStack::Init(Isolate *isolate, MSize size, MSize stack_limit) noexcept {
-    memory::IsolateAllocator allocator(isolate);
+void VMStack::Cleanup(Isolate *isolate) const {
+    const memory::IsolateAllocator allocator(isolate);
 
-    assert(stack_limit > size);
-
-    this->stack = allocator.alloc<Byte>(size);
-    if (this->stack == nullptr)
-        return false;
-
-    this->capacity = size;
-    this->limit = stack_limit;
-
-    return true;
+    allocator.free(this->stack);
 }

@@ -26,13 +26,13 @@ namespace orbiter {
     };
 
     class FiberPanic {
-        Panic **r_current_;
+        Panic **r_current_ = nullptr;
 
         friend Fiber;
         friend class TryCatch;
 
     public:
-        Panic *current_;
+        Panic *current_ = nullptr;
     };
 
     struct FiberContext {
@@ -42,30 +42,33 @@ namespace orbiter {
         datatype::Function *func;
     };
 
-    struct Fiber {
-        VMContext vm;
+    class Fiber {
+    public:
+        VMContext vm{};
 
-        FiberContext context;
+        FiberContext context{};
 
         FiberPanic panic;
 
         DeferStack defer_stack;
 
-        Isolate *isolate;
+        Isolate *isolate = nullptr;
 
-        Panic *panic_cache;
+        Panic *panic_cache = nullptr;
 
-        Panic *oom_cache;
+        Panic *oom_cache = nullptr;
 
         struct {
             Fiber *next;
             Fiber **prev;
-        } gc_set;
+        } gc_set{};
 
         struct {
             Fiber *next;
             Fiber *prev;
-        } queue;
+        } queue{};
+
+        ~Fiber();
 
         /**
          * @brief Saves the current state of the Fiber onto its stack.
@@ -89,7 +92,7 @@ namespace orbiter {
         /**
          * @brief Creates a new Fiber instance associated with the provided Isolate.
          *
-         * Create a new Fiber instance and initializes its context with the given stack size and stack limit.
+         * Create a new Fiber instance and initialize its context with the given stack size and stack limit.
          *
          * @param isolate A pointer to the Isolate to which the new Fiber will belong.
          * @param stack_size The size of the stack to allocate for the Fiber.

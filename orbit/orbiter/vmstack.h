@@ -35,7 +35,6 @@ namespace orbiter {
          */
         bool Init(Isolate *isolate, MSize size, MSize stack_limit) noexcept;
 
-
         /**
          * @brief Checks if there is sufficient space in the stack to accommodate the specified size.
          *
@@ -66,6 +65,15 @@ namespace orbiter {
          *         false if the operation failed due to exceeding the memory limits or allocation failure.
          */
         bool Grow(Isolate *isolate, MSize size) noexcept;
+
+        /**
+         * @brief Cleans up the allocated memory used by the VMStack.
+         *
+         * This method releases the memory previously allocated for the VMStack.
+         *
+         * @param isolate A pointer to the Isolate associated with the VMStack instance for memory deallocation.
+         */
+        void Cleanup(Isolate *isolate) const;
     };
 } // namespace orbiter
 

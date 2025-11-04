@@ -18,7 +18,7 @@
 #define GC_GET_OBJ(head) ((datatype::OObject*) (((unsigned char*) head) + sizeof(GCHead)))
 
 namespace orbiter {
-    struct Fiber;
+    class Fiber;
 
     namespace memory {
         constexpr unsigned short kGCGenerations = 3;

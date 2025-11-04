@@ -20,6 +20,10 @@ using namespace orbiter;
  */
 thread_local Fiber *thl_fiber = nullptr;
 
+Fiber::~Fiber() {
+    this->vm.stack.Cleanup(this->isolate);
+}
+
 bool Fiber::PushState() noexcept {
     constexpr auto totalSize = sizeof(FiberContext) + sizeof(Registers);
 
@@ -46,22 +50,16 @@ Fiber *Fiber::Current() noexcept {
     return thl_fiber;
 }
 
-void Fiber::SetCurrent(Fiber *fiber) noexcept {
-    thl_fiber = fiber;
-}
-
-Fiber *Fiber::New(Isolate *isolate, MSize stack_size, MSize stack_limit) noexcept {
+Fiber *Fiber::New(Isolate *isolate, const MSize stack_size, const MSize stack_limit) noexcept {
     memory::IsolateAllocator allocator(isolate);
 
-    const auto fiber = allocator.alloc<Fiber>(sizeof(Fiber));
+    const auto fiber = allocator.AllocObject<Fiber>();
     if (fiber != nullptr) {
         if (!fiber->vm.stack.Init(isolate, stack_size, stack_limit)) {
-            allocator.free(fiber);
+            allocator.FreeObject(fiber);
 
             return nullptr;
         }
-
-        new(&fiber->defer_stack)DeferStack();
 
         fiber->Reset();
 
@@ -70,7 +68,7 @@ Fiber *Fiber::New(Isolate *isolate, MSize stack_size, MSize stack_limit) noexcep
 
         fiber->oom_cache = allocator.alloc<struct Panic>(sizeof(struct Panic));
         if (fiber->oom_cache == nullptr) {
-            Delete(fiber);
+            allocator.FreeObject(fiber);
 
             return nullptr;
         }
@@ -82,12 +80,17 @@ Fiber *Fiber::New(Isolate *isolate, MSize stack_size, MSize stack_limit) noexcep
     return fiber;
 }
 
+void Fiber::SetCurrent(Fiber *fiber) noexcept {
+    thl_fiber = fiber;
+}
+
 void Fiber::Delete(Fiber *fiber) noexcept {
     if (fiber == nullptr)
         return;
 
-    // todo
-    assert(false);
+    const memory::IsolateAllocator allocator(fiber->isolate);
+
+    allocator.FreeObject(fiber);
 }
 
 void Fiber::DiscardPanic() noexcept {
