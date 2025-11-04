@@ -35,7 +35,7 @@ namespace orbiter {
                         obj = new(mem) T(args...);
                     } catch (...) {
                         this->free(mem);
-                        throw;
+                        obj = nullptr;
                     }
                 }
 
@@ -68,7 +68,7 @@ namespace orbiter {
             }
 
             template<typename T>
-            void FreeObject(T *obj) {
+            void FreeObject(T *obj) const {
                 obj->~T();
                 this->free(obj);
             }
