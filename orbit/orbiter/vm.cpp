@@ -472,27 +472,38 @@ CGOTO
 
                 REG_RR = REG_N(src);
 
-                REG_BP -= sizeof(void *);
-                REG_IP = *ACCESS_STACK_BP(0) + sizeof(MachineWord);
+                if (REG_BP > 0) {
+                    REG_BP -= sizeof(void *);
+                    REG_IP = *ACCESS_STACK_BP(0) + sizeof(MachineWord);
 
-                REG_BP -= sizeof(void *);
-                REG_SP = REG_BP;
+                    REG_BP -= sizeof(void *);
+                    REG_SP = REG_BP;
 
-                REG_BP = *ACCESS_STACK_SP(0);
+                    REG_BP = *ACCESS_STACK_SP(0);
 
-                // FIXME: check and free current context!
+                    // FIXME: check and free current context!
 
-                REG_SP -= sizeof(FiberContext);
-                stratum::util::MemoryCopy(&fiber->context.context, stack->stack + regs->SP.reg, sizeof(FiberContext));
+                    REG_SP -= sizeof(FiberContext);
+                    stratum::util::MemoryCopy(&fiber->context.context,
+                                              stack->stack + regs->SP.reg,
+                                              sizeof(FiberContext));
 
-                // Cleanup parameters
-                for (auto i = 0; i < pops; i++) {
-                    regs->SP.reg -= sizeof(void *);
-                    O_DECREF(*(OObject**)(stack->stack + regs->SP.reg));
+                    // Cleanup parameters
+                    for (auto i = 0; i < pops; i++) {
+                        regs->SP.reg -= sizeof(void *);
+                        O_DECREF(*(OObject**)(stack->stack + regs->SP.reg));
+                    }
+
+                    code = fiber->context.code;
+                    this_func = fiber->context.func;
+
+                    continue;
                 }
 
-                code = fiber->context.code;
-                this_func = fiber->context.func;
+                // If Module
+
+                REG_SP = REG_BP;
+                REG_IP += sizeof(MachineWord);
 
                 continue;
             }

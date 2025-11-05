@@ -1040,20 +1040,6 @@ Instruction *IRBuilder::visitReturn(const parser::Unary *unary) {
     if (this->sym_t_->scope->type == ScopeType::FUNCTION || this->sym_t_->scope->type == ScopeType::GENERATOR)
         pops_slot = this->sym_t_->scope->GetParameterCount();
 
-    if (this->builder_.context->deferred) {
-        const auto tmp_ret = (I16) (this->builder_.context->stack_slots - 1);
-
-        this->builder_.StoreToStackOffset(value, kBaseStackPointerReg, tmp_ret);
-
-        this->builder_.CreateUnaryOp(orbiter::OPCode::EXECDEFER);
-
-        this->builder_.context->stack_push_count -= this->builder_.context->deferred_stack_count;
-
-        value = this->builder_.LoadFromStackOffset(kBaseStackPointerReg, tmp_ret, true);
-
-        return this->builder_.CreateReturn(value, pops_slot);
-    }
-
     return this->builder_.CreateReturn(value, pops_slot);
 }
 
@@ -1267,6 +1253,10 @@ IRCHandle IRBuilder::Generate(const parser::ASTHandle<parser::Module *> &module)
             this->visit(statement.get());
 
         assert(this->builder_.context == context);
+
+        // Insert return value
+        if (!this->builder_.CheckIfLastInstructionIs(orbiter::OPCode::RET))
+            this->builder_.CreateReturn(0);
 
         // This call ensures any checks performed by LeaveContext are honored
         this->builder_.LeaveContext();

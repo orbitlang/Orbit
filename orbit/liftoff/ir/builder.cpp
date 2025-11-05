@@ -186,12 +186,26 @@ Instruction *Builder::CreateStoreVariable(const OPCode opcode, I16 offset, U8 fl
     return instr;
 }
 
-Instruction *Builder::CreateReturn(Instruction *s_reg, U16 slots) {
+Instruction *Builder::CreateReturn(Instruction *s_reg, const U16 slots) {
+    if (this->context->deferred) {
+        const auto tmp_ret = (I16) (this->context->stack_slots - 1);
+
+        this->StoreToStackOffset(s_reg, kBaseStackPointerReg, tmp_ret);
+
+        this->CreateUnaryOp(OPCode::EXECDEFER);
+
+        this->context->stack_push_count -= this->context->deferred_stack_count;
+
+        s_reg = this->LoadFromStackOffset(kBaseStackPointerReg, tmp_ret, true);
+
+        return this->CreateInstruction<ReturnInstruction>(s_reg, slots);
+    }
+
     return this->CreateInstruction<ReturnInstruction>(s_reg, slots);
 }
 
-Instruction *Builder::CreateReturn(U16 slots) {
-    return this->CreateInstruction<ReturnInstruction>(this->LoadNilValue(), slots);
+Instruction *Builder::CreateReturn(const U16 slots) {
+    return this->CreateReturn(this->LoadNilValue(), slots);
 }
 
 Instruction *Builder::CreateReturnSub(Instruction *s_reg) {
