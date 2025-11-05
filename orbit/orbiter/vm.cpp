@@ -914,7 +914,7 @@ CGOTO
             }
             TARGET_OP(NDICT) {
                 const auto dst = FETCH_R_DST(instr);
-                const auto imm = FETCH_IMM(instr);
+                // const auto imm = FETCH_IMM(instr);
 
                 auto dict = DictNew(fiber->isolate);
                 if (!dict) {
@@ -922,6 +922,18 @@ CGOTO
                 }
 
                 REG_N(dst) = (PtrSize) dict.get();
+
+                DISPATCH;
+            }
+            TARGET_OP(NERROR) {
+                const auto dst = FETCH_R_DST(instr);
+                const auto kind = (Atom *) REG_N(FETCH_R_SRC(instr));
+                const auto reason = (ORString *) REG_N(FETCH_R_RSRC(instr));
+                const auto details = (OObject *) REG_N(((instr >> 8) & 0xFu));
+
+                const auto err = ErrorNew(fiber->isolate, kind, reason, details);
+
+                REG_N(dst) = (PtrSize) err.get();
 
                 DISPATCH;
             }
