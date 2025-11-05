@@ -112,17 +112,19 @@ namespace liftoff::ir {
 
         void CaptureParametersIntoClosure(const parser::Function *node);
 
-        void VisitForInLoop(const parser::Loop *node);
+        void BuildMethodEmptyBody(const parser::Function *node);
 
         void PutSyncExit(const JBlock *block);
+
+        void VisitForInLoop(const parser::Loop *node);
 
     public:
         explicit IRBuilder(orbiter::Isolate *isolate,
                            const OptimizationLevel level,
-                           const bool is_module) noexcept: builder_(isolate),
-                                                           isolate_(isolate),
-                                                           level_(level),
-                                                           is_module_(is_module) {
+                           const bool is_module) noexcept : builder_(isolate),
+                                                            isolate_(isolate),
+                                                            level_(level),
+                                                            is_module_(is_module) {
         }
 
         [[nodiscard]] IRCHandle Generate(const parser::ASTHandle<parser::Module *> &module) noexcept;

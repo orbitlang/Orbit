@@ -2,6 +2,8 @@
 //
 // Licensed under the Apache License v2.0
 
+#include <orbit/orbiter/datatype/errors.h>
+
 #include <orbit/liftoff/parser/parser.h>
 
 #include <orbit/liftoff/ir/irbuilder.h>
@@ -811,10 +813,9 @@ Instruction *IRBuilder::visitFunction(const parser::Function *node) {
 
     const auto cleanup_count = node->params.size();
 
-    if (node->body == nullptr) {
-        // FIXME: impl this
-        assert(false);
-    } else
+    if (node->body == nullptr)
+        this->BuildMethodEmptyBody(node);
+    else
         this->visit(node->body);
 
     if (this->builder_.CheckIfLastInstructionIs(orbiter::OPCode::RET))
@@ -1213,14 +1214,20 @@ void IRBuilder::CaptureParametersIntoClosure(const parser::Function *node) {
     }
 }
 
-void IRBuilder::VisitForInLoop(const parser::Loop *node) {
-    const JBlock jb(&this->builder_, JBlockType::FOR_IN, nullptr);
+void IRBuilder::BuildMethodEmptyBody(const parser::Function *node) {
+    using namespace orbiter::datatype;
 
-    assert(false); // TODO: IMPL THIS!
+    const auto msg = ORStringFormat(this->isolate_,
+                                    NotImplementedError::Details[NotImplementedError::Reason::METHOD],
+                                    node->name->buffer);
 
-    this->sym_t_->EnterNestedScope(node->loc.start.offset);
+    auto *keyInstr = this->builder_.LoadAtomConstant(NotImplementedError::Details[NotImplementedError::Reason::ID]);
+    auto *msgInstr = this->builder_.LoadConstant((OObject *) msg.get());
+    auto *details = this->builder_.LoadNilValue();
 
-    this->sym_t_->LeaveNestedScope();
+    auto *error = this->builder_.CreateError(keyInstr, msgInstr, details);
+
+    this->builder_.CreateUnaryOp(orbiter::OPCode::PANIC, error);
 }
 
 void IRBuilder::PutSyncExit(const JBlock *block) {
@@ -1232,6 +1239,16 @@ void IRBuilder::PutSyncExit(const JBlock *block) {
 
         cursor = cursor->prev;
     }
+}
+
+void IRBuilder::VisitForInLoop(const parser::Loop *node) {
+    const JBlock jb(&this->builder_, JBlockType::FOR_IN, nullptr);
+
+    assert(false); // TODO: IMPL THIS!
+
+    this->sym_t_->EnterNestedScope(node->loc.start.offset);
+
+    this->sym_t_->LeaveNestedScope();
 }
 
 IRCHandle IRBuilder::Generate(const parser::ASTHandle<parser::Module *> &module) noexcept {
