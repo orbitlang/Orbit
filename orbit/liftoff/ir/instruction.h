@@ -70,8 +70,21 @@ namespace liftoff::ir {
         orbiter::OPCode opcode{};
     };
 
+    // Error instr
+    class ErrorInstr final : public PhysInstruction {
+        friend Builder;
+
+    protected:
+        explicit ErrorInstr(Instruction *kind, Instruction *reason, Instruction *details) noexcept : PhysInstruction(
+            orbiter::OPCode::NERROR, 3) {
+            this->SetOperand(0, kind);
+            this->SetOperand(1, reason);
+            this->SetOperand(2, details);
+        }
+    };
+
     // BinaryOp
-    class BinaryOpInstr : public PhysInstruction {
+    class BinaryOpInstr final : public PhysInstruction {
         friend Builder;
 
     protected:
@@ -90,7 +103,7 @@ namespace liftoff::ir {
         U8 flags = 0;
     };
 
-    class BinaryOpImmInstr : public PhysInstruction {
+    class BinaryOpImmInstr final : public PhysInstruction {
         friend Builder;
 
     protected:
@@ -125,7 +138,7 @@ namespace liftoff::ir {
     };
 
     // Branch
-    class BranchInstruction : public PhysInstruction {
+    class BranchInstruction final : public PhysInstruction {
         friend Builder;
 
     protected:
@@ -176,7 +189,7 @@ namespace liftoff::ir {
         }
     };
 
-    class ExecSubInstr : public PhysInstruction {
+    class ExecSubInstr final : public PhysInstruction {
         friend Builder;
 
     protected:
@@ -188,7 +201,8 @@ namespace liftoff::ir {
         }
     };
 
-    class LoadFunc : public PhysInstruction {
+    // Load/Store
+    class LoadFunc final : public PhysInstruction {
         friend Builder;
 
     protected:
@@ -217,7 +231,7 @@ namespace liftoff::ir {
         }
     };
 
-    class LoadImmValueInstr : public PhysInstruction {
+    class LoadImmValueInstr final : public PhysInstruction {
         friend Builder;
 
     public:
@@ -229,7 +243,6 @@ namespace liftoff::ir {
         }
     };
 
-    // Load/Store
     class LSObjectProp final : public PhysInstruction {
         friend Builder;
 
@@ -248,30 +261,6 @@ namespace liftoff::ir {
                                                                           offset(offset) {
             this->SetOperand(0, object);
             this->SetOperand(1, value);
-        }
-    };
-
-    class OffsetInstruction : public PhysInstruction {
-        friend Builder;
-
-    public:
-        U8 flags = 0;
-        U8 r_base = 0;
-        I16 offset = 0;
-
-        OffsetInstruction(const orbiter::OPCode opcode, const I16 offset) noexcept : PhysInstruction(opcode),
-            offset(offset) {
-        }
-
-        OffsetInstruction(const orbiter::OPCode opcode, const U8 r_base,
-                          const I16 offset) noexcept : PhysInstruction(opcode),
-                                                       r_base(r_base), offset(offset) {
-        }
-
-        OffsetInstruction(const orbiter::OPCode opcode, const U8 r_base, const I16 offset,
-                          Instruction *src) noexcept : PhysInstruction(opcode, 1),
-                                                       r_base(r_base), offset(offset) {
-            this->SetOperand(0, src);
         }
     };
 
@@ -312,7 +301,31 @@ namespace liftoff::ir {
         }
     };
 
-    class ReturnInstruction : PhysInstruction {
+    class OffsetInstruction final : public PhysInstruction {
+        friend Builder;
+
+    public:
+        U8 flags = 0;
+        U8 r_base = 0;
+        I16 offset = 0;
+
+        OffsetInstruction(const orbiter::OPCode opcode, const I16 offset) noexcept : PhysInstruction(opcode),
+            offset(offset) {
+        }
+
+        OffsetInstruction(const orbiter::OPCode opcode, const U8 r_base,
+                          const I16 offset) noexcept : PhysInstruction(opcode),
+                                                       r_base(r_base), offset(offset) {
+        }
+
+        OffsetInstruction(const orbiter::OPCode opcode, const U8 r_base, const I16 offset,
+                          Instruction *src) noexcept : PhysInstruction(opcode, 1),
+                                                       r_base(r_base), offset(offset) {
+            this->SetOperand(0, src);
+        }
+    };
+
+    class ReturnInstruction final : PhysInstruction {
         friend Builder;
 
     protected:
@@ -325,7 +338,7 @@ namespace liftoff::ir {
         U16 slots = 0;
     };
 
-    class ReturnSubInstruction : PhysInstruction {
+    class ReturnSubInstruction final : PhysInstruction {
         friend Builder;
 
     protected:
@@ -335,7 +348,7 @@ namespace liftoff::ir {
     };
 
     // UnaryOp immediate
-    class UnaryImmInstr : public PhysInstruction {
+    class UnaryImmInstr final : public PhysInstruction {
         friend Builder;
 
     public:
@@ -354,7 +367,7 @@ namespace liftoff::ir {
     };
 
     // UnaryOp
-    class UnaryOpInstr : public PhysInstruction {
+    class UnaryOpInstr final : public PhysInstruction {
         friend Builder;
 
     protected:
@@ -389,7 +402,7 @@ namespace liftoff::ir {
     };
 
     // Phi(φ) virtual instruction
-    class PhiInstr : public VirtualInstruction {
+    class PhiInstr final : public VirtualInstruction {
         // NOTE: Currently, only two instructions can be allocated,
         // useful for example for the ternary operator or null coalescing.
 

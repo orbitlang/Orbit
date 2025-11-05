@@ -140,7 +140,7 @@ namespace orbiter {
 
         PANIC, // Start panic               OPCODE | 4 RESERVED | 4 SRC | 16 RESERVED
         RET, // Return instruction          OPCODE | 4 RESERVED | 4 SRC | 16 POP VALUES
-        RETSUB, // Return from code object   OPCODE | 4 RESERVED | 4 SRC | 16 RESERVED
+        RETSUB, // Return from code object  OPCODE | 4 RESERVED | 4 SRC | 16 RESERVED
         YLD, // Yield instruction           OPCODE | 4 RESERVED | 4 SRC | 16 RESERVED
 
         CALL, // Call function:                     OPCODE | 4 FLAGS(CallMode) | 4 SRC | 16 ARITY
@@ -186,6 +186,7 @@ namespace orbiter {
 
         // Container object
         NDICT, // Create new dict                   OPCODE | 4 DST | 4 RESERVED | 16 UNSIGNED OFFSET
+        NERROR, // Create new error                 OPCODE | 4 DST | 4 KEY | 4 DESC | 4 aux | 8 RESERVED
         NLIST, // Create new list                   OPCODE | 4 DST | 4 RESERVED | 16 UNSIGNED OFFSET
         NSET, // Create new set                     OPCODE | 4 DST | 4 RESERVED | 16 UNSIGNED OFFSET
         NTUPLE, // Create new tuple                 OPCODE | 4 DST | 4 RESERVED | 16 UNSIGNED OFFSET

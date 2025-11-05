@@ -93,6 +93,13 @@ using namespace liftoff::ir;
 #define EMIT_DSS(opcode, dst, src_l, src_r) \
     EMIT_DSSF(opcode, dst, src_l, src_r, 0)
 
+// ============================================================================
+// Emit Macros with Multi Source Variants
+// ============================================================================
+
+#define EMIT_DSSS(opcode, dst, src1, src2, src3) \
+    (((U32)(opcode) << 24) | ((dst) << 20) | ((src1) << 16) | ((src2) << 12) | ((src3) << 8))
+
 unsigned char *Codegen::EmitOpcodes(BasicBlock *block, unsigned char *m_code) {
     for (auto *cursor = block->instr.head; cursor != nullptr; cursor = cursor->next) {
         if (cursor->type() == ir::ObjectType::VIRT_INSTRUCTION)
@@ -230,6 +237,13 @@ unsigned char *Codegen::EmitOpcodes(BasicBlock *block, unsigned char *m_code) {
                                                             instr->assigned_reg,
                                                             ((ir::OffsetInstruction *) instr)->r_base,
                                                             ((ir::OffsetInstruction *) instr)->offset);
+                break;
+            case orbiter::OPCode::NERROR:
+                *(orbiter::MachineWord *) m_code = EMIT_DSSS(instr->opcode,
+                                                             instr->assigned_reg,
+                                                             ((ErrorInstr*)instr->operands[0].value)->assigned_reg,
+                                                             ((ErrorInstr*)instr->operands[1].value)->assigned_reg,
+                                                             ((ErrorInstr *) instr->operands[2].value)->assigned_reg);
                 break;
             case orbiter::OPCode::CLONEW:
             case orbiter::OPCode::NDICT:

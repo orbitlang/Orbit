@@ -8,6 +8,24 @@
 #include <orbit/datatype.h>
 
 namespace orbiter::datatype {
+    struct NotImplementedError {
+        enum Reason : U8 {
+            ID,
+
+            DEFAULT,
+            METHOD,
+            OPERATOR
+        };
+
+        static constexpr const char *Details[] = {
+            (const char *) "NotImplementedError",
+
+            (const char *) "not implemented",
+            (const char *) "you must implement method %s",
+            (const char *) "operator '%s' not supported between '%s' and '%s'"
+        };
+    };
+
     struct MemoryError {
         enum Reason : U8 {
             ID,
@@ -19,8 +37,8 @@ namespace orbiter::datatype {
         static constexpr const char *Details[] = {
             (const char *) "OOMError",
 
-            (const char *) "Insufficient heap memory to complete allocation",
-            (const char *) "Stack overflow - maximum stack size exceeded"
+            (const char *) "insufficient heap memory to complete allocation",
+            (const char *) "stack overflow - maximum stack size exceeded"
         };
     };
 

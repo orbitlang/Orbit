@@ -153,6 +153,8 @@ namespace liftoff::ir {
         Instruction *CreateCallDetached(orbiter::OPCode opcode, Instruction *src, U16 arguments,
                                         orbiter::CallMode mode);
 
+        Instruction *CreateError(Instruction *kind, Instruction *reason, Instruction *details);
+
         Instruction *CreateJump(BasicBlock *destination);
 
         Instruction *CreateManip(orbiter::OPCode opcode, Instruction *target, Instruction *src, Instruction *src1);
@@ -187,9 +189,13 @@ namespace liftoff::ir {
             return this->LoadCodeObject(this->context->GetSubcontextCount() - 1);
         }
 
+        Instruction *LoadAtomConstant(const char *string);
+
         Instruction *LoadConstant(U16 offset);
 
         Instruction *LoadConstant(orbiter::datatype::OObject *object);
+
+        Instruction *LoadConstant(const char *string);
 
         Instruction *LoadClosureObject(U8 r_base, I16 offset);
 

@@ -4,6 +4,8 @@
 
 #include <cassert>
 
+#include <orbit/orbiter/datatype/atom.h>
+
 #include <orbit/liftoff/ir/builder.h>
 
 using namespace liftoff::ir;
@@ -152,6 +154,10 @@ Instruction *Builder::CreateCallDetached(const OPCode opcode, Instruction *src, 
     return call;
 }
 
+Instruction *Builder::CreateError(Instruction *kind, Instruction *reason, Instruction *details) {
+    return this->CreateInstruction<ErrorInstr>(kind, reason, details);
+}
+
 Instruction *Builder::CreateJump(BasicBlock *destination) {
     auto *jmp = this->CreateInstruction<BranchInstruction>(OPCode::JMP, nullptr, destination);
 
@@ -200,6 +206,14 @@ Instruction *Builder::CreateUnaryOp(const OPCode opcode, U16 imm, U8 flags) {
     return this->CreateInstruction<UnaryImmInstr>(opcode, flags, imm);
 }
 
+Instruction *Builder::LoadAtomConstant(const char *string) {
+    const auto str = datatype::AtomNew(this->context->isolate_, string);
+    if (!str)
+        throw std::bad_alloc();
+
+    return this->LoadConstant((datatype::OObject *) str.get());
+}
+
 Instruction *Builder::LoadCodeObject(U16 offset) {
     return this->CreateInstruction<OffsetInstruction>(OPCode::LDCODE, offset);
 }
@@ -212,6 +226,14 @@ Instruction *Builder::LoadConstant(datatype::OObject *object) {
     const auto offset = this->context->PushStaticValue(object);
 
     return this->LoadConstant(offset);
+}
+
+Instruction *Builder::LoadConstant(const char *string) {
+    const auto str = datatype::ORStringNew(this->context->isolate_, string);
+    if (!str)
+        throw std::bad_alloc();
+
+    return this->LoadConstant((datatype::OObject *) str.get());
 }
 
 Instruction *Builder::LoadClosureObject(U8 r_base, I16 offset) {
