@@ -183,13 +183,15 @@ namespace liftoff::ir {
             return this->CreateUnaryOp(opcode, 0, 0);
         }
 
+        Instruction *FindAndCreateAppropriateLoad(Instruction *src);
+
+        Instruction *LoadAtomConstant(const char *string);
+
         Instruction *LoadCodeObject(U16 offset);
 
         Instruction *LoadLastCodeObject() {
             return this->LoadCodeObject(this->context->GetSubcontextCount() - 1);
         }
-
-        Instruction *LoadAtomConstant(const char *string);
 
         Instruction *LoadConstant(U16 offset);
 
@@ -209,8 +211,6 @@ namespace liftoff::ir {
             return this->CreateInstruction<
                 UnaryImmInstr>(orbiter::OPCode::LDCST, (U8) orbiter::LoadConstantMode::FALSE);
         }
-
-        Instruction *LoadFromClosureAtOffset(I16 offset);
 
         Instruction *LoadFromStackOffset(U8 r_base, I16 offset, bool force_load);
 

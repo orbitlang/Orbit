@@ -219,17 +219,21 @@ unsigned char *Codegen::EmitOpcodes(BasicBlock *block, unsigned char *m_code) {
                                                             ((Instruction*)instr->operands[0].value)->assigned_reg,
                                                             ((ir::OffsetInstruction *) instr)->offset);
                 break;
+            case orbiter::OPCode::CLOSTR:
             case orbiter::OPCode::STGBL:
             case orbiter::OPCode::STGOFF:
-                *(orbiter::MachineWord *) m_code = EMIT_SO(instr->opcode,
-                                                           ((Instruction*)instr->operands[0].value)->assigned_reg,
-                                                           ((ir::OffsetInstruction *) instr)->offset);
+            case orbiter::OPCode::SKSTR:
+                *(orbiter::MachineWord *) m_code = EMIT_DSO(instr->opcode,
+                                                            ((ir::OffsetInstruction *) instr)->r_base,
+                                                            ((Instruction*)instr->operands[0].value)->assigned_reg,
+                                                            ((ir::OffsetInstruction *) instr)->offset);
                 break;
             case orbiter::OPCode::LDCLO:
                 *(orbiter::MachineWord *) m_code = EMIT_DO(instr->opcode,
                                                            ((ir::OffsetInstruction *) instr)->r_base,
                                                            (((ir::OffsetInstruction *) instr)->offset & 0xFFFF));
                 break;
+            case orbiter::OPCode::CLOLDR:
             case orbiter::OPCode::LDGBL:
             case orbiter::OPCode::LDGOFF:
             case orbiter::OPCode::SKLDR:
@@ -254,12 +258,6 @@ unsigned char *Codegen::EmitOpcodes(BasicBlock *block, unsigned char *m_code) {
                                                            instr->assigned_reg,
                                                            ((ir::UnaryImmInstr *) instr)->imm);
                 break;
-            case orbiter::OPCode::SKSTR:
-                *(orbiter::MachineWord *) m_code = EMIT_DSO(instr->opcode,
-                                                            ((ir::OffsetInstruction *) instr)->r_base,
-                                                            ((Instruction*)instr->operands[0].value)->assigned_reg,
-                                                            (((ir::OffsetInstruction *) instr)->offset & 0xFFFF));
-                break;
             case orbiter::OPCode::PUSH:
                 *(orbiter::MachineWord *) m_code = EMIT_SO(instr->opcode,
                                                            ((Instruction*)instr->operands[0].value)->assigned_reg,
@@ -280,17 +278,6 @@ unsigned char *Codegen::EmitOpcodes(BasicBlock *block, unsigned char *m_code) {
             }
             case orbiter::OPCode::POP:
                 *(orbiter::MachineWord *) m_code = EMIT_DO(instr->opcode, 0, 0);
-                break;
-            case orbiter::OPCode::CLOLDR:
-                *(orbiter::MachineWord *) m_code = EMIT_DFI(instr->opcode,
-                                                            instr->assigned_reg,
-                                                            0,
-                                                            ((ir::LoadStoreClosureWithOffsetInstr*)instr)->offset);
-                break;
-            case orbiter::OPCode::CLOSTR:
-                *(orbiter::MachineWord *) m_code = EMIT_SO(instr->opcode,
-                                                           ((Instruction*)instr->operands[0].value)->assigned_reg,
-                                                           ((ir::LoadStoreClosureWithOffsetInstr*)instr)->offset);
                 break;
             case orbiter::OPCode::ALLOCA:
             case orbiter::OPCode::POPN:

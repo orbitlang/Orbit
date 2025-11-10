@@ -114,11 +114,8 @@ Instruction *IRBuilder::CreateCall(const parser::Call *node, Instruction *f_src)
     Instruction *kwargs = nullptr;
 
     if (node->node_type == parser::NodeType::DEFER) {
-        if (!this->builder_.context->deferred) {
-            this->builder_.AllocStackSlots(1, orbiter::AllocaFlags::ZERO_INIT);
-
-            this->builder_.context->deferred = true;
-        }
+        if (this->builder_.context->deferred == 0)
+            this->builder_.context->deferred = 1;
 
         opcode = orbiter::OPCode::DEFER;
     }
@@ -251,7 +248,7 @@ Instruction *IRBuilder::LoadVariable(const Symbol *symbol) {
 
     // *** CLOSURE ***
     if (ENUMBITMASK_ISTRUE(symbol->flags, SymbolFlags::UPVALUE)) {
-        ret = this->builder_.LoadFromClosureAtOffset(offset);
+        ret = this->builder_.LoadFromOffset(orbiter::OPCode::CLOLDR, 0, offset, 0);
 
         goto EXIT;
     }
@@ -600,7 +597,7 @@ Instruction *IRBuilder::visitCallPrepend(const parser::Call *node, Instruction *
 
         this->builder_.AddInstruction(call);
 
-        if (this->builder_.context->deferred)
+        if (this->builder_.context->deferred > 0)
             this->builder_.context->deferred_stack_count += p_count + 1;
         else
             this->builder_.context->stack_push_count -= call->arguments;
@@ -617,7 +614,7 @@ Instruction *IRBuilder::visitCallPrepend(const parser::Call *node, Instruction *
 
     this->builder_.AddInstruction(call);
 
-    if (this->builder_.context->deferred)
+    if (this->builder_.context->deferred > 0)
         this->builder_.context->deferred_stack_count += p_count;
     else
         this->builder_.context->stack_push_count -= call->arguments;

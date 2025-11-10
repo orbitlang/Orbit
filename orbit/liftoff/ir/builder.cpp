@@ -187,18 +187,46 @@ Instruction *Builder::CreateStoreVariable(const OPCode opcode, I16 offset, U8 fl
 }
 
 Instruction *Builder::CreateReturn(Instruction *s_reg, const U16 slots) {
-    if (this->context->deferred) {
-        const auto tmp_ret = (I16) (this->context->stack_slots - 1);
+    if (this->context->deferred > 0) {
+        if (s_reg->type() == ObjectType::INSTRUCTION
+            && (((PhysInstruction *) s_reg)->opcode == OPCode::LDIMM
+                || (((PhysInstruction *) s_reg)->opcode == OPCode::LDCST
+                    && (((UnaryImmInstr *) s_reg)->flags == (U8) LoadConstantMode::FALSE
+                        || ((UnaryImmInstr *) s_reg)->flags == (U8) LoadConstantMode::TRUE
+                        || ((UnaryImmInstr *) s_reg)->flags == (U8) LoadConstantMode::NIL)))) {
+            auto *execdefer = this->CreateObject<UnaryImmInstr>(OPCode::EXECDEFER, 0, 0);
 
-        this->StoreToStackOffset(s_reg, kBaseStackPointerReg, tmp_ret);
+            this->context->current_->AddInstructionBefore(s_reg, execdefer);
+
+            this->context->program_size += 4;
+            
+            return this->CreateInstruction<ReturnInstruction>(s_reg, slots);
+        }
+
+        const auto l_instr = this->FindAndCreateAppropriateLoad(s_reg);
+        if (l_instr == nullptr) {
+            if (this->context->deferred < 2) {
+                this->AllocStackSlots(1, AllocaFlags::ZERO_INIT);
+
+                this->context->deferred += 1;
+            }
+
+            const auto tmp_ret = (I16) (this->context->stack_slots - 1);
+
+            this->StoreToStackOffset(s_reg, kBaseStackPointerReg, tmp_ret);
+
+            this->CreateUnaryOp(OPCode::EXECDEFER);
+
+            s_reg = this->LoadFromStackOffset(kBaseStackPointerReg, tmp_ret, true);
+
+            return this->CreateInstruction<ReturnInstruction>(s_reg, slots);
+        }
 
         this->CreateUnaryOp(OPCode::EXECDEFER);
 
-        this->context->stack_push_count -= this->context->deferred_stack_count;
+        this->AddInstruction(l_instr);
 
-        s_reg = this->LoadFromStackOffset(kBaseStackPointerReg, tmp_ret, true);
-
-        return this->CreateInstruction<ReturnInstruction>(s_reg, slots);
+        return this->CreateInstruction<ReturnInstruction>(l_instr, slots);
     }
 
     return this->CreateInstruction<ReturnInstruction>(s_reg, slots);
@@ -218,6 +246,39 @@ Instruction *Builder::CreateUnaryOp(const OPCode opcode, Instruction *s_reg) {
 
 Instruction *Builder::CreateUnaryOp(const OPCode opcode, U16 imm, U8 flags) {
     return this->CreateInstruction<UnaryImmInstr>(opcode, flags, imm);
+}
+
+Instruction *Builder::FindAndCreateAppropriateLoad(Instruction *src) {
+    const OffsetInstruction *last = nullptr;
+
+    const auto *cursor = (OffsetInstruction *) src;
+    const Use *user = src->use_list;
+
+    do {
+        switch (cursor->opcode) {
+            case OPCode::CLOSTR:
+                last = this->CreateObject<OffsetInstruction>(OPCode::CLOLDR, cursor->r_base, cursor->offset);
+                break;
+            case OPCode::STGBL:
+                last = this->CreateObject<OffsetInstruction>(OPCode::LDGBL, cursor->r_base, cursor->offset);
+                break;
+            case OPCode::STGOFF:
+                last = this->CreateObject<OffsetInstruction>(OPCode::LDGOFF, cursor->r_base, cursor->offset);
+                break;
+            case OPCode::SKSTR:
+                last = this->CreateObject<OffsetInstruction>(OPCode::SKLDR, cursor->r_base, cursor->offset);
+                break;
+            default:
+                break;
+        }
+
+        if (user != nullptr) {
+            cursor = (OffsetInstruction *) user->user;
+            user = user->next;
+        }
+    } while (last == nullptr && user != nullptr);
+
+    return (Instruction *) last;
 }
 
 Instruction *Builder::LoadAtomConstant(const char *string) {
@@ -260,15 +321,6 @@ Instruction *Builder::LoadExecCodeObject(U16 offset) {
     return this->CreateInstruction<ExecSubInstr>(co);
 }
 
-Instruction *Builder::LoadFromClosureAtOffset(I16 offset) {
-    const auto *last = (LoadStoreClosureWithOffsetInstr *) this->GetLastInstructionMatch(OPCode::CLOSTR);
-
-    if (last != nullptr)
-        return (Instruction *) last->operands->value;
-
-    return this->CreateInstruction<LoadStoreClosureWithOffsetInstr>(OPCode::CLOLDR, offset, nullptr);
-}
-
 Instruction *Builder::LoadFromStackOffset(U8 r_base, I16 offset, bool force_load) {
     if (force_load)
         return this->CreateInstruction<OffsetInstruction>(OPCode::SKLDR, r_base, offset);
@@ -296,10 +348,13 @@ Instruction *Builder::LoadObjectProp(Instruction *src, U16 offset, bool as_key, 
     return this->CreateInstruction<LSObjectProp>(OPCode::LDOBJP, src, offset, flags);
 }
 
-Instruction *Builder::LoadFromOffset(const OPCode opcode, U8 r_base, const I16 offset, U8 flags) {
+Instruction *Builder::LoadFromOffset(const OPCode opcode, const U8 r_base, const I16 offset, const U8 flags) {
     const OffsetInstruction *last = nullptr;
 
     switch (opcode) {
+        case OPCode::CLOLDR:
+            last = (OffsetInstruction *) this->GetLastInstructionMatch(OPCode::CLOSTR);
+            break;
         case OPCode::LDGBL:
             last = (OffsetInstruction *) this->GetLastInstructionMatch(OPCode::STGBL);
             break;
@@ -381,7 +436,7 @@ Instruction *Builder::StoreObjectProp(Instruction *obj, Instruction *value, U16 
 }
 
 Instruction *Builder::StoreToClosureAtOffset(Instruction *src, I16 offset) {
-    return this->CreateInstruction<LoadStoreClosureWithOffsetInstr>(OPCode::CLOSTR, offset, src);
+    return this->CreateInstruction<OffsetInstruction>(OPCode::CLOSTR, offset, src);
 }
 
 Instruction *Builder::StoreToStackOffset(Instruction *src, U8 r_base, I16 offset) {
@@ -456,6 +511,8 @@ void Builder::LeaveContext() {
     while (changed)
         changed = this->context->ComputeLiveness();
     */
+
+    this->context->stack_push_count -= this->context->deferred_stack_count;
 
     assert(this->context->stack_push_count ==0);
 

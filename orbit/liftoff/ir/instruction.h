@@ -217,20 +217,6 @@ namespace liftoff::ir {
         U16 flags = 0;
     };
 
-    class LoadStoreClosureWithOffsetInstr : public PhysInstruction {
-        friend Builder;
-
-    public:
-        I16 offset;
-
-    protected:
-        explicit LoadStoreClosureWithOffsetInstr(const orbiter::OPCode opcode, const I16 offset,
-                                                 Instruction *src) noexcept : PhysInstruction(
-                                                                                  opcode, 1), offset(offset) {
-            this->SetOperand(0, src);
-        }
-    };
-
     class LoadImmValueInstr final : public PhysInstruction {
         friend Builder;
 
@@ -321,6 +307,11 @@ namespace liftoff::ir {
         OffsetInstruction(const orbiter::OPCode opcode, const U8 r_base, const I16 offset,
                           Instruction *src) noexcept : PhysInstruction(opcode, 1),
                                                        r_base(r_base), offset(offset) {
+            this->SetOperand(0, src);
+        }
+
+        OffsetInstruction(const orbiter::OPCode opcode, const I16 offset,
+                          Instruction *src) noexcept : PhysInstruction(opcode, 1), offset(offset) {
             this->SetOperand(0, src);
         }
     };
