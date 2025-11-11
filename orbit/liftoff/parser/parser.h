@@ -95,7 +95,8 @@ namespace liftoff::parser {
         "Invalid constructor: first statement in derived class constructor must be super.init(...)",
         "Invalid 'prot' usage: can only be used within class/trait definitions",
         "Invalid assignment: cannot assign non-assignable expression (e.g., defer, panic, spawn)",
-        "Invalid expression: non-value expression (e.g., defer, panic, spawn) cannot be used in value context (e.g., tuple, function argument, binary operation)"
+        "Invalid expression: non-value expression (e.g., defer, panic, spawn) cannot be used in value context (e.g., tuple, function argument, binary operation)",
+        "Missing closing parenthesis: expected ')' after exception types"
     };
 
     constexpr auto kInitMethodName = "init";

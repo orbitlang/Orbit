@@ -74,8 +74,9 @@ NODES = {
     },
     "CatchBlock": {
         "fields": {
+            "body": "ASTNode*",
             "catches": "std::vector<ASTHandle<ASTNode*>>",
-            "body": "ASTNode*"
+            "err": "ASTNode*"
         }
     },
     "Construct": {

@@ -3,7 +3,7 @@
     Licensed under the Apache License v2.0
 
     syntax: ISO-14977 EBNF
-    version: 2.2
+    version: 2.3
 *)
 
 (* Basic elements *)
@@ -202,8 +202,10 @@ sync_statement = "sync", expression, block;
 (* Yield statement *)
 yield_statement = "yield", expression;
 
+(* Try/Catch/Finally statement *)
 try_statement = "try", block, {catch_clause}, [finally_clause];
-catch_clause = "catch", atom, [{"|", atom}], block;
+catch_clause = "catch", [exception_types], [identifier], block;
+exception_types = atom | "(", atom, {"|", atom}, ")";
 finally_clause = "finally", block;
 
 (* Defer Statement *)

@@ -748,16 +748,36 @@ ASTHandle<ASTNode *> Parser::ParseTryCatchFinally() {
 
         this->Eat(true);
 
-        do {
-            if (!this->Match(TokenType::ATOM))
-                throw ParserException(33);
+        if (this->MatchEat(TokenType::LEFT_ROUND, true)) {
+            do {
+                if (!this->Match(TokenType::ATOM))
+                    throw ParserException(33);
 
+                cb->catches.emplace_back(this->ParseLiteral()).release();
+            } while (this->MatchEat(TokenType::PIPE, true));
+
+            if (!this->MatchEat(TokenType::RIGHT_ROUND, true))
+                throw ParserException(84);
+        } else if (this->Match(TokenType::ATOM))
             cb->catches.emplace_back(this->ParseLiteral()).release();
-        } while (this->MatchEat(TokenType::PIPE, true));
 
-        cb->body = this->ParseBlock(true).release();
+        this->EatNL();
+
+        if (this->Match(TokenType::IDENTIFIER)) {
+            if (!this->sym_t_->DeclareNestedScope(cb->loc.start.offset))
+                throw SymbolTableException();
+
+            cb->err = this->ParseIdentifier().release();
+
+            cb->body = this->ParseBlock(false).release();
+
+            this->sym_t_->LeaveNestedScope(TKCUR_END.offset);
+        } else
+            cb->body = this->ParseBlock(true).release();
 
         tryb->catches.emplace_back(cb.release());
+
+        this->IgnoreNewLineIF(TokenType::KW_CATCH);
     }
 
     if (this->MatchEat(TokenType::KW_FINALLY, true)) {
