@@ -123,7 +123,9 @@ void LinearScan::ResolveInterferences() {
 
                 for (int i = 0; i < instr->num_ops; ++i) {
                     auto *operand = (Instruction *) instr->operands[i].value;
-                    if (operand != nullptr && operand->instr_offset < last_intf_point) {
+                    if (operand != nullptr
+                        && operand->type() == ObjectType::INSTRUCTION
+                        && operand->instr_offset < last_intf_point) {
                         auto *store = this->builder_.GetStackPush(operand);
 
                         this->ir_->InsertInstructionAfter(operand, store);
