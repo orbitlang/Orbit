@@ -597,7 +597,7 @@ Instruction *IRBuilder::visitCallPrepend(const parser::Call *node, Instruction *
 
         this->builder_.AddInstruction(call);
 
-        if (this->builder_.context->deferred > 0)
+        if (node->node_type == parser::NodeType::DEFER)
             this->builder_.context->deferred_stack_count += p_count + 1;
         else
             this->builder_.context->stack_push_count -= call->arguments;
@@ -614,7 +614,7 @@ Instruction *IRBuilder::visitCallPrepend(const parser::Call *node, Instruction *
 
     this->builder_.AddInstruction(call);
 
-    if (this->builder_.context->deferred > 0)
+    if (node->node_type == parser::NodeType::DEFER)
         this->builder_.context->deferred_stack_count += p_count;
     else
         this->builder_.context->stack_push_count -= call->arguments;
@@ -1086,7 +1086,89 @@ Instruction *IRBuilder::visitSwitchBlock(parser::SwitchBlock *node) {
 }
 
 Instruction *IRBuilder::visitTryBlock(parser::TryBlock *node) {
-    // TODO: Implement TryBlock visitation
+    BasicBlock *catch_ctl = nullptr;
+    BasicBlock *finally_block = nullptr;
+
+    assert(!node->catches.empty() || node->finally != nullptr);
+
+    if (!node->catches.empty())
+        catch_ctl = this->builder_.CreateBasicBlock();
+
+    finally_block = this->builder_.CreateBasicBlock();
+
+    // SETUP_TRY
+
+    this->builder_.SetupTryCatch(catch_ctl, finally_block);
+
+    this->visit(node->try_block);
+
+    // Skip the jump if there are no catch blocks,
+    // since the finally block is right after the try block
+
+    // Catch JMP Table
+    if (!node->catches.empty()) {
+        this->builder_.CreateJump(finally_block);
+
+        this->builder_.AppendBasicBlock(catch_ctl);
+
+        std::vector<BasicBlock *> catch_blocks;
+
+        for (auto &entry: node->catches) {
+            const auto *catch_block = (parser::CatchBlock *) entry.get();
+
+            catch_blocks.push_back(this->builder_.CreateBasicBlock());
+
+            // This catches everything because it has no type specified
+            if (catch_block->catches.empty()) {
+                this->builder_.CreateJump(catch_blocks.back());
+
+                this->builder_.CreateAppendBasicBlock();
+            }
+
+            // These are compared and only catch errors of the correct type
+            for (auto &type: catch_block->catches) {
+                const auto errKey = this->visit(type.get());
+
+                this->builder_.CreateJumpIfETypeMatch(errKey, catch_blocks.back());
+
+                this->builder_.CreateAppendBasicBlock();
+            }
+        }
+
+        if (finally_block == nullptr) {
+            // FIXME: DEFER HERE!
+
+            this->builder_.CreateUnaryOp(orbiter::OPCode::RETHROW);
+        } else
+            this->builder_.CreateJump(finally_block);
+
+        // Process catch body
+        auto catch_index = 0;
+        for (auto &entry: node->catches) {
+            const auto *catch_block = (parser::CatchBlock *) entry.get();
+
+            this->builder_.AppendBasicBlock(catch_blocks[catch_index++]);
+
+            this->visit(catch_block->body);
+
+            this->builder_.CreateJump(finally_block);
+        }
+    }
+
+    if (node->finally != nullptr) {
+        this->builder_.AppendBasicBlock(finally_block);
+
+        this->visit(node->finally);
+
+        // FIXME: PUSH END OF TRY BLOCK
+
+        this->builder_.CreateAppendBasicBlock();
+    } else {
+        this->builder_.AppendBasicBlock(finally_block);
+
+        this->builder_.CreateUnaryOp(orbiter::OPCode::TRY_END);
+    }
+
     return nullptr;
 }
 

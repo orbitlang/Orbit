@@ -157,6 +157,8 @@ namespace liftoff::ir {
 
         Instruction *CreateJump(BasicBlock *destination);
 
+        Instruction *CreateJumpIfETypeMatch(Instruction *src, BasicBlock *catch_block);
+
         Instruction *CreateManip(orbiter::OPCode opcode, Instruction *target, Instruction *src, Instruction *src1);
 
         Instruction *CreateManip(orbiter::OPCode opcode, Instruction *target, Instruction *src);
@@ -254,6 +256,8 @@ namespace liftoff::ir {
 
             return this->CreateObject<OffsetInstruction>(orbiter::OPCode::SKSTR, r_base, offset, src);
         }
+
+        Instruction *SetupTryCatch(BasicBlock *catch_block, BasicBlock *finally_block);
 
         Instruction *StackDiscard(U16 slots);
 

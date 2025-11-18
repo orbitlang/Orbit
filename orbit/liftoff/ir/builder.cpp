@@ -166,6 +166,14 @@ Instruction *Builder::CreateJump(BasicBlock *destination) {
     return jmp;
 }
 
+Instruction *Builder::CreateJumpIfETypeMatch(Instruction *src, BasicBlock *catch_block) {
+    auto *jmp = this->CreateInstruction<BranchInstruction>(OPCode::JERR, src, catch_block);
+
+    this->context->current_->alt = catch_block;
+
+    return jmp;
+}
+
 Instruction *Builder::CreateManip(const OPCode opcode, Instruction *target, Instruction *src, Instruction *src1) {
     return this->CreateInstruction<ManipInstruction>(opcode, target, src, src1);
 }
@@ -199,7 +207,7 @@ Instruction *Builder::CreateReturn(Instruction *s_reg, const U16 slots) {
             this->context->current_->AddInstructionBefore(s_reg, execdefer);
 
             this->context->program_size += 4;
-            
+
             return this->CreateInstruction<ReturnInstruction>(s_reg, slots);
         }
 
@@ -381,6 +389,15 @@ Instruction *Builder::LoadFromOffset(const OPCode opcode, const U8 r_base, const
     return instr;
 }
 
+Instruction *Builder::SetupTryCatch(BasicBlock *catch_block, BasicBlock *finally_block) {
+    this->CreateUnaryOp(OPCode::TRY_BEGIN);
+
+    this->CreateInstruction<BranchInstruction>(OPCode::SETUP_CATCH, nullptr, catch_block);
+    this->CreateInstruction<BranchInstruction>(OPCode::SETUP_FINALLY, nullptr, finally_block);
+
+    return nullptr;
+}
+
 Instruction *Builder::StackDiscard(U16 slots) {
     if (slots == 0)
         return nullptr;
@@ -490,8 +507,6 @@ void Builder::AppendBasicBlock(BasicBlock *bb) const noexcept {
 
     this->context->current_->next = bb;
     bb->prev = this->context->current_;
-
-    bb->offset = this->context->current_->offset + this->context->current_->size;
 
     this->context->current_ = bb;
 }

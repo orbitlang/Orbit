@@ -147,14 +147,13 @@ namespace liftoff::ir {
             this->SetOperand(0, value);
             this->SetOperand(1, (Object *) jmp);
         }
-
     public:
         void SetBasicBlock(BasicBlock *jmp) const {
             this->SetOperand(1, (Object *) jmp);
         }
     };
 
-    class CallInstr : public PhysInstruction {
+    class CallInstr final : public PhysInstruction {
         friend Builder;
 
     public:

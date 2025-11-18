@@ -204,6 +204,7 @@ namespace orbiter {
 
         // Jump Instructions
         JEN, // Jump if nil:                        OPCODE | 4 RESERVED | 4 SRC | 16 OFFSET
+        JERR, // Jump if error match                OPCODE | 4 RESERVED | 4 SRC | 16 OFFSET
         JF, // Jump if false:                       OPCODE | 4 RESERVED | 4 SRC | 16 OFFSET
         JT, // Jump if true:                        OPCODE | 4 RESERVED | 4 SRC | 16 OFFSET
         JMP, // Unconditional jump:                 OPCODE | 24 OFFSET
@@ -212,6 +213,13 @@ namespace orbiter {
         // Format: OPCODE | 4 RESERVED | 4 SRC | 16 RESERVED
         SYNC_ENTER,
         SYNC_EXIT,
+
+        // Try/Catch/Finally operations
+        TRY_BEGIN,
+        TRY_END,
+        SETUP_CATCH,
+        SETUP_FINALLY,
+        RETHROW
     };
 }
 

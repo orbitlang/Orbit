@@ -323,6 +323,7 @@ unsigned char *Codegen::EmitOpcodes(BasicBlock *block, unsigned char *m_code) {
                                                              ((LSObjectProp*)instr)->offset);
                 break;
             case orbiter::OPCode::JEN:
+            case orbiter::OPCode::JERR:
             case orbiter::OPCode::JF:
             case orbiter::OPCode::JT: {
                 const auto *jmp = (const BasicBlock *) (const Instruction *) instr->operands[1].value;
@@ -334,7 +335,9 @@ unsigned char *Codegen::EmitOpcodes(BasicBlock *block, unsigned char *m_code) {
                                                            jmp->offset);
                 break;
             }
-            case orbiter::OPCode::JMP: {
+            case orbiter::OPCode::JMP:
+            case orbiter::OPCode::SETUP_CATCH:
+            case orbiter::OPCode::SETUP_FINALLY: {
                 const auto *jmp = (const BasicBlock *) (const Instruction *) instr->operands[1].value;
 
                 assert(jmp->offset <= 0xFFFFFF);
@@ -348,6 +351,11 @@ unsigned char *Codegen::EmitOpcodes(BasicBlock *block, unsigned char *m_code) {
                 *(orbiter::MachineWord *) m_code = EMIT_SO(instr->opcode,
                                                            ((Instruction*)instr->operands[0].value)->assigned_reg,
                                                            0);
+                break;
+            case orbiter::OPCode::TRY_BEGIN:
+            case orbiter::OPCode::TRY_END:
+            case orbiter::OPCode::RETHROW:
+                *(orbiter::MachineWord *) m_code = EMIT_OP(instr->opcode);
                 break;
         }
 
@@ -383,6 +391,14 @@ void Codegen::ExportSymbols(orbiter::datatype::HCode &code) {
 
 orbiter::datatype::HCode Codegen::Generate() noexcept {
     const auto *ir = this->ir_;
+
+    // Calculate blocks offset
+    U32 offset = 0;
+    for (auto *b_cursor = ir->entry_; b_cursor; b_cursor = b_cursor->next) {
+        b_cursor->offset = offset;
+
+        offset += b_cursor->size;
+    }
 
     auto *m_code = this->allocator_.alloc<unsigned char>(ir->program_size);
     if (m_code == nullptr)
