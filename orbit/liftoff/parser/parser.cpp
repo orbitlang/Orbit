@@ -767,8 +767,21 @@ ASTHandle<ASTNode *> Parser::ParseTryCatchFinally() {
             if (!this->sym_t_->DeclareNestedScope(cb->loc.start.offset))
                 throw SymbolTableException();
 
-            cb->err = this->ParseIdentifier().release();
+            auto err_name = ORStringNew(this->isolate_, this->tkcur_.buffer, this->tkcur_.length);
+            if (!err_name)
+                throw DatatypeException();
 
+            auto *sym = this->sym_t_->Declare(err_name.get(), SymbolType::VARIABLE, TKCUR_START.offset);
+            if (sym == nullptr)
+                throw SymbolTableException();
+
+            auto identifier = MakeIdentifier(this->isolate_, TKCUR_LOC);
+            identifier->symbol = sym;
+            identifier->value = err_name.release();
+
+            this->Eat(false);
+
+            cb->err = identifier.release();
             cb->body = this->ParseBlock(false).release();
 
             this->sym_t_->LeaveNestedScope(TKCUR_END.offset);
@@ -814,17 +827,15 @@ ASTHandle<ASTNode *> Parser::ParseVarDecl(const Position &start, AccessModifier 
         if (access != AccessModifier::PRIVATE)
             this->exports.push_back(id_str);
 
-        auto sym = this->sym_t_->Declare(id_str.get(), constant ? SymbolType::CONSTANT : SymbolType::VARIABLE,
+        const auto sym = this->sym_t_->Declare(id_str.get(), constant ? SymbolType::CONSTANT : SymbolType::VARIABLE,
                                          TKCUR_LOC.start.offset);
         if (sym == nullptr)
             throw SymbolTableException();
 
         sym->access = access;
-
         sym->tdz = true;
 
         auto identifier = MakeIdentifier(this->isolate_, TKCUR_LOC);
-
         identifier->symbol = sym;
         identifier->value = id_str.release();
 
