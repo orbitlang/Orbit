@@ -20,6 +20,8 @@ namespace orbiter {
 
         datatype::OObject *error;
 
+        PtrSize frame;
+
         [[nodiscard]] bool ISAborted() const {
             return this->prev != nullptr;
         }
@@ -102,6 +104,18 @@ namespace orbiter {
          *         could not be created or initialized successfully.
          */
         static Fiber *New(Isolate *isolate, MSize stack_size, MSize stack_limit) noexcept;
+
+        /**
+         * @brief Retrieves and discards the current panic state of the Fiber.
+         *
+         * This method checks if there is an active panic in the current Fiber. If present, it retrieves
+         * the associated error object, discards the panic, and returns the error object. If there is no
+         * active panic, it returns an empty handle.
+         *
+         * @return A handle to the error object associated with the current panic if one exists,
+         * otherwise an empty handle.
+         */
+        datatype::HOObject GetDiscardPanic() noexcept;
 
         /**
          * @brief Deletes the provided Fiber instance, releasing associated resources.

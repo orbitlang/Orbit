@@ -84,6 +84,17 @@ void Fiber::SetCurrent(Fiber *fiber) noexcept {
     thl_fiber = fiber;
 }
 
+datatype::HOObject Fiber::GetDiscardPanic() noexcept {
+    if (*this->panic.r_current_ == nullptr)
+        return {};
+
+    auto err = datatype::HOObject((*this->panic.r_current_)->error);
+
+    this->DiscardPanic();
+
+    return err;
+}
+
 void Fiber::Delete(Fiber *fiber) noexcept {
     if (fiber == nullptr)
         return;
@@ -145,6 +156,7 @@ void Fiber::Panic(datatype::OObject *error) noexcept {
 
     p->prev = *this->panic.r_current_;
     p->error = O_FAST_INCREF(error);
+    p->frame = this->vm.regs.BP.reg;
 
     *this->panic.r_current_ = p;
 }
