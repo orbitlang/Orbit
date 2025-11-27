@@ -40,7 +40,7 @@ namespace liftoff::ir {
         U32 start;
         U32 end;
 
-        LiveInterval(Instruction *instr, U32 start, U32 end) noexcept: instr(instr), start(start), end(end) {
+        LiveInterval(Instruction *instr, U32 start, U32 end) noexcept : instr(instr), start(start), end(end) {
         }
     };
 
@@ -64,7 +64,7 @@ namespace liftoff::ir {
         U16 slot;
 
         ExportedName(orbiter::datatype::ORString *name, orbiter::VariableFlags flags,
-                     U16 slot) noexcept: name(O_INCREF(name)), flags(flags), slot(slot) {
+                     U16 slot) noexcept : name(O_INCREF(name)), flags(flags), slot(slot) {
         }
     };
 
@@ -151,7 +151,7 @@ namespace liftoff::ir {
         friend class Builder;
 
         explicit IRContext(orbiter::Isolate *isolate,
-                           const IRContextType type) noexcept: isolate_(isolate), type_(type) {
+                           const IRContextType type) noexcept : isolate_(isolate), type_(type) {
         }
 
         ~IRContext() noexcept;
@@ -248,6 +248,19 @@ namespace liftoff::ir {
         IRContextType type_;
 
         /**
+         * @brief Checks if the last active context matches the specified block type.
+         *
+         * This method verifies whether the current chain exists and whether
+         * its type matches the specified block type.
+         *
+         * @param type The block type to check against the last active context.
+         * @return True if the last active context exists and matches the specified type; false otherwise.
+         */
+        [[nodiscard]] bool CheckLastActiveContext(const JBlockType type) const {
+            return this->j_chain != nullptr && this->j_chain->type == type;
+        }
+
+        /**
          * @brief Computes the liveness information for the blocks in the intermediate representation (IR)
          * context.
          *
@@ -309,6 +322,19 @@ namespace liftoff::ir {
 
             return nullptr;
         }
+
+        /**
+         * @brief Retrieves the active context of a specific JBlockType
+         *
+         * Retrieves the active context of a specific type within the chain of JBlock objects,
+         * if it exists. The method iterates through the linked list of JBlock objects,
+         * returning the first block that matches the specified type.
+         *
+         * @param type The JBlockType to filter during the search for the active context.
+         * @return A pointer to the JBlock object of the specified type, or nullptr if no
+         *         matching block is found.
+         */
+        [[nodiscard]] const JBlock *GetActiveContextIf(JBlockType type) const;
 
         /**
          * @brief Adds a new entry into the collection of known exported names with the associated properties.
@@ -393,6 +419,16 @@ namespace liftoff::ir {
         U16 PushStaticValue(orbiter::datatype::OObject *value);
 
         /**
+         * @brief Computes the live intervals for all instructions within the intermediate representation (IR).
+         *
+         * This process calculates the lifetime of each instruction by iterating through the basic blocks
+         * and their individual instructions, identifying the range between their starting point and their
+         * last usage. The results are stored in the collection of live intervals maintained within the
+         * IRContext instance.
+         */
+        std::vector<LiveInterval> &ComputeLiveIntervals();
+
+        /**
          * @brief Adds an active variable to the IR context.
          *
          * Updates the internal state to track the provided symbol as active, associating it
@@ -402,16 +438,6 @@ namespace liftoff::ir {
          * @param instr A pointer to the instruction associated with the active symbol.
          */
         void AddActiveVar(const Symbol *symbol, Instruction *instr);
-
-        /**
-         * @brief Computes the live intervals for all instructions within the intermediate representation (IR).
-         *
-         * This process calculates the lifetime of each instruction by iterating through the basic blocks
-         * and their individual instructions, identifying the range between their starting point and their
-         * last usage. The results are stored in the collection of live intervals maintained within the
-         * IRContext instance.
-         */
-        std::vector<LiveInterval> &ComputeLiveIntervals();
 
         /**
          * @brief Inserts an instruction immediately after a given instruction in the instruction list.

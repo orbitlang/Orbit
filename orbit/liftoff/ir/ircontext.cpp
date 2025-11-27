@@ -90,6 +90,18 @@ Instruction *IRContext::RFindFirstInstruction(const orbiter::OPCode opcode) cons
     return nullptr;
 }
 
+const JBlock *IRContext::GetActiveContextIf(JBlockType type) const {
+    const auto *cursor = this->j_chain;
+    while (cursor != nullptr) {
+        if (cursor->type == type)
+            return cursor;
+
+        cursor = cursor->prev;
+    }
+
+    return nullptr;
+}
+
 U16 IRContext::ExportSymbol(const Symbol *symbol, orbiter::VariableFlags flags) {
     const auto length = this->exported_names.size();
 
@@ -167,6 +179,30 @@ U16 IRContext::PushSubContext(IRContext *context) {
     return this->sub.count++;
 }
 
+std::vector<LiveInterval> &IRContext::ComputeLiveIntervals() {
+    for (const auto *block = this->entry_; block != nullptr; block = block->next) {
+        for (auto *instr = block->instr.head; instr != nullptr; instr = instr->next) {
+            if (instr->use_list != nullptr) {
+                U32 end = 0;
+
+                for (const auto *use = instr->use_list; use != nullptr; use = use->next) {
+                    if (use->user->type() != ObjectType::INSTRUCTION
+                        && use->user->type() != ObjectType::VIRT_INSTRUCTION)
+                        continue;
+
+                    const auto *i_user = (Instruction *) use->user;
+                    if (i_user->instr_offset > end)
+                        end = i_user->instr_offset;
+                }
+
+                this->live_intervals_.emplace_back(instr, instr->instr_offset, end);
+            }
+        }
+    }
+
+    return this->live_intervals_;
+}
+
 void IRContext::AddActiveVar(const Symbol *symbol, Instruction *instr) {
     if (ENUMBITMASK_ISTRUE(symbol->flags, SymbolFlags::UPVALUE))
         return;
@@ -191,30 +227,6 @@ void IRContext::RemoveFromObjList(Object *obj) noexcept {
     }
 
     prev->memory_.next = next;
-}
-
-std::vector<LiveInterval> &IRContext::ComputeLiveIntervals() {
-    for (const auto *block = this->entry_; block != nullptr; block = block->next) {
-        for (auto *instr = block->instr.head; instr != nullptr; instr = instr->next) {
-            if (instr->use_list != nullptr) {
-                U32 end = 0;
-
-                for (const auto *use = instr->use_list; use != nullptr; use = use->next) {
-                    if (use->user->type() != ObjectType::INSTRUCTION
-                        && use->user->type() != ObjectType::VIRT_INSTRUCTION)
-                        continue;
-
-                    const auto *i_user = (Instruction *) use->user;
-                    if (i_user->instr_offset > end)
-                        end = i_user->instr_offset;
-                }
-
-                this->live_intervals_.emplace_back(instr, instr->instr_offset, end);
-            }
-        }
-    }
-
-    return this->live_intervals_;
 }
 
 void IRContext::InsertInstructionAfter(Instruction *instruction, Instruction *after) noexcept {
