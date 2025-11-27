@@ -200,6 +200,27 @@ namespace liftoff::ir {
         }
     };
 
+    class PendingActionInstruction final : public PhysInstruction {
+        friend Builder;
+
+    protected:
+        explicit PendingActionInstruction(BasicBlock *jmp, const orbiter::PendingAction action) noexcept : PhysInstruction(
+                orbiter::OPCode::TRY_SPA, 2), action(action) {
+            assert(action != orbiter::PendingAction::RETURN);
+
+            this->SetOperand(1, (Object *) jmp);
+        }
+
+        explicit PendingActionInstruction(Instruction *value, const U16 pops) noexcept : PhysInstruction(
+                orbiter::OPCode::TRY_SPA, 2), action(orbiter::PendingAction::RETURN), pops(pops) {
+            this->SetOperand(0, value);
+        }
+
+    public:
+        orbiter::PendingAction action;
+        U16 pops = 0;
+    };
+
     // Load/Store
     class LoadFunc final : public PhysInstruction {
         friend Builder;

@@ -100,6 +100,13 @@ using namespace liftoff::ir;
 #define EMIT_DSSS(opcode, dst, src1, src2, src3) \
     (((U32)(opcode) << 24) | ((dst) << 20) | ((src1) << 16) | ((src2) << 12) | ((src3) << 8))
 
+// ============================================================================
+// Emit Special Macros
+// ============================================================================
+
+#define EMIT_TSPA(opcode, pa, src, offset) \
+    (((U32)(opcode) << 24) | ((pa) << 22) | ((src) << 18) | (offset))
+
 unsigned char *Codegen::EmitOpcodes(BasicBlock *block, unsigned char *m_code) {
     for (auto *cursor = block->instr.head; cursor != nullptr; cursor = cursor->next) {
         if (cursor->type() == ir::ObjectType::VIRT_INSTRUCTION)
@@ -335,9 +342,7 @@ unsigned char *Codegen::EmitOpcodes(BasicBlock *block, unsigned char *m_code) {
                                                            jmp->offset);
                 break;
             }
-            case orbiter::OPCode::JMP:
-            case orbiter::OPCode::SETUP_CATCH:
-            case orbiter::OPCode::SETUP_FINALLY: {
+            case orbiter::OPCode::JMP:{
                 const auto *jmp = (const BasicBlock *) (const Instruction *) instr->operands[1].value;
 
                 assert(jmp->offset <= 0xFFFFFF);
@@ -353,10 +358,34 @@ unsigned char *Codegen::EmitOpcodes(BasicBlock *block, unsigned char *m_code) {
                                                            0);
                 break;
             case orbiter::OPCode::TRY_BEGIN:
+                *(orbiter::MachineWord *) m_code = EMIT_JMP(instr->opcode,
+                                                            ((BasicBlock *)instr->operands[1].value)->offset);
+                break;
             case orbiter::OPCode::TRY_END:
-            case orbiter::OPCode::RETHROW:
+            case orbiter::OPCode::LDEXC:
                 *(orbiter::MachineWord *) m_code = EMIT_OP(instr->opcode);
                 break;
+            case orbiter::OPCode::TRY_SPA: {
+                const auto action = ((PendingActionInstruction *) instr)->action;
+                const auto *src = (const Instruction *) instr->operands[0].value;
+                const auto *jmp = (const BasicBlock *) (const Instruction *) instr->operands[1].value;
+
+                if (action == orbiter::PendingAction::RETURN) {
+                    *(orbiter::MachineWord *) m_code = EMIT_TSPA(instr->opcode,
+                                                                 (U8)action,
+                                                                 src != nullptr ? src->assigned_reg : 0,
+                                                                 ((PendingActionInstruction *) instr)->pops);
+
+                    break;
+                }
+
+                *(orbiter::MachineWord *) m_code = EMIT_TSPA(instr->opcode,
+                                                             (U8)action,
+                                                             src != nullptr ? src->assigned_reg : 0,
+                                                             jmp != nullptr ? jmp->offset : 0);
+
+                break;
+            }
         }
 
         m_code += 4;

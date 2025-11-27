@@ -84,6 +84,13 @@ namespace orbiter {
         NOT_IN = 0x1
     };
 
+    enum class PendingAction : U8 {
+        NONE,
+        BREAK,
+        CONTINUE,
+        RETURN
+    };
+
     enum class PushIfFlags : U8 {
         EQ = 0x0,
         NEQ = 0x1,
@@ -215,10 +222,10 @@ namespace orbiter {
         SYNC_EXIT,
 
         // Try/Catch/Finally operations
-        TRY_BEGIN,
+        TRY_BEGIN, // Begin try block:              OPCODE | 24 OFFSET
         TRY_END,
-        SETUP_CATCH,
-        SETUP_FINALLY,
+        TRY_SPA, // Jump if false:                  OPCODE | 2 PENDING OP | 4 SRC | 18 JMP OFFSET
+        LDEXC,
         RETHROW
     };
 }

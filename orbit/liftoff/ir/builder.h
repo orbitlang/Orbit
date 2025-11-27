@@ -165,6 +165,10 @@ namespace liftoff::ir {
 
         Instruction *CreateManipType(orbiter::OPCode opcode, Instruction *target, Instruction *src, U16 offset);
 
+        Instruction *CreatePendingReturn(Instruction *src, const U16 pops) {
+            return this->CreateInstruction<PendingActionInstruction>(src, pops);
+        }
+
         Instruction *CreateStoreVariable(orbiter::OPCode opcode, I16 offset, U8 flags, Instruction *value);
 
         Instruction *CreateReturn(Instruction *s_reg, U16 slots);

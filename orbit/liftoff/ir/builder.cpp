@@ -195,6 +195,15 @@ Instruction *Builder::CreateStoreVariable(const OPCode opcode, I16 offset, U8 fl
 }
 
 Instruction *Builder::CreateReturn(Instruction *s_reg, const U16 slots) {
+    auto *tcf = this->context->GetActiveContextIf(JBlockType::TCF);
+    if (tcf != nullptr) {
+        auto *ret = this->CreatePendingReturn(s_reg, slots);
+
+        this->CreateJump(tcf->end);
+
+        return ret;
+    }
+
     if (this->context->deferred > 0) {
         if (s_reg->type() == ObjectType::INSTRUCTION
             && (((PhysInstruction *) s_reg)->opcode == OPCode::LDIMM
@@ -390,12 +399,10 @@ Instruction *Builder::LoadFromOffset(const OPCode opcode, const U8 r_base, const
 }
 
 Instruction *Builder::SetupTryCatch(BasicBlock *catch_block, BasicBlock *finally_block) {
-    this->CreateUnaryOp(OPCode::TRY_BEGIN);
-
-    this->CreateInstruction<BranchInstruction>(OPCode::SETUP_CATCH, nullptr, catch_block);
-    this->CreateInstruction<BranchInstruction>(OPCode::SETUP_FINALLY, nullptr, finally_block);
-
-    return nullptr;
+    return this->CreateInstruction<BranchInstruction>(OPCode::TRY_BEGIN, nullptr,
+                                               catch_block != nullptr
+                                                   ? catch_block
+                                                   : finally_block);
 }
 
 Instruction *Builder::StackDiscard(U16 slots) {

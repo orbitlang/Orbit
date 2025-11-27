@@ -16,6 +16,7 @@ namespace liftoff::ir {
         FOR_IN,
         LABEL,
         LOOP,
+        TCF,
         SYNC
     };
 
@@ -37,6 +38,8 @@ namespace liftoff::ir {
         JBlock(Builder *builder, JBlockType type, orbiter::datatype::ORString *label);
 
         JBlock(Builder *builder, Instruction *value);
+
+        JBlock(Builder *builder, JBlockType type);
 
         ~JBlock();
 
