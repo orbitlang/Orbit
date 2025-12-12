@@ -32,6 +32,7 @@ namespace liftoff {
     };
 
     enum class SymbolType {
+        ECONST,
         CLASS,
         CONSTANT,
         FUNC,

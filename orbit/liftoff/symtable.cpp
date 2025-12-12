@@ -9,7 +9,7 @@
 using namespace orbiter::datatype;
 using namespace liftoff;
 
-bool SymbolTable::DeclareNestedScope(MSize offset) noexcept {
+bool SymbolTable::DeclareNestedScope(const MSize offset) noexcept {
     orbiter::memory::IsolateAllocator allocator(this->isolate);
 
     auto *active = this->scope->active;
@@ -78,7 +78,7 @@ bool SymbolTable::EnterScope(const char *name) noexcept {
     return this->EnterScope(o_name.get());
 }
 
-bool SymbolTable::EnterNestedScope(MSize offset) const noexcept {
+bool SymbolTable::EnterNestedScope(const MSize offset) const noexcept {
     const auto active = this->scope->active;
     SubScope *target = nullptr;
 
@@ -119,7 +119,7 @@ const char *SymbolTable::GetStatusMessage() const {
     return messages[(int) this->status];
 }
 
-Scope *SymbolTable::ScopeNew(MSize line_start) const noexcept {
+Scope *SymbolTable::ScopeNew(const MSize line_start) const noexcept {
     orbiter::memory::IsolateAllocator allocator(this->isolate);
 
     auto *scope = allocator.alloc<Scope>(sizeof(Scope));
@@ -140,7 +140,7 @@ Scope *SymbolTable::ScopeNew(MSize line_start) const noexcept {
     return scope;
 }
 
-Symbol *SymbolTable::SymbolNew(ORString *name, SymbolType type, MSize offset) noexcept {
+Symbol *SymbolTable::SymbolNew(ORString *name, const SymbolType type, const MSize offset) noexcept {
     orbiter::memory::IsolateAllocator allocator(isolate);
 
     auto *symbol = allocator.calloc<Symbol>(sizeof(Symbol));
@@ -162,7 +162,7 @@ Symbol *SymbolTable::SymbolNew(ORString *name, SymbolType type, MSize offset) no
 
     symbol->tdz = false;
 
-    if (type != SymbolType::UNKNOWN) {
+    if (type != SymbolType::UNKNOWN && type != SymbolType::ECONST) {
         if (type == SymbolType::PARAMETER)
             symbol->offset = this->scope->parameter_count++;
         else if (type == SymbolType::CONSTANT || type == SymbolType::CLASS || type == SymbolType::TRAIT)
@@ -175,7 +175,7 @@ Symbol *SymbolTable::SymbolNew(ORString *name, SymbolType type, MSize offset) no
 }
 
 
-Symbol *SymbolTable::Declare(ORString *name, SymbolType type, MSize offset) noexcept {
+Symbol *SymbolTable::Declare(ORString *name, const SymbolType type, const MSize offset) noexcept {
     auto *table = this->scope->active;
 
     STHEntry *entry;
@@ -229,7 +229,7 @@ Symbol *SymbolTable::Declare(ORString *name, SymbolType type, MSize offset) noex
     return entry->value;
 }
 
-Symbol *SymbolTable::Declare(const char *name, SymbolType type, MSize offset) noexcept {
+Symbol *SymbolTable::Declare(const char *name, const SymbolType type, const MSize offset) noexcept {
     auto o_name = ORStringNew(this->isolate, name);
     if (!o_name) {
         this->status = SymbolTableError::MEMORY_ERROR;
@@ -239,7 +239,7 @@ Symbol *SymbolTable::Declare(const char *name, SymbolType type, MSize offset) no
     return this->Declare(o_name.get(), type, offset);
 }
 
-Symbol *SymbolTable::DeclareSymbolScope(ORString *name, SymbolType type, MSize offset, MSize line_start) noexcept {
+Symbol *SymbolTable::DeclareSymbolScope(ORString *name, const SymbolType type, const MSize offset, const MSize line_start) noexcept {
     auto *table = this->scope->active;
 
     STHEntry *entry;
@@ -287,7 +287,8 @@ Symbol *SymbolTable::DeclareSymbolScope(ORString *name, SymbolType type, MSize o
     return sym;
 }
 
-Symbol *SymbolTable::DeclareSymbolScope(const char *name, SymbolType type, MSize offset, MSize line_start) noexcept {
+Symbol *SymbolTable::DeclareSymbolScope(const char *name, const SymbolType type, const MSize offset,
+                                        const MSize line_start) noexcept {
     const auto o_name = ORStringNew(this->isolate, name);
     if (!o_name) {
         this->status = SymbolTableError::MEMORY_ERROR;
@@ -297,7 +298,7 @@ Symbol *SymbolTable::DeclareSymbolScope(const char *name, SymbolType type, MSize
     return this->DeclareSymbolScope(o_name.get(), type, offset, line_start);
 }
 
-Symbol *SymbolTable::Lookup(ORString *name, MSize offset, bool class_prop) noexcept {
+Symbol *SymbolTable::Lookup(ORString *name, const MSize offset, const bool class_prop) noexcept {
     STHEntry *entry;
 
     const auto *scope = this->scope;
@@ -341,7 +342,7 @@ Symbol *SymbolTable::Lookup(ORString *name, MSize offset, bool class_prop) noexc
     return nullptr;
 }
 
-Symbol *SymbolTable::Lookup(const char *name, MSize offset) noexcept {
+Symbol *SymbolTable::Lookup(const char *name, const MSize offset) noexcept {
     const auto o_name = ORStringNew(this->isolate, name);
     if (!o_name) {
         this->status = SymbolTableError::MEMORY_ERROR;
@@ -351,7 +352,7 @@ Symbol *SymbolTable::Lookup(const char *name, MSize offset) noexcept {
     return this->Lookup(o_name.get(), offset);
 }
 
-Symbol *SymbolTable::LookupInsert(ORString *name, MSize offset) noexcept {
+Symbol *SymbolTable::LookupInsert(ORString *name, const MSize offset) noexcept {
     auto *sym = this->Lookup(name, offset);
     if (sym != nullptr && sym->type != SymbolType::UNKNOWN) {
         if ((sym->type != SymbolType::FUNC && sym->type != SymbolType::VARIABLE && sym->type != SymbolType::PARAMETER)
@@ -385,7 +386,7 @@ Symbol *SymbolTable::LookupInsert(ORString *name, MSize offset) noexcept {
     return this->Declare(name, SymbolType::UNKNOWN, offset);
 }
 
-Symbol *SymbolTable::LookupInsert(const char *name, MSize offset) noexcept {
+Symbol *SymbolTable::LookupInsert(const char *name, const MSize offset) noexcept {
     const auto o_name = ORStringNew(this->isolate, name);
     if (!o_name) {
         this->status = SymbolTableError::MEMORY_ERROR;
@@ -435,7 +436,8 @@ void SymbolTable::ComputeLocalVarOffset(const SubScope *s_scope) const noexcept 
                      || value->type == SymbolType::METHOD))
                     value->offset = this->scope->local_variables++;
 
-                if (value->type != SymbolType::LABEL
+                if (value->type != SymbolType::ECONST
+                    && value->type != SymbolType::LABEL
                     && value->type != SymbolType::MODULE
                     && value->type != SymbolType::PARAMETER
                     && value->type != SymbolType::UNKNOWN) {
@@ -463,13 +465,13 @@ void SymbolTable::Delete(SymbolTable *table) noexcept {
     allocator.free(table);
 }
 
-void SymbolTable::LeaveNestedScope(MSize offset) const noexcept {
+void SymbolTable::LeaveNestedScope(const MSize offset) const noexcept {
     this->scope->active->offset_end = offset;
 
     this->scope->active = this->scope->active->parent;
 }
 
-void SymbolTable::LeaveScope(MSize offset, MSize line_end) noexcept {
+void SymbolTable::LeaveScope(const MSize offset, const MSize line_end) noexcept {
     this->status = SymbolTableError::OK;
 
     auto *c_scope = this->scope;
@@ -529,7 +531,7 @@ void SymbolTable::SymbolDel(Symbol *symbol) const noexcept {
     }
 }
 
-void SymbolTable::SubScopeDel(SubScope *sub_scope, bool r_memory) const noexcept {
+void SymbolTable::SubScopeDel(SubScope *sub_scope, const bool r_memory) const noexcept {
     sub_scope->symbols.Finalize([this](const STHEntry *entry) {
         O_FAST_DECREF(entry->key);
 

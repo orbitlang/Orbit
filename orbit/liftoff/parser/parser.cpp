@@ -771,7 +771,7 @@ ASTHandle<ASTNode *> Parser::ParseTryCatchFinally() {
             if (!err_name)
                 throw DatatypeException();
 
-            auto *sym = this->sym_t_->Declare(err_name.get(), SymbolType::VARIABLE, TKCUR_START.offset);
+            auto *sym = this->sym_t_->Declare(err_name.get(), SymbolType::ECONST, TKCUR_START.offset);
             if (sym == nullptr)
                 throw SymbolTableException();
 
@@ -1981,7 +1981,7 @@ ASTHandle<ASTNode *> Parser::ParseWalrus(ASTHandle<ASTNode *> &left) {
     return decl;
 }
 
-ASTHandle<Function *> Parser::ParseFunction(const Position &start, bool inl, AccessModifier access) {
+ASTHandle<Function *> Parser::ParseFunction(const Position &start, const bool inl, const AccessModifier access) {
     Context isolate(this, ContextType::FUNC);
 
     const auto loc = TKCUR_LOC;
