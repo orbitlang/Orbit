@@ -89,6 +89,68 @@ bool Call(Fiber *fiber, Function *func, const unsigned short total_args) {
     return true;
 }
 
+bool UnwindStack(Fiber *fiber) {
+    auto *regs = &fiber->vm.regs;
+    const auto *stack = &fiber->vm.stack;
+    const auto *except = (ExceptionContext *) regs->CP.reg;
+
+    while (regs->SP.reg > 0) {
+        if (ExecDefer(fiber))
+            return true;
+
+        // Stack cleanup
+        const auto BP = regs->BP.reg;
+        auto SP = regs->SP.reg;
+        while (SP != BP) {
+            SP -= sizeof(void *);
+
+            O_DECREF(*(OObject**)(stack->stack + SP));
+        }
+
+        if (regs->BP.reg == 0)
+            break;
+
+        // Load previous frame
+        regs->BP.reg -= sizeof(void *);
+        regs->IP.reg = (*(PtrSize *) (stack->stack + regs->BP.reg)) + sizeof(MachineWord);
+
+        regs->BP.reg -= sizeof(void *);
+        regs->SP.reg = regs->BP.reg;
+        regs->BP.reg = *(PtrSize *) (stack->stack + regs->BP.reg);
+
+        SP = regs->SP.reg;
+        regs->SP.reg -= sizeof(FiberContext);
+
+        // Is there at least one exception handler?
+        if (except != nullptr && except->key == regs->BP.reg) {
+            stratum::util::MemoryCopy(&fiber->context.context,
+                                      stack->stack + regs->SP.reg,
+                                      sizeof(FiberContext));
+
+            // Cleanup parameters
+            const auto pops = ((unsigned char *) (regs->CP.reg + sizeof(ExceptionContext))) - stack->stack;
+            while (regs->SP.reg > pops) {
+                regs->SP.reg -= sizeof(void *);
+                O_DECREF(*(OObject**)(stack->stack + regs->SP.reg));
+            }
+
+            if (except != nullptr && except->joffset != 0)
+                regs->IP.reg = (PtrSize) fiber->context.code->m_code + except->joffset;
+
+            return true;
+        }
+
+        regs->IP.reg = (PtrSize) ((FiberContext *) (stack->stack + regs->SP.reg))->code->m_end;
+
+        while (SP > regs->SP.reg) {
+            SP -= sizeof(void *);
+            O_DECREF(*(OObject**)(stack->stack + SP));
+        }
+    }
+
+    return false;
+}
+
 HOObject VMAdd(Isolate *isolate, PtrSize left, PtrSize right) {
     if (O_IS_SMI(left) && O_IS_SMI(right)) {
         left -= 1;
@@ -334,6 +396,47 @@ void CallNative(Function *func, Registers *regs, const VMStack *stack, const U16
     }
 }
 
+void Return(Fiber *fiber, const U32 pops) {
+    auto *regs = &fiber->vm.regs;
+    const auto *stack = &fiber->vm.stack;
+
+    // Cleanup local variables
+    for (auto i = regs->BP.reg; i != regs->SP.reg; i += sizeof(void *))
+        O_DECREF(*(OObject**)(stack->stack + i));
+
+    if (regs->BP.reg > 0) {
+        regs->BP.reg -= sizeof(void *);
+        regs->IP.reg = *((PtrSize *) (stack->stack + regs->BP.reg)) + sizeof(MachineWord);
+
+        regs->BP.reg -= sizeof(void *);
+        regs->SP.reg = regs->BP.reg;
+
+        regs->BP.reg = *((PtrSize *) (stack->stack + regs->SP.reg));
+
+        O_DECREF(fiber->context.context);
+        O_DECREF(fiber->context.module);
+        O_DECREF(fiber->context.code);
+        O_DECREF(fiber->context.func);
+
+        regs->SP.reg -= sizeof(FiberContext);
+        stratum::util::MemoryCopy(&fiber->context.context,
+                                  stack->stack + regs->SP.reg,
+                                  sizeof(FiberContext));
+
+        // Cleanup parameters
+        for (auto i = 0; i < pops; i++) {
+            regs->SP.reg -= sizeof(void *);
+            O_DECREF(*(OObject**)(stack->stack + regs->SP.reg));
+        }
+
+        return;
+    }
+
+    // Module
+    regs->SP.reg = regs->BP.reg;
+    regs->IP.reg = (PtrSize) fiber->context.code->m_end;
+}
+
 void StoreToObjectProp(const Fiber *fiber, OObject *obj, OObject *value,
                        const LoadObjectPropFlags flags, const U16 offset) {
     const auto *code = fiber->context.code;
@@ -408,6 +511,7 @@ CGOTO
 #define ACCESS_STACK_SP(offset) ((PtrSize *)(stack->stack + (regs->SP.reg + (offset))))
 #define LOAD_FROM_STACK         ACCESS_STACK_SP((-sizeof(void *)))
 
+BEGIN:
     auto *code = fiber->context.code;
     auto *this_func = fiber->context.func;
 
@@ -415,6 +519,10 @@ CGOTO
     if (fiber->context.module != nullptr)
         module_slots = O_SLOT(fiber->context.module, O_GET_TYPE(fiber->context.module));
 
+    if (fiber->panic.current_ != nullptr && fiber->panic.current_->frame == REG_BP)
+        goto ERROR;
+
+CATCH_FINALLY:
     while (regs->IP.reg < (PtrSize) code->m_end) {
         const auto instr = FETCH;
 
@@ -466,46 +574,11 @@ CGOTO
                 const auto src = FETCH_R_SRC(instr);
                 const auto pops = instr & 0xFFFF;
 
-                // Cleanup local variables
-                for (auto i = regs->BP.reg; i != regs->SP.reg; i += sizeof(void *))
-                    O_DECREF(*(OObject**)(stack->stack + i));
-
                 REG_RR = REG_N(src);
 
-                if (REG_BP > 0) {
-                    REG_BP -= sizeof(void *);
-                    REG_IP = *ACCESS_STACK_BP(0) + sizeof(MachineWord);
+                Return(fiber, pops);
 
-                    REG_BP -= sizeof(void *);
-                    REG_SP = REG_BP;
-
-                    REG_BP = *ACCESS_STACK_SP(0);
-
-                    // FIXME: check and free current context!
-
-                    REG_SP -= sizeof(FiberContext);
-                    stratum::util::MemoryCopy(&fiber->context.context,
-                                              stack->stack + regs->SP.reg,
-                                              sizeof(FiberContext));
-
-                    // Cleanup parameters
-                    for (auto i = 0; i < pops; i++) {
-                        regs->SP.reg -= sizeof(void *);
-                        O_DECREF(*(OObject**)(stack->stack + regs->SP.reg));
-                    }
-
-                    code = fiber->context.code;
-                    this_func = fiber->context.func;
-
-                    continue;
-                }
-
-                // If Module
-
-                REG_SP = REG_BP;
-                REG_IP += sizeof(MachineWord);
-
-                continue;
+                goto BEGIN;
             }
             TARGET_OP(RETSUB) {
                 const auto src = FETCH_R_SRC(instr);
@@ -545,12 +618,8 @@ CGOTO
                 if (res < 0)
                     goto ERROR;
 
-                if (Call(fiber, func, res)) {
-                    code = func->shared->code;
-                    this_func = fiber->context.func;
-
-                    continue;
-                }
+                if (Call(fiber, func, res))
+                    goto BEGIN;
 
                 DISPATCH;
             }
@@ -583,12 +652,8 @@ CGOTO
                 DISPATCH;
             }
             TARGET_OP(EXECDEFER) {
-                if (ExecDefer(fiber)) {
-                    this_func = fiber->context.func;
-                    code = this_func->shared->code;
-
-                    continue;
-                }
+                if (ExecDefer(fiber))
+                    goto BEGIN;
 
                 DISPATCH;
             }
@@ -1110,6 +1175,22 @@ CGOTO
 
                 DISPATCH;
             }
+            TARGET_OP(JERR) {
+                const auto src = FETCH_R_SRC(instr);
+                const auto offset = FETCH_IMM(instr);
+                auto *e_key = (Atom *) REG_N(src);
+
+                if (((Error *) fiber->panic.current_->error)->kind == e_key) {
+                    // Store error in current exception context
+                    ((ExceptionContext *) regs->CP.reg)->ret_value = (PtrSize) fiber->GetDiscardPanic().release();
+
+                    JMP_TO(offset);
+
+                    continue;
+                }
+
+                DISPATCH;
+            }
             TARGET_OP(JF) {
                 const auto src = FETCH_R_SRC(instr);
                 const auto offset = FETCH_IMM(instr);
@@ -1135,10 +1216,93 @@ CGOTO
                 DISPATCH;
             }
             TARGET_OP(JMP) {
-                const auto offset = FETCH_IMM(instr);
+                const auto offset = instr & 0xFFFFFFu;
 
                 JMP_TO(offset);
+
                 continue;
+            }
+            TARGET_OP(TBGIN) {
+                const auto offset = instr & 0xFFFFFFu;
+
+                const auto ctx = fiber->vm.e_stack.Push((ExceptionContext *) regs->CP.reg, offset);
+                if (ctx == nullptr) {
+                    ErrorSet(fiber->isolate,
+                             MemoryError::Details[MemoryError::Reason::ID],
+                             nullptr,
+                             MemoryError::Details[(int) MemoryError::Reason::ESTACK]);
+
+                    goto ERROR;
+                }
+
+                ctx->key = regs->BP.reg;
+
+                regs->CP.reg = (PtrSize) ctx;
+
+                DISPATCH;
+            }
+            TARGET_OP(TEND) {
+                const auto ctx = (ExceptionContext *) regs->CP.reg;
+
+                if (fiber->panic.current_ != nullptr) {
+                    regs->CP.reg = (PtrSize) ((ExceptionContext *) regs->CP.reg)->prev;
+
+                    fiber->vm.e_stack.Pop();
+
+                    goto ERROR;
+                }
+
+                if (ctx->action == (U32) PendingAction::RETURN) {
+                    if (ExecDefer(fiber))
+                        goto BEGIN;
+
+                    REG_RR = ctx->ret_value;
+
+                    O_DECREF((OObject*)ctx->ret_value);
+
+                    regs->CP.reg = (PtrSize) ((ExceptionContext *) regs->CP.reg)->prev;
+
+                    fiber->vm.e_stack.Pop();
+
+                    Return(fiber, ctx->ret_pops);
+
+                    goto BEGIN;
+                }
+
+                O_DECREF((OObject*)ctx->ret_value);
+
+                regs->CP.reg = (PtrSize) ((ExceptionContext *) regs->CP.reg)->prev;
+
+                fiber->vm.e_stack.Pop();
+
+                DISPATCH;
+            }
+            TARGET_OP(TSPA) {
+                const auto action = (PendingAction) ((instr >> 22) & 0x3u);
+                const auto src = ((instr >> 18) & 0xF);
+                const auto offset = instr & 0x3FFFFu;
+
+                auto ctx = (ExceptionContext *) regs->CP.reg;
+
+                ctx->action = (U32) action;
+                ctx->ret_pops = offset;
+
+                if (action == PendingAction::RETURN) {
+                    O_DECREF((OObject*)ctx->ret_value);
+
+                    ctx->ret_value = REG_N(src);
+
+                    O_INCREF((OObject*)ctx->ret_value);
+                }
+
+                DISPATCH;
+            }
+            TARGET_OP(LDEXC) {
+                const auto dst = FETCH_R_DST(instr);
+
+                REG_N(dst) = ((ExceptionContext *) regs->CP.reg)->ret_value;
+
+                DISPATCH;
             }
             default:
                 assert(false);
@@ -1149,8 +1313,20 @@ CGOTO
     }
 
 ERROR:
-    if (fiber->panic.current_ != nullptr)
-        assert(false);
+    if (fiber->panic.current_ != nullptr) {
+        auto *except = (ExceptionContext *) regs->CP.reg;
+        if (except != nullptr) {
+            if (except->key == regs->BP.reg) {
+                // if (except->catch_offset != 0)
+                JMP_TO(except->joffset);
+
+                goto CATCH_FINALLY;
+            }
+        }
+    }
+
+    if (UnwindStack(fiber))
+        goto BEGIN;
 
     return (OObject *) regs->RR.reg;
 }

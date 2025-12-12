@@ -22,6 +22,7 @@ thread_local Fiber *thl_fiber = nullptr;
 
 Fiber::~Fiber() {
     this->vm.stack.Cleanup(this->isolate);
+    this->vm.e_stack.Cleanup(this->isolate);
 }
 
 bool Fiber::PushState() noexcept {
@@ -56,6 +57,12 @@ Fiber *Fiber::New(Isolate *isolate, const MSize stack_size, const MSize stack_li
     const auto fiber = allocator.AllocObject<Fiber>();
     if (fiber != nullptr) {
         if (!fiber->vm.stack.Init(isolate, stack_size, stack_limit)) {
+            allocator.FreeObject(fiber);
+
+            return nullptr;
+        }
+
+        if (!fiber->vm.e_stack.Init(isolate)) {
             allocator.FreeObject(fiber);
 
             return nullptr;

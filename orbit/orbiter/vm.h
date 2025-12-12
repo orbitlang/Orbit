@@ -5,6 +5,7 @@
 #ifndef ORBIT_ORBITER_VM_H_
 #define ORBIT_ORBITER_VM_H_
 
+#include <orbit/orbiter/excstack.h>
 #include <orbit/orbiter/vmstack.h>
 
 namespace orbiter {
@@ -61,6 +62,8 @@ namespace orbiter {
 
         VMStack stack;
 
+        VMExcStack e_stack;
+
         VMState state;
 
         bool Push(datatype::OObject *value) {
@@ -70,8 +73,8 @@ namespace orbiter {
             return true;
         }
 
-        bool Push(PtrSize value) {
-            *((PtrSize*) (this->stack.stack + this->regs.SP.reg)) = value;
+        bool Push(const PtrSize value) {
+            *((PtrSize *) (this->stack.stack + this->regs.SP.reg)) = value;
             this->regs.SP.reg += sizeof(PtrSize);
 
             return true;

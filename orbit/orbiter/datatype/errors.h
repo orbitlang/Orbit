@@ -30,6 +30,7 @@ namespace orbiter::datatype {
         enum Reason : U8 {
             ID,
 
+            ESTACK,
             HEAP,
             STACK
         };
@@ -37,6 +38,7 @@ namespace orbiter::datatype {
         static constexpr const char *Details[] = {
             (const char *) "OOMError",
 
+            (const char *) "insufficient memory to create exception handling context",
             (const char *) "insufficient heap memory to complete allocation",
             (const char *) "stack overflow - maximum stack size exceeded"
         };
