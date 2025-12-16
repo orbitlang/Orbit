@@ -230,7 +230,7 @@ Symbol *SymbolTable::Declare(ORString *name, const SymbolType type, const MSize 
 }
 
 Symbol *SymbolTable::Declare(const char *name, const SymbolType type, const MSize offset) noexcept {
-    auto o_name = ORStringNew(this->isolate, name);
+    const auto o_name = ORStringNew(this->isolate, name);
     if (!o_name) {
         this->status = SymbolTableError::MEMORY_ERROR;
         return nullptr;
@@ -239,7 +239,8 @@ Symbol *SymbolTable::Declare(const char *name, const SymbolType type, const MSiz
     return this->Declare(o_name.get(), type, offset);
 }
 
-Symbol *SymbolTable::DeclareSymbolScope(ORString *name, const SymbolType type, const MSize offset, const MSize line_start) noexcept {
+Symbol *SymbolTable::DeclareSymbolScope(ORString *name, const SymbolType type, const MSize offset,
+                                        const MSize line_start) noexcept {
     auto *table = this->scope->active;
 
     STHEntry *entry;
@@ -423,14 +424,24 @@ SymbolTable *SymbolTable::New(orbiter::Isolate *isolate) noexcept {
 }
 
 void SymbolTable::ComputeLocalVarOffset(const SubScope *s_scope) const noexcept {
-    if (s_scope->sibling != nullptr)
-        this->ComputeLocalVarOffset(s_scope->sibling);
-
     for (auto s_cursor = s_scope; s_cursor != nullptr; s_cursor = s_cursor->next) {
+        bool sibling = false;
+
         for (auto cursor = s_cursor->symbols.iter_begin; cursor != nullptr; cursor = cursor->iter_next) {
             auto *value = cursor->value;
-
             while (value != nullptr && ENUMBITMASK_ISFALSE(value->flags, SymbolFlags::ANON)) {
+                if (s_cursor->sibling != nullptr && value->decl_offset > s_cursor->sibling->offset_start) {
+                    const auto g_offset = this->scope->global_offset;
+                    const auto l_offset = this->scope->local_variables;
+
+                    this->ComputeLocalVarOffset(s_scope->sibling);
+
+                    sibling = true;
+
+                    this->scope->global_offset = g_offset;
+                    this->scope->local_variables = l_offset;
+                }
+
                 if ((value->type == SymbolType::VARIABLE
                      || value->type == SymbolType::FUNC
                      || value->type == SymbolType::METHOD))
@@ -451,6 +462,9 @@ void SymbolTable::ComputeLocalVarOffset(const SubScope *s_scope) const noexcept 
                 value = value->next;
             }
         }
+
+        if (!sibling && s_cursor->sibling != nullptr)
+            this->ComputeLocalVarOffset(s_cursor->sibling);
     }
 }
 
