@@ -10,13 +10,13 @@ using namespace liftoff::ir;
 using namespace orbiter::datatype;
 
 JBlock::JBlock(Builder *builder, JBlockType type, ORString *label) : builder_(builder) {
-    auto *prev = builder_->context->j_chain;
+    auto *jc_prev = builder_->context->j_chain;
 
-    this->prev = prev;
+    this->prev = jc_prev;
 
-    if (prev != nullptr && prev->type == JBlockType::LABEL) {
-        this->begin = prev->begin;
-        this->end = prev->end;
+    if (jc_prev != nullptr && jc_prev->type == JBlockType::LABEL) {
+        this->begin = jc_prev->begin;
+        this->end = jc_prev->end;
 
         this->type = type;
 
