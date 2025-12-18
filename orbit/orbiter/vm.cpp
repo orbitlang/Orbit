@@ -782,6 +782,14 @@ CATCH_FINALLY:
 
                 DISPATCH;
             }
+            TARGET_OP(STRES) {
+                // TODO: Implement result object here
+                const auto src = FETCH_R_SRC(instr);
+
+                assert(false);
+
+                DISPATCH;
+            }
             TARGET_OP(LDCLO) {
                 const auto base = FETCH_R_DST(instr);
                 const auto slot = ((short) FETCH_IMM(instr)) * (short) sizeof(void *);
@@ -800,6 +808,7 @@ CATCH_FINALLY:
                 if (!ContextLookup(fiber->context.context, (ORString *) code->unknown_symbols->objects[k_index],
                                    out, nullptr)) {
                     // TODO: Error!
+                    assert(false);
                 }
 
                 REG_N(dst) = (PtrSize) out.get();

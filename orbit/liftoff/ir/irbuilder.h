@@ -103,6 +103,8 @@ namespace liftoff::ir {
 
         Instruction *visitSwitchBlock(const parser::SwitchBlock *node);
 
+        Instruction *visitTrap(const parser::Unary *node);
+
         Instruction *visitTryBlock(parser::TryBlock *node);
 
         Instruction *visitUnary(const parser::Unary *node);

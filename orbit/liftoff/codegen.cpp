@@ -191,6 +191,7 @@ unsigned char *Codegen::EmitOpcodes(BasicBlock *block, unsigned char *m_code) {
                 *(orbiter::MachineWord *) m_code = EMIT_OP(instr->opcode);
                 break;
             case orbiter::OPCode::EXECSUB:
+            case orbiter::OPCode::STRES:
                 *(orbiter::MachineWord *) m_code = EMIT_SO(instr->opcode,
                                                            ((Instruction*)instr->operands[0].value)->assigned_reg,
                                                            0);

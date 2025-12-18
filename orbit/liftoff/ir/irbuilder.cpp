@@ -455,7 +455,6 @@ Instruction *IRBuilder::visitAssignment(parser::Assignment *node) {
 }
 
 Instruction *IRBuilder::visitBinary(parser::Binary *node) {
-    Instruction *ret = nullptr;
     Instruction *left;
     Instruction *right;
 
@@ -466,6 +465,8 @@ Instruction *IRBuilder::visitBinary(parser::Binary *node) {
         case parser::NodeType::BINARY:
             return this->BinaryOP(node);
         case parser::NodeType::CMPEQ: {
+            Instruction *ret = nullptr;
+
             left = this->visit(node->left);
             right = this->visit(node->right);
 
@@ -520,7 +521,7 @@ Instruction *IRBuilder::visitBinary(parser::Binary *node) {
         case parser::NodeType::SYNC_BLOCK: {
             left = this->visit(node->left);
 
-            const JBlock jblock(&this->builder_, left);
+            const JBlock _(&this->builder_, left);
 
             this->builder_.CreateUnaryOp(orbiter::OPCode::SYNC_ENTER, left);
 
@@ -1149,6 +1150,22 @@ Instruction *IRBuilder::visitSwitchBlock(const parser::SwitchBlock *node) {
     return nullptr;
 }
 
+Instruction *IRBuilder::visitTrap(const parser::Unary *node) {
+    auto *finally_block = this->builder_.CreateBasicBlock();
+
+    this->builder_.SetupTryCatch(nullptr, finally_block);
+
+    auto *ret = this->visit(node->value);
+
+    this->builder_.AppendBasicBlock(finally_block);
+
+    this->builder_.CreateUnaryOp(orbiter::OPCode::STRES, ret);
+
+    this->builder_.CreateUnaryOp(orbiter::OPCode::TEND);
+
+    return ret;
+}
+
 Instruction *IRBuilder::visitTryBlock(parser::TryBlock *node) {
     BasicBlock *catch_ctl = nullptr;
     BasicBlock *finally_block = nullptr;
@@ -1270,21 +1287,21 @@ Instruction *IRBuilder::visitUnary(const parser::Unary *node) {
         }
     }
 
-    if (node->node_type == parser::NodeType::NEW)
-        return this->visitNew(node);
-
-    if (node->node_type == parser::NodeType::PANIC) {
-        value = this->visit(node->value);
-
-        return this->builder_.CreateUnaryOp(orbiter::OPCode::PANIC, value);
+    switch (node->node_type) {
+        case parser::NodeType::NEW:
+            return this->visitNew(node);
+        case parser::NodeType::PANIC:
+            value = this->visit(node->value);
+            return this->builder_.CreateUnaryOp(orbiter::OPCode::PANIC, value);
+        case parser::NodeType::TRAP:
+            return this->visitTrap(node);
+        case parser::NodeType::RETURN:
+            return this->visitReturn(node);
+        default:
+            assert(false); // Never get here
     }
 
-    if (node->node_type == parser::NodeType::RETURN)
-        return this->visitReturn(node);
-
     // TODO: yield
-
-    assert(false);
 
     return nullptr;
 }

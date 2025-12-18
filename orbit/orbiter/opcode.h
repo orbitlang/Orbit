@@ -167,6 +167,7 @@ namespace orbiter {
         NGBLV, // Create new context variable:                      OPCODE | 4 FLAGS    | 4 SRC   | 16 KEY OFFSET
         STGBL, // Store value into global variable using key:       OPCODE | 4 RESERVED | 4 SRC   | 16 KEY OFFSET
         STGOFF, // Store value into global variable using offset:   OPCODE | 4 RESERVED | 4 SRC   | 16 UNSIGNED OFFSET
+        STRES, // Store value or error into result object:          OPCODE | 4 RESERVED | 4 SRC   | 16 RESERVED
         LDCLO, // Load closure from function object:                OPCODE | 4 BASE_REG | 4 SRC   | 16 RESERVED
         LDGBL, // Load value from global variable using key:        OPCODE | 4 DST | 4 RESERVED   | 16 KEY OFFSET
         LDGOFF, // Load value from global variable using offset:    OPCODE | 4 DST | 4 RESERVED   | 16 UNSIGNED OFFSET
