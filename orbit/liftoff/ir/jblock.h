@@ -16,6 +16,7 @@ namespace liftoff::ir {
         FOR_IN,
         LABEL,
         LOOP,
+        NIL_SAFE,
         TCF,
         SYNC,
         SWITCH
@@ -27,7 +28,11 @@ namespace liftoff::ir {
     public:
         JBlock *prev = nullptr;
 
-        BasicBlock *begin = nullptr;
+        union {
+            BasicBlock *begin = nullptr;
+            BasicBlock *alt;
+        };
+
         BasicBlock *end = nullptr;
 
         Instruction *value = nullptr;

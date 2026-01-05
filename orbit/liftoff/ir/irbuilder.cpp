@@ -1057,6 +1057,28 @@ Instruction *IRBuilder::visitNew(const parser::Unary *node) {
     return self;
 }
 
+Instruction *IRBuilder::visitNilSafety(const parser::Unary *node) {
+    auto *end = this->builder_.CreateBasicBlock();
+    auto *nil_block = this->builder_.CreateBasicBlock();
+
+    JBlock ctx(&this->builder_, JBlockType::NIL_SAFE);
+    ctx.alt = nil_block;
+    ctx.end = end;
+
+    auto *value = this->visit(node->value);
+
+    this->builder_.CreateJump(end);
+
+    this->builder_.AppendBasicBlock(nil_block);
+
+    auto *nil_val = this->builder_.LoadNilValue();
+
+    this->builder_.AppendBasicBlock(end);
+
+    auto *phy = this->builder_.CreatePhi();
+    return phy->AddTarget(value)->AddTarget(nil_val);
+}
+
 Instruction *IRBuilder::visitParameter(parser::Parameter *node) {
     // TODO: Implement Parameter visitation
     return nullptr;
@@ -1080,6 +1102,12 @@ Instruction *IRBuilder::visitSelector(parser::Selector *node) {
     bool super = false;
 
     assert(key->node_type == parser::NodeType::IDENTIFIER);
+
+    if (node->token_type == scanner::TokenType::QUESTION_DOT) {
+        auto *ctx = this->builder_.context->GetActiveContextIf(JBlockType::NIL_SAFE);
+        if (ctx != nullptr)
+            this->builder_.CreateBranch(orbiter::OPCode::JEN, base, nullptr, ctx->alt);
+    }
 
     if (node->left->node_type == parser::NodeType::IDENTIFIER) {
         const auto *obj_base = (parser::Identifier *) node->left;
@@ -1347,6 +1375,8 @@ Instruction *IRBuilder::visitUnary(const parser::Unary *node) {
             return this->visitTrap(node);
         case parser::NodeType::RETURN:
             return this->visitReturn(node);
+        case parser::NodeType::NIL_SAFE:
+            return this->visitNilSafety(node);
         case parser::NodeType::UPDATE:
             return this->visitUpdate(node);
         default:

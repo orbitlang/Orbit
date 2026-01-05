@@ -91,6 +91,8 @@ namespace liftoff::ir {
 
         Instruction *visitNew(const parser::Unary *node);
 
+        Instruction *visitNilSafety(const parser::Unary *node);
+
         Instruction *visitParameter(parser::Parameter *node);
 
         Instruction *visitReturn(const parser::Unary *unary);
