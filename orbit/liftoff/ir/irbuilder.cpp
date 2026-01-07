@@ -552,6 +552,8 @@ Instruction *IRBuilder::visitBinary(parser::Binary *node) {
             this->visit(node->right);
 
             this->builder_.CreateUnaryOp(orbiter::OPCode::SYNC_EXIT, left);
+
+            return nullptr;
         }
         default:
             assert(false);
@@ -1106,6 +1108,8 @@ Instruction *IRBuilder::visitReturn(const parser::Unary *unary) {
 
     if (this->sym_t_->scope->type == ScopeType::FUNCTION || this->sym_t_->scope->type == ScopeType::GENERATOR)
         pops_slot = this->sym_t_->scope->GetParameterCount();
+
+    this->PutSyncExit(nullptr);
 
     return this->builder_.CreateReturn(value, pops_slot);
 }
