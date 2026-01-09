@@ -39,6 +39,7 @@ namespace liftoff {
         LABEL,
         METHOD,
         MODULE,
+        NATIVE_CONST,
         NATIVE_FUNC,
         NATIVE_VAR,
         PARAMETER,

@@ -467,6 +467,7 @@ ASTHandle<ASTNode *> Parser::ParseLoopStatement() {
 ASTHandle<ASTNode *> Parser::ParseNativeStatement() {
     auto doc = this->GetDocString();
     auto start = TKCUR_LOC.start;
+    SymbolType v_type = SymbolType::NATIVE_VAR;
 
     this->Eat(true);
 
@@ -485,7 +486,7 @@ ASTHandle<ASTNode *> Parser::ParseNativeStatement() {
     if (this->Match(TokenType::KW_VAR))
         this->Eat(true);
     else if (this->MatchEat(TokenType::KW_LET, true))
-        variable->node_type = NodeType::NATIVE_CONSTANT;
+        v_type = SymbolType::NATIVE_CONST;
     else
         throw ParserException(60);
 
@@ -516,14 +517,15 @@ ASTHandle<ASTNode *> Parser::ParseNativeStatement() {
         if (!this->Match(TokenType::IDENTIFIER))
             throw ParserException(64);
 
-        variable->alias = ORStringNew(this->isolate_, this->tkcur_.buffer, this->tkcur_.length).release();
-
-        if (!this->sym_t_->Declare(variable->alias, SymbolType::NATIVE_VAR, TKCUR_LOC.start.offset))
+        const auto alias = ORStringNew(this->isolate_, this->tkcur_.buffer, this->tkcur_.length);
+        variable->alias = this->sym_t_->Declare(alias.get(), v_type, TKCUR_LOC.start.offset);
+        if (variable->alias == nullptr)
             throw SymbolTableException();
 
         this->Eat(false);
     } else {
-        if (!this->sym_t_->Declare(variable->native_name, SymbolType::NATIVE_VAR, start.offset))
+        variable->alias = this->sym_t_->Declare(variable->native_name, v_type, start.offset);
+        if (variable->alias == nullptr)
             throw SymbolTableException();
     }
 
@@ -606,16 +608,17 @@ ASTHandle<ASTNode *> Parser::ParseNativeFuncStatement(const Position &start) {
         if (!this->Match(TokenType::IDENTIFIER))
             throw ParserException(58);
 
-        func->alias = ORStringNew(this->isolate_, this->tkcur_.buffer, this->tkcur_.length).release();
-
-        if (!this->sym_t_->Declare(func->alias, SymbolType::NATIVE_FUNC, TKCUR_LOC.start.offset))
+        const auto alias = ORStringNew(this->isolate_, this->tkcur_.buffer, this->tkcur_.length);
+        func->alias = this->sym_t_->Declare(alias.get(), SymbolType::NATIVE_FUNC, TKCUR_LOC.start.offset);
+        if (func->alias == nullptr)
             throw SymbolTableException();
 
         func->loc.end = TKCUR_LOC.end;
 
         this->Eat(false);
     } else {
-        if (!this->sym_t_->Declare(func->native_name, SymbolType::NATIVE_FUNC, func->loc.start.offset))
+        func->alias = this->sym_t_->Declare(func->native_name, SymbolType::NATIVE_FUNC, func->loc.start.offset);
+        if (func->alias == nullptr)
             throw SymbolTableException();
     }
 

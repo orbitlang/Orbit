@@ -178,7 +178,7 @@ NODES = {
     },
     "NativeFunc": {
         "fields": {
-            "alias": "orbiter::datatype::ORString*",
+            "alias": "Symbol*",
             "native_name": "orbiter::datatype::ORString*",
             "mod_name": "orbiter::datatype::ORString*",
             "doc": "orbiter::datatype::ORString*",
@@ -194,12 +194,12 @@ NODES = {
     },
     "NativeVariable": {
         "fields": {
-            "alias": "orbiter::datatype::ORString*",
+            "alias": "Symbol*",
             "native_name": "orbiter::datatype::ORString*",
             "mod_name": "orbiter::datatype::ORString*",
             "kind": "scanner::TokenType"
         },
-        "node_type": ["NATIVE_CONSTANT", "NATIVE_VAR"]
+        "node_type": ["NATIVE_VAR"]
     },
     "Parameter": {
         "fields": {
