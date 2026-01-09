@@ -7,10 +7,13 @@
 
 #include <orbit/datatype.h>
 
+#include <orbit/orbiter/datatype/code.h>
 #include <orbit/orbiter/datatype/list.h>
 
 #include <orbit/liftoff/ir/basicblock.h>
 #include <orbit/liftoff/ir/jblock.h>
+
+#include <orbit/orbiter/native/native.h>
 
 namespace liftoff::ir {
     enum class IRContextType {
@@ -40,7 +43,8 @@ namespace liftoff::ir {
         U32 start;
         U32 end;
 
-        LiveInterval(Instruction *instr, U32 start, U32 end) noexcept : instr(instr), start(start), end(end) {
+        LiveInterval(Instruction *instr, const U32 start,
+                     const U32 end) noexcept : instr(instr), start(start), end(end) {
         }
     };
 
@@ -63,9 +67,51 @@ namespace liftoff::ir {
 
         U16 slot;
 
-        ExportedName(orbiter::datatype::ORString *name, orbiter::VariableFlags flags,
-                     U16 slot) noexcept : name(O_INCREF(name)), flags(flags), slot(slot) {
+        ExportedName(orbiter::datatype::ORString *name, const orbiter::VariableFlags flags,
+                     const U16 slot) noexcept : name(O_INCREF(name)), flags(flags), slot(slot) {
         }
+    };
+
+    /**
+     * @class NativeParams
+     *
+     * Represents the parameters of a native function that is loaded via Foreign Function Interface (FFI).
+     * This class encapsulates the name and type of the native function parameter, providing essential metadata
+     * for FFI operations.
+     */
+    class NativeParams {
+    public:
+        orbiter::datatype::HORString name;
+        orbiter::native::NativeType type;
+
+        NativeParams(orbiter::datatype::ORString *name,
+                     const orbiter::native::NativeType type) noexcept : name(O_INCREF(name)), type(type) {
+        }
+    };
+
+    /**
+     * @class NativeBinding
+     *
+     * Represents a configuration for runtime binding of native functions or variables.
+     * This class provides the necessary details to perform Foreign Function Interface (FFI)
+     * operations by defining metadata about the native entities and their expected behavior.
+     *
+     * The class contains information such as the name of the binding, the symbol it maps to,
+     * the associated dynamic library, and the parameter types. It also includes the return
+     * type of the function or variable and the binding type to describe how the binding
+     * should be processed.
+     */
+    class NativeBinding {
+       public:
+        orbiter::datatype::HORString name;
+        orbiter::datatype::HORString symbol;
+        orbiter::datatype::HORString library;
+
+        std::vector<NativeParams> params;
+
+        orbiter::native::NativeType ret_type;
+
+        orbiter::datatype::NativeBindingType binding_type;
     };
 
     /**
@@ -197,6 +243,7 @@ namespace liftoff::ir {
 
     public:
         std::vector<ExportedName> exported_names;
+        std::vector<NativeBinding> native_bindings;
 
         /**
          * @variable live_intervals_
@@ -314,7 +361,7 @@ namespace liftoff::ir {
          * @return A pointer to the subcontext at the specified index if it exists,
          *         or nullptr if the index is out of range.
          */
-        [[nodiscard]] IRContext *GetSubContext(int n) const noexcept {
+        [[nodiscard]] IRContext *GetSubContext(const int n) const noexcept {
             if (n < this->sub.count)
                 return sub.context[n];
 

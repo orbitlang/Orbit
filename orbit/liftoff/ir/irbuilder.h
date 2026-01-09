@@ -83,11 +83,11 @@ namespace liftoff::ir {
 
         Instruction *visitModule(parser::Module *node);
 
-        Instruction *visitNativeFunc(parser::NativeFunc *node);
+        Instruction *visitNativeFunc(const parser::NativeFunc *node);
 
         Instruction *visitNativeParameter(parser::NativeParameter *node);
 
-        Instruction *visitNativeVariable(parser::NativeVariable *node);
+        Instruction *visitNativeVariable(const parser::NativeVariable *node);
 
         Instruction *visitNew(const parser::Unary *node);
 

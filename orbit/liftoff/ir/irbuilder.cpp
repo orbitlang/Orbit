@@ -49,6 +49,44 @@ orbiter::OPCode InfixOp2OpCode(const scanner::TokenType tt, const bool imm, U8 &
     return {};
 }
 
+orbiter::native::NativeType NativeTypeFromTokenType(const scanner::TokenType type) {
+    switch (type) {
+        case scanner::TokenType::DT_BOOL:
+            return orbiter::native::NativeType::BOOL;
+        case scanner::TokenType::DT_BYTE:
+            return orbiter::native::NativeType::BYTE;
+        case scanner::TokenType::DT_I8:
+            return orbiter::native::NativeType::I8;
+        case scanner::TokenType::DT_I16:
+            return orbiter::native::NativeType::I16;
+        case scanner::TokenType::DT_I32:
+            return orbiter::native::NativeType::I32;
+        case scanner::TokenType::DT_I64:
+            return orbiter::native::NativeType::I64;
+        case scanner::TokenType::DT_ISIZE:
+            return orbiter::native::NativeType::ISIZE;
+        case scanner::TokenType::DT_U8:
+            return orbiter::native::NativeType::U8;
+        case scanner::TokenType::DT_U16:
+            return orbiter::native::NativeType::U16;
+        case scanner::TokenType::DT_U32:
+            return orbiter::native::NativeType::U32;
+        case scanner::TokenType::DT_U64:
+            return orbiter::native::NativeType::U64;
+        case scanner::TokenType::DT_USIZE:
+            return orbiter::native::NativeType::USIZE;
+        case scanner::TokenType::DT_OPAQUE:
+        case scanner::TokenType::DT_PTR:
+            return orbiter::native::NativeType::PTR;
+        case scanner::TokenType::DT_F32:
+            return orbiter::native::NativeType::F32;
+        case scanner::TokenType::DT_F64:
+            return orbiter::native::NativeType::F64;
+        default:
+            assert(false); // Never get here
+    }
+}
+
 Instruction *IRBuilder::BinaryOP(const parser::Binary *binary) {
     const auto *nr = (parser::Binary *) binary->right;
 
@@ -287,7 +325,7 @@ Instruction *IRBuilder::StoreVariable(const Symbol *symbol, Instruction *value, 
 
     auto v_flags = orbiter::VariableFlags::VARIABLE;
 
-    if (symbol->type == SymbolType::CONSTANT)
+    if (symbol->type == SymbolType::CONSTANT || symbol->type == SymbolType::NATIVE_CONST)
         v_flags = orbiter::VariableFlags::CONSTANT;
 
     if (symbol->access == AccessModifier::PUBLIC)
@@ -1037,19 +1075,45 @@ Instruction *IRBuilder::visitModule(parser::Module *node) {
     return nullptr;
 }
 
-Instruction *IRBuilder::visitNativeFunc(parser::NativeFunc *node) {
-    // TODO: Implement NativeFunc visitation
-    return nullptr;
+Instruction *IRBuilder::visitNativeFunc(const parser::NativeFunc *node) {
+    auto &bind = this->builder_.context->native_bindings.emplace_back();
+    const auto fid = this->builder_.context->native_bindings.size() - 1;
+
+    bind.symbol = orbiter::datatype::HORString(node->native_name);
+    bind.name = orbiter::datatype::HORString(node->alias->name);
+    bind.library = orbiter::datatype::HORString(node->mod_name);
+
+    // Parse params
+    for (auto &native_param: node->parameters) {
+        const auto param = (parser::NativeParameter *) native_param.get();
+        bind.params.emplace_back(param->name, NativeTypeFromTokenType(param->kind));
+    }
+
+    bind.ret_type = NativeTypeFromTokenType(node->ret_type);
+    bind.binding_type = orbiter::datatype::NativeBindingType::FUNC;
+
+    auto *nt = this->builder_.CreateUnaryOp(orbiter::OPCode::LDNAT, fid, 0);
+    return this->StoreVariable(node->alias, nt, true);;
 }
 
 Instruction *IRBuilder::visitNativeParameter(parser::NativeParameter *node) {
-    // TODO: Implement NativeParameter visitation
     return nullptr;
 }
 
-Instruction *IRBuilder::visitNativeVariable(parser::NativeVariable *node) {
-    // TODO: Implement NativeVariable visitation
-    return nullptr;
+Instruction *IRBuilder::visitNativeVariable(const parser::NativeVariable *node) {
+    auto &bind = this->builder_.context->native_bindings.emplace_back();
+    const auto fid = this->builder_.context->native_bindings.size() - 1;
+
+    bind.symbol = orbiter::datatype::HORString(node->native_name);
+    bind.name = orbiter::datatype::HORString(node->alias->name);
+    bind.library = orbiter::datatype::HORString(node->mod_name);
+    bind.ret_type = NativeTypeFromTokenType(node->kind);
+    bind.binding_type = node->alias->type == SymbolType::NATIVE_CONST
+                            ? orbiter::datatype::NativeBindingType::CONST
+                            : orbiter::datatype::NativeBindingType::VAR;
+
+    auto *nt = this->builder_.CreateUnaryOp(orbiter::OPCode::LDNAT, fid, 0);
+    return this->StoreVariable(node->alias, nt, true);;
 }
 
 Instruction *IRBuilder::visitNew(const parser::Unary *node) {

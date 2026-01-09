@@ -114,7 +114,7 @@ using namespace liftoff::ir;
 #define EMIT_TSPA(opcode, pa, src, offset) \
     (((U32)(opcode) << 24) | ((pa) << 22) | ((src) << 18) | (offset))
 
-unsigned char *Codegen::EmitOpcodes(BasicBlock *block, unsigned char *m_code) {
+unsigned char *Codegen::EmitOpcodes(const BasicBlock *block, unsigned char *m_code) {
     for (auto *cursor = block->instr.head; cursor != nullptr; cursor = cursor->next) {
         if (cursor->type() == ir::ObjectType::VIRT_INSTRUCTION)
             continue;
@@ -220,6 +220,7 @@ unsigned char *Codegen::EmitOpcodes(BasicBlock *block, unsigned char *m_code) {
                 break;
             case orbiter::OPCode::LDCST:
             case orbiter::OPCode::LDIMM:
+            case orbiter::OPCode::LDNAT:
             case orbiter::OPCode::MKCLZ:
             case orbiter::OPCode::MKTRT:
                 *(orbiter::MachineWord *) m_code = EMIT_DFI(instr->opcode,
@@ -347,6 +348,7 @@ unsigned char *Codegen::EmitOpcodes(BasicBlock *block, unsigned char *m_code) {
                                                               ((Instruction *) instr->operands[2].value)->assigned_reg,
                                                               ((Instruction *) instr->operands[3].value)->assigned_reg);
                 break;
+            case orbiter::OPCode::LDMOD:
             case orbiter::OPCode::LDINIT:
             case orbiter::OPCode::NOBJ:
                 *(orbiter::MachineWord *) m_code = EMIT_DS(instr->opcode,
@@ -432,6 +434,69 @@ unsigned char *Codegen::EmitOpcodes(BasicBlock *block, unsigned char *m_code) {
     return m_code;
 }
 
+U32 Codegen::CalculateCodeSize() const {
+    U32 offset = 0;
+
+    for (auto *b_cursor = this->ir_->entry_; b_cursor; b_cursor = b_cursor->next) {
+        b_cursor->offset = offset;
+
+        offset += b_cursor->size;
+    }
+
+    return offset;
+}
+
+void Codegen::ExportNativeBindings(const orbiter::datatype::HCode &code) {
+    const auto *ir = this->ir_;
+
+    if (ir->native_bindings.empty())
+        return;
+
+    U32 bind_length = 0;
+    U32 bind_param = ir->native_bindings.size() * sizeof(orbiter::datatype::NativeBinding);
+    for (const auto &cursor: ir->native_bindings) {
+        bind_length += sizeof(orbiter::datatype::NativeBinding);
+
+        if (!cursor.params.empty())
+            bind_length += cursor.params.size() * sizeof(orbiter::datatype::NativeParam);
+    }
+
+    auto *buffer = this->allocator_.alloc<unsigned char>(bind_length);
+    if (buffer == nullptr)
+        throw std::bad_alloc();
+
+    code->native.bindings = (orbiter::datatype::NativeBinding *) buffer;
+    code->native.length = ir->native_bindings.size();
+
+    int index = 0;
+    for (const auto &cursor: ir->native_bindings) {
+        auto *binding = code->native.bindings + index++;
+
+        binding->name = cursor.name.get_inc();
+        binding->symbol = cursor.symbol.get_inc();
+        binding->library = cursor.library.get_inc();
+
+        binding->params.params = nullptr;
+        binding->params.count = cursor.params.size();
+
+        if (!cursor.params.empty()) {
+            binding->params.params = (orbiter::datatype::NativeParam *) (buffer + bind_param);
+
+            for (const auto &pcursor: cursor.params) {
+                auto *param = (orbiter::datatype::NativeParam *) (buffer + bind_param);
+
+                param->name = pcursor.name.get_inc();
+                param->type = pcursor.type;
+
+                bind_param += sizeof(orbiter::datatype::NativeParam);
+            }
+        }
+
+        binding->ret_type = cursor.ret_type;
+        binding->binding_type = cursor.binding_type;
+    }
+}
+
 void Codegen::ExportSymbols(orbiter::datatype::HCode &code) {
     const auto *ir = this->ir_;
 
@@ -459,15 +524,8 @@ void Codegen::ExportSymbols(orbiter::datatype::HCode &code) {
 orbiter::datatype::HCode Codegen::Generate() noexcept {
     const auto *ir = this->ir_;
 
-    // Calculate blocks offset
-    U32 offset = 0;
-    for (auto *b_cursor = ir->entry_; b_cursor; b_cursor = b_cursor->next) {
-        b_cursor->offset = offset;
-
-        offset += b_cursor->size;
-    }
-
-    auto *m_code = this->allocator_.alloc<unsigned char>(offset);
+    const auto code_length = this->CalculateCodeSize();
+    auto *m_code = this->allocator_.alloc<unsigned char>(code_length);
     if (m_code == nullptr)
         return {};
 
@@ -481,13 +539,17 @@ orbiter::datatype::HCode Codegen::Generate() noexcept {
             m_code,
             ir->unknown_names.get(),
             ir->static_values.get(),
-            offset,
+            code_length,
             ir->local_slots,
             ir->GetStackCount()
         );
-        if (!code)
-            throw std::bad_alloc();
+        if (!code) {
+            this->allocator_.free(m_code);
 
+            throw std::bad_alloc();
+        }
+
+        this->ExportNativeBindings(code);
         this->ExportSymbols(code);
 
         code->SetProps(ir->name.get(), ir->doc.get());
@@ -495,8 +557,6 @@ orbiter::datatype::HCode Codegen::Generate() noexcept {
 
         return code;
     } catch (...) {
-        this->allocator_.free(m_code);
+        return {};
     }
-
-    return {};
 }

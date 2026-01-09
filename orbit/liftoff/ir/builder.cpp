@@ -289,7 +289,7 @@ Instruction *Builder::CreateUnaryOp(const OPCode opcode, Instruction *s_reg) {
     return this->CreateInstruction<UnaryOpInstr>(opcode, s_reg);
 }
 
-Instruction *Builder::CreateUnaryOp(const OPCode opcode, U16 imm, U8 flags) {
+Instruction *Builder::CreateUnaryOp(const OPCode opcode, const U16 imm, const U8 flags) {
     return this->CreateInstruction<UnaryImmInstr>(opcode, flags, imm);
 }
 

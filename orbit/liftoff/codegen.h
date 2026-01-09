@@ -17,7 +17,11 @@ namespace liftoff {
 
         ir::IRContext *ir_;
 
-        static unsigned char *EmitOpcodes(ir::BasicBlock *block, unsigned char *m_code);
+        static unsigned char *EmitOpcodes(const ir::BasicBlock *block, unsigned char *m_code);
+
+        U32 CalculateCodeSize() const;
+
+        void ExportNativeBindings(const orbiter::datatype::HCode &code);
 
         void ExportSymbols(orbiter::datatype::HCode &code);
     public:
