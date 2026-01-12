@@ -111,6 +111,8 @@ void LinearScan::ExpireOldIntervals(const U32 position) {
 }
 
 void LinearScan::ResolveInterferences() {
+    Instruction *last_intf_instr = nullptr;
+
     U32 logical_counter = 0;
     U32 last_intf_point = 0;
 
@@ -128,7 +130,7 @@ void LinearScan::ResolveInterferences() {
                         && operand->instr_offset < last_intf_point) {
                         auto *store = this->builder_.GetStackPush(operand);
 
-                        this->ir_->InsertInstructionAfter(operand, store);
+                        IRContext::InsertInstructionAfter(operand, store);
 
                         Instruction *load = nullptr;
                         for (const auto *user = operand->use_list; user != nullptr; user = user->next) {
@@ -140,7 +142,7 @@ void LinearScan::ResolveInterferences() {
                                 if (load == nullptr) {
                                     load = this->builder_.GetStackPop();
 
-                                    this->ir_->InsertInstructionBefore(user_instr, load);
+                                    IRContext::InsertInstructionAfter(last_intf_instr, load);
                                 }
 
                                 user_instr->ReplaceOperand(operand, load);
@@ -163,8 +165,10 @@ void LinearScan::ResolveInterferences() {
 
             if (instr->type() == ObjectType::INSTRUCTION) {
                 const auto *phys = (PhysInstruction *) instr;
-                if (phys->opcode == orbiter::OPCode::CALL || phys->opcode == orbiter::OPCode::EXECSUB)
+                if (phys->opcode == orbiter::OPCode::CALL || phys->opcode == orbiter::OPCode::EXECSUB) {
+                    last_intf_instr = instr;
                     last_intf_point = instr->instr_offset;
+                }
             }
         }
     }
