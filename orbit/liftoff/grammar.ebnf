@@ -3,7 +3,7 @@
     Licensed under the Apache License v2.0
 
     syntax: ISO-14977 EBNF
-    version: 2.4
+    version: 2.5
 *)
 
 (* Basic elements *)
@@ -152,7 +152,7 @@ native_from = "from", string_literal;
 (* Native Variable Declaration *)
 native_variable_declaration = "native", ("var" | "let"), identifier, ":", native_type, [native_alias], [native_from];
 
-native_type = "bool" | "byte" | "i8" | "i16" | "i32" | "i64" | "iSize" | "u8" | "u16" | "u32" | "u64" | "uSize" | "opaque" | "ptr" |"f32" | "f64";
+native_type = "bool" | "byte" | "i8" | "i16" | "i32" | "i64" | "iSize" | "u8" | "u16" | "u32" | "u64" | "uSize" | "unit" | "opaque" | "ptr" |"f32" | "f64";
 
 (* Function definitions *)
 function_definition = [doc_comment], {decorator}, "func", identifier, "(", [parameter_list], ")", [return_type], [async_keyword], block_function;

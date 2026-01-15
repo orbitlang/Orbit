@@ -32,6 +32,7 @@ constexpr KwToken kw2tktype[] = {
     {"u32", TokenType::DT_U32},
     {"u64", TokenType::DT_U64},
     {"uSize", TokenType::DT_USIZE},
+    {"unit", TokenType::DT_UNIT},
     {"opaque", TokenType::DT_OPAQUE},
     {"ptr", TokenType::DT_PTR},
 

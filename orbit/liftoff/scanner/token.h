@@ -36,6 +36,7 @@ namespace liftoff::scanner {
         DT_U32,
         DT_U64,
         DT_USIZE,
+        DT_UNIT,
         DT_OPAQUE,
         DT_PTR,
 
