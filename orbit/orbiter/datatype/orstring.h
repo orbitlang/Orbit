@@ -11,7 +11,7 @@
 
 #include <orbit/orbiter/datatype/oobject.h>
 
-#define ORSTRING_TO_CSTR(string)     ((string)->buffer)
+#define ORSTRING_TO_CSTR(string)     ((const char *)((string)->buffer))
 #define ORSTRING_LENGTH(string)      ((string)->length)
 
 namespace orbiter::datatype {

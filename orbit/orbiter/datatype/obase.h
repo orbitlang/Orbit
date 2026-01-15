@@ -26,11 +26,6 @@ namespace orbiter::datatype {
 #define BOOL_TO_OBOOL(value) ((value) ? kOddBallTRUE : kOddBallFALSE)
 #define OBOOL_TO_BOOL(value) ((value) == kOddBallTRUE)
 
-    using DtorFn = bool (*)(OObject *);
-
-    using GCTraceCallback = void (*)(OObject *, MSize);
-    using TraceFn = void (*)(const OObject *self, GCTraceCallback callback, MSize epoch);
-
     enum class PropertyFlag:U8 {
         IN_OBJECT = 0x01,
 
@@ -57,6 +52,7 @@ namespace orbiter::datatype {
 
 #define OPROPERTY_ENTRY(name, offset, details)  {name, offset, details}
 #define OPROPERTY_SENTINEL                      {nullptr, 0, PropertyFlag::IN_OBJECT}
+
     struct OPropertyEntry {
         const char *name;
 
@@ -100,7 +96,7 @@ namespace orbiter::datatype {
         TUPLE
     };
 
-    constexpr const char* InstanceTypeNames[] = {
+    constexpr const char *InstanceTypeNames[] = {
         "Type",
         "Atom",
         "Boolean",
@@ -125,9 +121,71 @@ namespace orbiter::datatype {
         "Tuple"
     };
 
-    constexpr int kInstanceTypeCount = 22;
+    constexpr int kInstanceTypeCount = 23;
+
+    enum class NativeType {
+        BOOL,
+        BYTE,
+
+        I8,
+        I16,
+        I32,
+        I64,
+        ISIZE,
+
+        U8,
+        U16,
+        U32,
+        U64,
+        USIZE,
+        UNIT,
+        PTR,
+
+        F32,
+        F64
+    };
+
+    constexpr const char *NativeTypeNames[] = {
+        "bool", // BOOL
+        "uint8_t", // BYTE (unsigned char)
+
+        "int8_t", // I8
+        "int16_t", // I16
+        "int32_t", // I32
+        "int64_t", // I64
+        "intptr_t", // ISIZE (ssize_t)
+
+        "uint8_t", // U8
+        "uint16_t", // U16
+        "uint32_t", // U32
+        "uint64_t", // U64
+        "size_t", // USIZE
+
+        "void", // UNIT
+        "void*", // PTR
+
+        "float", // F32
+        "double" // F64
+    };
+
+    // *****************************************************************************************************************
+    // HELPER FUNCTIONS
+    // *****************************************************************************************************************
+
+    using DtorFn = bool (*)(OObject *);
+
+    using GCTraceCallback = void (*)(OObject *, MSize);
+    using TraceFn = void (*)(const OObject *self, GCTraceCallback callback, MSize epoch);
 
     using TypeInfoAUXDtor = bool (*)(struct TypeInfo *self);
+
+    using CompareFn = int (*)(const OObject *, const OObject *);
+    using EqualFn = bool (*)(const OObject *, const OObject *);
+    using ToNativeType = bool (*)(OObject *, void *, NativeType);
+
+    // *****************************************************************************************************************
+    // TYPE INFORMATION AND OPERATIONS
+    // *****************************************************************************************************************
 
     struct TypeInfo {
         OROBJ_HEAD;
@@ -172,14 +230,30 @@ namespace orbiter::datatype {
         } properties;
     };
 
+    struct TypeOps {
+        CompareFn compare;
+        EqualFn equal;
+        ToNativeType to_native;
+    };
+
+    struct TypeInfoOps {
+        TypeInfo type;
+        TypeOps ops;
+    };
+
     struct OObject {
         OROBJ_HEAD;
     };
+
+    // *****************************************************************************************************************
+    // HELPER MACROS
+    // *****************************************************************************************************************
 
 #define O_GET_HEAD(object)                  ((object)->head_)
 #define O_GET_RC(object)                    (O_GET_HEAD(object).ref_count_)
 #define O_UNSAFE_GET_RC(object)             (*((MSize *) &O_GET_HEAD(object).ref_count_))
 #define O_GET_TYPE(object)                  (O_GET_HEAD(object).type_)
+#define O_GET_TYPE_OPS(object)              (((TypeInfoOps *)((unsigned char*) O_GET_TYPE(object)))->ops)
 #define O_GET_ISOLATE(object)               (O_GET_TYPE(object)->isolate)
 
 #define O_CAST(object, tp_info, type_)      ((type_ *) (((unsigned char*) object) + (tp_info)->offset))

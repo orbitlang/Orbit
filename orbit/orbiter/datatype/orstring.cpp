@@ -16,7 +16,17 @@ using namespace orbiter::datatype;
 #define STR_BUF(str) ((str)->buffer)
 #define STR_LEN(str) ((str)->length)
 
-ORString *MkStringContainer(orbiter::Isolate *isolate, MSize len, bool mkbuf) {
+bool StrToNative(ORString *self, void *out, const NativeType type) {
+    if (type == NativeType::PTR) {
+        *((PtrSize *) out) = (PtrSize) STR_BUF(self);
+
+        return true;
+    }
+
+    return false;
+}
+
+ORString *MkStringContainer(orbiter::Isolate *isolate, const MSize len, bool mkbuf) {
     const auto str = MakeObject<ORString>(isolate, InstanceType::STRING);
 
     if (str != nullptr) {
@@ -70,6 +80,7 @@ bool StringInitKind(ORString *string) {
 }
 
 bool orbiter::datatype::ORStringTypeSetup(TypeInfo *self) {
+    ((TypeInfoOps*)self)->ops.to_native = (ToNativeType) StrToNative;
     return true;
 }
 
