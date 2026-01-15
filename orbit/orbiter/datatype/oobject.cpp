@@ -209,7 +209,7 @@ PropertyDescriptor *orbiter::datatype::TIFindProperty(const TypeInfo *type, cons
 
 HOType orbiter::datatype::MakeType(Isolate *isolate, TypeInfo *super, InstanceType type,
                                    U8 headroom, U8 props, U8 slots) {
-    auto *ti = (TypeInfo *) isolate->gc->AllocObject(sizeof(TypeInfo));
+    auto *ti = (TypeInfo *) isolate->gc->AllocObject(sizeof(TypeInfoOps));
     if (ti == nullptr)
         return {};
 
@@ -245,10 +245,12 @@ HOType orbiter::datatype::MakeType(Isolate *isolate, TypeInfo *super, InstanceTy
         return {};
     }
 
+    memory::MemoryZero(((unsigned char *) ti) + sizeof(TypeInfo), sizeof(TypeOps));
+
     O_GC_TRACK_RETURN(isolate, ti, false);
 }
 
-U32 orbiter::datatype::GetTypeName(const OObject *object, char *out_str, U32 out_size) {
+U32 orbiter::datatype::GetTypeName(const OObject *object, char *out_str, const U32 out_size) {
     U32 length = 0;
     InstanceType type;
 

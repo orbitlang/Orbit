@@ -13,13 +13,17 @@
 
 #define O_GC_TRACK_RETURN(isolate, object, is_container)                \
     do{                                                                 \
-            auto handle = Handle(object);                               \
+            auto handle_ = Handle(object);                              \
             if(object != nullptr) {                                     \
                 (isolate)->gc->Track((OObject *) object, is_container); \
             }                                                           \
-            return handle; } while (0)
+            return handle_; } while (0)
 
 namespace orbiter {
+    namespace native {
+        class Loader;
+    }
+
     class Isolate {
         stratum::Memory *allocator_;
 
@@ -32,6 +36,7 @@ namespace orbiter {
     public:
         class DeferPool *dpool_;
         class FiberPool *fpool_;
+        native::Loader *loader_;
 
         datatype::TypeInfo *primitive[datatype::kInstanceTypeCount];
 

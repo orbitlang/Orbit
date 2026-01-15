@@ -11,7 +11,7 @@
 #include <orbit/orbiter/datatype/list.h>
 #include <orbit/orbiter/datatype/orstring.h>
 
-#include <orbit/orbiter/native/native.h>
+#include <orbit/orbiter/native/ffi.h>
 
 namespace orbiter::datatype {
     struct ExportedSymbol {
@@ -20,33 +20,6 @@ namespace orbiter::datatype {
         VariableFlags flags;
 
         U16 slot;
-    };
-
-    enum class NativeBindingType : U8 {
-        FUNC,
-        VAR,
-        CONST
-    };
-
-    struct NativeParam {
-        ORString *name;
-
-        native::NativeType type;
-    };
-
-    struct NativeBinding {
-        ORString *name;
-        ORString *symbol;
-        ORString *library;
-
-        struct {
-            NativeParam *params;
-            U16 count;
-        } params;
-
-        native::NativeType ret_type;
-
-        NativeBindingType binding_type;
     };
 
     struct Code {
@@ -63,7 +36,7 @@ namespace orbiter::datatype {
         } exported;
 
         struct {
-            NativeBinding *bindings;
+            native::NativeBinding *bindings;
 
             U16 length;
         } native;

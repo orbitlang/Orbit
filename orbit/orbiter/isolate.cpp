@@ -14,12 +14,15 @@
 #include <orbit/orbiter/datatype/function.h>
 #include <orbit/orbiter/datatype/list.h>
 #include <orbit/orbiter/datatype/module.h>
+#include <orbit/orbiter/datatype/nativefunc.h>
 #include <orbit/orbiter/datatype/number.h>
 #include <orbit/orbiter/datatype/orstring.h>
 #include <orbit/orbiter/datatype/type.h>
 #include <orbit/orbiter/datatype/tuple.h>
 
 #include <orbit/orbiter/memory/gc.h>
+
+#include <orbit/orbiter/native/loader.h>
 
 #include <orbit/orbiter/isolate.h>
 #include <orbit/orbiter/defer.h>
@@ -32,6 +35,7 @@ Isolate::~Isolate() {
     delete this->dpool_;
     delete this->fpool_;
     delete this->gc;
+    delete this->loader_;
 
     this->allocator_->Finalize();
     delete this->allocator_;
@@ -76,6 +80,7 @@ Isolate *Isolate::New() {
     INIT_TYPE(InstanceType::FUNCTION, FunctionTypeInit);
     INIT_TYPE(InstanceType::LIST, ListTypeInit);
     INIT_TYPE(InstanceType::MODULE, ModuleInit);
+    INIT_TYPE(InstanceType::NATIVE_FUNC, NativeFuncTypeInit);
     INIT_TYPE(InstanceType::NUMBER, NumberTypeInit);
     INIT_TYPE(InstanceType::STRING, ORStringTypeInit);
     INIT_TYPE(InstanceType::TRAIT, TraitTypeInit);
@@ -96,6 +101,7 @@ Isolate *Isolate::New() {
     SETUP_TYPE(InstanceType::FUNCTION, FunctionTypeSetup);
     SETUP_TYPE(InstanceType::LIST, ListTypeSetup);
     SETUP_TYPE(InstanceType::MODULE, ModuleSetup);
+    SETUP_TYPE(InstanceType::NATIVE_FUNC, NativeFuncTypeSetup);
     SETUP_TYPE(InstanceType::NUMBER, NumberTypeSetup);
     SETUP_TYPE(InstanceType::STRING, ORStringTypeSetup);
     SETUP_TYPE(InstanceType::TRAIT, TraitTypeSetup);
@@ -107,6 +113,10 @@ Isolate *Isolate::New() {
                                                nullptr,
                                                MemoryError::Details[MemoryError::Reason::HEAP]).release();
     if (isolate->oom_error_ == nullptr)
+        goto ERROR;
+
+    isolate->loader_ = new native::Loader(isolate);
+    if (!isolate->loader_->Initialize())
         goto ERROR;
 
     return isolate;
