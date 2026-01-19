@@ -9,6 +9,7 @@
 #include <orbit/orbiter/datatype/errors.h>
 #include <orbit/orbiter/datatype/number.h>
 #include <orbit/orbiter/datatype/orstring.h>
+#include <orbit/orbiter/datatype/rawptr.h>
 
 #define __FFI_INTERNAL
 
@@ -148,9 +149,7 @@ HOObject orbiter::native::ConvertToOrbitObject(Isolate *isolate, void **result, 
         case NativeType::UNIT:
             return HOObject(kOddBallNIL);
         case NativeType::PTR:
-            // TODO: Ptr object
-            assert(false);
-            break;
+            return HOObject(RawPtrNew(isolate, result));
         case NativeType::F32:
             return HOObject(DecimalNew(isolate, *(float *) result));
         case NativeType::F64:

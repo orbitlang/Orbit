@@ -91,7 +91,8 @@ namespace orbiter::datatype {
         NATIVE_FUNC,
         NUMBER,
         OBJECT,
-        SET,
+        RAWPTR,
+       // SET,
         STRING,
         TRAIT,
         TUPLE
@@ -117,7 +118,8 @@ namespace orbiter::datatype {
         "NativeFunc",
         "Number",
         "Object",
-        "Set",
+        "RawPtr",
+        //"Set",
         "String",
         "Trait",
         "Tuple"
