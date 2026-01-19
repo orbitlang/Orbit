@@ -91,7 +91,9 @@ namespace orbiter::datatype {
             ID,
 
             PARAMETER,
-            PANIC
+            PANIC,
+            NON_CALLABLE,
+            INVALID_NATIVE_TYPE
         };
 
         static constexpr const char *Details[] = {
@@ -99,6 +101,9 @@ namespace orbiter::datatype {
 
             (const char *) "unexpected type '%s' for '%s' parameter(%d)",
             (const char *) "panic expect type '%s'",
+            (const char *) "invalid call to a non-callable object('%s')",
+            (const char *) "invalid call: native functions can only be called within their defining module by directly "
+            "invoking the symbol (indirect calls are not allowed)"
         };
     };
 

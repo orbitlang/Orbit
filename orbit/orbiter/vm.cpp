@@ -10,8 +10,12 @@
 #include <orbit/orbiter/datatype/error.h>
 #include <orbit/orbiter/datatype/errors.h>
 #include <orbit/orbiter/datatype/function.h>
+#include <orbit/orbiter/datatype/nativefunc.h>
 #include <orbit/orbiter/datatype/number.h>
 #include <orbit/orbiter/datatype/tuple.h>
+
+#include <orbit/orbiter/native/ffi.h>
+#include <orbit/orbiter/native/loader.h>
 
 #include <orbit/orbiter/opcode.h>
 #include <orbit/orbiter/fiber.h>
@@ -168,9 +172,23 @@ HOObject VMAdd(Isolate *isolate, PtrSize left, PtrSize right) {
     return {};
 }
 
-int CallInit(Fiber *fiber, const Function *func, unsigned short p_count, const CallMode mode) {
+int CallInit(Fiber *fiber, const Function *func, const unsigned short p_count, const CallMode mode) {
     auto *regs = &fiber->vm.regs;
     auto *stack = &fiber->vm.stack;
+
+    if (!O_IS_TYPE(func, InstanceType::FUNCTION)) {
+        char error[24];
+
+        GetTypeName((OObject *) func, error, sizeof(error));
+
+        ErrorSet(fiber->isolate,
+                 TypeError::Details[TypeError::Reason::ID],
+                 nullptr,
+                 TypeError::Details[TypeError::Reason::NON_CALLABLE],
+                 error);
+
+        return -1;
+    }
 
     const auto *fn_shared = func->shared;
 
@@ -629,6 +647,44 @@ CATCH_FINALLY:
 
                 DISPATCH;
             }
+            TARGET_OP(NTCALL) {
+                const auto src = FETCH_R_SRC(instr);
+                const auto p_count = FETCH_IMM(instr);
+
+                const auto func = (Function *) REG_N(src);
+
+                if (!O_IS_TYPE(func, InstanceType::NATIVE_FUNC)) {
+                    char error[24];
+
+                    GetTypeName((OObject *) func, error, sizeof(error));
+
+                    ErrorSet(fiber->isolate, TypeError::Details[TypeError::Reason::ID],
+                             nullptr,
+                             TypeError::Details[TypeError::Reason::NON_CALLABLE],
+                             error);
+
+                    goto ERROR;
+                }
+
+                HOObject res;
+
+                if (!native::CallFunction(fiber->isolate,
+                                          res,
+                                          (NativeFunc *) func,
+                                          (OObject **) (stack->stack + (regs->SP.reg - (p_count * sizeof(void *)))),
+                                          p_count))
+                    goto ERROR;
+
+                REG_RR = (PtrSize) res.get();
+
+                for (auto i = 0; i < p_count; i++) {
+                    regs->SP.reg -= sizeof(void *);
+
+                    O_DECREF(*(OObject**)(stack->stack + regs->SP.reg));
+                }
+
+                DISPATCH;
+            }
             TARGET_OP(DEFER) {
                 const auto flags = FETCH_F_DST(CallMode, instr);
                 const auto src = FETCH_R_SRC(instr);
@@ -1000,6 +1056,23 @@ CATCH_FINALLY:
                 }
 
                 REG_N(dst) = (PtrSize) func.get();
+
+                DISPATCH;
+            }
+            TARGET_OP(LDMOD) {
+                assert(false);
+
+                DISPATCH;
+            }
+            TARGET_OP(LDNAT) {
+                const auto dst = FETCH_R_DST(instr);
+                const auto imm = FETCH_IMM(instr);
+
+                auto sym = fiber->isolate->loader_->Load(code->native.bindings + imm);
+                if (!sym)
+                    goto ERROR;
+
+                REG_N(dst) = (PtrSize) sym.get();
 
                 DISPATCH;
             }
