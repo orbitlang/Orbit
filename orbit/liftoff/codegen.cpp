@@ -453,19 +453,19 @@ void Codegen::ExportNativeBindings(const orbiter::datatype::HCode &code) {
         return;
 
     U32 bind_length = 0;
-    U32 bind_param = ir->native_bindings.size() * sizeof(orbiter::datatype::NativeBinding);
+    U32 bind_param = ir->native_bindings.size() * sizeof(orbiter::native::NativeBinding);
     for (const auto &cursor: ir->native_bindings) {
-        bind_length += sizeof(orbiter::datatype::NativeBinding);
+        bind_length += sizeof(orbiter::native::NativeBinding);
 
         if (!cursor.params.empty())
-            bind_length += cursor.params.size() * sizeof(orbiter::datatype::NativeParam);
+            bind_length += cursor.params.size() * sizeof(orbiter::native::NativeParam);
     }
 
     auto *buffer = this->allocator_.alloc<unsigned char>(bind_length);
     if (buffer == nullptr)
         throw std::bad_alloc();
 
-    code->native.bindings = (orbiter::datatype::NativeBinding *) buffer;
+    code->native.bindings = (orbiter::native::NativeBinding *) buffer;
     code->native.length = ir->native_bindings.size();
 
     int index = 0;
@@ -480,15 +480,15 @@ void Codegen::ExportNativeBindings(const orbiter::datatype::HCode &code) {
         binding->params.count = cursor.params.size();
 
         if (!cursor.params.empty()) {
-            binding->params.params = (orbiter::datatype::NativeParam *) (buffer + bind_param);
+            binding->params.params = (orbiter::native::NativeParam *) (buffer + bind_param);
 
             for (const auto &pcursor: cursor.params) {
-                auto *param = (orbiter::datatype::NativeParam *) (buffer + bind_param);
+                auto *param = (orbiter::native::NativeParam *) (buffer + bind_param);
 
                 param->name = pcursor.name.get_inc();
                 param->type = pcursor.type;
 
-                bind_param += sizeof(orbiter::datatype::NativeParam);
+                bind_param += sizeof(orbiter::native::NativeParam);
             }
         }
 
@@ -497,7 +497,7 @@ void Codegen::ExportNativeBindings(const orbiter::datatype::HCode &code) {
     }
 }
 
-void Codegen::ExportSymbols(orbiter::datatype::HCode &code) {
+void Codegen::ExportSymbols(const orbiter::datatype::HCode &code) {
     const auto *ir = this->ir_;
 
     if (ir->exported_names.empty())

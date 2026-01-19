@@ -49,39 +49,41 @@ orbiter::OPCode InfixOp2OpCode(const scanner::TokenType tt, const bool imm, U8 &
     return {};
 }
 
-orbiter::native::NativeType NativeTypeFromTokenType(const scanner::TokenType type) {
+orbiter::datatype::NativeType NativeTypeFromTokenType(const scanner::TokenType type) {
     switch (type) {
         case scanner::TokenType::DT_BOOL:
-            return orbiter::native::NativeType::BOOL;
+            return orbiter::datatype::NativeType::BOOL;
         case scanner::TokenType::DT_BYTE:
-            return orbiter::native::NativeType::BYTE;
+            return orbiter::datatype::NativeType::BYTE;
         case scanner::TokenType::DT_I8:
-            return orbiter::native::NativeType::I8;
+            return orbiter::datatype::NativeType::I8;
         case scanner::TokenType::DT_I16:
-            return orbiter::native::NativeType::I16;
+            return orbiter::datatype::NativeType::I16;
         case scanner::TokenType::DT_I32:
-            return orbiter::native::NativeType::I32;
+            return orbiter::datatype::NativeType::I32;
         case scanner::TokenType::DT_I64:
-            return orbiter::native::NativeType::I64;
+            return orbiter::datatype::NativeType::I64;
         case scanner::TokenType::DT_ISIZE:
-            return orbiter::native::NativeType::ISIZE;
+            return orbiter::datatype::NativeType::ISIZE;
         case scanner::TokenType::DT_U8:
-            return orbiter::native::NativeType::U8;
+            return orbiter::datatype::NativeType::U8;
         case scanner::TokenType::DT_U16:
-            return orbiter::native::NativeType::U16;
+            return orbiter::datatype::NativeType::U16;
         case scanner::TokenType::DT_U32:
-            return orbiter::native::NativeType::U32;
+            return orbiter::datatype::NativeType::U32;
         case scanner::TokenType::DT_U64:
-            return orbiter::native::NativeType::U64;
+            return orbiter::datatype::NativeType::U64;
         case scanner::TokenType::DT_USIZE:
-            return orbiter::native::NativeType::USIZE;
+            return orbiter::datatype::NativeType::USIZE;
+        case scanner::TokenType::DT_UNIT:
+            return orbiter::datatype::NativeType::UNIT;
         case scanner::TokenType::DT_OPAQUE:
         case scanner::TokenType::DT_PTR:
-            return orbiter::native::NativeType::PTR;
+            return orbiter::datatype::NativeType::PTR;
         case scanner::TokenType::DT_F32:
-            return orbiter::native::NativeType::F32;
+            return orbiter::datatype::NativeType::F32;
         case scanner::TokenType::DT_F64:
-            return orbiter::native::NativeType::F64;
+            return orbiter::datatype::NativeType::F64;
         default:
             assert(false); // Never get here
     }
@@ -1090,7 +1092,7 @@ Instruction *IRBuilder::visitNativeFunc(const parser::NativeFunc *node) {
     }
 
     bind.ret_type = NativeTypeFromTokenType(node->ret_type);
-    bind.binding_type = orbiter::datatype::NativeBindingType::FUNC;
+    bind.binding_type = orbiter::native::NativeBindingType::FUNC;
 
     auto *nt = this->builder_.CreateUnaryOp(orbiter::OPCode::LDNAT, fid, 0);
     return this->StoreVariable(node->alias, nt, true);;
@@ -1109,8 +1111,8 @@ Instruction *IRBuilder::visitNativeVariable(const parser::NativeVariable *node) 
     bind.library = orbiter::datatype::HORString(node->mod_name);
     bind.ret_type = NativeTypeFromTokenType(node->kind);
     bind.binding_type = node->alias->type == SymbolType::NATIVE_CONST
-                            ? orbiter::datatype::NativeBindingType::CONST
-                            : orbiter::datatype::NativeBindingType::VAR;
+                            ? orbiter::native::NativeBindingType::CONST
+                            : orbiter::native::NativeBindingType::VAR;
 
     auto *nt = this->builder_.CreateUnaryOp(orbiter::OPCode::LDNAT, fid, 0);
     return this->StoreVariable(node->alias, nt, true);;

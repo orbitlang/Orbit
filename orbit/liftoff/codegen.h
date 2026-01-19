@@ -19,11 +19,11 @@ namespace liftoff {
 
         static unsigned char *EmitOpcodes(const ir::BasicBlock *block, unsigned char *m_code);
 
-        U32 CalculateCodeSize() const;
+        [[nodiscard]] U32 CalculateCodeSize() const;
 
         void ExportNativeBindings(const orbiter::datatype::HCode &code);
 
-        void ExportSymbols(orbiter::datatype::HCode &code);
+        void ExportSymbols(const orbiter::datatype::HCode &code);
     public:
         explicit Codegen(ir::IRContext *ir) noexcept : allocator_(ir->GetIsolate()), ir_(ir) {
         }

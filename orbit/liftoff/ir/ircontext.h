@@ -13,8 +13,6 @@
 #include <orbit/liftoff/ir/basicblock.h>
 #include <orbit/liftoff/ir/jblock.h>
 
-#include <orbit/orbiter/native/native.h>
-
 namespace liftoff::ir {
     enum class IRContextType {
         CLASS,
@@ -82,10 +80,10 @@ namespace liftoff::ir {
     class NativeParams {
     public:
         orbiter::datatype::HORString name;
-        orbiter::native::NativeType type;
+        orbiter::datatype::NativeType type;
 
         NativeParams(orbiter::datatype::ORString *name,
-                     const orbiter::native::NativeType type) noexcept : name(O_INCREF(name)), type(type) {
+                     const orbiter::datatype::NativeType type) noexcept : name(O_INCREF(name)), type(type) {
         }
     };
 
@@ -109,9 +107,9 @@ namespace liftoff::ir {
 
         std::vector<NativeParams> params;
 
-        orbiter::native::NativeType ret_type;
+        orbiter::datatype::NativeType ret_type;
 
-        orbiter::datatype::NativeBindingType binding_type;
+        orbiter::native::NativeBindingType binding_type;
     };
 
     /**
