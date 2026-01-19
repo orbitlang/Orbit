@@ -609,7 +609,8 @@ ASTHandle<ASTNode *> Parser::ParseNativeFuncStatement(const Position &start) {
             throw ParserException(58);
 
         const auto alias = ORStringNew(this->isolate_, this->tkcur_.buffer, this->tkcur_.length);
-        func->alias = this->sym_t_->Declare(alias.get(), SymbolType::NATIVE_FUNC, TKCUR_LOC.start.offset);
+        func->alias = this->sym_t_->DeclareSymbolScope(alias.get(), SymbolType::NATIVE_FUNC, TKCUR_LOC.start.offset,
+                                                       TKCUR_LOC.start.line);
         if (func->alias == nullptr)
             throw SymbolTableException();
 
@@ -617,10 +618,22 @@ ASTHandle<ASTNode *> Parser::ParseNativeFuncStatement(const Position &start) {
 
         this->Eat(false);
     } else {
-        func->alias = this->sym_t_->Declare(func->native_name, SymbolType::NATIVE_FUNC, func->loc.start.offset);
+        func->alias = this->sym_t_->DeclareSymbolScope(func->native_name, SymbolType::NATIVE_FUNC,
+                                                       func->loc.start.offset, func->loc.start.line);
         if (func->alias == nullptr)
             throw SymbolTableException();
     }
+
+    for (const auto &cursor: func->parameters) {
+        const auto *param = (NativeParameter *) cursor.get();
+
+        const auto *sym = this->sym_t_->Declare(param->name, SymbolType::PARAMETER, param->loc.start.offset);
+        if (sym == nullptr)
+            throw SymbolTableException();
+    }
+
+    this->sym_t_->LeaveScope();
+
 
     this->IgnoreNewLineIF(TokenType::KW_FROM);
 
@@ -1400,6 +1413,16 @@ ASTHandle<ASTNode *> Parser::ParseFuncCall(ASTHandle<ASTNode *> &left) {
 
     if (!this->MatchEat(TokenType::RIGHT_ROUND, false))
         throw ParserException(22);
+
+    if (call->left->node_type == NodeType::IDENTIFIER) {
+        const auto &id = (ASTHandle<Identifier *> &) call->left;
+
+        if (id->symbol->type == SymbolType::NATIVE_FUNC && id->symbol->scope->GetParameterCount() != call->args.size())
+            throw ParserException(86);
+
+        if (id->symbol->type == SymbolType::NATIVE_VAR || id->symbol->type == SymbolType::NATIVE_CONST)
+            throw ParserException(87);
+    }
 
     return call;
 }

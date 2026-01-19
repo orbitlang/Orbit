@@ -202,6 +202,17 @@ Instruction *IRBuilder::CreateCall(const parser::Call *node, Instruction *f_src)
     if ((int) mode > 1)
         mode &= ~orbiter::CallMode::FASTCALL;
 
+    if (node->left->node_type == parser::NodeType::IDENTIFIER) {
+        const auto *id = ((parser::Identifier *) node->left);
+
+        if (id->symbol->type == SymbolType::NATIVE_FUNC) {
+            if (opcode == orbiter::OPCode::DEFER)
+                assert(false); // TODO: fix
+
+            return this->builder_.CreateCallNativeDetached(f_src, node->args.size());
+        }
+    }
+
     const auto call = (CallInstr *) this->builder_.CreateCallDetached(opcode, f_src, node->args.size(), mode);
 
     if (nargs != nullptr)

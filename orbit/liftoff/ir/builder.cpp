@@ -148,8 +148,11 @@ Instruction *Builder::CreateCall(Instruction *src, U16 arguments, CallMode mode)
 }
 
 Instruction *Builder::CreateCallDetached(const OPCode opcode, Instruction *src, U16 arguments, CallMode mode) {
-    auto *call = this->CreateObject<CallInstr>(opcode, src, arguments, mode);
-    return call;
+    return this->CreateObject<CallInstr>(opcode, src, arguments, mode);
+}
+
+Instruction *Builder::CreateCallNativeDetached(Instruction *src, const U16 arguments) {
+    return this->CreateObject<CallInstr>(OPCode::NTCALL, src, arguments);
 }
 
 Instruction *Builder::CreateDec(Instruction *src) {

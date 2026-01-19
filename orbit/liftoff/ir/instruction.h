@@ -191,6 +191,14 @@ namespace liftoff::ir {
 
             this->assigned_reg = kReturnRegisterReg;
         }
+
+        explicit CallInstr(const orbiter::OPCode opcode, Instruction *src,
+                           const U16 arguments) noexcept : PhysInstruction(opcode, 1),
+                                                           arguments(arguments), mode(orbiter::CallMode::FASTCALL) {
+            this->SetOperand(0, src);
+
+            this->assigned_reg = kReturnRegisterReg;
+        }
     };
 
     class ExecSubInstr final : public PhysInstruction {

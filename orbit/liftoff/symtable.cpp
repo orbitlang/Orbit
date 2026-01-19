@@ -275,6 +275,9 @@ Symbol *SymbolTable::DeclareSymbolScope(ORString *name, const SymbolType type, c
             break;
         case SymbolType::MODULE:
             assert(false);
+        case SymbolType::NATIVE_FUNC:
+            scope->type = ScopeType::NATIVE_FUNC;
+            break;
         default:
             break;
     }

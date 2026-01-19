@@ -97,7 +97,9 @@ namespace liftoff::parser {
         "Invalid assignment: cannot assign non-assignable expression (e.g., defer, panic, spawn)",
         "Invalid expression: non-value expression (e.g., defer, panic, spawn) cannot be used in value context (e.g., tuple, function argument, binary operation)",
         "Missing closing parenthesis: expected ')' after exception types",
-        "Invalid import: module name is not a valid identifier. Use 'as' to provide an alias"
+        "Invalid import: module name is not a valid identifier. Use 'as' to provide an alias",
+        "Invalid native function call arity",
+        "Invalid call to a native variable"
     };
 
     constexpr auto kInitMethodName = "init";

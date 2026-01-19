@@ -204,6 +204,11 @@ unsigned char *Codegen::EmitOpcodes(const BasicBlock *block, unsigned char *m_co
                                                             ((Instruction*)instr->operands[0].value)->assigned_reg,
                                                             ((ir::CallInstr*)instr)->arguments);
                 break;
+            case orbiter::OPCode::NTCALL:
+                *(orbiter::MachineWord *) m_code = EMIT_SO(instr->opcode,
+                                                           ((Instruction*)instr->operands[0].value)->assigned_reg,
+                                                           ((ir::CallInstr*)instr)->arguments);
+                break;
             case orbiter::OPCode::EXECDEFER:
                 *(orbiter::MachineWord *) m_code = EMIT_OP(instr->opcode);
                 break;

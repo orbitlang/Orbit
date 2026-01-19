@@ -53,6 +53,7 @@ namespace liftoff {
         FUNCTION,
         GENERATOR,
         MODULE,
+        NATIVE_FUNC,
         TRAIT
     };
 
@@ -138,7 +139,7 @@ namespace liftoff {
         }
 
         [[nodiscard]] U16 GetParameterCount() const {
-            assert(this->type == ScopeType::FUNCTION);
+            assert(this->type == ScopeType::FUNCTION || this->type == ScopeType::NATIVE_FUNC);
 
             return this->parameter_count;
         }
