@@ -27,6 +27,10 @@ bool Loader::Initialize() {
 }
 
 DLHandle Loader::LoadLibrary(ORString *name, bool &closable) {
+#ifdef _ORBIT_PLATFORM_DARWIN
+    HORString tmp;
+#endif
+
     const char *library = nullptr;
 
     closable = false;
@@ -41,9 +45,29 @@ DLHandle Loader::LoadLibrary(ORString *name, bool &closable) {
             return ((RawPtr *) out_value_.get())->ptr;
     }
 
-    const auto lib = OpenLibrary(this->isolate_, library);
-    if (lib == DLHandleError)
+    auto lib = OpenLibrary(this->isolate_, library);
+    if (lib == DLHandleError) {
+#ifdef _ORBIT_PLATFORM_DARWIN
+        // macOS doesn't automatically append .dylib, so if nothing is found, attempt to add it explicitly.
+        if (name == nullptr)
+            return nullptr;
+
+        tmp = ORStringFormat(this->isolate_, "%s.dylib", library);
+
+        name = tmp.get();
+        library = ORSTRING_TO_CSTR(name);
+
+        HOObject out_value_;
+        if (DictLookup(this->lib_cache_.get(), (OObject *) name, out_value_))
+            return ((RawPtr *) out_value_.get())->ptr;
+
+        lib = OpenLibrary(this->isolate_, library);
+        if (lib == DLHandleError)
+            return nullptr;
+#else
         return nullptr;
+#endif
+    }
 
     const auto ret = RawPtrNew(this->isolate_, lib);
     if (!ret)
@@ -57,7 +81,7 @@ DLHandle Loader::LoadLibrary(ORString *name, bool &closable) {
     return ret->ptr;
 }
 
-HOObject Loader::Load(NativeBinding *binding)  {
+HOObject Loader::Load(NativeBinding *binding) {
     const auto key = this->MakeKey(binding->library, binding->symbol, binding->binding_type);
 
     HOObject out_value_;
@@ -93,7 +117,7 @@ HOObject Loader::LoadFunction(NativeBinding *binding) {
     return HOObject((OObject *) native_func.get());
 }
 
-HOObject Loader::LoadVariable(NativeBinding *binding)  {
+HOObject Loader::LoadVariable(NativeBinding *binding) {
     assert(false);
 
     return {};
