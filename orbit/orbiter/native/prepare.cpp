@@ -89,7 +89,7 @@ bool orbiter::native::PrepareCall(Isolate *isolate, const NativeFunc *func, Para
                 break;
         }
 
-        const auto to_native = O_GET_TYPE_OPS(args[i]).to_native;
+        const auto to_native = O_IS_OBJECT(args[i]) ? O_GET_TYPE_OPS(args[i]).to_native : nullptr;
         if (to_native == nullptr || !to_native(args[i], &dst[d_index++].value, param->type)) {
             char error[24]{};
 
