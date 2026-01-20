@@ -5,7 +5,7 @@
 #ifndef ORBIT_ORBITER_NATIVE_LOADER_H_
 #define ORBIT_ORBITER_NATIVE_LOADER_H_
 
-#include <orbit/orbiter/isolate.h>
+#include <mutex>
 
 #include <orbit/orbiter/datatype/dict.h>
 #include <orbit/orbiter/datatype/nativefunc.h>
@@ -13,23 +13,32 @@
 
 namespace orbiter::native {
     class Loader {
+        std::mutex cache_mutex_;
+        std::mutex lib_cache_mutex_;
+
         datatype::HDict cache_;
+        datatype::HDict lib_cache_;
 
         Isolate *isolate_;
 
-        datatype::HOObject LoadFunction(NativeBinding *binding) const;
+        DLHandle LoadLibrary(datatype::ORString *name, bool &closable);
 
-        datatype::HOObject LoadVariable(NativeBinding *binding) const;
+        datatype::HOObject LoadFunction(NativeBinding *binding);
+
+        datatype::HOObject LoadVariable(NativeBinding *binding);
 
         datatype::HORString MakeKey(const datatype::ORString *library, const datatype::ORString *symbol,
                                     NativeBindingType type) const;
+
+        void CloseLibrary(DLHandle handle, datatype::ORString *name, bool closable) const;
+
     public:
         explicit Loader(Isolate *isolate) : isolate_(isolate) {
         }
 
         bool Initialize();
 
-        datatype::HOObject Load(NativeBinding *binding) const;
+        datatype::HOObject Load(NativeBinding *binding);
     };
 } // orbiter::native
 
