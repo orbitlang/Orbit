@@ -63,16 +63,16 @@ namespace orbiter {
         NIL
     };
 
-    enum class LoadFuncFlags : U16 {
+    enum class LoadFuncFlags : U8 {
         SIMPLE = 0,
 
         ASYNC = 0x1,
+        GENERATOR = 1 << 1,
         INIT = 1 << 2,
         METHOD = 1 << 3,
         NPARAMS = 1 << 4,
         KW_PARAMS = 1 << 5,
-        REST_PARAMS = 1 << 6,
-        GENERATOR = 1 << 7
+        REST_PARAMS = 1 << 6
     };
 
     enum class LoadObjectPropFlags : U8 {

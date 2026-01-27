@@ -96,21 +96,12 @@ HFunction orbiter::datatype::FunctionNew(Isolate *isolate, const FunctionDef *de
     return {};
 }
 
-HFunction orbiter::datatype::FunctionNew(Code *code, Closure *closure, Tuple *defaults, LoadFuncFlags flags) {
+HFunction orbiter::datatype::FunctionNew(Code *code, Closure *closure, Tuple *defaults, const LoadFuncFlags flags) {
     auto *isolate = O_GET_ISOLATE(code);
-    auto fn_kind = FunctionKind::SIMPLE;
 
-    if (ENUMBITMASK_ISTRUE(flags, LoadFuncFlags::ASYNC))
-        fn_kind = FunctionKind::ASYNC;
-
-    if (ENUMBITMASK_ISTRUE(flags, LoadFuncFlags::INIT))
-        fn_kind |= FunctionKind::INIT;
-
-    if (ENUMBITMASK_ISTRUE(flags, LoadFuncFlags::METHOD))
-        fn_kind |= FunctionKind::METHOD;
-
-    if (ENUMBITMASK_ISTRUE(flags, LoadFuncFlags::REST_PARAMS))
-        fn_kind |= FunctionKind::REST;
+    // LoadFuncFlags and FunctionKind are identical except for NPARAMS, which is mapped to NATIVE in FunctionKind.
+    // Since we're creating an interpreted function here (not a native one), we can safely mask out and remove this flag.
+    const auto fn_kind = (FunctionKind) (flags & ~LoadFuncFlags::NPARAMS);
 
     auto *f_shared = FunSharedNew(isolate, nullptr, nullptr, code->params_count, nullptr, fn_kind);
     if (f_shared != nullptr) {

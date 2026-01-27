@@ -19,13 +19,14 @@
 namespace orbiter::datatype {
     enum class FunctionKind : U8 {
         SIMPLE = 0x0,
-        ASYNC = 0x1,
 
-        INIT = 0x1 << 1,
-        METHOD = 0x1 << 2,
-        NATIVE = 0x1 << 3,
-        REST = 0x1 << 4,
-        KWARGS = 0x1 << 5
+        ASYNC = 0x1,
+        GENERATOR = 1 << 1,
+        INIT = 0x1 << 2,
+        METHOD = 0x1 << 3,
+        NATIVE = 0x1 << 4,
+        KWARGS = 0x1 << 5,
+        REST = 0x1 << 6
     };
 }
 
@@ -105,6 +106,15 @@ namespace orbiter::datatype {
          */
         [[nodiscard]] bool HasDefaultArgs() const {
             return this->defaults != nullptr;
+        }
+
+        /**
+         * @brief Check if the function is a generator
+         *
+         * @return true if the function is a generator, false otherwise
+         */
+        [[nodiscard]] bool IsGenerator() const {
+            return ENUMBITMASK_ISTRUE(this->kind, FunctionKind::GENERATOR);
         }
 
         /**
