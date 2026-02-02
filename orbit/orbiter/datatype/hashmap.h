@@ -55,7 +55,7 @@ namespace orbiter::datatype {
         size_t free_count = 0;
         size_t free_max = 0;
 
-        explicit HashMap(Isolate *isolate): allocator_(isolate) {
+        explicit HashMap(Isolate *isolate) : allocator_(isolate) {
         }
 
         bool Initialize(size_t capacity_, size_t free_nodes) {
@@ -179,16 +179,34 @@ namespace orbiter::datatype {
                     next = cur->next;
 
                     if (hash == i) {
+                        if (prev == nullptr)
+                            cur->prev = new_map + i;
+
                         prev = cur;
                         continue;
                     }
 
-                    cur->next = new_map[hash];
+                    auto *old_head = new_map[hash];
+
+                    cur->next = old_head;
+                    cur->prev = new_map + hash;
+
+                    if (old_head != nullptr)
+                        old_head->prev = &cur->next;
+
                     new_map[hash] = cur;
-                    if (prev != nullptr)
+
+                    if (prev != nullptr) {
                         prev->next = next;
-                    else
+
+                        if (next != nullptr)
+                            next->prev = &prev->next;
+                    } else {
                         new_map[i] = next;
+
+                        if (next != nullptr)
+                            next->prev = new_map + i;
+                    }
                 }
             }
 
