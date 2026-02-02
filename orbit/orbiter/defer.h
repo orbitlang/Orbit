@@ -5,6 +5,8 @@
 #ifndef ORBIT_ORBITER_DEFER_H_
 #define ORBIT_ORBITER_DEFER_H_
 
+#include <orbit/orbiter/datatype/function.h>
+
 #include <orbit/datatype.h>
 
 namespace orbiter {

@@ -5,11 +5,32 @@
 #ifndef ORBIT_ORBITER_DATATYPE_GENERATOR_H_
 #define ORBIT_ORBITER_DATATYPE_GENERATOR_H_
 
+#include <atomic>
+
 #include <orbit/orbiter/datatype/oobject.h>
 
 namespace orbiter::datatype {
+    enum class GeneratorState : U8 {
+        READY,
+        RUNNING,
+        EXHAUSTED
+    };
+
     struct Generator {
         OROBJ_HEAD;
+
+        Function *base;
+
+        OObject **regs_dump;
+        OObject **params;
+        OObject **stack;
+
+        PtrSize IP;
+
+        std::atomic_uintptr_t acquired;
+        std::atomic<GeneratorState> state;
+
+        U32 stack_size;
     };
 
     using HGenerator = Handle<Generator>;
@@ -30,7 +51,20 @@ namespace orbiter::datatype {
      */
     bool GeneratorTypeSetup(TypeInfo *self);
 
-    HGenerator GeneratorNew(Fiber *fiber, Function *base);
+    /**
+     * @brief Creates a new generator object and initializes its state
+     *
+     * This function constructs a generator object, setting up the necessary memory allocations and initializing
+     * its internal state. The generator is prepared to operate based on the provided fiber, base function,
+     * and the specified parameter size.
+     *
+     * @param fiber Pointer to the Fiber object that provides the execution context for the generator
+     * @param base Pointer to the Function object that defines the generator's base functionality
+     * @param param_size The number of parameters to allocate for the generator's stack
+     *
+     * @return Handle to the newly created Generator object, or an empty handle if creation fails
+     */
+    HGenerator GeneratorNew(const Fiber *fiber, Function *base, U16 param_size);
 
     /**
      * @brief Initialize and create the specified type

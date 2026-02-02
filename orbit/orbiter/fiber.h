@@ -8,7 +8,6 @@
 #include <cassert>
 
 #include <orbit/orbiter/datatype/context.h>
-#include <orbit/orbiter/datatype/function.h>
 #include <orbit/orbiter/datatype/module.h>
 
 #include <orbit/orbiter/defer.h>
@@ -41,7 +40,7 @@ namespace orbiter {
         datatype::Context *context;
         datatype::Module *module;
         datatype::Code *code;
-        datatype::Function *func;
+        datatype::OObject *func;
     };
 
     class Fiber {

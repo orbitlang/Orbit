@@ -10,6 +10,7 @@
 #include <orbit/orbiter/datatype/error.h>
 #include <orbit/orbiter/datatype/errors.h>
 #include <orbit/orbiter/datatype/function.h>
+#include <orbit/orbiter/datatype/generator.h>
 #include <orbit/orbiter/datatype/nativefunc.h>
 #include <orbit/orbiter/datatype/number.h>
 #include <orbit/orbiter/datatype/tuple.h>
@@ -55,7 +56,7 @@ bool ExecDefer(Fiber *fiber) {
         fiber->context.context = O_FAST_INCREF(defer->func->shared->context);
         fiber->context.module = O_INCREF(defer->func->shared->module);
         fiber->context.code = O_FAST_INCREF(defer->func->shared->code);
-        fiber->context.func = O_FAST_INCREF(defer->func);
+        fiber->context.func = O_FAST_INCREF((OObject*)defer->func);
 
         *((PtrSize *) (stack->stack + (defer->SP - sizeof(void *)))) = regs->IP.reg - sizeof(MachineWord);
 
@@ -73,7 +74,7 @@ bool ExecDefer(Fiber *fiber) {
     }
 }
 
-bool Call(Fiber *fiber, Function *func, const unsigned short total_args) {
+bool Call(Fiber *fiber, Function *func, const U16 total_args) {
     auto *regs = &fiber->vm.regs;
 
     if (!func->shared->IsInterpreted()) {
@@ -82,18 +83,27 @@ bool Call(Fiber *fiber, Function *func, const unsigned short total_args) {
         return false;
     }
 
+    // Store current context
+    stratum::util::MemoryCopy(fiber->vm.stack.stack + regs->SP.reg, &fiber->context.context, sizeof(FiberContext));
+    regs->SP.reg += sizeof(FiberContext);
+
+    fiber->vm.Push(regs->BP.reg);
+    fiber->vm.Push(regs->IP.reg);
+
+    // Load new context
     regs->BP.reg = regs->SP.reg;
     regs->IP.reg = (PtrSize) func->shared->code->m_code;
 
     fiber->context.context = O_FAST_INCREF(func->shared->context);
     fiber->context.module = O_INCREF(func->shared->module);
     fiber->context.code = O_FAST_INCREF(func->shared->code);
-    fiber->context.func = O_FAST_INCREF(func);
+    fiber->context.func = O_FAST_INCREF((OObject*)func);
 
     return true;
 }
 
 bool UnwindStack(Fiber *fiber) {
+    const auto *context = &fiber->context;
     auto *regs = &fiber->vm.regs;
     const auto *stack = &fiber->vm.stack;
     const auto *except = (ExceptionContext *) regs->CP.reg;
@@ -125,11 +135,23 @@ bool UnwindStack(Fiber *fiber) {
         SP = regs->SP.reg;
         regs->SP.reg -= sizeof(FiberContext);
 
+        if (context == &fiber->context) {
+            if (context->func != nullptr && O_IS_TYPE(context->func, InstanceType::GENERATOR)) {
+                ((Generator *) context->func)->state = GeneratorState::EXHAUSTED;
+                ((Generator *) context->func)->acquired = 0;
+            }
+        }
+
+        context = (FiberContext *) (stack->stack + regs->SP.reg);
+
         // Is there at least one exception handler?
         if (except != nullptr && except->key == regs->BP.reg) {
-            stratum::util::MemoryCopy(&fiber->context.context,
-                                      stack->stack + regs->SP.reg,
-                                      sizeof(FiberContext));
+            O_FAST_DECREF(fiber->context.context);
+            O_DECREF(fiber->context.module);
+            O_FAST_DECREF(fiber->context.code);
+            O_DECREF(fiber->context.func);
+
+            stratum::util::MemoryCopy(&fiber->context.context, context, sizeof(FiberContext));
 
             // Cleanup parameters
             const auto pops = ((unsigned char *) (regs->CP.reg + sizeof(ExceptionContext))) - stack->stack;
@@ -144,7 +166,12 @@ bool UnwindStack(Fiber *fiber) {
             return true;
         }
 
-        regs->IP.reg = (PtrSize) ((FiberContext *) (stack->stack + regs->SP.reg))->code->m_end;
+        if (context->func != nullptr && O_IS_TYPE(context->func, InstanceType::GENERATOR)) {
+            ((Generator *) context->func)->state = GeneratorState::EXHAUSTED;
+            ((Generator *) context->func)->acquired = 0;
+        }
+
+        regs->IP.reg = (PtrSize) context->code->m_end;
 
         while (SP > regs->SP.reg) {
             SP -= sizeof(void *);
@@ -354,18 +381,75 @@ int CallInit(Fiber *fiber, const Function *func, const unsigned short p_count, c
         fiber->vm.Push((OObject *) dict.get());
     }
 
-    if (func->shared->IsInterpreted()) {
-        stratum::util::MemoryCopy(stack->stack + regs->SP.reg, &fiber->context.context, sizeof(FiberContext));
-        regs->SP.reg += sizeof(FiberContext);
-
-        fiber->vm.Push(regs->BP.reg);
-        fiber->vm.Push(regs->IP.reg);
-    }
-
     return total_args;
 }
 
-OObject *LoadFromObjectProp(const Fiber *fiber, OObject *obj, const LoadObjectPropFlags flags, const U16 offset) {
+int CallGenerator(Fiber *fiber, Generator *gen, const U16 total_args, const CallMode mode) {
+    auto *regs = &fiber->vm.regs;
+    const auto *stack = &fiber->vm.stack;
+
+    if (total_args != 0 || mode != CallMode::FASTCALL) {
+        ErrorSet(fiber->isolate,
+                 TypeError::Details[TypeError::Reason::ID],
+                 nullptr,
+                 TypeError::Details[TypeError::Reason::GENERATOR_INVALID_CALL]);
+
+        return -1;
+    }
+
+    if (gen->state == GeneratorState::EXHAUSTED) {
+        ErrorSet(fiber->isolate,
+                 StopIterationError::Details[StopIterationError::Reason::ID],
+                 nullptr,
+                 StopIterationError::Details[StopIterationError::Reason::GENERATOR_EXHAUSTED]);
+
+        return -1;
+    }
+
+    PtrSize actual = 0;
+    if (!gen->acquired.compare_exchange_strong(actual, (PtrSize) fiber))
+        return 0;
+
+    // Load registers
+    stratum::util::MemoryCopy(regs, gen->regs_dump, kGeneralPurposeRegistersCount);
+
+    // Load generator params
+    const auto params_length = gen->stack - gen->params;
+    stratum::util::MemoryCopy(stack->stack + regs->SP.reg, gen->params, params_length);
+    regs->SP.reg += params_length;
+
+    // Store current context
+    stratum::util::MemoryCopy(stack->stack + regs->SP.reg, &fiber->context.context, sizeof(FiberContext));
+    regs->SP.reg += sizeof(FiberContext);
+
+    fiber->vm.Push(regs->BP.reg); // Store BP
+    fiber->vm.Push(regs->IP.reg); // Store IP
+
+    const auto BP = regs->SP.reg;
+
+    // Load generator stack
+    if (gen->stack_size > 0) {
+        stratum::util::MemoryCopy(stack->stack + regs->SP.reg, gen->params, gen->stack_size);
+        regs->SP.reg += gen->stack_size;
+    }
+
+    // Load context into fiber
+    const auto func = gen->base;
+    fiber->context.context = O_FAST_INCREF(func->shared->context);
+    fiber->context.module = O_INCREF(func->shared->module);
+    fiber->context.code = O_FAST_INCREF(func->shared->code);
+    fiber->context.func = O_FAST_INCREF((OObject*)gen);
+
+    regs->BP.reg = BP;
+    regs->IP.reg = gen->IP;
+
+    gen->state = GeneratorState::RUNNING;
+
+    return 1;
+}
+
+OObject *LoadFromObjectProp(const Fiber *fiber, const Function *func, OObject *obj, const LoadObjectPropFlags flags,
+                            const U16 offset) {
     const auto *code = fiber->context.code;
     const auto *type = GetTypeInfoFromObject(obj);
 
@@ -383,10 +467,10 @@ OObject *LoadFromObjectProp(const Fiber *fiber, OObject *obj, const LoadObjectPr
     }
 
     if (ENUMBITMASK_ISFALSE(prop->detail, PropertyFlag::IS_PUBLIC)) {
-        if (fiber->context.func == nullptr
-            || fiber->context.func->shared->owner_type == nullptr
+        if (func == nullptr
+            || func->shared->owner_type == nullptr
             || ENUMBITMASK_ISFALSE(prop->detail, PropertyFlag::IS_PROTECTED)
-            || !IsTypeExtends(type, fiber->context.func->shared->owner_type))
+            || !IsTypeExtends(type, func->shared->owner_type))
             assert(false); // FIXME
     }
 
@@ -417,6 +501,7 @@ void CallNative(Function *func, Registers *regs, const VMStack *stack, const U16
 void Return(Fiber *fiber, const U32 pops) {
     auto *regs = &fiber->vm.regs;
     const auto *stack = &fiber->vm.stack;
+    auto *func = fiber->context.func;
 
     // Cleanup local variables
     for (auto i = regs->BP.reg; i != regs->SP.reg; i += sizeof(void *))
@@ -431,9 +516,9 @@ void Return(Fiber *fiber, const U32 pops) {
 
         regs->BP.reg = *((PtrSize *) (stack->stack + regs->SP.reg));
 
-        O_DECREF(fiber->context.context);
+        O_FAST_DECREF(fiber->context.context);
         O_DECREF(fiber->context.module);
-        O_DECREF(fiber->context.code);
+        O_FAST_DECREF(fiber->context.code);
         O_DECREF(fiber->context.func);
 
         regs->SP.reg -= sizeof(FiberContext);
@@ -447,6 +532,11 @@ void Return(Fiber *fiber, const U32 pops) {
             O_DECREF(*(OObject**)(stack->stack + regs->SP.reg));
         }
 
+        if (O_IS_TYPE(func, InstanceType::GENERATOR)) {
+            ((Generator *) func)->state = GeneratorState::EXHAUSTED;
+            ((Generator *) func)->acquired = 0;
+        }
+
         return;
     }
 
@@ -455,7 +545,59 @@ void Return(Fiber *fiber, const U32 pops) {
     regs->IP.reg = (PtrSize) fiber->context.code->m_end;
 }
 
-void StoreToObjectProp(const Fiber *fiber, OObject *obj, OObject *value,
+void SaveGenerator(Fiber *fiber) {
+    auto *regs = &fiber->vm.regs;
+    const auto *stack = &fiber->vm.stack;
+
+    auto *gen = (Generator *) fiber->context.func;
+
+    // Decrement the reference count for each saved register in the generator
+    for (auto *cursor = gen->regs_dump; cursor < gen->params; cursor++)
+        O_DECREF(*cursor);
+
+    // About to save a new stack, decrement the reference count for each value in the previously saved stack
+    for (auto i = 0; i < gen->stack_size; i++)
+        O_DECREF(gen->stack[i]);
+
+    // Store stack
+    gen->stack_size = regs->SP.reg - regs->BP.reg;
+    stratum::util::MemoryCopy(gen->stack, stack->stack + regs->BP.reg, gen->stack_size);
+
+    regs->SP.reg = regs->BP.reg - sizeof(void *);
+
+    // Save the IP and advance it to the next instruction
+    gen->IP = regs->IP.reg + sizeof(MachineWord);
+
+    // Restore the caller's IP (saved before entering the generator) and advance to the next instruction
+    regs->IP.reg = *((PtrSize *) (stack->stack + regs->SP.reg)) + sizeof(MachineWord);
+
+    // Restore BP
+    regs->SP.reg -= sizeof(void *);
+    regs->BP.reg = *((PtrSize *) (stack->stack + regs->SP.reg));
+
+    // Restore the previous fiber context saved on the stack
+    O_DECREF(fiber->context.context);
+    O_DECREF(fiber->context.module);
+    O_DECREF(fiber->context.code);
+    O_DECREF(fiber->context.func);
+
+    regs->SP.reg -= sizeof(FiberContext);
+    stratum::util::MemoryCopy(&fiber->context.context, stack->stack + regs->SP.reg, sizeof(FiberContext));
+
+    // Remove the generator parameters from the stack without decrementing (ownership remains with Generator)
+    regs->SP.reg -= gen->stack - gen->params;
+
+    // Dump the current registers into the generator
+    stratum::util::MemoryCopy(gen->regs_dump, regs, kGeneralPurposeRegistersCount);
+
+    // Increment the reference count for each value in the dumped registers
+    for (auto *cursor = gen->regs_dump; cursor < gen->params; cursor++)
+        O_INCREF(*cursor);
+
+    gen->acquired = 0;
+}
+
+void StoreToObjectProp(const Fiber *fiber, const Function *func, OObject *obj, OObject *value,
                        const LoadObjectPropFlags flags, const U16 offset) {
     const auto *code = fiber->context.code;
     const auto *type = GetTypeInfoFromObject(obj);
@@ -474,10 +616,10 @@ void StoreToObjectProp(const Fiber *fiber, OObject *obj, OObject *value,
     }
 
     if (ENUMBITMASK_ISFALSE(prop->detail, PropertyFlag::IS_PUBLIC)) {
-        if (fiber->context.func == nullptr
-            || fiber->context.func->shared->owner_type == nullptr
+        if (func == nullptr
+            || func->shared->owner_type == nullptr
             || ENUMBITMASK_ISFALSE(prop->detail, PropertyFlag::IS_PROTECTED)
-            || !IsTypeExtends(type, fiber->context.func->shared->owner_type))
+            || !IsTypeExtends(type, func->shared->owner_type))
             assert(false); // FIXME
     }
 
@@ -532,7 +674,10 @@ CGOTO
 
 BEGIN:
     auto *code = fiber->context.code;
-    auto *this_func = fiber->context.func;
+
+    auto *this_func = (Function *) fiber->context.func;
+    if (this_func != nullptr && !O_IS_TYPE(this_func, InstanceType::GENERATOR))
+        this_func = ((Generator *) this_func)->base;
 
     OObject **module_slots = nullptr;
     if (fiber->context.module != nullptr)
@@ -631,16 +776,47 @@ CATCH_FINALLY:
 
                 continue;
             }
+            TARGET_OP(YLD) {
+                REG_RR = REG_N(FETCH_R_SRC(instr));
+
+                SaveGenerator(fiber);
+
+                goto BEGIN;
+            }
             TARGET_OP(CALL) {
                 const auto flags = FETCH_F_DST(CallMode, instr);
                 const auto src = FETCH_R_SRC(instr);
                 const auto p_count = FETCH_IMM(instr);
+                const auto SP = regs->SP.reg;
 
                 const auto func = (Function *) REG_N(src);
 
-                const auto res = CallInit(fiber, func, p_count, flags);
+                int res;
+
+                if (O_IS_TYPE(func, InstanceType::GENERATOR)) {
+                    res = CallGenerator(fiber, (Generator *) func, p_count, flags);
+                    if (res < 0)
+                        goto ERROR;
+
+                    // TODO: ==0, busy
+
+                    goto BEGIN;
+                }
+
+                res = CallInit(fiber, func, p_count, flags);
                 if (res < 0)
                     goto ERROR;
+
+                if (func->shared->IsGenerator()) {
+                    const auto param_size = (REG_SP - SP) + p_count * sizeof(void *);
+                    REG_RR = (PtrSize) GeneratorNew(fiber, func, param_size).get();
+
+                    // Release the stack; the call is complete, and the parameters have been copied,
+                    // ready for later execution
+                    REG_SP = SP - (p_count * sizeof(void *));
+
+                    DISPATCH;
+                }
 
                 if (Call(fiber, func, res))
                     goto BEGIN;
@@ -1186,7 +1362,7 @@ CATCH_FINALLY:
                     DISPATCH;
                 }
 
-                REG_N(dst) = (PtrSize) LoadFromObjectProp(fiber, src, flags, offset);
+                REG_N(dst) = (PtrSize) LoadFromObjectProp(fiber, this_func, src, flags, offset);
 
                 DISPATCH;
             }
@@ -1205,7 +1381,7 @@ CATCH_FINALLY:
                     DISPATCH;
                 }
 
-                StoreToObjectProp(fiber, obj, value, flags, offset);
+                StoreToObjectProp(fiber, this_func, obj, value, flags, offset);
 
                 DISPATCH;
             }
