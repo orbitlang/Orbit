@@ -551,10 +551,6 @@ void SaveGenerator(Fiber *fiber) {
 
     auto *gen = (Generator *) fiber->context.func;
 
-    // Decrement the reference count for each saved register in the generator
-    for (auto *cursor = gen->regs_dump; cursor < gen->params; cursor++)
-        O_DECREF(*cursor);
-
     // About to save a new stack, decrement the reference count for each value in the previously saved stack
     for (auto i = 0; i < gen->stack_size; i++)
         O_DECREF(gen->stack[i]);
@@ -589,10 +585,6 @@ void SaveGenerator(Fiber *fiber) {
 
     // Dump the current registers into the generator
     stratum::util::MemoryCopy(gen->regs_dump, regs, kGeneralPurposeRegistersCount);
-
-    // Increment the reference count for each value in the dumped registers
-    for (auto *cursor = gen->regs_dump; cursor < gen->params; cursor++)
-        O_INCREF(*cursor);
 
     gen->acquired = 0;
 }

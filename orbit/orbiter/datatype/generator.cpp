@@ -8,6 +8,13 @@
 
 using namespace orbiter::datatype;
 
+void GeneratorTrace(const Generator *self, const GCTraceCallback callback, const MSize epoch) {
+    for (auto cursor = self->regs_dump; cursor < self->params; cursor++) {
+        if (O_IS_OBJECT(*cursor))
+            callback(*cursor, epoch);
+    }
+}
+
 bool orbiter::datatype::GeneratorTypeSetup(TypeInfo *self) {
     return true;
 }
@@ -40,11 +47,6 @@ HGenerator orbiter::datatype::GeneratorNew(const Fiber *fiber, Function *base, c
 
     memory::MemoryCopy(gen->regs_dump, regs, (kGeneralPurposeRegistersCount * sizeof(void *)));
     memory::MemoryCopy(gen->params, (stack->stack + regs->SP.reg) - param_size, param_size);
-
-    // This can be optimized: stack parameters already have their incref. Just copy them here and remove them from the stack.
-    // No other action is required; you only need to incref the register duplicates!
-    for (auto *cursor = gen->regs_dump; cursor < gen->params; cursor++)
-        O_INCREF(*cursor);
 
     gen->IP = (PtrSize) base->shared->code->m_code;
 
