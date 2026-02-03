@@ -124,7 +124,7 @@ bool orbiter::datatype::TIPropertyAdd(TypeInfo *type, const OPropertyEntry *bulk
         for (auto *cursor = bulk; cursor->name != nullptr; cursor++) {
             const auto flags = bulk->details | PropertyFlag::IN_OBJECT;
 
-            if (!TIPropertyAdd(type, cursor->name, nullptr, bulk->slot, flags))
+            if (!TIPropertyAdd(type, cursor->name, nullptr, cursor->slot, flags))
                 return false;
         }
     }
