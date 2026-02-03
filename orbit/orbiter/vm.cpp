@@ -1436,7 +1436,7 @@ CATCH_FINALLY:
                 const auto offset = instr & 0x1FFFFF;
                 auto *e_key = (Atom *) REG_N(src);
 
-                if (((Error *) fiber->panic.current_->error)->kind == e_key) {
+                if (e_key == nullptr || ((Error *) fiber->panic.current_->error)->kind == e_key) {
                     // Store error in current exception context
                     ((ExceptionContext *) regs->CP.reg)->ret_value = (PtrSize) fiber->GetDiscardPanic().release();
 
