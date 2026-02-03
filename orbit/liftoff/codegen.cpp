@@ -407,7 +407,6 @@ unsigned char *Codegen::EmitOpcodes(const BasicBlock *block, unsigned char *m_co
                                                             ((BasicBlock *)instr->operands[1].value)->offset);
                 break;
             case orbiter::OPCode::TEND:
-            case orbiter::OPCode::LDEXC:
                 *(orbiter::MachineWord *) m_code = EMIT_OP(instr->opcode);
                 break;
             case orbiter::OPCode::TSPA: {
@@ -431,6 +430,9 @@ unsigned char *Codegen::EmitOpcodes(const BasicBlock *block, unsigned char *m_co
 
                 break;
             }
+            case orbiter::OPCode::LDEXC:
+                *(orbiter::MachineWord *) m_code = EMIT_DO(instr->opcode, instr->assigned_reg, 0);
+                break;
         }
 
         m_code += 4;
