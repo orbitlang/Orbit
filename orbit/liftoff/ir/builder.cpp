@@ -483,10 +483,11 @@ Instruction *Builder::LoadFromOffset(const OPCode opcode, const U8 r_base, const
 }
 
 Instruction *Builder::SetupTryCatch(BasicBlock *catch_block, BasicBlock *finally_block) {
-    return this->CreateInstruction<BranchInstruction>(OPCode::TBGIN, nullptr,
-                                                      catch_block != nullptr
-                                                          ? catch_block
-                                                          : finally_block);
+    if (catch_block == nullptr)
+        return this->CreateInstruction<BranchInstruction>(OPCode::TBGIN, nullptr, nullptr);
+
+    this->CreateInstruction<BranchInstruction>(OPCode::TBGIN, nullptr, catch_block);
+    return this->CreateInstruction<BranchInstruction>(OPCode::TSFIN, nullptr, finally_block);
 }
 
 Instruction *Builder::StackDiscard(U16 slots) {

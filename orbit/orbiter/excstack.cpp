@@ -23,7 +23,7 @@ bool VMExcStack::Init(Isolate *isolate, const U16 exceptions) noexcept {
     return true;
 }
 
-ExceptionContext *VMExcStack::Push(ExceptionContext *prev, const U32 joffset) noexcept {
+ExceptionContext *VMExcStack::Push(ExceptionContext *prev, const U32 coffset) noexcept {
     ExceptionContext *context = nullptr;
 
     if (this->count + 1 > this->limit)
@@ -32,7 +32,7 @@ ExceptionContext *VMExcStack::Push(ExceptionContext *prev, const U32 joffset) no
     context = this->stack + this->count;
 
     context->prev = prev;
-    context->joffset = joffset;
+    context->coffset = coffset;
 
     context->ret_value = 0;
 

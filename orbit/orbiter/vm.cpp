@@ -160,8 +160,8 @@ bool UnwindStack(Fiber *fiber) {
                 O_DECREF(*(OObject**)(stack->stack + regs->SP.reg));
             }
 
-            if (except != nullptr && except->joffset != 0)
-                regs->IP.reg = (PtrSize) fiber->context.code->m_code + except->joffset;
+            if (except != nullptr && except->coffset != 0)
+                regs->IP.reg = (PtrSize) fiber->context.code->m_code + except->coffset;
 
             return true;
         }
@@ -1434,11 +1434,16 @@ CATCH_FINALLY:
             TARGET_OP(JERR) {
                 const auto src = FETCH_J_SRC(instr);
                 const auto offset = instr & 0x1FFFFF;
+
+                auto *ec = (ExceptionContext *) regs->CP.reg;
                 auto *e_key = (Atom *) REG_N(src);
 
                 if (e_key == nullptr || ((Error *) fiber->panic.current_->error)->kind == e_key) {
                     // Store error in current exception context
-                    ((ExceptionContext *) regs->CP.reg)->ret_value = (PtrSize) fiber->GetDiscardPanic().release();
+                    ec->ret_value = (PtrSize) fiber->GetDiscardPanic().release();
+
+                    // Mark catch handler as consumed
+                    ec->coffset = 0;
 
                     JMP_TO(offset);
 
@@ -1501,6 +1506,8 @@ CATCH_FINALLY:
                 const auto ctx = (ExceptionContext *) regs->CP.reg;
 
                 if (fiber->panic.current_ != nullptr) {
+                    O_DECREF((OObject*)ctx->ret_value);
+
                     regs->CP.reg = (PtrSize) ((ExceptionContext *) regs->CP.reg)->prev;
 
                     fiber->vm.e_stack.Pop();
@@ -1530,6 +1537,14 @@ CATCH_FINALLY:
                 regs->CP.reg = (PtrSize) ((ExceptionContext *) regs->CP.reg)->prev;
 
                 fiber->vm.e_stack.Pop();
+
+                DISPATCH;
+            }
+            TARGET_OP(TSFIN) {
+                const auto offset = instr & 0xFFFFFFu;
+                auto *ec = (ExceptionContext *) regs->CP.reg;
+
+                ec->foffset = offset;
 
                 DISPATCH;
             }
@@ -1573,10 +1588,24 @@ ERROR:
         auto *except = (ExceptionContext *) regs->CP.reg;
         if (except != nullptr) {
             if (except->key == regs->BP.reg) {
-                // if (except->catch_offset != 0)
-                JMP_TO(except->joffset);
+                if (except->coffset != 0) {
+                    JMP_TO(except->coffset);
+                    except->coffset = 0;
 
-                goto CATCH_FINALLY;
+                    goto CATCH_FINALLY;
+                }
+
+                if (except->foffset != 0) {
+                    JMP_TO(except->foffset);
+                    except->foffset = 0;
+
+                    goto CATCH_FINALLY;
+                }
+
+                // Release the exhausted exception context (both catch and finally consumed)
+                O_DECREF((OObject*)except->ret_value);
+                regs->CP.reg = (PtrSize) except->prev;
+                fiber->vm.e_stack.Pop();
             }
         }
     }

@@ -403,9 +403,11 @@ unsigned char *Codegen::EmitOpcodes(const BasicBlock *block, unsigned char *m_co
                                                            0);
                 break;
             case orbiter::OPCode::TBGIN:
-                *(orbiter::MachineWord *) m_code = EMIT_JMP(instr->opcode,
-                                                            ((BasicBlock *)instr->operands[1].value)->offset);
+            case orbiter::OPCode::TSFIN: {
+                const auto *jmp = (const BasicBlock *) instr->operands[1].value;
+                *(orbiter::MachineWord *) m_code = EMIT_JMP(instr->opcode, jmp!=nullptr ? jmp->offset : 0);
                 break;
+            }
             case orbiter::OPCode::TEND:
                 *(orbiter::MachineWord *) m_code = EMIT_OP(instr->opcode);
                 break;

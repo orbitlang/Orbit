@@ -237,6 +237,7 @@ namespace orbiter {
         // Try/Catch/Finally operations
         TBGIN, // Begin try block:                                          OPCODE | 24 OFFSET
         TEND,  // End try block context                                     OPCODE | 24 RESERVED
+        TSFIN,
         TSPA, // Sets the suspended operation in a try/catch/finally block  OPCODE | 2 PENDING OP | 4 SRC | 18 JMP OFFSET
         LDEXC // Load current caught exception                              OPCODE | 24 OFFSET
     };

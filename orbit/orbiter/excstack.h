@@ -16,7 +16,8 @@ namespace orbiter {
             U32 action: 2;
         };
 
-        U32 joffset;
+        U32 coffset;
+        U32 foffset;
 
         PtrSize key;
         PtrSize ret_value;
@@ -69,12 +70,12 @@ namespace orbiter {
          *
          * @param prev A pointer to the previous ExceptionContext representing
          *             the current top of the stack.
-         * @param joffset The offset representing the location to catch
+         * @param coffset The offset representing the location to catch
          *                     exceptions at runtime.
          * @return A pointer to the newly created ExceptionContext, or nullptr
          *         if the operation fails.
          */
-        ExceptionContext *Push(ExceptionContext *prev, U32 joffset) noexcept;
+        ExceptionContext *Push(ExceptionContext *prev, U32 coffset) noexcept;
 
         /**
          * @brief Cleans up the allocated memory used by the ExceptionStack.

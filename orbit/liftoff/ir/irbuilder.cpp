@@ -1401,7 +1401,7 @@ Instruction *IRBuilder::visitTryBlock(const parser::TryBlock *node) {
 
             // This catches everything because it has no type specified
             if (catch_block->catches.empty()) {
-                this->builder_.CreateJump(catch_blocks.back());
+                this->builder_.CreateJumpIfETypeMatch(nullptr, catch_blocks.back());
 
                 this->builder_.CreateAppendBasicBlock();
             }
