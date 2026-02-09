@@ -250,9 +250,7 @@ Instruction *IRBuilder::LoadParameter(const Symbol *symbol) {
     assert(symbol->type == SymbolType::PARAMETER);
 
     const auto params_count = (I16) this->sym_t_->scope->GetParameterCount();
-    const auto sym_offset = (I16) ENUMBITMASK_ISTRUE(symbol->flags, SymbolFlags::UPVALUE)
-                                ? symbol->stack_offset
-                                : symbol->offset;
+    const auto sym_offset = symbol->location == StorageLocation::CLOSURE ? symbol->stack_offset : symbol->offset;
     const auto p_offset = (params_count - sym_offset) + kStackPrologueOffset;
 
     assert(p_offset > 0);
@@ -276,7 +274,7 @@ Instruction *IRBuilder::LoadVariable(const Symbol *symbol) {
     auto offset = (I16) symbol->offset;
 
     // *** UNKNOWN ***
-    if (symbol->type == SymbolType::UNKNOWN) {
+    if (symbol->location == StorageLocation::GLOBAL) {
         offset = (I16) this->builder_.context->PushUnknownProps(symbol->name);
         ret = this->builder_.LoadFromOffset(orbiter::OPCode::LDGBL, 0, offset, 0);
 
@@ -291,7 +289,7 @@ Instruction *IRBuilder::LoadVariable(const Symbol *symbol) {
     }
 
     // *** MODULE ***
-    if (symbol->defining_scope->type == ScopeType::MODULE) {
+    if (symbol->location == StorageLocation::MODULE) {
         if (!this->is_module_) {
             offset = (I16) this->builder_.context->PushUnknownProps(symbol->name);
             ret = this->builder_.LoadFromOffset(orbiter::OPCode::LDGBL, 0, offset, 0);
@@ -305,13 +303,14 @@ Instruction *IRBuilder::LoadVariable(const Symbol *symbol) {
     // TODO
 
     // *** CLOSURE ***
-    if (ENUMBITMASK_ISTRUE(symbol->flags, SymbolFlags::UPVALUE)) {
+    if (symbol->location == StorageLocation::CLOSURE) {
         ret = this->builder_.LoadFromOffset(orbiter::OPCode::CLOLDR, 0, offset, 0);
 
         goto EXIT;
     }
 
-    // *** PARAMETERS ***
+    // *** LOAD FROM STACK ***
+
     if (symbol->type == SymbolType::PARAMETER) {
         ret = this->LoadParameter(symbol);
 
@@ -328,7 +327,7 @@ EXIT:
     return ret;
 }
 
-Instruction *IRBuilder::StoreVariable(const Symbol *symbol, Instruction *value, bool decl) {
+Instruction *IRBuilder::StoreVariable(const Symbol *symbol, Instruction *value, const bool decl) {
     auto offset = (I16) symbol->offset;
 
     this->builder_.context->InvalidateActiveVar(symbol);
@@ -338,7 +337,7 @@ Instruction *IRBuilder::StoreVariable(const Symbol *symbol, Instruction *value, 
 
     auto v_flags = orbiter::VariableFlags::VARIABLE;
 
-    if (symbol->type == SymbolType::CONSTANT || symbol->type == SymbolType::NATIVE_CONST)
+    if (ENUMBITMASK_ISTRUE(symbol->flags, SymbolFlags::CONST))
         v_flags = orbiter::VariableFlags::CONSTANT;
 
     if (symbol->access == AccessModifier::PUBLIC)
@@ -347,7 +346,7 @@ Instruction *IRBuilder::StoreVariable(const Symbol *symbol, Instruction *value, 
         v_flags |= orbiter::VariableFlags::PROTECTED;
 
     // *** UNKNOWN ***
-    if (symbol->type == SymbolType::UNKNOWN) {
+    if (symbol->location == StorageLocation::GLOBAL) {
         offset = (I16) this->builder_.context->PushUnknownProps(symbol->name);
         this->builder_.CreateStoreVariable(orbiter::OPCode::STGBL, offset, 0, value);
 
@@ -355,7 +354,7 @@ Instruction *IRBuilder::StoreVariable(const Symbol *symbol, Instruction *value, 
     }
 
     // *** MODULE ***
-    if (symbol->defining_scope->type == ScopeType::MODULE) {
+    if (symbol->location == StorageLocation::MODULE) {
         if (decl && !this->is_module_) {
             offset = (I16) this->builder_.context->PushUnknownProps(symbol->name);
             this->builder_.CreateStoreVariable(orbiter::OPCode::NGBLV, offset, (U8) v_flags, value);
@@ -377,12 +376,13 @@ Instruction *IRBuilder::StoreVariable(const Symbol *symbol, Instruction *value, 
     }
 
     // *** CLASS / TRAIT ***
-    if (symbol->defining_scope->type == ScopeType::CLASS || symbol->defining_scope->type == ScopeType::TRAIT) {
+    if (symbol->location == StorageLocation::SLOTS) {
         // For constructs (Class/Trait) variables must be handled as constants,
         // since variables are not managed this way. (Yes, functions and methods are treated as constants)
         v_flags |= orbiter::VariableFlags::CONSTANT;
 
-        if (symbol->type != SymbolType::CONSTANT && symbol->defining_scope->type == ScopeType::CLASS) {
+        if (ENUMBITMASK_ISFALSE(symbol->flags, SymbolFlags::CONST) && symbol->defining_scope->type ==
+            ScopeType::CLASS) {
             v_flags |= orbiter::VariableFlags::CP_INLINE;
 
             this->builder_.context->local_slots += 1;
@@ -397,14 +397,17 @@ Instruction *IRBuilder::StoreVariable(const Symbol *symbol, Instruction *value, 
     }
 
     // *** CLOSURE ***
-    if (ENUMBITMASK_ISTRUE(symbol->flags, SymbolFlags::UPVALUE)) {
+    if (symbol->location == StorageLocation::CLOSURE) {
         this->builder_.StoreToClosureAtOffset(value, offset);
 
         goto EXIT;
     }
 
-    // *** PARAMETERS ***
+    // *** STORE TO STACK ***
+
     if (symbol->type == SymbolType::PARAMETER) {
+        assert(symbol->location == StorageLocation::STACK);
+
         const auto params_count = (I16) this->sym_t_->scope->GetParameterCount();
         const auto p_offset = (params_count - offset) + kStackPrologueOffset;
 
@@ -465,8 +468,8 @@ Instruction *IRBuilder::visitAssignment(parser::Assignment *node) {
         auto *ld = (LSObjectProp *) this->builder_.context->RFindFirstInstruction(orbiter::OPCode::LDOBJP);
 
         // Const check
-        const auto *sym = this->sym_t_->Lookup(property->value, property->loc.start.offset, true);
-        if (sym != nullptr && (sym->type == SymbolType::CONSTANT
+        const auto *sym = this->sym_t_->LookupMember(property->value);
+        if (sym != nullptr && (ENUMBITMASK_ISTRUE(sym->flags, SymbolFlags::CONST)
                                || sym->type == SymbolType::FUNC
                                || sym->type == SymbolType::METHOD))
             assert(false); // TODO: Constant error
@@ -486,6 +489,8 @@ Instruction *IRBuilder::visitAssignment(parser::Assignment *node) {
     }
 
     if (node->name->node_type == parser::NodeType::TUPLE) {
+        // TODO: tuple expansion
+
         assert(false);
 
         return nullptr;
@@ -493,8 +498,8 @@ Instruction *IRBuilder::visitAssignment(parser::Assignment *node) {
 
     const auto *sym = ((parser::Identifier *) node->name)->symbol;
 
-    if (sym->defining_scope->type == ScopeType::CLASS || sym->defining_scope->type == ScopeType::TRAIT) {
-        if (sym->type == SymbolType::CONSTANT) {
+    if (sym->decl_scope->type == ScopeType::CLASS || sym->decl_scope->type == ScopeType::TRAIT) {
+        if (ENUMBITMASK_ISTRUE(sym->flags, SymbolFlags::CONST)) {
             value = this->visit(node->value);
 
             return this->StoreVariable(sym, value, node->node_type == parser::NodeType::VAR_DECLARATION);
@@ -520,7 +525,7 @@ Instruction *IRBuilder::visitAssignment(parser::Assignment *node) {
         assert(false);
     }
 
-    if (sym->type == SymbolType::CONSTANT)
+    if (ENUMBITMASK_ISTRUE(sym->flags, SymbolFlags::CONST))
         assert(false); // TODO: Constant error
 
     if (node->value != nullptr)
@@ -801,7 +806,7 @@ Instruction *IRBuilder::visitFunction(const parser::Function *node) {
     if (node->node_type == parser::NodeType::INIT)
         f_flags |= orbiter::LoadFuncFlags::INIT;
 
-    if (node->symbol->scope->type == ScopeType::GENERATOR)
+    if (node->symbol->defining_scope->flags == ScopeFlags::GENERATOR)
         f_flags |= orbiter::LoadFuncFlags::GENERATOR;
 
     const auto params_count = this->ProcessFunctionParams(node, def_args, f_flags);
@@ -818,7 +823,7 @@ Instruction *IRBuilder::visitFunction(const parser::Function *node) {
 
     // Alloc extra stack space for Closure object (IF ANY)
     auto alloc_size = local_vars_count;
-    if (this->sym_t_->scope->closure)
+    if (ENUMBITMASK_ISTRUE(this->sym_t_->scope->flags, ScopeFlags::CLOSURE))
         alloc_size += 1;
 
     if (alloc_size > 0)
@@ -837,7 +842,7 @@ Instruction *IRBuilder::visitFunction(const parser::Function *node) {
         Instruction *value = nullptr;
 
         // Load super
-        if (this->ct_active_->extends_type && ENUMBITMASK_ISTRUE(node->symbol->flags, SymbolFlags::SYNTETIC)) {
+        if (this->ct_active_->extends_type && ENUMBITMASK_ISTRUE(node->symbol->flags, SymbolFlags::SYNTHETIC)) {
             const auto offset = (I16) this->builder_.context->PushUnknownProps(parser::kInitMethodName);
 
             self = this->LoadSelfParam(node->loc.end.offset);
@@ -882,7 +887,7 @@ Instruction *IRBuilder::visitFunction(const parser::Function *node) {
     }
 
     // Load closure from Function object
-    if (this->sym_t_->scope->closure)
+    if (ENUMBITMASK_ISTRUE(this->sym_t_->scope->flags, ScopeFlags::CLOSURE))
         this->builder_.LoadClosureObject(kBaseStackPointerReg, (I16) local_vars_count);
 
     const auto cleanup_count = node->params.size();
@@ -1113,7 +1118,7 @@ Instruction *IRBuilder::visitNativeVariable(const parser::NativeVariable *node) 
     bind.name = orbiter::datatype::HORString(node->alias->name);
     bind.library = orbiter::datatype::HORString(node->mod_name);
     bind.ret_type = NativeTypeFromTokenType(node->kind);
-    bind.binding_type = node->alias->type == SymbolType::NATIVE_CONST
+    bind.binding_type = ENUMBITMASK_ISTRUE(node->alias->flags, SymbolFlags::CONST)
                             ? orbiter::native::NativeBindingType::CONST
                             : orbiter::native::NativeBindingType::VAR;
 
@@ -1175,7 +1180,7 @@ Instruction *IRBuilder::visitReturn(const parser::Unary *unary) {
     auto *value = unary->value != nullptr ? this->visit(unary->value) : this->builder_.LoadNilValue();
     auto pops_slot = 0;
 
-    if (this->sym_t_->scope->type == ScopeType::FUNCTION || this->sym_t_->scope->type == ScopeType::GENERATOR)
+    if (this->sym_t_->scope->type == ScopeType::FUNCTION)
         pops_slot = this->sym_t_->scope->GetParameterCount();
 
     this->PutSyncExit(nullptr);
@@ -1204,9 +1209,9 @@ Instruction *IRBuilder::visitSelector(parser::Selector *node) {
         if (obj_base->kind == scanner::TokenType::SELF
             && this->ct_active_ != nullptr
             && ((PhysInstruction *) this->ct_active_->tp_ptr)->opcode == orbiter::OPCode::MKCLZ) {
-            const auto *sym = this->sym_t_->Lookup(key->value, key->loc.start.offset, true);
+            const auto *sym = this->sym_t_->LookupMember(key->value);
 
-            if (sym != nullptr && sym->type != SymbolType::CONSTANT)
+            if (sym != nullptr && ENUMBITMASK_ISFALSE(sym->flags, SymbolFlags::CONST))
                 return this->builder_.LoadObjectProp(base, sym->offset, false, false);
         }
 
@@ -1609,7 +1614,7 @@ void IRBuilder::CaptureParametersIntoClosure(const parser::Function *node) {
 
         assert(sym != nullptr);
 
-        if (sym->type == SymbolType::PARAMETER && ENUMBITMASK_ISTRUE(sym->flags, SymbolFlags::UPVALUE)) {
+        if (sym->type == SymbolType::PARAMETER && sym->location == StorageLocation::CLOSURE) {
             const auto value = this->LoadParameter(sym);
 
             this->StoreVariable(sym, value, false);
@@ -1645,13 +1650,7 @@ void IRBuilder::PutSyncExit(const JBlock *block) {
 }
 
 void IRBuilder::VisitForInLoop(const parser::Loop *node) {
-    const JBlock jb(&this->builder_, JBlockType::FOR_IN, nullptr);
-
-    assert(false); // TODO: IMPL THIS!
-
-    this->sym_t_->EnterNestedScope(node->loc.start.offset);
-
-    this->sym_t_->LeaveNestedScope();
+    assert(false);
 }
 
 IRCHandle IRBuilder::Generate(const parser::ASTHandle<parser::Module *> &module) noexcept {
@@ -1662,7 +1661,7 @@ IRCHandle IRBuilder::Generate(const parser::ASTHandle<parser::Module *> &module)
         this->sym_t_ = module->sym_t;
 
         // Create first context
-        this->builder_.IRContextNew(IRContextType::MODULE, this->sym_t_->scope->GetLocalVariableCount());
+        this->builder_.IRContextNew(IRContextType::MODULE, this->sym_t_->scope->GetSlotsCount());
 
         auto *context = this->builder_.context;
 

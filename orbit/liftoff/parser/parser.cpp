@@ -107,7 +107,7 @@ ASTHandle<ASTNode *> Parser::InjectInit(Loc loc) const {
         throw SymbolTableException();
 
     sym->access = AccessModifier::PUBLIC;
-    sym->flags = SymbolFlags::SYNTETIC;
+    sym->flags = SymbolFlags::SYNTHETIC;
 
     func->params.emplace_back(std::move(this->PushSelfParam(loc)));
 
@@ -265,7 +265,7 @@ ASTHandle<ASTNode *> Parser::ParseForInStatement() {
 
     auto forIn = MakeLoop(this->isolate_, TKCUR_LOC, NodeType::FOR_IN);
 
-    if (!this->sym_t_->DeclareNestedScope(TKCUR_START.offset))
+    if (!this->sym_t_->CreateNestedScope(TKCUR_START.offset))
         throw SymbolTableException();
 
     this->Eat(true);
@@ -398,11 +398,12 @@ ASTHandle<ASTNode *> Parser::ParseImportStatement() {
         }
 
         imp_name->alias = this->sym_t_->Declare(!alias ? imp_name->name : alias.get(),
-                                                SymbolType::CONSTANT,
+                                                SymbolType::VARIABLE,
                                                 imp->loc.start.offset);
-
         if (imp_name->alias == nullptr)
             throw SymbolTableException();
+
+        imp_name->alias->flags |= SymbolFlags::CONST;
 
         imp->names.emplace_back(std::move(imp_name));
     } while (this->MatchEat(TokenType::COMMA, true));
@@ -427,7 +428,7 @@ ASTHandle<ASTNode *> Parser::ParseLoopStatement() {
 
     auto loop = MakeLoop(this->isolate_, TKCUR_LOC, NodeType::LOOP);
 
-    if (!this->sym_t_->DeclareNestedScope(TKCUR_START.offset))
+    if (!this->sym_t_->CreateNestedScope(TKCUR_START.offset))
         throw SymbolTableException();
 
     this->Eat(true);
@@ -467,7 +468,7 @@ ASTHandle<ASTNode *> Parser::ParseLoopStatement() {
 ASTHandle<ASTNode *> Parser::ParseNativeStatement() {
     auto doc = this->GetDocString();
     auto start = TKCUR_LOC.start;
-    SymbolType v_type = SymbolType::NATIVE_VAR;
+    bool constant = false;
 
     this->Eat(true);
 
@@ -486,7 +487,7 @@ ASTHandle<ASTNode *> Parser::ParseNativeStatement() {
     if (this->Match(TokenType::KW_VAR))
         this->Eat(true);
     else if (this->MatchEat(TokenType::KW_LET, true))
-        v_type = SymbolType::NATIVE_CONST;
+        constant = true;
     else
         throw ParserException(60);
 
@@ -518,16 +519,19 @@ ASTHandle<ASTNode *> Parser::ParseNativeStatement() {
             throw ParserException(64);
 
         const auto alias = ORStringNew(this->isolate_, this->tkcur_.buffer, this->tkcur_.length);
-        variable->alias = this->sym_t_->Declare(alias.get(), v_type, TKCUR_LOC.start.offset);
+        variable->alias = this->sym_t_->Declare(alias.get(), SymbolType::NATIVE_VAR, TKCUR_LOC.start.offset);
         if (variable->alias == nullptr)
             throw SymbolTableException();
 
         this->Eat(false);
     } else {
-        variable->alias = this->sym_t_->Declare(variable->native_name, v_type, start.offset);
+        variable->alias = this->sym_t_->Declare(variable->native_name, SymbolType::NATIVE_VAR, start.offset);
         if (variable->alias == nullptr)
             throw SymbolTableException();
     }
+
+    if (constant)
+        variable->alias->flags |= SymbolFlags::CONST;
 
     this->IgnoreNewLineIF(TokenType::KW_FROM);
 
@@ -632,9 +636,6 @@ ASTHandle<ASTNode *> Parser::ParseNativeFuncStatement(const Position &start) {
             throw SymbolTableException();
     }
 
-    this->sym_t_->LeaveScope();
-
-
     this->IgnoreNewLineIF(TokenType::KW_FROM);
 
     if (this->MatchEat(TokenType::KW_FROM, false)) {
@@ -649,6 +650,8 @@ ASTHandle<ASTNode *> Parser::ParseNativeFuncStatement(const Position &start) {
 
         this->Eat(false);
     }
+
+    this->sym_t_->LeaveScope(func->loc.end.offset, func->loc.end.line);
 
     return func;
 }
@@ -680,7 +683,7 @@ ASTHandle<ASTNode *> Parser::ParseSwitchCase(bool as_if) {
 
     auto block = MakeBlock(this->isolate_, TKCUR_LOC);
 
-    if (!this->sym_t_->DeclareNestedScope(TKCUR_START.offset))
+    if (!this->sym_t_->CreateNestedScope(TKCUR_START.offset))
         throw SymbolTableException();
 
     while (!this->Match(TokenType::KW_CASE, TokenType::KW_DEFAULT, TokenType::RIGHT_BRACES)) {
@@ -792,7 +795,7 @@ ASTHandle<ASTNode *> Parser::ParseTryCatchFinally() {
         this->EatNL();
 
         if (this->Match(TokenType::IDENTIFIER)) {
-            if (!this->sym_t_->DeclareNestedScope(cb->loc.start.offset))
+            if (!this->sym_t_->CreateNestedScope(cb->loc.start.offset))
                 throw SymbolTableException();
 
             auto err_name = ORStringNew(this->isolate_, this->tkcur_.buffer, this->tkcur_.length);
@@ -855,13 +858,14 @@ ASTHandle<ASTNode *> Parser::ParseVarDecl(const Position &start, AccessModifier 
         if (access != AccessModifier::PRIVATE)
             this->exports.push_back(id_str);
 
-        const auto sym = this->sym_t_->Declare(id_str.get(), constant ? SymbolType::CONSTANT : SymbolType::VARIABLE,
-                                               TKCUR_LOC.start.offset);
+        const auto sym = this->sym_t_->Declare(id_str.get(), SymbolType::VARIABLE,TKCUR_LOC.start.offset);
         if (sym == nullptr)
             throw SymbolTableException();
 
+        if (constant)
+            sym->flags |= SymbolFlags::CONST;
+
         sym->access = access;
-        sym->tdz = true;
 
         auto identifier = MakeIdentifier(this->isolate_, TKCUR_LOC);
         identifier->symbol = sym;
@@ -899,7 +903,7 @@ ASTHandle<ASTNode *> Parser::ParseVarDecl(const Position &start, AccessModifier 
     }
 
     for (auto &identifier: identifiers)
-        ((Identifier *) identifier.get())->symbol->tdz = false;
+        ((Identifier *) identifier.get())->symbol->flags |= SymbolFlags::INITIALIZED;
 
     if (identifiers.size() == 1)
         decl->name = identifiers.front().release();
@@ -1046,7 +1050,7 @@ ASTHandle<ASTNode *> Parser::ParseBlock(bool nested) {
     if (!this->MatchEat(TokenType::LEFT_BRACES, true))
         throw ParserException(18);
 
-    if (nested && !this->sym_t_->DeclareNestedScope(block->loc.start.offset))
+    if (nested && !this->sym_t_->CreateNestedScope(block->loc.start.offset))
         throw SymbolTableException();
 
     while (!this->Match(TokenType::RIGHT_BRACES)) {
@@ -1417,10 +1421,11 @@ ASTHandle<ASTNode *> Parser::ParseFuncCall(ASTHandle<ASTNode *> &left) {
     if (call->left->node_type == NodeType::IDENTIFIER) {
         const auto &id = (ASTHandle<Identifier *> &) call->left;
 
-        if (id->symbol->type == SymbolType::NATIVE_FUNC && id->symbol->scope->GetParameterCount() != call->args.size())
+        if (id->symbol->type == SymbolType::NATIVE_FUNC && id->symbol->defining_scope->GetParameterCount() != call->args
+            .size())
             throw ParserException(86);
 
-        if (id->symbol->type == SymbolType::NATIVE_VAR || id->symbol->type == SymbolType::NATIVE_CONST)
+        if (id->symbol->type == SymbolType::NATIVE_VAR)
             throw ParserException(87);
     }
 
@@ -1870,7 +1875,7 @@ ASTHandle<ASTNode *> Parser::ParseStatement() {
             case TokenType::KW_YIELD:
                 if (!this->context_->Check(ContextType::FUNC))
                     throw ParserException(31);
-                this->sym_t_->scope->type = ScopeType::GENERATOR;
+                this->sym_t_->scope->flags |= ScopeFlags::GENERATOR;
             case TokenType::KW_RETURN: {
                 auto ret = MakeUnary(
                     this->isolate_,
@@ -2162,7 +2167,7 @@ ASTHandle<Parameter *> Parser::PushSelfParam(const Loc &loc) const {
     if (sym == nullptr)
         throw SymbolTableException();
 
-    sym->flags = SymbolFlags::SELF | SymbolFlags::SYNTETIC;
+    sym->flags = SymbolFlags::SELF | SymbolFlags::SYNTHETIC;
 
     auto param = MakeParameter(this->isolate_, loc, NodeType::PARAM);
 
@@ -2374,9 +2379,11 @@ void Parser::CheckSetImportAlias(HORString alias, Import *imp) const {
         alias = ORStringNew(this->isolate_, mod_name_end - idx, idx);
     }
 
-    imp->alias = this->sym_t_->Declare(alias.get(), SymbolType::CONSTANT, imp->loc.start.offset);
+    imp->alias = this->sym_t_->Declare(alias.get(), SymbolType::VARIABLE, imp->loc.start.offset);
     if (!imp->alias)
         throw SymbolTableException();
+
+    imp->alias->flags |= SymbolFlags::CONST;
 }
 
 void Parser::ClassCheck(const Construct *clazz) const {

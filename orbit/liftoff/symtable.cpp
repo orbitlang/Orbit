@@ -51,6 +51,9 @@ Symbol *SymbolTable::SymbolNew(ORString *name, const SymbolType type, const Stor
     symbol->offset = 0;
     symbol->nesting = this->scope->active->nesting;
 
+    if (type != SymbolType::VARIABLE)
+        symbol->flags = SymbolFlags::INITIALIZED;
+
     if (location == StorageLocation::AUTO) {
         switch (this->scope->type) {
             case ScopeType::FUNCTION:
@@ -68,6 +71,69 @@ Symbol *SymbolTable::SymbolNew(ORString *name, const SymbolType type, const Stor
     }
 
     return symbol;
+}
+
+void SymbolTable::ComputeLocalVarOffset(const SubScope *s_scope) const noexcept {
+    for (auto s_cursor = s_scope; s_cursor != nullptr; s_cursor = s_cursor->child) {
+        bool sibling = false;
+
+        for (auto cursor = s_cursor->symbols.iter_begin; cursor != nullptr; cursor = cursor->iter_next) {
+            auto *symbol = cursor->value;
+
+            if (s_cursor->next_sibling != nullptr && symbol->decl_offset > s_cursor->next_sibling->offset.start) {
+                const auto slots_count = this->scope->slot_count;
+                const auto stack_count = this->scope->stack_count;
+
+                this->ComputeLocalVarOffset(s_cursor->next_sibling);
+
+                sibling = true;
+
+                this->scope->slot_count = slots_count;
+                this->scope->stack_count = stack_count;
+            }
+
+            if (symbol->type == SymbolType::CLASS || symbol->type == SymbolType::TRAIT) {
+                symbol->offset = this->scope->static_count++;
+
+                continue;
+            }
+
+            if (symbol->type == SymbolType::PARAMETER) {
+                symbol->offset = this->scope->parameter_count++;
+
+                continue;
+            }
+
+            if (symbol->type == SymbolType::UNKNOWN)
+                symbol->location = StorageLocation::GLOBAL;
+
+            if (ENUMBITMASK_ISTRUE(symbol->flags, SymbolFlags::CONST))
+                symbol->offset = this->scope->static_count++;
+
+            switch (symbol->location) {
+                case StorageLocation::AUTO:
+                    break;
+                case StorageLocation::CLOSURE:
+                    symbol->offset = this->scope->closure_count++;
+                    symbol->stack_offset = this->scope->stack_count++;
+                    break;
+                case StorageLocation::GLOBAL:
+                    symbol->offset = this->scope->unknown_count++;
+                    break;
+                case StorageLocation::MODULE:
+                case StorageLocation::SLOTS:
+                    // Module and slots share the same counter since a scope cannot be both a module and a class/trait
+                    symbol->offset = this->scope->slot_count++;
+                    break;
+                case StorageLocation::STACK:
+                    symbol->offset = this->scope->stack_count++;
+                    break;
+            }
+        }
+
+        if (!sibling && s_cursor->next_sibling != nullptr)
+            this->ComputeLocalVarOffset(s_cursor->next_sibling);
+    }
 }
 
 void SymbolTable::ScopeDel(Scope *target) const noexcept {
@@ -217,6 +283,18 @@ bool SymbolTable::EnterScope(ORString *name) noexcept {
     this->scope = entry->value->defining_scope;
 
     return true;
+}
+
+const char *SymbolTable::GetStatusMessage() const {
+    static const char *messages[] = {
+        "no error",
+        "memory allocation failed",
+        "scope not found",
+        "symbol already exists",
+        "symbol not found"
+    };
+
+    return messages[(int) this->status];
 }
 
 Symbol *SymbolTable::Declare(ORString *name, const SymbolType type, const StorageLocation location,
@@ -482,6 +560,17 @@ SymbolTable *SymbolTable::New(orbiter::Isolate *isolate) noexcept {
     return table;
 }
 
+void SymbolTable::Delete(SymbolTable *table) noexcept {
+    if (table == nullptr)
+        return;
+
+    const orbiter::memory::IsolateAllocator allocator(table->isolate);
+
+    table->~SymbolTable();
+
+    allocator.free(table);
+}
+
 void SymbolTable::LeaveNestedScope(const MSize offset) const noexcept {
     this->scope->active->offset.end = offset;
 
@@ -500,7 +589,7 @@ void SymbolTable::LeaveScope(const MSize offset, const MSize line_end) noexcept 
     current->scope.offset.end = offset;
     current->line.end = line_end;
 
-    // fixme this->ComputeLocalVarOffset(current->active);
+    this->ComputeLocalVarOffset(current->active);
 
     if (this->scope->type != ScopeType::MODULE)
         this->scope = current->back;

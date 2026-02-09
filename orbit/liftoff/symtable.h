@@ -37,6 +37,11 @@ namespace liftoff {
         TRAIT
     };
 
+    enum class ScopeFlags : U8 {
+        CLOSURE = 1,
+        GENERATOR = 1 << 1
+    };
+
     enum class StorageLocation {
         AUTO,
 
@@ -53,8 +58,7 @@ namespace liftoff {
         ANON = 1 << 1,
         CONST = 1 << 2,
         SELF = 1 << 3,
-        SYNTHETIC = 1 << 4,
-        UPVALUE = 1 << 5
+        SYNTHETIC = 1 << 4
     };
 
     enum class SymbolType {
@@ -64,7 +68,6 @@ namespace liftoff {
         LABEL,
         METHOD,
         MODULE,
-        NATIVE_CONST,
         NATIVE_FUNC,
         NATIVE_VAR,
         PARAMETER,
@@ -73,6 +76,12 @@ namespace liftoff {
         UNKNOWN
     };
 
+    /**
+     * @brief Represents a nested lexical scope within a Scope (e.g. a for-loop or block inside a function).
+     *
+     * SubScopes are organized as a first-child/next-sibling tree, where each node holds its own
+     * symbol table and links to its parent, first child, and next sibling at the same nesting level.
+     */
     class SubScope {
         STHMap symbols;
 
@@ -97,10 +106,24 @@ namespace liftoff {
         friend class SymbolTable;
     };
 
+    /**
+     * @brief Represents a top-level lexical scope associated with a named construct (function, module, class, etc.).
+     *
+     * Each Scope owns a root SubScope and tracks the currently active SubScope during parsing
+     * and compilation. Scopes are linked via the @c back pointer to form a scope chain.
+     */
     class Scope {
         SubScope scope;
 
         SubScope *active = nullptr;
+
+        unsigned short closure_count = 0;
+        unsigned short slot_count = 0;
+        unsigned short stack_count = 0;
+
+        unsigned short parameter_count = 0;
+        unsigned short static_count = 0;
+        unsigned short unknown_count = 0;
 
         explicit Scope(orbiter::Isolate *isolate, const MSize line_start) : scope(isolate) {
             this->line.start = line_start;
@@ -113,15 +136,45 @@ namespace liftoff {
     public:
         ScopeType type = ScopeType::MODULE;
 
+        ScopeFlags flags{};
+
         Scope *back = nullptr;
 
         struct {
             MSize start;
             MSize end;
         } line{};
+
+        [[nodiscard]] bool ShouldCreateClosure() const {
+            return this->closure_count > 0;
+        }
+
+        [[nodiscard]] U16 GetClosureSize() const {
+            return this->closure_count;
+        }
+
+        [[nodiscard]] U16 GetLocalVariableCount() const {
+            return this->stack_count;
+        }
+
+        [[nodiscard]] U16 GetParameterCount() const {
+            assert(this->type == ScopeType::FUNCTION || this->type == ScopeType::NATIVE_FUNC);
+
+            return this->parameter_count;
+        }
+
+        [[nodiscard]] U16 GetSlotsCount() const {
+            return this->slot_count;
+        }
     };
 
     struct Symbol {
+        /// @brief Pointer to the actual declaration that resolves a forward reference.
+        ///
+        /// When a symbol is referenced before being declared, an UNKNOWN entry is created in the scope.
+        /// If a declaration with the same name appears later, this pointer links the UNKNOWN entry to
+        /// the resolved symbol. If the existing entry is not UNKNOWN, the declaration is rejected
+        /// as a name collision.
         Symbol *next;
 
         Scope *decl_scope;
@@ -141,6 +194,9 @@ namespace liftoff {
         SymbolType type;
 
         unsigned short offset;
+
+        /// @brief Original stack position for upvalues captured into a closure.
+        unsigned short stack_offset;
 
         unsigned short nesting;
     };
@@ -165,6 +221,8 @@ namespace liftoff {
 
         [[nodiscard]] Symbol *SymbolNew(orbiter::datatype::ORString *name, SymbolType type, StorageLocation location,
                                         MSize offset) noexcept;
+
+        void ComputeLocalVarOffset(const SubScope *s_scope) const noexcept;
 
         void ScopeDel(Scope *target) const noexcept;
 
@@ -209,6 +267,13 @@ namespace liftoff {
          * @return True if the scope was successfully entered, false otherwise.
          */
         bool EnterScope(orbiter::datatype::ORString *name) noexcept;
+
+        /**
+         * @brief Get SymbolTable status message.
+         *
+         * @return SymbolTable status message.
+         */
+        [[nodiscard]] const char *GetStatusMessage() const;
 
         Symbol *Declare(orbiter::datatype::ORString *name, SymbolType type, StorageLocation location,
                         MSize offset) noexcept;
@@ -316,6 +381,13 @@ namespace liftoff {
         static SymbolTable *New(orbiter::Isolate *isolate) noexcept;
 
         /**
+         * @brief Deletes the specified symbol table.
+         *
+         * @param table The symbol table to be deleted.
+         */
+        static void Delete(SymbolTable *table) noexcept;
+
+        /**
          * @brief Leave the nested scope using the specified offset as end position.
          * @note This method is designed to be used during parsing.
          *
@@ -342,6 +414,8 @@ namespace liftoff {
         void LeaveScope() noexcept;
     };
 }
+
+ENUMBITMASK_ENABLE(liftoff::ScopeFlags);
 
 ENUMBITMASK_ENABLE(liftoff::SymbolFlags);
 

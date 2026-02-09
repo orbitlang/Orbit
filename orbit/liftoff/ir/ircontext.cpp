@@ -205,7 +205,7 @@ std::vector<LiveInterval> &IRContext::ComputeLiveIntervals() {
 }
 
 void IRContext::AddActiveVar(const Symbol *symbol, Instruction *instr) {
-    if (ENUMBITMASK_ISTRUE(symbol->flags, SymbolFlags::UPVALUE))
+    if (symbol->location == StorageLocation::CLOSURE)
         return;
 
     this->active_regs_.insert({symbol, instr});
