@@ -836,9 +836,14 @@ ASTHandle<ASTNode *> Parser::ParseTryCatchFinally() {
     return tryb;
 }
 
-ASTHandle<ASTNode *> Parser::ParseVarDecl(const Position &start, AccessModifier access, bool constant, bool weak,
-                                          bool decl_only) {
+ASTHandle<ASTNode *> Parser::ParseVarDecl(const Position &start, const AccessModifier access, const bool constant,
+                                          const bool weak, const bool decl_only) {
     std::vector<ASTHandle<ASTNode *> > identifiers;
+
+    StorageLocation location = StorageLocation::AUTO;
+
+    if (this->context_->Check(ContextType::LOOP))
+        location = StorageLocation::STACK;
 
     if (constant && (!this->context_->Check(ContextType::CLASS)
                      && !this->context_->Check(ContextType::TRAIT)
@@ -858,7 +863,7 @@ ASTHandle<ASTNode *> Parser::ParseVarDecl(const Position &start, AccessModifier 
         if (access != AccessModifier::PRIVATE)
             this->exports.push_back(id_str);
 
-        const auto sym = this->sym_t_->Declare(id_str.get(), SymbolType::VARIABLE,TKCUR_LOC.start.offset);
+        const auto sym = this->sym_t_->Declare(id_str.get(), SymbolType::VARIABLE, location, TKCUR_LOC.start.offset);
         if (sym == nullptr)
             throw SymbolTableException();
 
