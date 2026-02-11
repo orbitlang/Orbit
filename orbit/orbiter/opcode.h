@@ -222,9 +222,14 @@ namespace orbiter {
         MKTRT, // Create new trait                  OPCODE | 4 DST | 12 RESERVED         | 8 IMPLs COUNT
         NOBJ, // Create new object                  OPCODE | 4 DST | 4 SRC(Class type)   | 16 UNSIGNED OFFSET
 
+        // Iterator
+        GITR, // Create new iterator                OPCODE | 4 DST | 4 SRC | 16 RESERVED
+        ITRNXT, // Iterator next value              OPCODE | 4 DST | 4 SRC(Iter obj) | 16 RESERVED
+
         // Jump Instructions
         JEN, // Jump if nil:                        OPCODE | 4 SRC | 20 OFFSET
         JERR, // Jump if error match                OPCODE | 4 SRC | 20 OFFSET
+        JEX, // Jump if exhaust                     OPCODE | 4 SRC | 20 OFFSET
         JF, // Jump if false:                       OPCODE | 4 SRC | 20 OFFSET
         JT, // Jump if true:                        OPCODE | 4 SRC | 20 OFFSET
         JMP, // Unconditional jump:                 OPCODE | 24 OFFSET

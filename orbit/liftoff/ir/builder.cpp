@@ -601,6 +601,11 @@ void Builder::AppendBasicBlock(BasicBlock *bb) const noexcept {
     bb->prev = this->context->current_;
 
     this->context->current_ = bb;
+
+    // Cached variable loads are only valid within a single basic block.
+    // Crossing a block boundary (branches, loop headers, merge points) may
+    // invalidate register contents, so the cache must be cleared.
+    this->context->InvalidateActiveVar(nullptr);
 }
 
 void Builder::DeleteBasicBlock(BasicBlock *bb) const noexcept {

@@ -617,7 +617,7 @@ Instruction *IRBuilder::visitBlock(const parser::Block *node) {
 }
 
 Instruction *IRBuilder::visitBranch(const parser::Branch *node) {
-    BranchInstruction *last = nullptr;
+    const BranchInstruction *last = nullptr;
 
     auto *end = this->builder_.CreateBasicBlock();
     auto *orelse = end;
@@ -626,7 +626,8 @@ Instruction *IRBuilder::visitBranch(const parser::Branch *node) {
 
     this->builder_.CreateBranch(orbiter::OPCode::JF, value, nullptr, orelse);
 
-    this->sym_t_->EnterNestedScope(node->body->loc.start.offset);
+    if (!this->sym_t_->EnterNestedScope(node->body->loc.start.offset))
+        throw SymbolTableException();
 
     this->visit(node->body);
 
@@ -1039,7 +1040,8 @@ Instruction *IRBuilder::visitLoop(const parser::Loop *node) {
             this->builder_.CreateBranch(orbiter::OPCode::JF, test, nullptr, jb.end);
         }
 
-        this->sym_t_->EnterNestedScope(node->body->loc.start.offset);
+        if (!this->sym_t_->EnterNestedScope(node->body->loc.start.offset))
+            throw SymbolTableException();
 
         this->visit(node->body);
 
@@ -1055,7 +1057,8 @@ Instruction *IRBuilder::visitLoop(const parser::Loop *node) {
     if (node->node_type != parser::NodeType::FOR)
         assert(false); // Never get here
 
-    this->sym_t_->EnterNestedScope(node->loc.start.offset);
+    if (!this->sym_t_->EnterNestedScope(node->loc.start.offset))
+        throw SymbolTableException();
 
     if (node->init != nullptr)
         this->visit(node->init);
@@ -1307,7 +1310,8 @@ Instruction *IRBuilder::visitSwitchBlock(const parser::SwitchBlock *node) {
 
         this->builder_.AppendBasicBlock(bodies[case_index++]);
 
-        this->sym_t_->EnterNestedScope(case_node->body->loc.start.offset);
+        if (!this->sym_t_->EnterNestedScope(case_node->body->loc.start.offset))
+            throw SymbolTableException();
 
         this->visit(case_node->body);
 
@@ -1380,7 +1384,8 @@ Instruction *IRBuilder::visitTryBlock(const parser::TryBlock *node) {
     ctx.alt = catch_ctl;
     ctx.end = finally_block;
 
-    this->sym_t_->EnterNestedScope(node->try_block->loc.start.offset);
+    if (!this->sym_t_->EnterNestedScope(node->try_block->loc.start.offset))
+        throw SymbolTableException();
 
     this->visit(node->try_block);
 
@@ -1430,7 +1435,8 @@ Instruction *IRBuilder::visitTryBlock(const parser::TryBlock *node) {
 
             this->builder_.AppendBasicBlock(catch_blocks[catch_index++]);
 
-            this->sym_t_->EnterNestedScope(catch_block->loc.start.offset);
+            if (!this->sym_t_->EnterNestedScope(catch_block->loc.start.offset))
+                throw SymbolTableException();
 
             this->visit(catch_block->body);
 
@@ -1449,7 +1455,8 @@ Instruction *IRBuilder::visitTryBlock(const parser::TryBlock *node) {
 
         ctx.end = next_block;
 
-        this->sym_t_->EnterNestedScope(node->finally->loc.start.offset);
+        if (!this->sym_t_->EnterNestedScope(node->finally->loc.start.offset))
+            throw SymbolTableException();
 
         this->visit(node->finally);
 
@@ -1650,7 +1657,40 @@ void IRBuilder::PutSyncExit(const JBlock *block) {
 }
 
 void IRBuilder::VisitForInLoop(const parser::Loop *node) {
-    assert(false);
+    auto *target = this->visit(node->test);
+
+    target = this->builder_.CreateUnaryOp(orbiter::OPCode::GITR, target);
+
+    const JBlock jb(&this->builder_, JBlockType::FOR_IN, nullptr);
+
+    this->builder_.AppendBasicBlock(jb.begin);
+
+    this->builder_.CreateBranch(orbiter::OPCode::JEX, target, nullptr, jb.end);
+
+    if (!this->sym_t_->EnterNestedScope(node->loc.start.offset))
+        throw SymbolTableException();
+
+    const auto gen_value = this->builder_.CreateUnaryOp(orbiter::OPCode::ITRNXT, target);
+
+    if (node->init->node_type == parser::NodeType::VAR_DECLARATION) {
+        const auto id = (parser::Identifier *) ((parser::Assignment *) node->init)->name;
+
+        this->StoreVariable(id->symbol, gen_value, false);
+    } else if (node->init->node_type == parser::NodeType::VAR_DECLARATIONS) {
+        assert(false); // TODO: tuple assignment
+    } else if (node->init->node_type == parser::NodeType::IDENTIFIER) {
+        const auto id = (parser::Identifier *) node->init;
+
+        this->StoreVariable(id->symbol, gen_value, false);
+    }
+
+    this->visit(node->body);
+
+    this->sym_t_->LeaveNestedScope();
+
+    this->builder_.CreateJump(jb.begin);
+
+    this->builder_.CreateAppendBasicBlock();
 }
 
 IRCHandle IRBuilder::Generate(const parser::ASTHandle<parser::Module *> &module) noexcept {
