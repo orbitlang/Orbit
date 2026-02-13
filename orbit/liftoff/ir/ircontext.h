@@ -277,6 +277,8 @@ namespace liftoff::ir {
 
         U16 stack_slots = 0;
 
+        U16 stack_slots_max = 0;
+
         U16 stack_push_count = 0;
 
         U16 stack_push_max = 0;
@@ -400,7 +402,7 @@ namespace liftoff::ir {
          * @return The total stack count as an unsigned 16-bit integer.
          */
         [[nodiscard]] U16 GetStackCount() const noexcept {
-            return this->stack_slots + this->stack_push_max;
+            return this->stack_slots_max + this->stack_push_max;
         }
 
         /**

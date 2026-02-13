@@ -15,7 +15,7 @@ LinearScan::LinearScan(IRContext *ir, U16 total_regs) noexcept : builder_(ir),
     for (auto i = total_regs - 1; i >= 0; --i)
         this->free_registers_.insert(static_cast<U16>(i));
 
-    this->stack_offset_ = ir->stack_slots;
+    this->stack_offset_ = ir->stack_slots_max;
 }
 
 U16 LinearScan::GetFreeStackSlot() {
@@ -277,6 +277,6 @@ void LinearScan::Allocate() {
     }
 
     // Update the stack slot of the IR context to the current stack size
-    if (this->stack_offset_ > this->ir_->stack_slots)
+    if (this->stack_offset_ > this->ir_->stack_slots_max)
         this->builder_.AllocStackSlots(this->stack_offset_ - this->ir_->stack_slots, orbiter::AllocaFlags::DEFAULT);
 }
