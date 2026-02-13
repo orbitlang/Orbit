@@ -75,7 +75,7 @@ namespace liftoff::ir {
 
         Instruction *visitLabel(const parser::Label *node);
 
-        Instruction *visitListExpression(parser::ListExpression *node);
+        Instruction *visitListExpression(const parser::ListExpression *node);
 
         Instruction *visitLiteral(parser::Literal *node);
 

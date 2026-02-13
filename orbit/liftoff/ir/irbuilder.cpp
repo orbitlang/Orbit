@@ -474,9 +474,9 @@ Instruction *IRBuilder::visitAssignment(parser::Assignment *node) {
                                || sym->type == SymbolType::METHOD))
             assert(false); // TODO: Constant error
 
-        auto *obj = (Instruction *) ld->operands[0].value;
-
         assert(ld!=nullptr);
+
+        auto *obj = (Instruction *) ld->operands[0].value;
 
         auto *st = this->builder_.GetStoreObjectProp(obj, value, ld->offset,
                                                      ld->flags == orbiter::LoadObjectPropFlags::KEY);
@@ -593,6 +593,8 @@ Instruction *IRBuilder::visitBinary(parser::Binary *node) {
             return this->CreateJumpForElvisOrNil(node, orbiter::OPCode::JEN);
         case parser::NodeType::NOT_IN:
             flags = orbiter::MembershipFlags::NOT_IN;
+
+            [[fallthrough]];
         case parser::NodeType::IN:
             left = this->visit(node->left);
             right = this->visit(node->right);
@@ -971,7 +973,7 @@ Instruction *IRBuilder::visitLabel(const parser::Label *node) {
     return this->visit(node->statement);
 }
 
-Instruction *IRBuilder::visitListExpression(parser::ListExpression *node) {
+Instruction *IRBuilder::visitListExpression(const parser::ListExpression *node) {
     const auto elements = node->elements.size();
 
     Instruction *container = nullptr;
@@ -995,6 +997,8 @@ Instruction *IRBuilder::visitListExpression(parser::ListExpression *node) {
         container = this->builder_.CreateUnaryOp(orbiter::OPCode::NLIST, elements);
     else if (node->node_type == parser::NodeType::TUPLE)
         container = this->builder_.CreateUnaryOp(orbiter::OPCode::NTUPLE, elements);
+    else if (node->node_type == parser::NodeType::SET)
+        container = this->builder_.CreateUnaryOp(orbiter::OPCode::NSET, elements);
 
     for (auto &element: node->elements) {
         auto *value = this->visit(element.get());
