@@ -1026,7 +1026,7 @@ ASTHandle<ASTNode *> Parser::ParseAssignment(ASTHandle<ASTNode *> &left) {
 
             if (itm->node_type != NodeType::IDENTIFIER
                 && itm->node_type != NodeType::INDEX
-                && left->node_type != NodeType::SLICE
+                && itm->node_type != NodeType::SLICE
                 && itm->node_type != NodeType::SELECTOR)
                 throw ParserException(1);
         }
@@ -1522,18 +1522,19 @@ ASTHandle<ASTNode *> Parser::ParseInfix(ASTHandle<ASTNode *> &left) {
     auto right = this->ParseExpression(tk_type);
 
     switch (tk_type) {
-        case scanner::TokenType::ARROW_LEFT:
+        case TokenType::ARROW_LEFT:
             node_type = NodeType::CHAN_SEND;
             break;
-        case scanner::TokenType::LESS:
-        case scanner::TokenType::LESS_EQ:
-        case scanner::TokenType::GREATER:
-        case scanner::TokenType::GREATER_EQ:
-        case scanner::TokenType::EQUAL_EQUAL:
-        case scanner::TokenType::EQUAL_STRICT:
-        case scanner::TokenType::NOT_EQUAL:
-        case scanner::TokenType::NOT_EQUAL_STRICT:
+        case TokenType::LESS:
+        case TokenType::LESS_EQ:
+        case TokenType::GREATER:
+        case TokenType::GREATER_EQ:
+        case TokenType::EQUAL_EQUAL:
+        case TokenType::EQUAL_STRICT:
+        case TokenType::NOT_EQUAL:
+        case TokenType::NOT_EQUAL_STRICT:
             node_type = NodeType::CMPEQ;
+            break;
         default:
             break;
     }
@@ -1881,6 +1882,7 @@ ASTHandle<ASTNode *> Parser::ParseStatement() {
                 if (!this->context_->Check(ContextType::FUNC))
                     throw ParserException(31);
                 this->sym_t_->scope->flags |= ScopeFlags::GENERATOR;
+                [[fallthrough]];
             case TokenType::KW_RETURN: {
                 auto ret = MakeUnary(
                     this->isolate_,
