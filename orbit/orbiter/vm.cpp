@@ -28,6 +28,14 @@ using namespace orbiter::datatype;
 
 constexpr auto kStackPrologueOffset = sizeof(FiberContext) + (sizeof(void *) * 2);
 
+enum CallResult : int {
+    CALL_ERROR = -1,
+    CALL_BUSY = 0,
+    CALL_CONTINUE = 1,
+    CALL_DONE = 2,
+    CALL_EXHAUST = 3
+};
+
 // *** Prototypes
 
 void CallNative(Function *func, Registers *regs, const VMStack *stack, U16 argc);
@@ -182,6 +190,37 @@ bool UnwindStack(Fiber *fiber) {
     return false;
 }
 
+bool VMGetIter(const Fiber *fiber, OObject *object, PtrSize *dst) {
+    if (O_IS_OBJECT(object)) {
+        const auto type = (TypeInfoOps *) O_GET_TYPE(object);
+
+        // Generator fast path
+        if (type->type.i_type == InstanceType::GENERATOR) {
+            *dst = (PtrSize) object;
+
+            return true;
+        }
+
+        if (type->ops.get_iter != nullptr) {
+            *dst = (PtrSize) type->ops.get_iter(object);
+
+            return true;
+        }
+    }
+
+    char error[24];
+
+    GetTypeName(object, error, sizeof(error));
+
+    ErrorSet(fiber->isolate,
+             TypeError::Details[TypeError::Reason::ID],
+             nullptr,
+             TypeError::Details[TypeError::Reason::NON_ITERABLE],
+             error);
+
+    return false;
+}
+
 HOObject VMAdd(Isolate *isolate, PtrSize left, PtrSize right) {
     if (O_IS_SMI(left) && O_IS_SMI(right)) {
         left -= 1;
@@ -214,7 +253,7 @@ int CallInit(Fiber *fiber, const Function *func, const unsigned short p_count, c
                  TypeError::Details[TypeError::Reason::NON_CALLABLE],
                  error);
 
-        return -1;
+        return CALL_ERROR;
     }
 
     const auto *fn_shared = func->shared;
@@ -284,7 +323,7 @@ int CallInit(Fiber *fiber, const Function *func, const unsigned short p_count, c
 
             regs->RR.reg = (PtrSize) FunctionNew(func, args, total_args).get();
 
-            return 2;
+            return CALL_DONE;
         }
 
         if (!func->shared->IsVariadic() && rest->length > args_diff) {
@@ -384,7 +423,7 @@ int CallInit(Fiber *fiber, const Function *func, const unsigned short p_count, c
     return total_args;
 }
 
-int CallGenerator(Fiber *fiber, Generator *gen, const U16 total_args, const CallMode mode) {
+int CallGenerator(Fiber *fiber, Generator *gen, const U16 total_args, const CallMode mode, const bool exhausted_error) {
     auto *regs = &fiber->vm.regs;
     const auto *stack = &fiber->vm.stack;
 
@@ -394,21 +433,26 @@ int CallGenerator(Fiber *fiber, Generator *gen, const U16 total_args, const Call
                  nullptr,
                  TypeError::Details[TypeError::Reason::GENERATOR_INVALID_CALL]);
 
-        return -1;
+        return CALL_ERROR;
     }
 
+    PtrSize actual = 0;
+    if (!gen->acquired.compare_exchange_strong(actual, (PtrSize) fiber))
+        return CALL_BUSY;
+
     if (gen->state == GeneratorState::EXHAUSTED) {
+        gen->acquired = 0;
+
+        if (!exhausted_error)
+            return CALL_EXHAUST;
+
         ErrorSet(fiber->isolate,
                  StopIterationError::Details[StopIterationError::Reason::ID],
                  nullptr,
                  StopIterationError::Details[StopIterationError::Reason::GENERATOR_EXHAUSTED]);
 
-        return -1;
+        return CALL_ERROR;
     }
-
-    PtrSize actual = 0;
-    if (!gen->acquired.compare_exchange_strong(actual, (PtrSize) fiber))
-        return 0;
 
     // Load registers
     stratum::util::MemoryCopy(regs, gen->regs_dump, kGeneralPurposeRegistersCount);
@@ -445,7 +489,31 @@ int CallGenerator(Fiber *fiber, Generator *gen, const U16 total_args, const Call
 
     gen->state = GeneratorState::RUNNING;
 
-    return 1;
+    return CALL_CONTINUE;
+}
+
+int VMGetIterNext(Fiber *fiber, OObject *object, PtrSize *dst) {
+    if (O_IS_OBJECT(object)) {
+        if (O_IS_TYPE(object, InstanceType::GENERATOR))
+            return CallGenerator(fiber, (Generator *) object, 0, CallMode::FASTCALL, false);
+
+        const auto type = (TypeInfoOps *) O_GET_TYPE(object);
+
+        if (type->ops.iter_next != nullptr)
+            return type->ops.iter_next(object, (OObject **) &dst);
+    }
+
+    char error[24];
+
+    GetTypeName(object, error, sizeof(error));
+
+    ErrorSet(fiber->isolate,
+             RuntimeError::Details[RuntimeError::Reason::ID],
+             nullptr,
+             RuntimeError::Details[RuntimeError::Reason::ITER_NEXT_NOT_IMPLEMENTED],
+             error);
+
+    return CALL_ERROR;
 }
 
 OObject *LoadFromObjectProp(const Fiber *fiber, const Function *func, OObject *obj, const LoadObjectPropFlags flags,
@@ -643,7 +711,8 @@ CGOTO
 #define NEXT_IP                 (regs->IP.reg += sizeof(MachineWord))
 #define JMP_TO(offset)          (regs->IP.reg = (PtrSize) code->m_code + offset)
 
-#define REGISTER(registers, n)  (*((PtrSize *) (((Register *) (registers)) + n)))
+#define REGISTER_PTR(registers, n)  ((PtrSize *) (((Register *) (registers)) + n))
+#define REGISTER(registers, n)      (*REGISTER_PTR(registers, n))
 
 #define REG_N(n)                REGISTER(regs, n)
 #define REG_RR                  REG_N(13)
@@ -786,17 +855,17 @@ CATCH_FINALLY:
                 int res;
 
                 if (O_IS_TYPE(func, InstanceType::GENERATOR)) {
-                    res = CallGenerator(fiber, (Generator *) func, p_count, flags);
-                    if (res < 0)
+                    res = CallGenerator(fiber, (Generator *) func, p_count, flags, true);
+                    if (res == CALL_ERROR)
                         goto ERROR;
 
-                    // TODO: ==0, busy
+                    // TODO: ==CALL_BUSY
 
                     goto BEGIN;
                 }
 
                 res = CallInit(fiber, func, p_count, flags);
-                if (res < 0)
+                if (res == CALL_ERROR)
                     goto ERROR;
 
                 if (func->shared->IsGenerator()) {
@@ -861,7 +930,7 @@ CATCH_FINALLY:
                 const auto func = (Function *) REG_N(src);
 
                 const auto res = CallInit(fiber, func, p_count, flags);
-                if (res < 0)
+                if (res == CALL_ERROR)
                     goto ERROR;
 
                 auto *defer = fiber->isolate->dpool_->NewDefer();
@@ -1416,6 +1485,33 @@ CATCH_FINALLY:
                 auto *tp = (TypeInfo *) REG_N(src);
 
                 REG_N(dst) = (PtrSize) ClassNew(tp).get();
+
+                DISPATCH;
+            }
+            TARGET_OP(GITR) {
+                const auto dst = FETCH_R_DST(instr);
+                const auto src = FETCH_R_SRC(instr);
+
+                if (!VMGetIter(fiber, (OObject *) REG_N(src), REGISTER_PTR(regs, dst)))
+                    goto ERROR;
+
+                DISPATCH;
+            }
+            TARGET_OP(ITRNXT) {
+                const auto dst = FETCH_R_DST(instr);
+                const auto src = (OObject *) REG_N(FETCH_R_SRC(instr));
+                const auto jmp = FETCH_IMM(instr);
+
+                int res = VMGetIterNext(fiber, src, REGISTER_PTR(regs, dst));
+                if (res == CALL_ERROR)
+                    goto ERROR;
+                if (res == CALL_CONTINUE)
+                    goto BEGIN;
+                if (res == CALL_EXHAUST) {
+                    JMP_TO(jmp);
+
+                    continue;
+                }
 
                 DISPATCH;
             }

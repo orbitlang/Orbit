@@ -93,7 +93,7 @@ namespace orbiter::datatype {
         NUMBER,
         OBJECT,
         RAWPTR,
-       // SET,
+        // SET,
         STRING,
         TRAIT,
         TUPLE
@@ -187,6 +187,8 @@ namespace orbiter::datatype {
 
     using CompareFn = int (*)(const OObject *, const OObject *);
     using EqualFn = bool (*)(const OObject *, const OObject *);
+    using GetIterFn = OObject *(*)(OObject *);
+    using IterNextFn = bool (*)(OObject *, OObject **);
     using ToNativeType = bool (*)(OObject *, void *, NativeType);
 
     // *****************************************************************************************************************
@@ -239,6 +241,8 @@ namespace orbiter::datatype {
     struct TypeOps {
         CompareFn compare;
         EqualFn equal;
+        GetIterFn get_iter;
+        IterNextFn iter_next;
         ToNativeType to_native;
     };
 

@@ -74,7 +74,8 @@ namespace orbiter::datatype {
 
             NATIVE_LOAD_LIBRARY,
             NATIVE_LOAD_SYMBOL,
-            NATIVE_UNLOAD_LIBRARY
+            NATIVE_UNLOAD_LIBRARY,
+            ITER_NEXT_NOT_IMPLEMENTED
         };
 
         static constexpr const char *Details[] = {
@@ -82,7 +83,8 @@ namespace orbiter::datatype {
 
             (const char *) "failed to load native library '%s': %s",
             (const char *) "failed to load native symbol '%s': %s",
-            (const char *) "failed to unload native library '%s': %s"
+            (const char *) "failed to unload native library '%s': %s",
+            (const char *) "'%s' object passed iterator check but does not implement iter_next"
         };
     };
 
@@ -96,7 +98,7 @@ namespace orbiter::datatype {
         static constexpr const char *Details[] = {
             (const char *) "StopIterationError",
 
-            (const char *) "generator is exahusted",
+            (const char *) "generator is exhausted",
         };
     };
 
@@ -107,6 +109,7 @@ namespace orbiter::datatype {
             PARAMETER,
             PANIC,
             NON_CALLABLE,
+            NON_ITERABLE,
             GENERATOR_INVALID_CALL,
             INVALID_NATIVE_TYPE
         };
@@ -117,6 +120,7 @@ namespace orbiter::datatype {
             (const char *) "unexpected type '%s' for '%s' parameter(%d)",
             (const char *) "panic expect type '%s'",
             (const char *) "invalid call to a non-callable object('%s')",
+            (const char *) "'%s' object is not iterable",
             (const char *) "cannot pass arguments when resuming a generator",
             (const char *) "invalid call: native functions can only be called within their defining module by directly "
             "invoking the symbol (indirect calls are not allowed)"
