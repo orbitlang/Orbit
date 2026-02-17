@@ -81,7 +81,7 @@ namespace liftoff::ir {
             }
         }
 
-        explicit Object(ObjectType type, int operands) noexcept: objType_(type), num_ops(operands) {
+        explicit Object(const ObjectType type, const unsigned short operands) noexcept: objType_(type), num_ops(operands) {
             if (operands > 0) {
                 this->operands = new Use[operands];
 

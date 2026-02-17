@@ -1689,12 +1689,10 @@ void IRBuilder::VisitForInLoop(const parser::Loop *node) {
 
     const auto generator = this->builder_.LoadFromStackOffset(kBaseStackPointerReg, tmp_slot, true);
 
-    this->builder_.CreateBranch(orbiter::OPCode::JEX, generator, nullptr, jb.end);
-
     if (!this->sym_t_->EnterNestedScope(node->loc.start.offset))
         throw SymbolTableException();
 
-    const auto gen_value = this->builder_.CreateUnaryOp(orbiter::OPCode::ITRNXT, generator);
+    const auto gen_value = this->builder_.CreateBranch(orbiter::OPCode::ITRNXT, generator, nullptr, jb.end);
 
     if (node->init->node_type == parser::NodeType::IDENTIFIER) {
         const auto id = (parser::Identifier *) node->init;

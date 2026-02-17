@@ -32,10 +32,10 @@ namespace liftoff::ir {
         friend Builder;
 
     protected:
-        explicit Instruction(const ObjectType type, const int operands) noexcept : Object(type, operands) {
+        explicit Instruction(const ObjectType type, const unsigned short operands) noexcept : Object(type, operands) {
         }
 
-        explicit Instruction(const int operands) noexcept : Instruction(ObjectType::INSTRUCTION, operands) {
+        explicit Instruction(const unsigned short operands) noexcept : Instruction(ObjectType::INSTRUCTION, operands) {
         }
 
     public:
@@ -148,6 +148,9 @@ namespace liftoff::ir {
     protected:
         explicit BranchInstruction(const orbiter::OPCode opcode, Instruction *value,
                                    BasicBlock *jmp) noexcept : PhysInstruction(opcode, 2) {
+            if (opcode == orbiter::OPCode::ITRNXT)
+                this->assigned_reg = kReturnRegisterReg;
+
             this->SetOperand(0, value);
             this->SetOperand(1, (Object *) jmp);
         }
@@ -435,8 +438,6 @@ namespace liftoff::ir {
         }
 
         explicit UnaryOpInstr(const orbiter::OPCode opcode, Instruction *src) noexcept : UnaryOpInstr(opcode, 0, src) {
-            if (opcode == orbiter::OPCode::ITRNXT)
-                this->assigned_reg = kReturnRegisterReg;
         }
 
         explicit UnaryOpInstr(const orbiter::OPCode opcode, const U8 flags,

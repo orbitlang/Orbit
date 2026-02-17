@@ -229,7 +229,6 @@ namespace orbiter {
         // Jump Instructions
         JEN, // Jump if nil:                        OPCODE | 4 SRC | 20 OFFSET
         JERR, // Jump if error match                OPCODE | 4 SRC | 20 OFFSET
-        JEX, // Jump if exhaust                     OPCODE | 4 SRC | 20 OFFSET
         JF, // Jump if false:                       OPCODE | 4 SRC | 20 OFFSET
         JT, // Jump if true:                        OPCODE | 4 SRC | 20 OFFSET
         JMP, // Unconditional jump:                 OPCODE | 24 OFFSET
