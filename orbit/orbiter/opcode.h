@@ -190,6 +190,10 @@ namespace orbiter {
         CLOLDR, // Load from closure object:        OPCODE | 4 DST | 4 RESERVED | 16 UNSIGNED OFFSET
         CLOSTR, // Store to closure object:         OPCODE | 4 SRC | 4 RESERVED | 16 UNSIGNED OFFSET
 
+        // Channel Operations
+        CHRCV, // Recv from channel:                OPCODE | 4 DST          | 4 SRC     | 16 RESERVED
+        CHSND, // Send to channel:                  OPCODE | 4 DST (Chan)   | 4 SRC     | 16 RESERVED
+
         // Allocate space for N variable on stack
         // Format: OPCODE | 4 RESERVED | 4 FLAGS(AllocaFlags) | 16 UNSIGNED SLOTS
         ALLOCA,

@@ -558,6 +558,10 @@ Instruction *IRBuilder::visitBinary(parser::Binary *node) {
     switch (node->node_type) {
         case parser::NodeType::BINARY:
             return this->BinaryOP(node);
+        case parser::NodeType::CHAN_SEND:
+            left = this->visit(node->left);
+            right = this->visit(node->right);
+            return this->builder_.CreateManip(orbiter::OPCode::CHSND, left, right);
         case parser::NodeType::CMPEQ: {
             Instruction *ret = nullptr;
 
@@ -1511,6 +1515,9 @@ Instruction *IRBuilder::visitUnary(const parser::Unary *node) {
     }
 
     switch (node->node_type) {
+        case parser::NodeType::CHAN_RECV:
+            value = this->visit(node->value);
+            return this->builder_.CreateUnaryOp(orbiter::OPCode::CHRCV, value);
         case parser::NodeType::NEW:
             return this->visitNew(node);
         case parser::NodeType::PANIC:

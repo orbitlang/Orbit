@@ -332,6 +332,7 @@ unsigned char *Codegen::EmitOpcodes(const BasicBlock *block, unsigned char *m_co
                 break;
             }
             case orbiter::OPCode::ADDELEM:
+            case orbiter::OPCode::CHSND:
                 *(orbiter::MachineWord *) m_code = EMIT_DSS(instr->opcode,
                                                             ((Instruction*)instr->operands[0].value)->assigned_reg,
                                                             ((Instruction*)instr->operands[1].value)->assigned_reg,
@@ -356,6 +357,7 @@ unsigned char *Codegen::EmitOpcodes(const BasicBlock *block, unsigned char *m_co
             case orbiter::OPCode::LDMOD:
             case orbiter::OPCode::LDINIT:
             case orbiter::OPCode::NOBJ:
+            case orbiter::OPCode::CHRCV:
             case orbiter::OPCode::GITR:
                 *(orbiter::MachineWord *) m_code = EMIT_DS(instr->opcode,
                                                            instr->assigned_reg,

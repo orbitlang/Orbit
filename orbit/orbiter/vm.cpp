@@ -1259,6 +1259,24 @@ CATCH_FINALLY:
 
                 DISPATCH;
             }
+            TARGET_OP(CHRCV) {
+                const auto dst = FETCH_R_DST(instr);
+                const auto src = FETCH_R_SRC(instr);
+
+                // TODO: IMPL CHAN RECV
+                assert(false);
+
+                DISPATCH;
+            }
+            TARGET_OP(CHSND) {
+                const auto dst = FETCH_R_DST(instr);
+                const auto src = FETCH_R_SRC(instr);
+
+                // TODO: IMPL CHAN SEND
+                assert(false);
+
+                DISPATCH;
+            }
             TARGET_OP(ALLOCA) {
                 const auto flags = (AllocaFlags) ((instr >> 16) & 0xFu);
                 const auto size = FETCH_IMM(instr) * sizeof(void *);
