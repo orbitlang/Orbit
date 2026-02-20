@@ -14,6 +14,15 @@
 #include <orbit/orbiter/native/ffi.h>
 
 namespace orbiter::datatype {
+    struct CleanupEntry {
+        const unsigned char *m_start;
+        const unsigned char *m_end;
+
+        OPCode type;
+
+        U16 slot;
+    };
+
     struct ExportedSymbol {
         ORString *name;
 
@@ -28,6 +37,12 @@ namespace orbiter::datatype {
         const unsigned char *m_code;
 
         const unsigned char *m_end;
+
+        struct {
+            CleanupEntry *entries;
+
+            U16 length;
+        } cleanup;
 
         struct {
             ExportedSymbol *symbols;

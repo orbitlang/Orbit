@@ -305,8 +305,13 @@ Instruction *Builder::CreateYield(Instruction *s_reg) {
     const auto *cursor = this->context->j_chain;
 
     while (cursor != nullptr) {
-        if (cursor->type == JBlockType::SYNC)
-            this->CreateUnaryOp(OPCode::SYNC_EXIT, cursor->value);
+        if (cursor->type == JBlockType::SYNC) {
+            const auto slot = this->context->GetSlotFromCleanupMatch(cursor->value);
+
+            const auto value = this->LoadFromStackOffset(kBaseStackPointerReg, (I16) slot, false);
+
+            this->CreateUnaryOp(OPCode::SYNC_EXIT, value);
+        }
 
         cursor = cursor->prev;
     }
@@ -332,8 +337,13 @@ Instruction *Builder::CreateYield(Instruction *s_reg) {
     // Restore SYNC
     cursor = this->context->j_chain;
     while (cursor != nullptr) {
-        if (cursor->type == JBlockType::SYNC)
-            this->CreateUnaryOp(OPCode::SYNC_ENTER, cursor->value);
+        if (cursor->type == JBlockType::SYNC) {
+            const auto slot = this->context->GetSlotFromCleanupMatch(cursor->value);
+
+            const auto value = this->LoadFromStackOffset(kBaseStackPointerReg, (I16) slot, false);
+
+            this->CreateUnaryOp(OPCode::SYNC_ENTER, value);
+        }
 
         cursor = cursor->prev;
     }
@@ -457,33 +467,64 @@ Instruction *Builder::LoadObjectProp(Instruction *src, U16 offset, bool as_key, 
 }
 
 Instruction *Builder::LoadFromOffset(const OPCode opcode, const U8 r_base, const I16 offset, const U8 flags) {
-    const OffsetInstruction *last = nullptr;
+    if (this->context->current_ != nullptr) {
+        const OffsetInstruction *last = nullptr;
+        
+        bool call = false;
+        
+        for (auto cursor = this->context->current_->instr.tail; cursor != nullptr; cursor = cursor->prev) {
+            const auto *instr = (OffsetInstruction *) cursor;
 
-    switch (opcode) {
-        case OPCode::CLOLDR:
-            last = (OffsetInstruction *) this->GetLastInstructionMatch(OPCode::CLOSTR);
-            break;
-        case OPCode::LDGBL:
-            last = (OffsetInstruction *) this->GetLastInstructionMatch(OPCode::STGBL);
-            break;
-        case OPCode::LDGOFF:
-            last = (OffsetInstruction *) this->GetLastInstructionMatch(OPCode::STGOFF);
-            break;
-        case OPCode::SKLDR:
-            last = (OffsetInstruction *) this->GetLastInstructionMatch(OPCode::SKSTR);
-            break;
-        default:
-            break;
+            if (cursor->type() != ObjectType::INSTRUCTION)
+                continue;
+
+            switch (opcode) {
+                case OPCode::CLOLDR:
+                    last = instr->opcode == OPCode::CLOSTR ? instr : nullptr;
+                    break;
+                case OPCode::LDGBL:
+                    last = instr->opcode == OPCode::STGBL ? instr : nullptr;
+                    break;
+                case OPCode::LDGOFF:
+                    last = instr->opcode == OPCode::STGOFF ? instr : nullptr;
+                    break;
+                case OPCode::SKLDR:
+                    last = instr->opcode == OPCode::SKSTR ? instr : nullptr;
+                    break;
+                default:
+                    break;
+            }
+
+            if (last != nullptr
+                && last->r_base == r_base
+                && last->offset == offset
+                && last->flags == flags)
+                return (Instruction *) last->operands->value;
+
+            if (instr->opcode == OPCode::CALL || instr->opcode == OPCode::NTCALL)
+                call = true;
+
+            // Load-load reuse: if no matching store was found, look for a previous load
+            // with the same opcode/base/offset/flags and reuse its result.
+            // SKLDR (stack frame local load) is always safe to reuse since calls cannot
+            // modify the current frame's local slots. For all other locations (globals,
+            // closures, module vars), a call in between invalidates the previous load
+            // because the callee may have modified the underlying memory.
+            last = instr->opcode == opcode ? instr : nullptr;
+            if (last != nullptr
+                && last->r_base == r_base
+                && last->offset == offset
+                && last->flags == flags) {
+                
+                if (!call || opcode == OPCode::SKLDR)
+                    return (Instruction *) last;
+                
+                break;
+            }
+        }
     }
 
-    if (last != nullptr
-        && last->r_base == r_base
-        && last->offset == offset
-        && last->flags == flags)
-        return (Instruction *) last->operands->value;
-
     auto *instr = this->CreateInstruction<OffsetInstruction>(opcode, r_base, offset);
-
     instr->flags = flags;
 
     return instr;

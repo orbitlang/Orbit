@@ -21,6 +21,8 @@ namespace liftoff {
 
         [[nodiscard]] U32 CalculateCodeSize() const;
 
+        void ExportCleanupTable(const orbiter::datatype::HCode &code);
+
         void ExportNativeBindings(const orbiter::datatype::HCode &code);
 
         void ExportSymbols(const orbiter::datatype::HCode &code);

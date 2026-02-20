@@ -21,26 +21,17 @@ namespace liftoff::ir {
         TRAIT
     };
 
-    /**
-     * @class LiveInterval
-     *
-     * Represents a live interval of a variable or temporary value in an intermediate
-     * representation. It marks the range of program instructions where the value is
-     * active and needs to be kept alive. These intervals are typically used during
-     * register allocation to determine the lifetime of values and optimize resource usage.
-     *
-     * Each interval associates with a specific instruction and defines the start
-     * and end points, indicating where the live range begins and ends.
-     */
-    class LiveInterval {
+    class CleanupEntry {
     public:
-        Instruction *instr;
+        Instruction *start;
+        Instruction *end;
 
-        U32 start;
-        U32 end;
+        orbiter::OPCode type;
 
-        LiveInterval(Instruction *instr, const U32 start,
-                     const U32 end) noexcept : instr(instr), start(start), end(end) {
+        U16 slot;
+
+        CleanupEntry(Instruction *start, Instruction *end, const orbiter::OPCode type, const U16 slot) noexcept : start(start),
+            end(end), type(type), slot(slot) {
         }
     };
 
@@ -65,6 +56,29 @@ namespace liftoff::ir {
 
         ExportedName(orbiter::datatype::ORString *name, const orbiter::VariableFlags flags,
                      const U16 slot) noexcept : name(O_INCREF(name)), flags(flags), slot(slot) {
+        }
+    };
+
+    /**
+     * @class LiveInterval
+     *
+     * Represents a live interval of a variable or temporary value in an intermediate
+     * representation. It marks the range of program instructions where the value is
+     * active and needs to be kept alive. These intervals are typically used during
+     * register allocation to determine the lifetime of values and optimize resource usage.
+     *
+     * Each interval associates with a specific instruction and defines the start
+     * and end points, indicating where the live range begins and ends.
+     */
+    class LiveInterval {
+    public:
+        Instruction *instr;
+
+        U32 start;
+        U32 end;
+
+        LiveInterval(Instruction *instr, const U32 start,
+                     const U32 end) noexcept : instr(instr), start(start), end(end) {
         }
     };
 
@@ -98,7 +112,7 @@ namespace liftoff::ir {
      * should be processed.
      */
     class NativeBinding {
-       public:
+    public:
         orbiter::datatype::HORString name;
         orbiter::datatype::HORString symbol;
         orbiter::datatype::HORString library;
@@ -238,6 +252,8 @@ namespace liftoff::ir {
         void RemoveFromObjList(Object *obj) noexcept;
 
     public:
+        std::vector<CleanupEntry> cleanup_entries_;
+
         std::vector<ExportedName> exported_names;
         std::vector<NativeBinding> native_bindings;
 
@@ -392,6 +408,20 @@ namespace liftoff::ir {
          * @return The size of the exported_names collection before the addition.
          */
         U16 ExportSymbol(const Symbol *symbol, orbiter::VariableFlags flags);
+
+        /**
+         * @brief Finds the stack slot associated with a cleanup entry matching the given start instruction.
+         *
+         * Searches the cleanup table for an entry whose start instruction matches the specified one,
+         * and returns the stack slot where the object requiring cleanup is stored.
+         * Used during code generation to resolve cleanup entries (e.g., SYNC_EXIT) to their
+         * corresponding stack locations.
+         *
+         * @param start The instruction marking the beginning of the cleanup region.
+         * @return The stack slot index of the object requiring cleanup.
+         * @note Asserts if no matching entry is found.
+         */
+        U16 GetSlotFromCleanupMatch(const Instruction *start);
 
         /**
          * Retrieves the total stack count for this context.

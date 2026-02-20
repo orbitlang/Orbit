@@ -1208,12 +1208,10 @@ Instruction *IRBuilder::visitReturn(const parser::Unary *unary) {
     if (this->sym_t_->scope->type == ScopeType::FUNCTION)
         pops_slot = this->sym_t_->scope->GetParameterCount();
 
-    this->PutSyncExit(nullptr);
-
     return this->builder_.CreateReturn(value, pops_slot);
 }
 
-Instruction *IRBuilder::visitSelector(parser::Selector *node) {
+Instruction *IRBuilder::visitSelector(const parser::Selector *node) {
     auto *base = this->visit(node->left);
 
     const auto *key = (parser::Identifier *) node->right;
@@ -1352,9 +1350,18 @@ Instruction *IRBuilder::visitSyncBlock(const parser::Binary *binary) {
     if (!((parser::Block *) binary->right)->statements.empty()) {
         auto *left = this->visit(binary->left);
 
-        const JBlock _(&this->builder_, left);
+        JBlock jb(&this->builder_, JBlockType::SYNC);
 
-        this->builder_.CreateUnaryOp(orbiter::OPCode::SYNC_ENTER, left);
+        auto v_slot = this->builder_.ReserveStackSlots(1);
+        this->builder_.StoreToStackOffset(left, kBaseStackPointerReg, (I16) v_slot);
+
+        jb.value = this->builder_.CreateUnaryOp(orbiter::OPCode::SYNC_ENTER, left);
+
+        auto &c_entry = this->builder_.context->cleanup_entries_.emplace_back(
+            jb.value,
+            nullptr,
+            orbiter::OPCode::SYNC_EXIT,
+            v_slot);
 
         this->visit(binary->right);
 
@@ -1367,7 +1374,11 @@ Instruction *IRBuilder::visitSyncBlock(const parser::Binary *binary) {
             return nullptr;
         }
 
-        this->builder_.CreateUnaryOp(orbiter::OPCode::SYNC_EXIT, left);
+        left = this->builder_.LoadFromStackOffset(kBaseStackPointerReg, (I16) v_slot, false);
+
+        c_entry.end = this->builder_.CreateUnaryOp(orbiter::OPCode::SYNC_EXIT, left);
+
+        this->builder_.ReleaseStackSlots(1);
     }
 
     return nullptr;
@@ -1674,8 +1685,13 @@ void IRBuilder::PutSyncExit(const JBlock *block) {
     const auto *cursor = this->builder_.context->j_chain;
 
     while (cursor != block) {
-        if (cursor->type == JBlockType::SYNC)
-            this->builder_.CreateUnaryOp(orbiter::OPCode::SYNC_EXIT, cursor->value);
+        if (cursor->type == JBlockType::SYNC) {
+            const auto slot = this->builder_.context->GetSlotFromCleanupMatch(cursor->value);
+
+            const auto value = this->builder_.LoadFromStackOffset(kBaseStackPointerReg, (I16) slot, false);
+
+            this->builder_.CreateUnaryOp(orbiter::OPCode::SYNC_EXIT, value);
+        }
 
         cursor = cursor->prev;
     }

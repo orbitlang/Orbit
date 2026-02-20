@@ -471,6 +471,30 @@ U32 Codegen::CalculateCodeSize() const {
     return offset;
 }
 
+void Codegen::ExportCleanupTable(const orbiter::datatype::HCode &code) {
+    const auto b_length = this->ir_->cleanup_entries_.size() * sizeof(orbiter::datatype::CleanupEntry);
+    if (b_length == 0)
+        return;
+
+    auto *buffer = this->allocator_.alloc<orbiter::datatype::CleanupEntry>(b_length);
+    if (buffer == nullptr)
+        throw std::bad_alloc();
+
+    auto *cursor = buffer;
+    for (const auto entry: this->ir_->cleanup_entries_) {
+        cursor->m_start = code->m_code + (entry.start->instr_offset * 4);
+        cursor->m_end = code->m_code + (entry.end->instr_offset * 4);
+
+        cursor->type = entry.type;
+        cursor->slot = entry.slot;
+
+        cursor++;
+    }
+
+    code->cleanup.entries = buffer;
+    code->cleanup.length = this->ir_->cleanup_entries_.size();
+}
+
 void Codegen::ExportNativeBindings(const orbiter::datatype::HCode &code) {
     const auto *ir = this->ir_;
 
@@ -556,7 +580,7 @@ orbiter::datatype::HCode Codegen::Generate() noexcept {
 
     try {
         auto *m_cursor = m_code;
-        for (auto *b_cursor = ir->entry_; b_cursor; b_cursor = b_cursor->next)
+        for (const auto *b_cursor = ir->entry_; b_cursor; b_cursor = b_cursor->next)
             m_cursor = EmitOpcodes(b_cursor, m_cursor);
 
         auto code = CodeNew(
@@ -574,6 +598,7 @@ orbiter::datatype::HCode Codegen::Generate() noexcept {
             throw std::bad_alloc();
         }
 
+        this->ExportCleanupTable(code);
         this->ExportNativeBindings(code);
         this->ExportSymbols(code);
 

@@ -110,6 +110,17 @@ U16 IRContext::ExportSymbol(const Symbol *symbol, orbiter::VariableFlags flags) 
     return length;
 }
 
+U16 IRContext::GetSlotFromCleanupMatch(const Instruction *start) {
+    const auto it = std::find_if(cleanup_entries_.begin(), cleanup_entries_.end(),
+                                 [&](const CleanupEntry &e) {
+                                     return e.start == start;
+                                 });
+
+    assert(it != cleanup_entries_.end());
+
+    return it->slot;
+}
+
 U16 IRContext::PushUnknownProps(orbiter::datatype::ORString *id) {
     if (!this->unknown_names) {
         this->unknown_names = orbiter::datatype::ListNew(this->isolate_);
