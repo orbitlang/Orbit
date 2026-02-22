@@ -158,8 +158,11 @@ void LinearScan::ResolveInterferences() {
 
                 if (first_intf_point != nullptr) {
                     logical_counter = first_intf_point->instr_offset;
+
                     for (auto *cursor = first_intf_point; cursor != instr; cursor = cursor->next)
                         cursor->instr_offset = logical_counter++;
+
+                    instr->instr_offset = logical_counter++;
                 }
             }
 
