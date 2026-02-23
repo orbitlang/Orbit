@@ -186,6 +186,12 @@ namespace liftoff::ir {
 
         Instruction *CreateManipType(orbiter::OPCode opcode, Instruction *target, Instruction *src, U16 offset);
 
+        Instruction *CreatePendingBCAction(BasicBlock *target, const orbiter::PendingAction action) {
+            assert(action == orbiter::PendingAction::BREAK || action == orbiter::PendingAction::CONTINUE);
+
+            return this->CreateInstruction<PendingActionInstruction>(target, action);
+        }
+
         Instruction *CreatePendingReturn(Instruction *src, const U16 pops) {
             return this->CreateInstruction<PendingActionInstruction>(src, pops);
         }

@@ -975,11 +975,27 @@ Instruction *IRBuilder::visitImportName(parser::ImportName *node) {
 
 Instruction *IRBuilder::visitJump(const parser::Jump *node) {
     const auto b_target = FindLabeledBlock(this->builder_.context->j_chain, node->label);
-
     if (b_target == nullptr)
         assert(false); // TODO ERROR
 
     this->PutSyncExit(b_target);
+
+    for (auto cursor = this->builder_.context->j_chain; cursor != b_target; cursor = cursor->prev) {
+        if (cursor->type == JBlockType::TCF) {
+            const auto pa = node->token_type == scanner::TokenType::KW_BREAK
+                                ? orbiter::PendingAction::BREAK
+                                : orbiter::PendingAction::CONTINUE;
+
+            auto *ret = this->builder_.CreatePendingBCAction(
+                pa == orbiter::PendingAction::BREAK
+                    ? GetJBlockEnd(b_target)
+                    : GetJBlockBegin(b_target), pa);
+
+            this->builder_.CreateJump(((JBlockBranch *) cursor)->end);
+
+            return ret;
+        }
+    }
 
     return this->builder_.CreateJump(node->token_type == scanner::TokenType::KW_BREAK
                                          ? GetJBlockEnd(b_target)

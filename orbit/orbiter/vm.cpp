@@ -40,6 +40,8 @@ enum CallResult : int {
 
 void CallNative(Function *func, Registers *regs, const VMStack *stack, U16 argc);
 
+void ExecuteCleanupForPC(const Fiber *fiber);
+
 // EOF ***
 
 bool ExecDefer(Fiber *fiber) {
@@ -117,6 +119,8 @@ bool UnwindStack(Fiber *fiber) {
     const auto *except = (ExceptionContext *) regs->CP.reg;
 
     while (regs->SP.reg > 0) {
+        ExecuteCleanupForPC(fiber);
+
         if (ExecDefer(fiber))
             return true;
 
@@ -566,10 +570,43 @@ void CallNative(Function *func, Registers *regs, const VMStack *stack, const U16
     }
 }
 
+void ExecuteCleanupForPC(const Fiber *fiber) {
+    const auto count = fiber->context.code->cleanup.length;
+    if (count == 0)
+        return;
+
+    const auto ip = fiber->vm.regs.IP.reg;
+
+    const auto *table = fiber->context.code->cleanup.entries;
+
+    for (auto i = count - 1; i >= 0; i--) {
+        const auto *entry = table + i;
+
+        if (ip < (PtrSize) entry->m_start || ip >= (PtrSize) entry->m_end)
+            continue;
+
+        auto *value = *((OObject **) (fiber->vm.stack.stack + (
+                                          fiber->vm.regs.BP.reg + (entry->slot * sizeof(void *)))));
+
+        switch (entry->type) {
+            case OPCode::SYNC_EXIT:
+                // TODO: impl this
+                printf("sync_exit: %p\n", value);
+                break;
+            default:
+                assert(false);
+                break;
+        }
+    }
+}
+
 void Return(Fiber *fiber, const U32 pops) {
     auto *regs = &fiber->vm.regs;
     const auto *stack = &fiber->vm.stack;
     auto *func = fiber->context.func;
+
+    if (regs->BP.reg > 0)
+        ExecuteCleanupForPC(fiber);
 
     // Cleanup local variables
     for (auto i = regs->BP.reg; i != regs->SP.reg; i += sizeof(void *))
@@ -1597,6 +1634,14 @@ CATCH_FINALLY:
 
                 continue;
             }
+            TARGET_OP(SYNC_ENTER) {
+                // TDOO: impl this
+                DISPATCH;
+            }
+            TARGET_OP(SYNC_EXIT) {
+                // TDOO: impl this
+                DISPATCH;
+            }
             TARGET_OP(TBGIN) {
                 const auto offset = instr & 0xFFFFFFu;
 
@@ -1623,7 +1668,6 @@ CATCH_FINALLY:
                     O_DECREF((OObject*)ctx->ret_value);
 
                     regs->CP.reg = (PtrSize) ((ExceptionContext *) regs->CP.reg)->prev;
-
                     fiber->vm.e_stack.Pop();
 
                     goto ERROR;
@@ -1638,7 +1682,6 @@ CATCH_FINALLY:
                     O_DECREF((OObject*)ctx->ret_value);
 
                     regs->CP.reg = (PtrSize) ((ExceptionContext *) regs->CP.reg)->prev;
-
                     fiber->vm.e_stack.Pop();
 
                     Return(fiber, ctx->ret_pops);
@@ -1648,8 +1691,28 @@ CATCH_FINALLY:
 
                 O_DECREF((OObject*)ctx->ret_value);
 
-                regs->CP.reg = (PtrSize) ((ExceptionContext *) regs->CP.reg)->prev;
+                if (ctx->action != (U32) PendingAction::NONE) {
+                    U32 target = ctx->ret_pops;
+                    U32 action = ctx->action;
 
+                    regs->CP.reg = (PtrSize) ((ExceptionContext *) regs->CP.reg)->prev;
+                    fiber->vm.e_stack.Pop();
+
+                    auto *outer = (ExceptionContext *)regs->CP.reg;
+                    if (outer != nullptr && outer->key == regs->BP.reg) {
+                        outer->action = action;
+                        outer->ret_pops = target;
+
+                        JMP_TO(outer->foffset);
+
+                        goto BEGIN;
+                    }
+
+                    JMP_TO(target);
+                    goto BEGIN;
+                }
+
+                regs->CP.reg = (PtrSize) ((ExceptionContext *) regs->CP.reg)->prev;
                 fiber->vm.e_stack.Pop();
 
                 DISPATCH;
@@ -1702,6 +1765,8 @@ ERROR:
         auto *except = (ExceptionContext *) regs->CP.reg;
         if (except != nullptr) {
             if (except->key == regs->BP.reg) {
+                ExecuteCleanupForPC(fiber);
+
                 if (except->coffset != 0) {
                     JMP_TO(except->coffset);
                     except->coffset = 0;
