@@ -64,6 +64,7 @@ namespace liftoff::ir {
      * Inherits from JBlock and introduces two additional basic blocks:
      * - `alt`: An alternate execution path for the block, such as the catch block in a try-catch-finally structure.
      * - `end`: The termination block for the control flow, marking the end of the structure.
+     * - `stack_slot`: When used with TCF (Try-Catch-Finally), indicates the position in the stack where the exception handling structure resides.
      *
      * This class is useful for representing branching constructs and their respective control flow targets,
      * facilitating the generation of intermediate representation in the compiler.
@@ -72,6 +73,8 @@ namespace liftoff::ir {
     public:
         BasicBlock *alt;
         BasicBlock *end;
+
+        U16 stack_slot = 0;
 
         JBlockBranch(Builder *builder, JBlockType type, BasicBlock *alt, BasicBlock *end);
     };

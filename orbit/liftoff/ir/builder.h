@@ -296,7 +296,7 @@ namespace liftoff::ir {
             return this->CreateObject<OffsetInstruction>(orbiter::OPCode::SKSTR, r_base, offset, src);
         }
 
-        Instruction *SetupTryCatch(BasicBlock *catch_block, BasicBlock *finally_block);
+        Instruction *SetupTryCatch(BasicBlock *catch_block, BasicBlock *finally_block, U16 offset);
 
         Instruction *StackDiscard(U16 slots);
 

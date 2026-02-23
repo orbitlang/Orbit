@@ -111,8 +111,12 @@ using namespace liftoff::ir;
 // Emit Special Macros
 // ============================================================================
 
+#define EMIT_TBGIN(opcode, slot, offset) \
+    (((U32)(opcode) << 24) | ((slot) << 18) | (offset))
+
 #define EMIT_TSPA(opcode, pa, src, offset) \
     (((U32)(opcode) << 24) | ((pa) << 22) | ((src) << 18) | (offset))
+
 
 unsigned char *Codegen::EmitOpcodes(const BasicBlock *block, unsigned char *m_code) {
     for (auto *cursor = block->instr.head; cursor != nullptr; cursor = cursor->next) {
@@ -415,7 +419,13 @@ unsigned char *Codegen::EmitOpcodes(const BasicBlock *block, unsigned char *m_co
                                                            ((Instruction*)instr->operands[0].value)->assigned_reg,
                                                            0);
                 break;
-            case orbiter::OPCode::TBGIN:
+            case orbiter::OPCode::TBGIN: {
+                const auto *catch_bb = (const BasicBlock *) instr->operands[0].value;
+                *(orbiter::MachineWord *) m_code = EMIT_TBGIN(instr->opcode,
+                                                              ((TCFInstr*)instr)->offset,
+                                                              catch_bb != nullptr ? catch_bb->offset : 0);
+                break;
+            }
             case orbiter::OPCode::TSFIN: {
                 const auto *jmp = (const BasicBlock *) instr->operands[1].value;
                 *(orbiter::MachineWord *) m_code = EMIT_JMP(instr->opcode, jmp!=nullptr ? jmp->offset : 0);

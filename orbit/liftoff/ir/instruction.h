@@ -222,20 +222,36 @@ namespace liftoff::ir {
     protected:
         explicit PendingActionInstruction(BasicBlock *jmp,
                                           const orbiter::PendingAction action) noexcept : PhysInstruction(
-                orbiter::OPCode::TSPA, 2), action(action) {
+            orbiter::OPCode::TSPA, 2), action(action) {
             assert(action != orbiter::PendingAction::RETURN);
 
             this->SetOperand(1, (Object *) jmp);
         }
 
         explicit PendingActionInstruction(Instruction *value, const U16 pops) noexcept : PhysInstruction(
-                orbiter::OPCode::TSPA, 2), action(orbiter::PendingAction::RETURN), pops(pops) {
+            orbiter::OPCode::TSPA, 2), action(orbiter::PendingAction::RETURN), pops(pops) {
             this->SetOperand(0, value);
         }
 
     public:
         orbiter::PendingAction action;
         U16 pops = 0;
+    };
+
+    class TCFInstr final : public PhysInstruction {
+        friend Builder;
+
+    protected:
+        TCFInstr(const orbiter::OPCode opcode, BasicBlock *catch_block, const U16 offset) : PhysInstruction(opcode, 1),
+            offset(offset) {
+            this->SetOperand(0, (Object *) catch_block);
+        }
+
+        TCFInstr(const orbiter::OPCode opcode, const U16 offset) : PhysInstruction(opcode, 1), offset(offset) {
+        }
+
+    public:
+        U16 offset = 0;
     };
 
     // Load/Store

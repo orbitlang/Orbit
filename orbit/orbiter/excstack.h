@@ -9,6 +9,8 @@
 
 namespace orbiter {
     struct ExceptionContext {
+        PtrSize _sentinel_;
+
         ExceptionContext *prev;
 
         struct {
@@ -25,6 +27,7 @@ namespace orbiter {
 
     constexpr auto kExceptionStackSize = 16 * sizeof(ExceptionContext);
     constexpr auto kExceptionStackMinSize = 2 * sizeof(ExceptionContext);
+    constexpr PtrSize kExceptionContextTag = (0xECECEC << 1) | 0x1;
 
     struct VMExcStack {
         ExceptionContext *stack;

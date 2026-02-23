@@ -8,6 +8,8 @@
 
 #include <orbit/liftoff/ir/irbuilder.h>
 
+#include <orbit/orbiter/excstack.h>
+
 using namespace liftoff;
 using namespace liftoff::ir;
 
@@ -1401,7 +1403,9 @@ Instruction *IRBuilder::visitSyncBlock(const parser::Binary *binary) {
 Instruction *IRBuilder::visitTrap(const parser::Unary *node) {
     auto *finally_block = this->builder_.CreateBasicBlock();
 
-    this->builder_.SetupTryCatch(nullptr, finally_block);
+    const StackSlotGuard guard(this->builder_, sizeof(orbiter::ExceptionContext) / sizeof(PtrSize));
+
+    this->builder_.SetupTryCatch(nullptr, finally_block, guard.base);
 
     auto *ret = this->visit(node->value);
 
@@ -1425,9 +1429,12 @@ Instruction *IRBuilder::visitTryBlock(const parser::TryBlock *node) {
 
     finally_block = this->builder_.CreateBasicBlock();
 
-    this->builder_.SetupTryCatch(catch_ctl, finally_block);
+    const StackSlotGuard guard(this->builder_, sizeof(orbiter::ExceptionContext) / sizeof(PtrSize));
+
+    this->builder_.SetupTryCatch(catch_ctl, finally_block, guard.base);
 
     JBlockBranch ctx(&this->builder_, JBlockType::TCF, catch_ctl, finally_block);
+    ctx.stack_slot = guard.base;
 
     if (!this->sym_t_->EnterNestedScope(node->try_block->loc.start.offset))
         throw SymbolTableException();

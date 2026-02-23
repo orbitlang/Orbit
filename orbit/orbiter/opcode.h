@@ -243,7 +243,7 @@ namespace orbiter {
         SYNC_EXIT,
 
         // Try/Catch/Finally operations
-        TBGIN, // Begin try block:                                          OPCODE | 24 OFFSET
+        TBGIN, // Begin try block:                                          OPCODE | 6 STACK SLOT | 18 OFFSET
         TEND,  // End try block context                                     OPCODE | 24 RESERVED
         TSFIN,
         TSPA, // Sets the suspended operation in a try/catch/finally block  OPCODE | 2 PENDING OP | 4 SRC | 18 JMP OFFSET

@@ -330,7 +330,7 @@ Instruction *Builder::CreateYield(Instruction *s_reg) {
     while (cursor != nullptr) {
         if (cursor->type == JBlockType::TCF) {
             const auto *tcf = (JBlockBranch *) cursor;
-            this->SetupTryCatch(tcf->alt, tcf->end);
+            this->SetupTryCatch(tcf->alt, tcf->end, tcf->stack_slot);
         }
 
         cursor = cursor->prev;
@@ -531,11 +531,13 @@ Instruction *Builder::LoadFromOffset(const OPCode opcode, const U8 r_base, const
     return instr;
 }
 
-Instruction *Builder::SetupTryCatch(BasicBlock *catch_block, BasicBlock *finally_block) {
-    if (catch_block == nullptr)
-        return this->CreateInstruction<BranchInstruction>(OPCode::TBGIN, nullptr, nullptr);
+Instruction *Builder::SetupTryCatch(BasicBlock *catch_block, BasicBlock *finally_block, const U16 offset) {
+    assert(offset <= 63);
 
-    this->CreateInstruction<BranchInstruction>(OPCode::TBGIN, nullptr, catch_block);
+    if (catch_block == nullptr)
+        return this->CreateInstruction<TCFInstr>(OPCode::TBGIN, offset);
+
+    this->CreateInstruction<TCFInstr>(OPCode::TBGIN, catch_block, offset);
     return this->CreateInstruction<BranchInstruction>(OPCode::TSFIN, nullptr, finally_block);
 }
 
