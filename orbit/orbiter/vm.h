@@ -5,7 +5,6 @@
 #ifndef ORBIT_ORBITER_VM_H_
 #define ORBIT_ORBITER_VM_H_
 
-#include <orbit/orbiter/excstack.h>
 #include <orbit/orbiter/vmstack.h>
 
 namespace orbiter {
@@ -61,8 +60,6 @@ namespace orbiter {
         Registers regs;
 
         VMStack stack;
-
-        VMExcStack e_stack;
 
         VMState state;
 

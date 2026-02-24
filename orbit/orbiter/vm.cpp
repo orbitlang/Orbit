@@ -21,6 +21,7 @@
 #include <orbit/orbiter/opcode.h>
 #include <orbit/orbiter/fiber.h>
 
+#include <orbit/orbiter/excstack.h>
 #include <orbit/orbiter/vm.h>
 
 using namespace orbiter;
@@ -63,18 +64,23 @@ bool ExecDefer(Fiber *fiber) {
             continue;
         }
 
+        // Store current context
+        stratum::util::MemoryCopy(fiber->vm.stack.stack + regs->SP.reg, &fiber->context.context, sizeof(FiberContext));
+        regs->SP.reg += sizeof(FiberContext);
+
+        fiber->vm.Push(regs->BP.reg);
+        fiber->vm.Push(regs->IP.reg);
+
         fiber->context.context = O_FAST_INCREF(defer->func->shared->context);
         fiber->context.module = O_INCREF(defer->func->shared->module);
         fiber->context.code = O_FAST_INCREF(defer->func->shared->code);
         fiber->context.func = O_FAST_INCREF((OObject*)defer->func);
 
-        *((PtrSize *) (stack->stack + (defer->SP - sizeof(void *)))) = regs->IP.reg - sizeof(MachineWord);
-
         regs->r10.reg = defer->r10;
         regs->r11.reg = defer->r11;
         regs->r12.reg = defer->r12;
 
-        regs->BP.reg = defer->SP;
+        regs->BP.reg = defer->SP + kStackPrologueOffset;
 
         regs->IP.reg = (PtrSize) func->shared->code->m_code;
 
@@ -609,8 +615,16 @@ void Return(Fiber *fiber, const U32 pops) {
         ExecuteCleanupForPC(fiber);
 
     // Cleanup local variables
-    for (auto i = regs->BP.reg; i != regs->SP.reg; i += sizeof(void *))
+    for (auto i = regs->BP.reg; i != regs->SP.reg; i += sizeof(void *)) {
+        // TODO: remove this after RC refactoring
+        if (*((PtrSize*)(stack->stack + i))  == kExceptionContextTag) {
+            i += sizeof(ExceptionContext) - sizeof(void *);
+
+            continue;
+        }
+
         O_DECREF(*(OObject**)(stack->stack + i));
+    }
 
     if (regs->BP.reg > 0) {
         regs->BP.reg -= sizeof(void *);
@@ -1643,17 +1657,21 @@ CATCH_FINALLY:
                 DISPATCH;
             }
             TARGET_OP(TBGIN) {
-                const auto offset = instr & 0xFFFFFFu;
+                const auto coffset = (instr & 0x3FFFFu);
+                const auto slot = ((instr >> 18) & 0x3Fu) * sizeof(void *);
 
-                const auto ctx = fiber->vm.e_stack.Push((ExceptionContext *) regs->CP.reg, offset);
-                if (ctx == nullptr) {
-                    ErrorSet(fiber->isolate,
-                             MemoryError::Details[MemoryError::Reason::ID],
-                             nullptr,
-                             MemoryError::Details[(int) MemoryError::Reason::ESTACK]);
+                const auto ctx = (ExceptionContext *) (stack->stack + (regs->BP.reg + slot));
 
-                    goto ERROR;
-                }
+                ctx->_sentinel_ = kExceptionContextTag;
+                ctx->prev = (ExceptionContext *) regs->CP.reg;
+
+                ctx->ret_pops = 0;
+                ctx->action = (U32) PendingAction::NONE;
+
+                ctx->coffset = coffset;
+                ctx->foffset = 0;
+
+                ctx->ret_value = 0;
 
                 ctx->key = regs->BP.reg;
 
@@ -1668,7 +1686,6 @@ CATCH_FINALLY:
                     O_DECREF((OObject*)ctx->ret_value);
 
                     regs->CP.reg = (PtrSize) ((ExceptionContext *) regs->CP.reg)->prev;
-                    fiber->vm.e_stack.Pop();
 
                     goto ERROR;
                 }
@@ -1682,7 +1699,6 @@ CATCH_FINALLY:
                     O_DECREF((OObject*)ctx->ret_value);
 
                     regs->CP.reg = (PtrSize) ((ExceptionContext *) regs->CP.reg)->prev;
-                    fiber->vm.e_stack.Pop();
 
                     Return(fiber, ctx->ret_pops);
 
@@ -1696,9 +1712,8 @@ CATCH_FINALLY:
                     U32 action = ctx->action;
 
                     regs->CP.reg = (PtrSize) ((ExceptionContext *) regs->CP.reg)->prev;
-                    fiber->vm.e_stack.Pop();
 
-                    auto *outer = (ExceptionContext *)regs->CP.reg;
+                    auto *outer = (ExceptionContext *) regs->CP.reg;
                     if (outer != nullptr && outer->key == regs->BP.reg) {
                         outer->action = action;
                         outer->ret_pops = target;
@@ -1713,7 +1728,6 @@ CATCH_FINALLY:
                 }
 
                 regs->CP.reg = (PtrSize) ((ExceptionContext *) regs->CP.reg)->prev;
-                fiber->vm.e_stack.Pop();
 
                 DISPATCH;
             }
@@ -1741,6 +1755,12 @@ CATCH_FINALLY:
                     ctx->ret_value = REG_N(src);
 
                     O_INCREF((OObject*)ctx->ret_value);
+                }
+
+                if (action != PendingAction::NONE) {
+                    O_DECREF((OObject*)ctx->ret_value);
+
+                    ctx->ret_pops = offset;
                 }
 
                 DISPATCH;
@@ -1784,7 +1804,6 @@ ERROR:
                 // Release the exhausted exception context (both catch and finally consumed)
                 O_DECREF((OObject*)except->ret_value);
                 regs->CP.reg = (PtrSize) except->prev;
-                fiber->vm.e_stack.Pop();
             }
         }
     }
