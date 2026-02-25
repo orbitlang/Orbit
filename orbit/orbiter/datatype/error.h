@@ -66,6 +66,29 @@ namespace orbiter::datatype {
      */
     HError ErrorNew(Isolate *isolate, const char *kind, OObject *details, const char *format, ...);
 
+#ifdef _ORBIT_PLATFORM_WINDOWS
+    /**
+     * @brief Retrieve an error message string corresponding to the last Windows error
+     *
+     * This function obtains a descriptive error message for the last error code reported
+     * by the Windows operating system. It uses the `GetLastError` API to retrieve the
+     * error code and `FormatMessageA` to convert it into a human-readable string.
+     *
+     * The function performs the following tasks:
+     * - Checks the last error code using `GetLastError`.
+     * - If an error code exists, retrieves the associated error message using `FormatMessageA`.
+     * - Allocates a string.
+     * - Frees any allocated memory used by `FormatMessageA`.
+     * - Returns either the retrieved message or a default message for successful operations.
+     *
+     * @param isolate Pointer to the `Isolate` instance used for string allocation and error message management
+     *
+     * @return A handle to an `ORString` containing the error message. If no error occurred, a message indicating
+     *         successful execution is returned.
+     */
+    HORString ErrorGetMsgFromWinErr(Isolate *isolate);
+#endif
+
     /**
      * @brief Initialize and create the specified type
      *

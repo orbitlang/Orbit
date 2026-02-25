@@ -7,10 +7,20 @@
 
 #include <orbit/orbiter/isolate.h>
 
+#ifndef _ORBIT_PLATFORM_WINDOWS
+#include <dlfcn.h>
+#endif
+
 namespace orbiter::native {
     using DLHandle = void *;
 
     constexpr DLHandle DLHandleError = nullptr;
+
+#ifdef _ORBIT_PLATFORM_WINDOWS
+    const auto kDefaultScopeHandle = (DLHandle) 1;
+#else
+    const auto kDefaultScopeHandle = (DLHandle) RTLD_DEFAULT;
+#endif
 
     /**
      * @brief Loads a shared library or dynamic-link library at runtime.

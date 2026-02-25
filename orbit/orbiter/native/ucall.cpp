@@ -4,6 +4,10 @@
 
 #include <cassert>
 
+#include <orbit/util/macros.h>
+
+#ifndef _ORBIT_PLATFORM_WINDOWS
+
 #include <orbit/orbiter/datatype/error.h>
 #include <orbit/orbiter/datatype/errors.h>
 #include <orbit/orbiter/datatype/nativefunc.h>
@@ -165,3 +169,5 @@ bool orbiter::native::CallFunction(Isolate *isolate, HOObject &out, const Native
 
     return true;
 }
+
+#endif

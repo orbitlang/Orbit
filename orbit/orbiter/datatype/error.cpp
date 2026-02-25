@@ -2,6 +2,8 @@
 //
 // Licensed under the Apache License v2.0
 
+#include <cstdarg>
+
 #include <orbit/orbiter/fiber.h>
 
 #include <orbit/orbiter/datatype/function.h>

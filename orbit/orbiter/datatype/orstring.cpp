@@ -3,6 +3,7 @@
 // Licensed under the Apache License v2.0
 
 #include <cassert>
+#include <cstdarg>
 
 #include <orbit/util/hash.h>
 
