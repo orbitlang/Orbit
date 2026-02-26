@@ -606,6 +606,18 @@ void ExecuteCleanupForPC(const Fiber *fiber) {
     }
 }
 
+void ReleaseExceptionContext(Registers *regs) {
+    auto *ctx = (ExceptionContext *) regs->CP.reg;
+
+    assert(ctx!=nullptr);
+
+    regs->CP.reg = (PtrSize) ctx->prev;
+
+    O_DECREF((OObject*)ctx->ret_value); // TODO: remove once fully transitioned to GC.
+
+    memory::MemoryZero(ctx, sizeof(ExceptionContext));
+}
+
 void Return(Fiber *fiber, const U32 pops) {
     auto *regs = &fiber->vm.regs;
     const auto *stack = &fiber->vm.stack;
@@ -615,16 +627,8 @@ void Return(Fiber *fiber, const U32 pops) {
         ExecuteCleanupForPC(fiber);
 
     // Cleanup local variables
-    for (auto i = regs->BP.reg; i != regs->SP.reg; i += sizeof(void *)) {
-        // TODO: remove this after RC refactoring
-        if (*((PtrSize*)(stack->stack + i))  == kExceptionContextTag) {
-            i += sizeof(ExceptionContext) - sizeof(void *);
-
-            continue;
-        }
-
+    for (auto i = regs->BP.reg; i != regs->SP.reg; i += sizeof(void *))
         O_DECREF(*(OObject**)(stack->stack + i));
-    }
 
     if (regs->BP.reg > 0) {
         regs->BP.reg -= sizeof(void *);
@@ -1683,9 +1687,7 @@ CATCH_FINALLY:
                 const auto ctx = (ExceptionContext *) regs->CP.reg;
 
                 if (fiber->panic.current_ != nullptr) {
-                    O_DECREF((OObject*)ctx->ret_value);
-
-                    regs->CP.reg = (PtrSize) ((ExceptionContext *) regs->CP.reg)->prev;
+                    ReleaseExceptionContext(regs);
 
                     goto ERROR;
                 }
@@ -1696,9 +1698,7 @@ CATCH_FINALLY:
 
                     REG_RR = ctx->ret_value;
 
-                    O_DECREF((OObject*)ctx->ret_value);
-
-                    regs->CP.reg = (PtrSize) ((ExceptionContext *) regs->CP.reg)->prev;
+                    ReleaseExceptionContext(regs);
 
                     Return(fiber, ctx->ret_pops);
 
@@ -1711,7 +1711,7 @@ CATCH_FINALLY:
                     U32 target = ctx->ret_pops;
                     U32 action = ctx->action;
 
-                    regs->CP.reg = (PtrSize) ((ExceptionContext *) regs->CP.reg)->prev;
+                    ReleaseExceptionContext(regs);
 
                     auto *outer = (ExceptionContext *) regs->CP.reg;
                     if (outer != nullptr && outer->key == regs->BP.reg) {
@@ -1727,7 +1727,7 @@ CATCH_FINALLY:
                     goto BEGIN;
                 }
 
-                regs->CP.reg = (PtrSize) ((ExceptionContext *) regs->CP.reg)->prev;
+                ReleaseExceptionContext(regs);
 
                 DISPATCH;
             }
@@ -1802,8 +1802,7 @@ ERROR:
                 }
 
                 // Release the exhausted exception context (both catch and finally consumed)
-                O_DECREF((OObject*)except->ret_value);
-                regs->CP.reg = (PtrSize) except->prev;
+                ReleaseExceptionContext(regs);
             }
         }
     }
