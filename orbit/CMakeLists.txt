@@ -23,7 +23,9 @@ elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
         # MASM (ml64) requires .asm extension
         file(GLOB ASM_SRC_ARCH "${CMAKE_CURRENT_SOURCE_DIR}/orbiter/native/arch/x86_64/win64/*.asm")
     else()
-        file(GLOB ASM_SRC_ARCH "${CMAKE_CURRENT_SOURCE_DIR}/orbiter/native/arch/x86_64/*/*.S")
+        file(GLOB ASM_SRC_ARCH
+            "${CMAKE_CURRENT_SOURCE_DIR}/orbiter/native/arch/x86_64/*.S"
+            "${CMAKE_CURRENT_SOURCE_DIR}/orbiter/native/arch/x86_64/*/*.S")
     endif()
     set(ASM_SRC ${ASM_SRC_ARCH})
     message(STATUS "Using x86_64 assembly files")
