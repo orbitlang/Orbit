@@ -183,10 +183,12 @@ namespace orbiter {
         void Reset() noexcept {
             memory::MemoryZero(&this->vm.regs, sizeof(Registers));
 
-            this->vm.state = VMState::RUNNABLE;
-
             this->panic.current_ = nullptr;
             this->panic.r_current_ = &this->panic.current_;
+
+            this->UnsetContext();
+
+            this->vm.state = VMState::RUNNABLE;
         }
 
         /**
