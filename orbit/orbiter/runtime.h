@@ -23,7 +23,7 @@ namespace orbiter {
 
         bool wired = false;
 
-        FiberQueue queue;
+        FiberQueue<> queue;
 
         VCore() : queue(kVCoreQueueLengthMax) {
         }
@@ -78,7 +78,7 @@ namespace orbiter {
 
         std::condition_variable ost_cond_;
 
-        FiberQueue fiber_queue_;
+        FiberQueue<> fiber_queue_;
 
         static inline Orbiter *orbiter_ = nullptr;
 

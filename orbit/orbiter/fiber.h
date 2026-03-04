@@ -59,6 +59,8 @@ namespace orbiter {
 
         Panic *oom_cache = nullptr;
 
+        datatype::OObject *future = nullptr;
+
         struct {
             Fiber *next;
             Fiber **prev;

@@ -12,6 +12,7 @@
 #include <orbit/orbiter/datatype/error.h>
 #include <orbit/orbiter/datatype/errors.h>
 #include <orbit/orbiter/datatype/function.h>
+#include <orbit/orbiter/datatype/future.h>
 #include <orbit/orbiter/datatype/generator.h>
 #include <orbit/orbiter/datatype/list.h>
 #include <orbit/orbiter/datatype/module.h>
@@ -80,6 +81,7 @@ Isolate *Isolate::New() {
     INIT_TYPE(InstanceType::DICT, DictTypeInit);
     INIT_TYPE(InstanceType::ERROR, ErrorTypeInit);
     INIT_TYPE(InstanceType::FUNCTION, FunctionTypeInit);
+    INIT_TYPE(InstanceType::FUTURE, FutureTypeInit);
     INIT_TYPE(InstanceType::GENERATOR, GeneratorTypeInit);
     INIT_TYPE(InstanceType::LIST, ListTypeInit);
     INIT_TYPE(InstanceType::MODULE, ModuleInit);
@@ -103,6 +105,7 @@ Isolate *Isolate::New() {
     SETUP_TYPE(InstanceType::DICT, DictTypeSetup);
     SETUP_TYPE(InstanceType::ERROR, ErrorTypeSetup);
     SETUP_TYPE(InstanceType::FUNCTION, FunctionTypeSetup);
+    SETUP_TYPE(InstanceType::FUTURE, FutureTypeSetup);
     SETUP_TYPE(InstanceType::GENERATOR, GeneratorTypeSetup);
     SETUP_TYPE(InstanceType::LIST, ListTypeSetup);
     SETUP_TYPE(InstanceType::MODULE, ModuleSetup);

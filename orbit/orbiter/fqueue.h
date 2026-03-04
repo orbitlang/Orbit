@@ -17,7 +17,19 @@ namespace orbiter {
      * a maximum number of fibers and ensures proper synchronization during enqueueing
      * and dequeuing operations.
      */
+    template<bool ThreadSafe = true>
     class FiberQueue {
+        class NoopMutex {
+        public:
+            void lock() {
+            }
+
+            void unlock() {
+            }
+        };
+
+        using MutexType = std::conditional_t<ThreadSafe, std::mutex, NoopMutex>;
+
         //                                            +----head
         //                                            v
         //           +--------+    +--------+    +--------+
@@ -26,7 +38,7 @@ namespace orbiter {
         //           |        |    |        |    |        |
         //           +--------+    +--------+    +--------+
 
-        std::mutex lock_;
+        MutexType lock_;
 
         Fiber *head_ = nullptr;
         Fiber *tail_ = nullptr;
@@ -35,9 +47,10 @@ namespace orbiter {
         U32 max_;
 
     public:
-        //FiberQueue() noexcept = default;
+        explicit FiberQueue(const U32 max_length) noexcept : max_(max_length) {
+        }
 
-        explicit FiberQueue(const U32 max_length) noexcept: max_(max_length) {
+        explicit FiberQueue() noexcept : max_(0) {
         }
 
         ~FiberQueue() {
@@ -57,7 +70,29 @@ namespace orbiter {
          *         false if the queue is at its maximum capacity and cannot accept new
          *         fibers.
          */
-        bool Enqueue(Fiber *fiber) noexcept;
+        bool Enqueue(Fiber *fiber) noexcept {
+            if (fiber == nullptr)
+                return true;
+
+            std::unique_lock _(this->lock_);
+
+            if (this->max_ > 0 && (this->count_ + 1 >= this->max_))
+                return false;
+
+            fiber->queue.next = this->tail_;
+            fiber->queue.prev = nullptr;
+
+            if (this->tail_ == nullptr)
+                this->head_ = fiber;
+            else
+                this->tail_->queue.prev = fiber;
+
+            this->tail_ = fiber;
+
+            this->count_ += 1;
+
+            return true;
+        }
 
         /**
          * @brief Inserts a Fiber object at the head of the queue.
@@ -72,7 +107,33 @@ namespace orbiter {
          * @return True if the Fiber object is successfully inserted, false if the
          *         operation fails due to capacity constraints.
          */
-        bool InsertHead(Fiber *fiber) noexcept;
+        bool InsertHead(Fiber *fiber) noexcept {
+            if (fiber == nullptr)
+                return true;
+
+            std::unique_lock _(this->lock_);
+
+            if (this->max_ > 0 && (this->count_ + 1 >= this->max_))
+                return false;
+
+            if (this->head_ == nullptr) {
+                this->head_ = fiber;
+                this->tail_ = fiber;
+
+                this->count_ += 1;
+
+                return true;
+            }
+
+            this->head_->queue.next = fiber;
+            fiber->queue.prev = this->head_;
+
+            this->head_ = fiber;
+
+            this->count_ += 1;
+
+            return true;
+        }
 
         /**
          * @brief Determines if the FiberQueue is empty.
@@ -82,7 +143,10 @@ namespace orbiter {
          *
          * @return True if the FiberQueue is empty, otherwise false.
          */
-        [[nodiscard]] bool IsEmpty() noexcept;
+        [[nodiscard]] bool IsEmpty() noexcept {
+            std::unique_lock _(this->lock_);
+            return this->count_ == 0;
+        }
 
         /**
          * @brief Removes and returns the Fiber object at the front of the queue.
@@ -93,7 +157,21 @@ namespace orbiter {
          * @return A pointer to the Fiber object dequeued from the front of the queue,
          *         or nullptr if the queue is empty.
          */
-        Fiber *Dequeue() noexcept;
+        Fiber *Dequeue() noexcept {
+            std::unique_lock lock(this->lock_);
+
+            auto *ret = this->head_;
+            if (ret != nullptr) {
+                this->head_ = ret->queue.prev;
+
+                if (this->head_ == nullptr)
+                    this->tail_ = nullptr;
+
+                this->count_ -= 1;
+            }
+
+            return ret;
+        }
 
         /**
          * @brief Removes and returns a fiber from this queue after attempting to steal fibers
@@ -112,7 +190,12 @@ namespace orbiter {
          *
          * @note This operation is thread-safe.
          */
-        Fiber *StealDequeue(U16 min_length, FiberQueue &other) noexcept;
+        Fiber *StealDequeue(U16 min_length, FiberQueue &other) noexcept {
+            if (this->Steal(min_length, other) > 0)
+                return this->Dequeue();
+
+            return nullptr;
+        }
 
         /**
          * @brief Steals fibers from another FiberQueue and appends them to this queue.
@@ -131,7 +214,63 @@ namespace orbiter {
          *       and will assert if they are the same.
          * @note The operation ensures thread-safety by locking both queues.
          */
-        U32 Steal(U16 min_length, FiberQueue &other) noexcept;
+        U32 Steal(U16 min_length, FiberQueue &other) noexcept {
+            assert(this != &other);
+
+            std::unique_lock lock(this->lock_);
+            std::unique_lock lock_other(other.lock_);
+
+            Fiber *mid = other.tail_; // Mid element pointer
+            Fiber *last = other.head_; // Pointer to last element in queue
+            Fiber *mid_prev = nullptr;
+
+            // Check target queue minimum length
+            if (other.count_ == 0 || other.count_ < min_length)
+                return 0;
+
+            // Steal half queue
+            unsigned int counter = 0;
+
+            for (Fiber *cursor = other.tail_; cursor != nullptr; cursor = cursor->queue.next) {
+                last = cursor;
+
+                if (counter & 1u) {
+                    mid_prev = mid;
+                    mid = mid->queue.next;
+                }
+
+                counter++;
+            }
+
+            auto grab_len = (other.count_ / 2) + (other.count_ & 1u);
+
+            // Other contains a single fiber.
+            if (other.tail_ == other.head_)
+                other.tail_ = nullptr;
+
+            // This code transfers the second half of the queue from the source queue to the current one,
+            // leaving the first half in the original queue.
+            other.head_ = mid_prev;
+            if (mid_prev != nullptr)
+                mid_prev->queue.next = nullptr;
+            other.count_ -= grab_len;
+
+            mid->queue.prev = nullptr;
+
+            if (this->tail_ == nullptr) {
+                this->tail_ = mid;
+                this->head_ = last;
+            } else {
+                this->tail_->queue.prev = last;
+                last->queue.next = this->tail_;
+
+                this->tail_ = mid;
+            }
+
+            this->count_ += grab_len;
+
+            return grab_len;
+        }
 
         /**
          * @brief Removes the given fiber from the queue, updating the fiber queue's state as required.
@@ -140,7 +279,26 @@ namespace orbiter {
          *
          * @param fiber A pointer to the Fiber object that needs to be removed from the queue.
          */
-        void Relinquish(Fiber *fiber) noexcept;
+        void Relinquish(Fiber *fiber) noexcept {
+            if (fiber == nullptr)
+                return;
+
+            std::unique_lock lock(this->lock_);
+
+            if (fiber->queue.prev != nullptr)
+                fiber->queue.prev->queue.next = fiber->queue.next;
+
+            if (fiber->queue.next != nullptr)
+                fiber->queue.next->queue.prev = fiber->queue.prev;
+
+            if (this->tail_ == fiber)
+                this->tail_ = fiber->queue.next;
+
+            if (this->head_ == fiber)
+                this->head_ = fiber->queue.prev;
+
+            this->count_ -= 1;
+        }
     };
 } // namespace orbiter
 

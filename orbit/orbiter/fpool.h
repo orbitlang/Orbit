@@ -11,7 +11,7 @@ namespace orbiter {
     constexpr unsigned short kFiberPoolSize = 255; // Items
 
     class FiberPool {
-        FiberQueue queue_;
+        FiberQueue<> queue_;
 
         Isolate *isolate_;
 
@@ -21,8 +21,9 @@ namespace orbiter {
         U64 stack_limit_ = kMaxStackSize;
 
     public:
-        explicit FiberPool(Isolate *isolate, I32 pool_size, I32 stack_size, I64 stack_limit) noexcept : queue_(
-                pool_size > 0 ? pool_size : kFiberPoolSize), isolate_(isolate) {
+        explicit FiberPool(Isolate *isolate, const I32 pool_size, const I32 stack_size,
+                           const I64 stack_limit) noexcept : queue_(pool_size > 0 ? pool_size : kFiberPoolSize),
+                                                             isolate_(isolate) {
             if (pool_size > 0)
                 this->pool_size_ = pool_size;
 

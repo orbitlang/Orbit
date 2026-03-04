@@ -2,6 +2,8 @@
 //
 // Licensed under the Apache License v2.0
 
+#include <orbit/orbiter/datatype/future.h>
+
 #include <orbit/orbiter/fpool.h>
 
 #include <orbit/orbiter/runtime.h>
@@ -34,6 +36,7 @@ bool Orbiter::InitVCores(unsigned int n) noexcept {
 
     this->vcores_ = new(std::nothrow) VCore[n]();
     this->vcores_count_ = n;
+    this->vcore_unwired_count_ = n;
 
     return this->vcores_ != nullptr;
 }
@@ -72,6 +75,8 @@ OSThread *Orbiter::AllocOSThread() noexcept {
 
 void Orbiter::Scheduler(OSThread *ost) noexcept {
     // TODO: impl me
+    assert(false);
+    // Fiber::SetCurrent(...);
 }
 
 void Orbiter::FreeOSThread(const OSThread *ost) noexcept {
@@ -142,8 +147,6 @@ void Orbiter::OSTWakeRun() noexcept {
         return;
     }
 
-    this->ost_total_ += 1;
-
     const auto acquired = this->AcquireVCore(ost);
 
     vc_lock.unlock();
@@ -207,6 +210,7 @@ bool Orbiter::Initialize(const void *config) noexcept {
         if (!orbiter_->InitVCores(kVCoreDefault))
             return false; // TODO: from config!
 
+        orbiter_->ost_max_ = 4; // FIXME
         return true;
     }
 
@@ -214,8 +218,7 @@ bool Orbiter::Initialize(const void *config) noexcept {
 }
 
 HOObject Orbiter::Eval(Context *context, Module *module, Code *code) noexcept {
-    const auto *isolate = O_GET_ISOLATE(code);
-    bool push = true;
+    auto *isolate = O_GET_ISOLATE(code);
 
     // Sanity check
     assert(O_GET_ISOLATE(context) == isolate);
@@ -227,6 +230,13 @@ HOObject Orbiter::Eval(Context *context, Module *module, Code *code) noexcept {
         // TODO: error?
         return HOObject(nullptr);
     }
+
+    const auto future = FutureNew(isolate);
+
+    fiber->SetContext(context, module, code);
+    fiber->future = (OObject *) future.get();
+
+    isolate->gc->AddFiber(fiber);
 
     if (!this->fiber_queue_.Enqueue(fiber)) {
         // TODO: limit reached, return error
@@ -241,4 +251,8 @@ HOObject Orbiter::Eval(Context *context, Module *module, Code *code) noexcept {
 
     // Note: One might consider releasing fibers from this queue at this point.
     // However, this is unnecessary due to the work-stealing mechanism already in place.
+
+    FutureAwait(future.get());
+
+    return HOObject{future->result};
 }
