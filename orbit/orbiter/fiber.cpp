@@ -22,6 +22,15 @@ thread_local Fiber *thl_fiber = nullptr;
 
 Fiber::~Fiber() {
     this->vm.stack.Cleanup(this->isolate);
+
+    const memory::IsolateAllocator allocator(this->isolate);
+    while (this->panic_cache != nullptr) {
+        auto *prev = this->panic_cache->prev;
+
+        allocator.free(this->panic_cache);
+
+        this->panic_cache = prev;
+    }
 }
 
 bool Fiber::PushState() noexcept {
@@ -66,15 +75,19 @@ Fiber *Fiber::New(Isolate *isolate, const MSize stack_size, const MSize stack_li
         fiber->isolate = isolate;
         fiber->panic_cache = nullptr;
 
-        fiber->oom_cache = allocator.alloc<struct Panic>(sizeof(struct Panic));
-        if (fiber->oom_cache == nullptr) {
+        fiber->panic_cache = allocator.calloc<struct Panic>(sizeof(struct Panic));
+        if (fiber->panic_cache == nullptr) {
             allocator.FreeObject(fiber);
 
             return nullptr;
         }
 
-        fiber->oom_cache->prev = nullptr;
-        fiber->oom_cache->error = nullptr;
+        fiber->panic_cache->prev = allocator.calloc<struct Panic>(sizeof(struct Panic));
+        if (fiber->panic_cache->prev == nullptr) {
+            allocator.FreeObject(fiber);
+
+            return nullptr;
+        }
     }
 
     return fiber;
@@ -108,70 +121,12 @@ void Fiber::DiscardPanic() noexcept {
     if (*this->panic.r_current_ == nullptr)
         return;
 
-    auto *chain = *this->panic.r_current_;
-    while (chain != nullptr) {
-        orbiter::Panic *prev = nullptr;
-
-        if (chain->error == this->isolate->oom_error_) {
-            chain->error = nullptr;
-
-            prev = chain->prev;
-
-            chain->prev = nullptr;
-            this->oom_cache = chain;
-
-            chain = prev;
-
-            continue;
-        }
-
-        O_FAST_DECREF(chain->error);
-
-        chain->error = nullptr;
-
-        prev = chain->prev;
-
-        chain->prev = this->panic_cache;
-        this->panic_cache = chain;
-
-        chain = prev;
-    }
-
-    *this->panic.r_current_ = nullptr;
+    this->panic.DiscardPanic(&this->panic_cache);
 }
 
 void Fiber::Panic(datatype::OObject *error) noexcept {
-    struct Panic *p = nullptr;
-
-    if (this->panic_cache == nullptr) {
-        memory::IsolateAllocator allocator(this->isolate);
-
-        p = allocator.alloc<struct Panic>(sizeof(struct Panic));
-        if (p == nullptr)
-            return;
-    } else {
-        p = this->panic_cache;
-        this->panic_cache = this->panic_cache->prev;
-    }
-
-    p->prev = *this->panic.r_current_;
-    p->error = O_FAST_INCREF(error);
+    auto *p = this->panic.CreatePanic(this->isolate, &this->panic_cache, error);
     p->frame = this->vm.regs.BP.reg;
-
-    *this->panic.r_current_ = p;
-}
-
-void Fiber::PanicOOM() noexcept {
-    assert(this->oom_cache != nullptr);
-
-    this->oom_cache->prev = *this->panic.r_current_;
-    this->oom_cache->error = this->isolate->oom_error_;
-
-    // Creates a virtually immortal object
-    O_UNSAFE_GET_RC(this->isolate->oom_error_) = 0xFFFFFFA;
-
-    *this->panic.r_current_ = this->oom_cache;
-    this->oom_cache = nullptr;
 }
 
 void Fiber::PopState() noexcept {

@@ -11,31 +11,10 @@
 #include <orbit/orbiter/datatype/module.h>
 
 #include <orbit/orbiter/defer.h>
+#include <orbit/orbiter/panic.h>
 #include <orbit/orbiter/vm.h>
 
 namespace orbiter {
-    struct Panic {
-        Panic *prev;
-
-        datatype::OObject *error;
-
-        PtrSize frame;
-
-        [[nodiscard]] bool ISAborted() const {
-            return this->prev != nullptr;
-        }
-    };
-
-    class FiberPanic {
-        Panic **r_current_ = nullptr;
-
-        friend Fiber;
-        friend class TryCatch;
-
-    public:
-        Panic *current_ = nullptr;
-    };
-
     struct FiberContext {
         datatype::Context *context;
         datatype::Module *module;
@@ -49,15 +28,13 @@ namespace orbiter {
 
         FiberContext context{};
 
-        FiberPanic panic;
+        PanicContainer panic;
 
         DeferStack defer_stack;
 
         Isolate *isolate = nullptr;
 
         Panic *panic_cache = nullptr;
-
-        Panic *oom_cache = nullptr;
 
         datatype::OObject *future = nullptr;
 
@@ -151,19 +128,6 @@ namespace orbiter {
         void Panic(datatype::OObject *error) noexcept;
 
         /**
-         * @brief Handles an out-of-memory (OOM) panic situation in the Fiber.
-         *
-         * This method is invoked when the Fiber encounters an OOM condition to handle
-         * the error in a controlled manner. It updates the Fiber's internal state to
-         * manage OOM recovery by preserving necessary error information and creating
-         * a special object to represent the fatal OOM error.
-         *
-         * The operation is noexcept, guaranteeing that no exceptions are thrown while
-         * handling the OOM condition.
-         */
-        void PanicOOM() noexcept;
-
-        /**
          * @brief Restores the previously saved state of the Fiber from its stack.
          *
          * Copies the Fiber's context and general-purpose registers from the stack back into
@@ -185,8 +149,7 @@ namespace orbiter {
         void Reset() noexcept {
             memory::MemoryZero(&this->vm.regs, sizeof(Registers));
 
-            this->panic.current_ = nullptr;
-            this->panic.r_current_ = &this->panic.current_;
+            this->panic.Reset();
 
             this->UnsetContext();
 

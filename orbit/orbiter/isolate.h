@@ -11,6 +11,8 @@
 
 #include <orbit/orbiter/memory/gc.h>
 
+#include <orbit/orbiter/panic.h>
+
 #define O_GC_TRACK_RETURN(isolate, object, is_container)                \
     do{                                                                 \
             auto handle_ = Handle(object);                              \
@@ -27,13 +29,15 @@ namespace orbiter {
     class Isolate {
         stratum::Memory *allocator_;
 
-        datatype::OObject *oom_error_;
-
-        friend Fiber;
-
         friend class memory::IsolateAllocator;
 
     public:
+        PanicContainer panic;
+
+        Panic *panic_cache;
+
+        datatype::OObject *oom_error_;
+
         class DeferPool *dpool_;
         class FiberPool *fpool_;
         native::Loader *loader_;

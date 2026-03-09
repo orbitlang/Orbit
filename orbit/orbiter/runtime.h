@@ -228,6 +228,12 @@ namespace orbiter {
         static Orbiter *GetInstance() noexcept {
             return orbiter_;
         }
+
+        static void RuntimeDiscardPanic(Isolate *isolate);
+
+        static void RuntimeOOMPanic(Isolate *isolate) noexcept;
+
+        static void RuntimePanic(Isolate *isolate, datatype::OObject *error);
     };
 }
 

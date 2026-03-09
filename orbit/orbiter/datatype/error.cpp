@@ -8,8 +8,9 @@
 
 #include <orbit/orbiter/datatype/function.h>
 #include <orbit/orbiter/datatype/pcheck.h>
-
 #include <orbit/orbiter/datatype/error.h>
+
+#include <orbit/orbiter/runtime.h>
 
 using namespace orbiter::datatype;
 
@@ -122,6 +123,5 @@ void orbiter::datatype::ErrorSet(Isolate *isolate, const char *kind, OObject *de
     if (!error)
         return;
 
-    const auto fiber = Fiber::Current();
-    fiber->Panic((OObject *) error.get());
+    Orbiter::RuntimePanic(isolate, (OObject *) error.get());
 }

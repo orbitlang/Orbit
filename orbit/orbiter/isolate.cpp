@@ -62,8 +62,18 @@ Isolate *Isolate::New() {
         return nullptr;
 
     isolate->allocator_ = new stratum::Memory();
-    if (!isolate->allocator_->Initialize())
+    if (!isolate->allocator_->Initialize()) {
+        delete isolate;
+
+        return nullptr;
+    }
+
+    auto allocator = memory::IsolateAllocator(isolate);
+    isolate->panic_cache = allocator.alloc<Panic>(sizeof(Panic));
+    if (isolate->panic_cache == nullptr)
         goto ERROR;
+
+    isolate->panic.Reset();
 
     isolate->dpool_ = new DeferPool(isolate);
     isolate->fpool_ = new FiberPool(isolate, -1, -1, -1);

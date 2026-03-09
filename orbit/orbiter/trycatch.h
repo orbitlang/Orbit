@@ -9,19 +9,27 @@
 
 namespace orbiter {
     class TryCatch {
-        Fiber *fiber = nullptr;
+        PanicContainer *container_ = nullptr;
+        Panic **panic_cache_ = nullptr;
 
         Panic **prev_ = nullptr;
         Panic *caught_error = nullptr;
 
     public:
-        explicit TryCatch(Fiber *fiber) {
-            this->fiber = fiber;
+        explicit TryCatch(Isolate *isolate) {
+            this->container_ = &isolate->panic;
+            this->panic_cache_ = &isolate->panic_cache;
 
-            if (fiber != nullptr) {
-                this->prev_ = fiber->panic.r_current_;
-                fiber->panic.r_current_ = &this->caught_error;
-            }
+            this->prev_ = this->container_->r_current_;
+            this->container_->r_current_ = &this->caught_error;
+        }
+
+        explicit TryCatch(Fiber *fiber) {
+            this->container_ = &fiber->panic;
+            this->panic_cache_ = &fiber->panic_cache;
+
+            this->prev_ = this->container_->r_current_;
+            this->container_->r_current_ = &this->caught_error;
         }
 
         TryCatch() noexcept : TryCatch(Fiber::Current()) {
@@ -36,10 +44,10 @@ namespace orbiter {
         }
 
         ~TryCatch() {
-            if (this->fiber != nullptr) {
-                this->fiber->DiscardPanic();
+            if (this->container_ != nullptr) {
+                this->container_->DiscardPanic(this->panic_cache_);
 
-                this->fiber->panic.r_current_ = this->prev_;
+                this->container_->r_current_ = this->prev_;
             }
         }
     };

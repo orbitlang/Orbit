@@ -8,6 +8,8 @@
 
 #include <orbit/orbiter/runtime.h>
 
+#include "datatype/error.h"
+
 using namespace orbiter;
 using namespace orbiter::datatype;
 
@@ -255,4 +257,38 @@ HOObject Orbiter::Eval(Context *context, Module *module, Code *code) noexcept {
     FutureAwait(future.get());
 
     return HOObject{future->result};
+}
+
+void Orbiter::RuntimeDiscardPanic(Isolate *isolate) {
+    auto *fiber = Fiber::Current();
+    if (fiber != nullptr) {
+        fiber->DiscardPanic();
+
+        return;
+    }
+
+    isolate->panic.DiscardPanic(&isolate->panic_cache);
+}
+
+void Orbiter::RuntimeOOMPanic(Isolate *isolate) noexcept {
+    auto *fiber = Fiber::Current();
+    if (fiber != nullptr) {
+        auto *p = fiber->panic.CreateOOMPanic(isolate, &fiber->panic_cache);
+        p->frame = fiber->vm.regs.BP.reg;
+
+        return;
+    }
+
+    isolate->panic.CreateOOMPanic(isolate, &isolate->panic_cache);
+}
+
+void Orbiter::RuntimePanic(Isolate *isolate, OObject *error) {
+    auto *fiber = Fiber::Current();
+    if (fiber != nullptr) {
+        fiber->Panic(error);
+
+        return;
+    }
+
+    isolate->panic.CreatePanic(isolate, &isolate->panic_cache, error);
 }

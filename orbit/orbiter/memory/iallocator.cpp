@@ -4,8 +4,7 @@
 
 #include <cassert>
 
-#include <orbit/orbiter/fiber.h>
-#include <orbit/orbiter/isolate.h>
+#include <orbit/orbiter/runtime.h>
 
 #include <orbit/orbiter/memory/iallocator.h>
 
@@ -16,22 +15,16 @@ IsolateAllocator::IsolateAllocator(Isolate *isolate) noexcept : isolate_(isolate
 
 void *IsolateAllocator::Alloc(const size_type size) const noexcept {
     auto *data = this->allocator_->Alloc(size);
-    if (data == nullptr) {
-        auto *fiber = Fiber::Current();
-        if (fiber != nullptr)
-            fiber->PanicOOM();
-    }
+    if (data == nullptr)
+        Orbiter::RuntimeOOMPanic(this->isolate_);
 
     return data;
 }
 
 void *IsolateAllocator::Realloc(void *ptr, const size_type size) const noexcept {
     auto *data = this->allocator_->Realloc(ptr, size);
-    if (data == nullptr) {
-        auto *fiber = Fiber::Current();
-        if (fiber != nullptr)
-            fiber->PanicOOM();
-    }
+    if (data == nullptr)
+        Orbiter::RuntimeOOMPanic(this->isolate_);
 
     return data;
 }
