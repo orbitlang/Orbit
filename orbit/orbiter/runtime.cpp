@@ -2,13 +2,13 @@
 //
 // Licensed under the Apache License v2.0
 
+#include <orbit/orbiter/datatype/error.h>
+#include <orbit/orbiter/datatype/errors.h>
 #include <orbit/orbiter/datatype/future.h>
 
 #include <orbit/orbiter/fpool.h>
 
 #include <orbit/orbiter/runtime.h>
-
-#include "datatype/error.h"
 
 using namespace orbiter;
 using namespace orbiter::datatype;
@@ -228,12 +228,15 @@ HOObject Orbiter::Eval(Context *context, Module *module, Code *code) noexcept {
         assert(O_GET_ISOLATE(module) == isolate);
 
     auto *fiber = isolate->fpool_->NewFiber();
-    if (fiber == nullptr) {
-        // TODO: error?
+    if (fiber == nullptr)
         return HOObject(nullptr);
-    }
 
     const auto future = FutureNew(isolate);
+    if (!future) {
+        isolate->fpool_->DeleteFiber(fiber);
+
+        return HOObject(nullptr);
+    }
 
     fiber->SetContext(context, module, code);
     fiber->future = (OObject *) future.get();
@@ -241,10 +244,12 @@ HOObject Orbiter::Eval(Context *context, Module *module, Code *code) noexcept {
     isolate->gc->AddFiber(fiber);
 
     if (!this->fiber_queue_.Enqueue(fiber)) {
-        // TODO: limit reached, return error
-        fiber->Reset();
-
         isolate->fpool_->DeleteFiber(fiber);
+
+        ErrorSet(isolate,
+                 SchedulerError::Details[SchedulerError::Reason::ID],
+                 nullptr,
+                 SchedulerError::Details[SchedulerError::Reason::FIBER_QUEUE_FULL]);
 
         return HOObject(nullptr);
     }

@@ -88,6 +88,20 @@ namespace orbiter::datatype {
         };
     };
 
+    struct SchedulerError {
+        enum Reason : U8 {
+            ID,
+
+            FIBER_QUEUE_FULL,
+        };
+
+        static constexpr const char *Details[] = {
+            (const char *) "SchedulerError",
+
+            (const char *) "failed to enqueue fiber for execution",
+        };
+    };
+
     struct StopIterationError {
         enum Reason : U8 {
             ID,
