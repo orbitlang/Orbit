@@ -70,7 +70,7 @@ NODES = {
             "rest": "ASTNode*",
             "kwargs": "ASTNode*"
         },
-        "node_type": ["CALL", "DEFER", "SPAWN"]
+        "node_type": ["CALL", "DEFER"]
     },
     "CatchBlock": {
         "fields": {
@@ -250,7 +250,7 @@ NODES = {
             "value": "ASTNode*"
         },
         "node_type": ["AWAIT", "CHAN_RECV", "ELLIPSIS", "KW_ARG", "NEW", "NIL_SAFE", "PANIC", "RETURN",
-                      "TRAP", "UNARY", "UPDATE", "YIELD"]
+                      "SPAWN", "TRAP", "UNARY", "UPDATE", "YIELD"]
     }
 }
 

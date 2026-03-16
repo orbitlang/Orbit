@@ -1556,6 +1556,10 @@ Instruction *IRBuilder::visitUnary(const parser::Unary *node) {
         case parser::NodeType::PANIC:
             value = this->visit(node->value);
             return this->builder_.CreateUnaryOp(orbiter::OPCode::PANIC, value);
+        case parser::NodeType::SPAWN:
+            value = this->visit(node->value);
+            ((PhysInstruction *) value)->opcode = orbiter::OPCode::SPWN;
+            return value;
         case parser::NodeType::TRAP:
             return this->visitTrap(node);
         case parser::NodeType::RETURN:

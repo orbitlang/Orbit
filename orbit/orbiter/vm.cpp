@@ -973,7 +973,10 @@ CATCH_FINALLY:
                     if (res == CALL_ERROR)
                         goto ERROR;
 
-                    // TODO: ==CALL_BUSY
+                    if (res == CALL_BUSY) {
+                        fiber->state = FiberState::YIELDED;
+                        return nullptr;
+                    }
 
                     goto BEGIN;
                 }
@@ -1035,6 +1038,44 @@ CATCH_FINALLY:
                     regs->SP.reg -= sizeof(void *);
 
                     O_DECREF(*(OObject**)(stack->stack + regs->SP.reg));
+                }
+
+                DISPATCH;
+            }
+            TARGET_OP(SPWN) {
+                const auto flags = FETCH_F_DST(CallMode, instr);
+                const auto src = FETCH_R_SRC(instr);
+                const auto p_count = FETCH_IMM(instr);
+                const auto old_sp = regs->SP.reg;
+
+                const auto func = (Function *) REG_N(src);
+
+                if (O_IS_TYPE(func, InstanceType::GENERATOR)) {
+                    ErrorSet(fiber->isolate,
+                             TypeError::Details[TypeError::Reason::ID],
+                             nullptr,
+                             TypeError::Details[TypeError::Reason::GENERATOR_SPAWN]);
+
+                    goto ERROR;
+                }
+
+                auto res = CallInit(fiber, func, p_count, flags);
+                if (res == CALL_ERROR)
+                    goto ERROR;
+
+                const auto size = res * sizeof(void *);
+                if (!Orbiter::GetInstance()->EvalAsync(func,
+                                                  (fiber->vm.stack.stack + regs->SP.reg) - size,
+                                                  size).get())
+                    goto ERROR;
+
+                regs->RR.reg = 0;
+
+                // Cleanup this stack
+                while (regs->SP.reg > old_sp) {
+                    regs->SP.reg -= sizeof(void *);
+
+                    O_DECREF(*(OObject**)(fiber->vm.stack.stack + regs->SP.reg));
                 }
 
                 DISPATCH;

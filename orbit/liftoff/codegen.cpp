@@ -203,6 +203,7 @@ unsigned char *Codegen::EmitOpcodes(const BasicBlock *block, unsigned char *m_co
                 break;
             case orbiter::OPCode::CALL:
             case orbiter::OPCode::DEFER:
+            case orbiter::OPCode::SPWN:
                 *(orbiter::MachineWord *) m_code = EMIT_FSO(instr->opcode,
                                                             (U8)((ir::CallInstr*)instr)->mode,
                                                             ((Instruction*)instr->operands[0].value)->assigned_reg,

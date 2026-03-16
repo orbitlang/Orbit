@@ -153,8 +153,10 @@ namespace orbiter {
         RETSUB, // Return from code object  OPCODE | 4 RESERVED | 4 SRC | 16 RESERVED
         YLD, // Yield instruction           OPCODE | 4 RESERVED | 4 SRC | 16 RESERVED
 
+        AWAIT, // Await future              OPCODE | 4 DST      | 4 SRC | 16 RESERVED
         CALL, // Call function:                     OPCODE | 4 FLAGS(CallMode) | 4 SRC | 16 ARITY
         NTCALL, // Native call:                     OPCODE | 4 RESERVED.       | 4 SRC | 16 ARITY
+        SPWN, // Spawn new fiber with function:     OPCODE | 4 FLAGS(CallMode) | 4 SRC | 16 ARITY
         DEFER, // Defer function:                   OPCODE | 4 FLAGS(CallMode) | 4 SRC | 16 ARITY
         EXECDEFER, // Execute deferred functions:    OPCODE | 24 RESERVED
         EXECSUB, // Execute code object directly:    OPCODE | 4 RESERVED        | 4 SRC | 16 RESERVED
@@ -212,7 +214,8 @@ namespace orbiter {
 
         // Indexing/Slicing Operations
         LDIDX, // Load value from object at index   OPCODE | 4 DST | 4 SRC | 4 SRC_INDEX | 12 RESERVED
-        STIDX, // Store value into object at index  OPCODE | 4 DST (Container) | 4 SRC | 4 SRC_INDEX | 4 SRC_VALUE | 8 RESERVED
+        STIDX,
+        // Store value into object at index  OPCODE | 4 DST (Container) | 4 SRC | 4 SRC_INDEX | 4 SRC_VALUE | 8 RESERVED
         LDSBSCR, // Load values from object slice   OPCODE | 4 DST | 4 START | 4 STOP | 4 END | 8 RESERVED
         STSBSCR, // Store values into object slice  OPCODE | 4 SRC | 4 START | 4 STOP | 4 END | 4 VALUE | 4 RESERVED
 
@@ -244,9 +247,10 @@ namespace orbiter {
 
         // Try/Catch/Finally operations
         TBGIN, // Begin try block:                                          OPCODE | 6 STACK SLOT | 18 OFFSET
-        TEND,  // End try block context                                     OPCODE | 24 RESERVED
+        TEND, // End try block context                                     OPCODE | 24 RESERVED
         TSFIN,
-        TSPA, // Sets the suspended operation in a try/catch/finally block  OPCODE | 2 PENDING OP | 4 SRC | 18 JMP OFFSET
+        TSPA,
+        // Sets the suspended operation in a try/catch/finally block  OPCODE | 2 PENDING OP | 4 SRC | 18 JMP OFFSET
         LDEXC // Load current caught exception                              OPCODE | 24 OFFSET
     };
 }
