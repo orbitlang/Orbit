@@ -10,6 +10,7 @@
 #include <orbit/orbiter/datatype/error.h>
 #include <orbit/orbiter/datatype/errors.h>
 #include <orbit/orbiter/datatype/function.h>
+#include <orbit/orbiter/datatype/future.h>
 #include <orbit/orbiter/datatype/generator.h>
 #include <orbit/orbiter/datatype/nativefunc.h>
 #include <orbit/orbiter/datatype/number.h>
@@ -21,13 +22,13 @@
 #include <orbit/orbiter/opcode.h>
 #include <orbit/orbiter/fiber.h>
 
+#include <orbit/orbiter/runtime.h>
+
 #include <orbit/orbiter/excstack.h>
 #include <orbit/orbiter/vm.h>
 
 using namespace orbiter;
 using namespace orbiter::datatype;
-
-constexpr auto kStackPrologueOffset = sizeof(FiberContext) + (sizeof(void *) * 2);
 
 enum CallResult : int {
     CALL_ERROR = -1,
@@ -95,6 +96,24 @@ bool Call(Fiber *fiber, Function *func, const U16 total_args) {
 
     if (!func->shared->IsInterpreted()) {
         CallNative(func, regs, &fiber->vm.stack, total_args);
+
+        return false;
+    }
+
+    if (func->shared->IsAsync()) {
+        const auto size = total_args * sizeof(void *);
+        const auto old_sp = regs->SP.reg - size;
+
+        regs->RR.reg = (PtrSize) Orbiter::GetInstance()->EvalAsync(func,
+                                                                   (fiber->vm.stack.stack + regs->SP.reg) - size,
+                                                                   size).get();
+
+        // Cleanup this stack
+        while (regs->SP.reg > old_sp) {
+            regs->SP.reg -= sizeof(void *);
+
+            O_DECREF(*(OObject**)(fiber->vm.stack.stack + regs->SP.reg));
+        }
 
         return false;
     }
@@ -791,6 +810,8 @@ CGOTO
 
 BEGIN:
     auto *code = fiber->context.code;
+    if (code == nullptr)
+        return (OObject *) regs->RR.reg;
 
     auto *this_func = (Function *) fiber->context.func;
     if (this_func != nullptr && !O_IS_TYPE(this_func, InstanceType::GENERATOR))
@@ -899,6 +920,43 @@ CATCH_FINALLY:
                 SaveGenerator(fiber);
 
                 goto BEGIN;
+            }
+            TARGET_OP(AWAIT) {
+                const auto dst = FETCH_R_DST(instr);
+                const auto src = FETCH_R_SRC(instr);
+
+                auto *future = (Future *) REG_N(src);
+
+                if (!O_IS_TYPE(future, InstanceType::FUTURE)) {
+                    char error[24];
+
+                    GetTypeName((OObject *) future, error, sizeof(error));
+
+                    ErrorSet(fiber->isolate,
+                             TypeError::Details[TypeError::Reason::ID],
+                             nullptr,
+                             TypeError::Details[TypeError::Reason::MISMATCH],
+                             InstanceTypeNames[(int) InstanceType::FUTURE],
+                             error);
+
+                    goto ERROR;
+                }
+
+                if (FutureAsyncAwait(future)) {
+                    fiber->state = FiberState::SUSPENDED;
+
+                    return nullptr;
+                }
+
+                if (future->state == FutureState::REJECTED) {
+                    fiber->Panic(future->result);
+
+                    goto ERROR;
+                }
+
+                REG_N(dst) = (PtrSize) future->result;
+
+                DISPATCH;
             }
             TARGET_OP(CALL) {
                 const auto flags = FETCH_F_DST(CallMode, instr);

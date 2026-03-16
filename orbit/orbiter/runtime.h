@@ -7,6 +7,8 @@
 
 #include <thread>
 
+#include <orbit/orbiter/datatype/future.h>
+
 #include <orbit/orbiter/config.h>
 
 #include <orbit/orbiter/fqueue.h>
@@ -19,6 +21,8 @@ namespace orbiter {
 
     constexpr unsigned int kSpinningCheckMax = 3;
     constexpr unsigned int kFairnessTickCount = 32;
+
+    extern thread_local class OSThread *ost_self;
 
     class VCore {
     public:
@@ -244,8 +248,32 @@ namespace orbiter {
 
         datatype::HOObject Eval(datatype::Context *context, datatype::Module *module, datatype::Code *code) noexcept;
 
+        datatype::HFuture EvalAsync(datatype::Function *func, const unsigned char *stack_begin, U16 size) noexcept;
+
         static Orbiter *GetInstance() noexcept {
             return orbiter_;
+        }
+
+        void PushFiber(Fiber *fiber) noexcept {
+            if (ost_self == nullptr || ost_self->current == nullptr) {
+                this->fiber_queue_.Enqueue(fiber);
+                this->OSTWakeRun();
+
+                return;
+            }
+
+            ost_self->current->queue.Enqueue(fiber);
+        }
+
+        template<bool ThreadSafe>
+        void PushFiber(FiberQueue<ThreadSafe> &queue) {
+            this->PushFiber(queue.Dequeue());
+
+            for (auto *fiber = queue.Dequeue(); fiber != nullptr; fiber = queue.Dequeue()) {
+                this->fiber_queue_.Enqueue(fiber);
+
+                this->OSTWakeRun();
+            }
         }
 
         static void RuntimeDiscardPanic(Isolate *isolate);

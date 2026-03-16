@@ -4,6 +4,8 @@
 
 #include <orbit/orbiter/datatype/future.h>
 
+#include <orbit/orbiter/runtime.h>
+
 using namespace orbiter::datatype;
 
 bool orbiter::datatype::FutureAsyncAwait(Future *future) {
@@ -40,10 +42,15 @@ HOType orbiter::datatype::FutureTypeInit(Isolate *isolate) {
 }
 
 void orbiter::datatype::FutureReject(Future *future, OObject *result) {
+    auto *orbiter = Orbiter::GetInstance();
+    assert(orbiter != nullptr);
+
     std::unique_lock lock(future->mutex);
 
     future->result = O_INCREF(result);
     future->state = FutureState::REJECTED;
+
+    orbiter->PushFiber(future->waiters);
 
     lock.unlock();
 
@@ -51,10 +58,15 @@ void orbiter::datatype::FutureReject(Future *future, OObject *result) {
 }
 
 void orbiter::datatype::FutureResolve(Future *future, OObject *result) {
+    auto *orbiter = Orbiter::GetInstance();
+    assert(orbiter != nullptr);
+
     std::unique_lock lock(future->mutex);
 
     future->result = O_INCREF(result);
     future->state = FutureState::RESOLVED;
+
+    orbiter->PushFiber(future->waiters);
 
     lock.unlock();
 

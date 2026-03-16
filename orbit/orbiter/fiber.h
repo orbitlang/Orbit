@@ -8,6 +8,7 @@
 #include <cassert>
 
 #include <orbit/orbiter/datatype/context.h>
+#include <orbit/orbiter/datatype/function.h>
 #include <orbit/orbiter/datatype/module.h>
 
 #include <orbit/orbiter/defer.h>
@@ -21,6 +22,8 @@ namespace orbiter {
         datatype::Code *code;
         datatype::OObject *func;
     };
+
+    constexpr auto kStackPrologueOffset = sizeof(FiberContext) + (sizeof(void *) * 2);
 
     enum class FiberState : U8 {
         RUNNABLE, // ready, never executed or resumed after yield
@@ -190,6 +193,12 @@ namespace orbiter {
             this->context.func = nullptr;
 
             this->vm.regs.IP.reg = (PtrSize) code->m_code;
+        }
+
+        void SetContext(datatype::Function *func) noexcept {
+            this->SetContext(func->shared->context, func->shared->module, func->shared->code);
+
+            this->context.func = (datatype::OObject *) func;
         }
 
         static void SetCurrent(Fiber *fiber) noexcept;

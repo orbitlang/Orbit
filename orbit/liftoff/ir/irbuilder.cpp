@@ -1545,6 +1545,9 @@ Instruction *IRBuilder::visitUnary(const parser::Unary *node) {
     }
 
     switch (node->node_type) {
+        case parser::NodeType::AWAIT:
+            value = this->visit(node->value);
+            return this->builder_.CreateUnaryOp(orbiter::OPCode::AWAIT, value);
         case parser::NodeType::CHAN_RECV:
             value = this->visit(node->value);
             return this->builder_.CreateUnaryOp(orbiter::OPCode::CHRCV, value);

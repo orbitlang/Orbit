@@ -358,6 +358,7 @@ unsigned char *Codegen::EmitOpcodes(const BasicBlock *block, unsigned char *m_co
                                                               ((Instruction *) instr->operands[2].value)->assigned_reg,
                                                               ((Instruction *) instr->operands[3].value)->assigned_reg);
                 break;
+            case orbiter::OPCode::AWAIT:
             case orbiter::OPCode::LDMOD:
             case orbiter::OPCode::LDINIT:
             case orbiter::OPCode::NOBJ:

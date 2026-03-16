@@ -15,6 +15,8 @@
 using namespace orbiter;
 using namespace orbiter::datatype;
 
+thread_local OSThread *orbiter::ost_self = nullptr;
+
 bool Orbiter::AcquireVCore(OSThread *ost) noexcept {
     // First, look at the "idle" VCores, which are those that have available fibers.
     for (auto *cursor = this->vcores_idle_; cursor != nullptr; cursor = cursor->next) {
@@ -185,6 +187,8 @@ void Orbiter::AcquireVCoreOrSuspend(OSThread *ost) noexcept {
 
 void Orbiter::Scheduler(OSThread *ost) noexcept {
     Fiber *last = nullptr;
+
+    ost_self = ost;
 
     unsigned int fairness_tick = kFairnessTickCount;
 
@@ -480,6 +484,71 @@ HOObject Orbiter::Eval(Context *context, Module *module, Code *code) noexcept {
     FutureAwait(future.get());
 
     return HOObject{future->result};
+}
+
+HFuture Orbiter::EvalAsync(Function *func, const unsigned char *stack_begin, const U16 size) noexcept {
+    auto *isolate = O_GET_ISOLATE(func);
+
+    // Allocate a new fiber to run the async function. Unlike Eval(), this does not block
+    // the caller — the function executes concurrently on a scheduler thread.
+    auto *fiber = isolate->fpool_->NewFiber();
+    if (fiber == nullptr)
+        return HFuture(nullptr);
+
+    // Create the future that will carry the result once the fiber completes.
+    // The caller holds this handle and can await it at any point.
+    const auto future = FutureNew(isolate);
+    if (!future) {
+        isolate->fpool_->DeleteFiber(fiber);
+
+        return HFuture(nullptr);
+    }
+
+    fiber->SetContext(func);
+    fiber->future = (OObject *) future.get();
+
+    // Transfer the caller's stack arguments into the new fiber's stack.
+    // Arguments have already been evaluated and pushed by the caller, so we copy
+    // them verbatim. The fiber begins execution as if it entered the function through
+    // a normal call frame, with BP and SP positioned past the arguments and prologue.
+    auto *BP = &fiber->vm.regs.BP.reg;
+    auto *SP = &fiber->vm.regs.SP.reg;
+
+    auto *stack_dst = fiber->vm.stack.stack + *SP;
+
+    // TODO: No INCREF here — the GC will handle object lifetime in a future revision.
+    memory::MemoryCopy(stack_dst, stack_begin, size);
+
+    // Zero the call frame prologue (saved BP, return address slot) so the fiber
+    // unwinds cleanly when the function returns.
+    memory::MemoryZero(stack_dst + size, kStackPrologueOffset);
+
+    (*BP) += size + kStackPrologueOffset;
+    (*SP) += size + kStackPrologueOffset;
+
+    // Register the fiber with the GC before scheduling so it is tracked for
+    // the entire duration of its execution.
+    isolate->gc->AddFiber(fiber);
+
+    // Submit the fiber to the global run queue. If the queue is full, clean up and
+    // surface an error to the caller rather than silently dropping the task.
+    if (!this->fiber_queue_.Enqueue(fiber)) {
+        isolate->gc->RemoveFiber(fiber);
+        isolate->fpool_->DeleteFiber(fiber);
+
+        ErrorSet(isolate,
+                 SchedulerError::Details[SchedulerError::Reason::ID],
+                 nullptr,
+                 SchedulerError::Details[SchedulerError::Reason::FIBER_QUEUE_FULL]);
+
+        return HFuture(nullptr);
+    }
+
+    // Signal the scheduler that new work is available. This either wakes an idle
+    // OSThread or spins up a new one if the thread pool has not yet reached its limit.
+    this->OSTWakeRun();
+
+    return future;
 }
 
 void Orbiter::RuntimeDiscardPanic(Isolate *isolate) {

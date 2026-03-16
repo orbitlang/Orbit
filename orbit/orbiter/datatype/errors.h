@@ -120,6 +120,7 @@ namespace orbiter::datatype {
         enum Reason : U8 {
             ID,
 
+            MISMATCH,
             PARAMETER,
             PANIC,
             NON_CALLABLE,
@@ -131,6 +132,7 @@ namespace orbiter::datatype {
         static constexpr const char *Details[] = {
             (const char *) "TypeError",
 
+            (const char *) "expected type '%s', got '%s'",
             (const char *) "unexpected type '%s' for '%s' parameter(%d)",
             (const char *) "panic expect type '%s'",
             (const char *) "invalid call to a non-callable object('%s')",

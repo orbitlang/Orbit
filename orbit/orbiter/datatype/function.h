@@ -108,6 +108,10 @@ namespace orbiter::datatype {
             return this->defaults != nullptr;
         }
 
+        [[nodiscard]] bool IsAsync() const {
+            return ENUMBITMASK_ISTRUE(this->kind, FunctionKind::ASYNC);
+        }
+
         /**
          * @brief Check if the function is a generator
          *
