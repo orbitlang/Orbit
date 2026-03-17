@@ -52,6 +52,19 @@ namespace orbiter {
 
         static Isolate *New();
     };
+
+    class MutatorScope {
+        memory::GC &gc_;
+
+    public:
+        explicit MutatorScope(Isolate *isolate) noexcept : gc_(*isolate->gc) {
+            this->gc_.EnterManagedRegion();
+        }
+
+        ~MutatorScope() {
+            this->gc_.LeaveManagedRegion();
+        }
+    };
 }
 
 #endif // !ORBIT_ORBITER_ISOLATE_H_

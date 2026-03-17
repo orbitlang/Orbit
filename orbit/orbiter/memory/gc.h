@@ -35,7 +35,7 @@ namespace orbiter {
 #ifdef _ORBIT_ENVIRON_64BIT_
         constexpr unsigned char kGCMaxEpoch = 0xFFFFFFFFFFFFFE; // (1u<<56) - 2
 #elif  _ORBIT_ENVIRON_32BIT_
-        constexpr unsigned char kGCMaxEpoch = 0xFFFFFE;         // (1u<<24) - 2
+        constexpr unsigned char kGCMaxEpoch = 0xFFFFFE; // (1u<<24) - 2
 #else
 #error "invalid environment."
 #endif
@@ -232,10 +232,13 @@ namespace orbiter {
          */
         class GCContext {
         public:
+            std::mutex barrier_lock;
+
             std::mutex garbage_lock;
             std::mutex track_lock;
-            std::mutex run_lock;
             std::mutex vm_lock;
+
+            std::condition_variable wait_barrier;
 
             GCGeneration generations[kGCGenerations]{};
 
@@ -265,12 +268,16 @@ namespace orbiter {
             MSize max_heap_size_;
 
             std::atomic_bool enabled_ = true;
+            std::atomic_bool requested_ = false;
 
             std::atomic_uintptr_t allocated_bytes_ = 0;
 
-            explicit GC(Isolate *isolate, U32 heap_size) noexcept : allocator_(isolate),
-                                                                    fibers_(nullptr),
-                                                                    max_heap_size_(heap_size) {
+            std::atomic_uint mutators_ = 0;
+            unsigned int parked_mutators_ = 0;
+
+            explicit GC(Isolate *isolate, const U32 heap_size) noexcept : allocator_(isolate),
+                                                                          fibers_(nullptr),
+                                                                          max_heap_size_(heap_size) {
                 if (heap_size < kGCMinHeapSize)
                     this->max_heap_size_ = kGCMinHeapSize;
 
@@ -295,6 +302,10 @@ namespace orbiter {
 
             void NextEpoch() noexcept;
 
+            void ReleaseSTW() noexcept;
+
+            void RequestSTW() noexcept;
+
             void ResetStats(int generation) noexcept;
 
             void ScanVMRegisters() noexcept;
@@ -310,6 +321,8 @@ namespace orbiter {
             friend Isolate;
 
         public:
+            bool ParkAtSafepoint() noexcept;
+
             /**
              * @brief Triggers a forced garbage collection in the current context.
              *
@@ -346,6 +359,10 @@ namespace orbiter {
              * @param fiber A pointer to the Fiber instance to be added for tracking.
              */
             void AddFiber(Fiber *fiber) noexcept;
+
+            void EnterManagedRegion() noexcept;
+
+            void LeaveManagedRegion() noexcept;
 
             /**
              * @brief Frees the memory associated with the given object by invoking the garbage collection mechanism on its header.

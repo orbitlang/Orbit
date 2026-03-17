@@ -187,6 +187,7 @@ void Orbiter::AcquireVCoreOrSuspend(OSThread *ost) noexcept {
 
 void Orbiter::Scheduler(OSThread *ost) noexcept {
     Fiber *last = nullptr;
+    const Isolate *last_isolate = nullptr;
 
     ost_self = ost;
 
@@ -205,6 +206,11 @@ void Orbiter::Scheduler(OSThread *ost) noexcept {
         if (ost->fiber == nullptr) {
             if (should_exit_)
                 break;
+
+            if (last_isolate != nullptr) {
+                last_isolate->gc->LeaveManagedRegion();
+                last_isolate = nullptr;
+            }
 
             this->OSTActive2Idle(ost);
             this->OSTSleep();
@@ -228,11 +234,22 @@ void Orbiter::Scheduler(OSThread *ost) noexcept {
 
         const auto fiber = ost->fiber;
 
+        if (last_isolate != fiber->isolate) {
+            if (last_isolate != nullptr)
+                last_isolate->gc->LeaveManagedRegion();
+
+            fiber->isolate->gc->EnterManagedRegion();
+
+            last_isolate = fiber->isolate;
+        }
+
         fiber->active_ost = ost;
 
         Fiber::SetCurrent(fiber);
 
-        const auto result = eval(fiber);
+        auto *result = eval(fiber);
+
+        fiber->isolate->gc->ParkAtSafepoint();
 
         fiber->active_ost = nullptr;
 
@@ -251,7 +268,12 @@ void Orbiter::Scheduler(OSThread *ost) noexcept {
         }
 
         assert(fiber->state == FiberState::YIELDED);
+
+        fiber->vm.preempt_tick = kPreemptTick; // TODO: get from config
     }
+
+    if (last_isolate != nullptr)
+        last_isolate->gc->LeaveManagedRegion();
 
     std::unique_lock vc_lock(this->vcore_lock_);
 

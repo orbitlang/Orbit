@@ -24,6 +24,7 @@ namespace orbiter {
     };
 
     constexpr auto kStackPrologueOffset = sizeof(FiberContext) + (sizeof(void *) * 2);
+    constexpr auto kPreemptTick = 32;
 
     enum class FiberState : U8 {
         RUNNABLE, // ready, never executed or resumed after yield
@@ -168,6 +169,8 @@ namespace orbiter {
             this->panic.Reset();
 
             this->UnsetContext();
+
+            this->vm.preempt_tick = kPreemptTick;
 
             this->state = FiberState::RUNNABLE;
         }

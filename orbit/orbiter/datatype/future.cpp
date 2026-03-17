@@ -74,9 +74,17 @@ void orbiter::datatype::FutureResolve(Future *future, OObject *result) {
 }
 
 void orbiter::datatype::FutureAwait(Future *future) {
+    const auto *isolate = O_GET_ISOLATE(future);
+
+    // Not an active mutator while blocked waiting - inform GC we're leaving managed region
+    isolate->gc->LeaveManagedRegion();
+
     std::unique_lock lock(future->mutex);
 
     future->cv.wait(lock, [future]() {
         return future->state != FutureState::PENDING;
     });
+
+    // Thread is now an active mutator again - re-enter managed region for GC
+    isolate->gc->EnterManagedRegion();
 }
