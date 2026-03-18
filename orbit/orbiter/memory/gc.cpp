@@ -4,6 +4,7 @@
 
 #include <cassert>
 
+#include <orbit/orbiter/excstack.h>
 #include <orbit/orbiter/fiber.h>
 
 #include <orbit/orbiter/memory/gc.h>
@@ -36,8 +37,8 @@ MSize GC::Collect(int start, int end) noexcept {
     // Move to the next epoch to avoid revisiting old objects
     this->NextEpoch();
 
-    // 1) Scan active virtual machine registers for reachable objects
-    this->ScanVMRegisters();
+    // 1) Scan active fibers and VMs for reachable objects
+    this->ScanFibers();
 
     for (auto i = start; i < end; i++) {
         // Determine the next generation for promoting objects
@@ -171,7 +172,7 @@ void GC::RequestSTW() noexcept {
     });
 }
 
-void GC::ResetStats(int generation) noexcept {
+void GC::ResetStats(const int generation) noexcept {
     if (generation > 0)
         this->context_.generations[generation - 1].times = 0;
 
@@ -180,26 +181,65 @@ void GC::ResetStats(int generation) noexcept {
     gen->uncollected = 0;
 }
 
-void GC::ScanVMRegisters() noexcept {
-    std::unique_lock _(this->context_.vm_lock);
+void GC::ScanFibers() const noexcept {
+    for (auto *cursor = this->fibers_; cursor != nullptr; cursor = cursor->gc_set.next) {
+        // FiberContext
+        Visit((OObject *) cursor->context.context, this->epoch);
+        Visit((OObject *) cursor->context.module, this->epoch);
+        Visit((OObject *) cursor->context.code, this->epoch);
+        Visit(cursor->context.func, this->epoch);
 
-    for (const auto *cursor = this->fibers_; cursor != nullptr; cursor = cursor->gc_set.next) {
-        const auto *regs = (Register *) &cursor->vm.regs;
+        // PanicContainer
+        for (const auto *panic = *cursor->panic.r_current_; panic != nullptr; panic = panic->prev)
+            Visit(panic->error, this->epoch);
 
-        for (auto i = 0; i < sizeof(Registers); i++) {
-            auto *obj = (OObject *) ((PtrSize *) (regs + i));
+        // Defer stack
+        for (const auto *defer = cursor->defer_stack.stack_; defer != nullptr; defer = defer->next)
+            Visit((OObject *) defer->func, this->epoch);
 
-            if (!O_IS_OBJECT(obj))
-                continue;
+        // Future
+        Visit(cursor->future, this->epoch);
 
-            auto *head = GC_GET_HEAD(obj);
-            if (!head->IsVisited(this->epoch)) {
-                head->epoch = this->epoch - 1;
+        this->ScanVMRegisters(cursor);
+        this->ScanVMStack(cursor);
+    }
+}
 
-                if (head->IsContainer())
-                    Trace(obj, this->epoch);
-            }
+void GC::ScanVMRegisters(Fiber *fiber) const noexcept {
+    const auto *regs = (Register *) &fiber->vm.regs;
+
+    for (auto i = 0; i < kGeneralPurposeRegistersCount; i++) {
+        auto *obj = (OObject *) (*(PtrSize *) (regs + i));
+
+        if (!O_IS_OBJECT(obj))
+            continue;
+
+        Visit(obj, this->epoch);
+    }
+}
+
+void GC::ScanVMStack(const Fiber *fiber) const noexcept {
+    const auto *stack = fiber->vm.stack.stack;
+    const auto SP = fiber->vm.regs.SP.reg;
+
+    for (auto i = 0; i < SP; i += sizeof(PtrSize)) {
+        auto *obj = *((OObject **) (stack + i));
+
+        if (*((PtrSize *) (stack + i)) == kExceptionContextTag) {
+            obj = (OObject *) ((ExceptionContext *) (stack + i))->ret_value;
+
+            if (O_IS_OBJECT(obj))
+                Visit(obj, this->epoch);
+
+            i += sizeof(ExceptionContext) - sizeof(PtrSize);
+
+            continue;
         }
+
+        if (!O_IS_OBJECT(obj))
+            continue;
+
+        Visit(obj, this->epoch);
     }
 }
 
@@ -318,6 +358,17 @@ void GC::TraceRoots(GCGeneration *generation, GCTransientList *nextgen, GCTransi
 
         this->context_.tracked_count -= 1;
         this->context_.tracked_bytes -= cursor->size;
+    }
+}
+
+void GC::Visit(OObject *object, const MSize epoch) noexcept {
+    if (object == nullptr)
+        return;
+
+    auto *head = GC_GET_HEAD(object);
+    if (!head->CheckSetVisited(epoch)) {
+        if (head->IsContainer())
+            Trace(object, epoch);
     }
 }
 

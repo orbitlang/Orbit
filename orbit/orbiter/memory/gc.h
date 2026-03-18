@@ -73,6 +73,16 @@ namespace orbiter {
 
             MSize size = 0;
 
+            [[nodiscard]] bool CheckSetVisited(const MSize epoch) {
+                if (!this->IsVisited(epoch)) {
+                    this->SetVisited(epoch);
+
+                    return false;
+                }
+
+                return true;
+            }
+
             [[nodiscard]] bool IsContainer() const {
                 return ((((uintptr_t) this->next) & GCBitOffsets::ContainerTypeMask) >>
                         GCBitOffsets::ContainerTypeShift);
@@ -86,7 +96,7 @@ namespace orbiter {
                 return this->prev != nullptr;
             }
 
-            [[nodiscard]] bool IsVisited(MSize epoch) const {
+            [[nodiscard]] bool IsVisited(const MSize epoch) const {
                 return this->epoch == epoch || this->epoch == (epoch - 1);
             }
 
@@ -98,7 +108,7 @@ namespace orbiter {
                 this->next = (GCHead *) ((uintptr_t) this->next | GCBitOffsets::ContainerTypeMask);
             }
 
-            void SetFinalize(bool visited) {
+            void SetFinalize(const bool visited) {
                 this->next = (GCHead *) (visited
                                              ? (uintptr_t) this->next | GCBitOffsets::FinalizedMask
                                              : (uintptr_t) this->next & ~GCBitOffsets::FinalizedMask);
@@ -108,7 +118,7 @@ namespace orbiter {
                 this->next = (GCHead *) (((uintptr_t) head) | ((uintptr_t) this->next & ~GCBitOffsets::AddressMask));
             }
 
-            void SetVisited(MSize epoch) {
+            void SetVisited(const MSize epoch) {
                 this->epoch = epoch;
             }
         };
@@ -315,7 +325,11 @@ namespace orbiter {
 
             void ResetStats(int generation) noexcept;
 
-            void ScanVMRegisters() noexcept;
+            void ScanFibers() const noexcept;
+
+            void ScanVMRegisters(Fiber *fiber) const noexcept;
+
+            void ScanVMStack(const Fiber *fiber) const noexcept;
 
             void Sweep() noexcept;
 
@@ -324,6 +338,8 @@ namespace orbiter {
             static void Trace(datatype::OObject *object, MSize epoch) noexcept;
 
             void TraceRoots(GCGeneration *generation, GCTransientList *nextgen, GCTransientList *unreachable) noexcept;
+
+            static void Visit(datatype::OObject *object, MSize epoch) noexcept;
 
             friend Isolate;
 

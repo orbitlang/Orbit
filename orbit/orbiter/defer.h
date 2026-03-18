@@ -30,6 +30,7 @@ namespace orbiter {
     class DeferStack {
         Defer *stack_ = nullptr;
 
+        friend class memory::GC;
     public:
         [[nodiscard]] bool IsEmpty() const noexcept {
             return this->stack_ == nullptr;
