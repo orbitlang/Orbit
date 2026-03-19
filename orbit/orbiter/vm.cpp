@@ -72,10 +72,10 @@ bool ExecDefer(Fiber *fiber) {
         fiber->vm.Push(regs->BP.reg);
         fiber->vm.Push(regs->IP.reg);
 
-        fiber->context.context = O_FAST_INCREF(defer->func->shared->context);
-        fiber->context.module = O_INCREF(defer->func->shared->module);
-        fiber->context.code = O_FAST_INCREF(defer->func->shared->code);
-        fiber->context.func = O_FAST_INCREF((OObject*)defer->func);
+        fiber->context.context = defer->func->shared->context;
+        fiber->context.module = defer->func->shared->module;
+        fiber->context.code = defer->func->shared->code;
+        fiber->context.func = (OObject *) defer->func;
 
         regs->r10.reg = defer->r10;
         regs->r11.reg = defer->r11;
@@ -102,18 +102,12 @@ bool Call(Fiber *fiber, Function *func, const U16 total_args) {
 
     if (func->shared->IsAsync()) {
         const auto size = total_args * sizeof(void *);
-        const auto old_sp = regs->SP.reg - size;
 
         regs->RR.reg = (PtrSize) Orbiter::GetInstance()->EvalAsync(func,
                                                                    (fiber->vm.stack.stack + regs->SP.reg) - size,
                                                                    size).get();
 
-        // Cleanup this stack
-        while (regs->SP.reg > old_sp) {
-            regs->SP.reg -= sizeof(void *);
-
-            O_DECREF(*(OObject**)(fiber->vm.stack.stack + regs->SP.reg));
-        }
+        regs->SP.reg -= size;
 
         return false;
     }
@@ -129,10 +123,10 @@ bool Call(Fiber *fiber, Function *func, const U16 total_args) {
     regs->BP.reg = regs->SP.reg;
     regs->IP.reg = (PtrSize) func->shared->code->m_code;
 
-    fiber->context.context = O_FAST_INCREF(func->shared->context);
-    fiber->context.module = O_INCREF(func->shared->module);
-    fiber->context.code = O_FAST_INCREF(func->shared->code);
-    fiber->context.func = O_FAST_INCREF((OObject*)func);
+    fiber->context.context = func->shared->context;
+    fiber->context.module = func->shared->module;
+    fiber->context.code = func->shared->code;
+    fiber->context.func = (OObject *) func;
 
     return true;
 }
@@ -149,14 +143,7 @@ bool UnwindStack(Fiber *fiber) {
         if (ExecDefer(fiber))
             return true;
 
-        // Stack cleanup
-        const auto BP = regs->BP.reg;
-        auto SP = regs->SP.reg;
-        while (SP != BP) {
-            SP -= sizeof(void *);
-
-            O_DECREF(*(OObject**)(stack->stack + SP));
-        }
+        regs->SP.reg = regs->BP.reg;
 
         if (regs->BP.reg == 0)
             break;
@@ -169,7 +156,6 @@ bool UnwindStack(Fiber *fiber) {
         regs->SP.reg = regs->BP.reg;
         regs->BP.reg = *(PtrSize *) (stack->stack + regs->BP.reg);
 
-        SP = regs->SP.reg;
         regs->SP.reg -= sizeof(FiberContext);
 
         if (context == &fiber->context) {
@@ -183,21 +169,12 @@ bool UnwindStack(Fiber *fiber) {
 
         // Is there at least one exception handler?
         if (except != nullptr && except->key == regs->BP.reg) {
-            O_FAST_DECREF(fiber->context.context);
-            O_DECREF(fiber->context.module);
-            O_FAST_DECREF(fiber->context.code);
-            O_DECREF(fiber->context.func);
-
             stratum::util::MemoryCopy(&fiber->context.context, context, sizeof(FiberContext));
 
-            // Cleanup parameters
-            const auto pops = ((unsigned char *) (regs->CP.reg + sizeof(ExceptionContext))) - stack->stack;
-            while (regs->SP.reg > pops) {
-                regs->SP.reg -= sizeof(void *);
-                O_DECREF(*(OObject**)(stack->stack + regs->SP.reg));
-            }
+            // The stack pointer must be adjusted to point to the end of the exception block on the stack.
+            regs->SP.reg = ((unsigned char *) (regs->CP.reg + sizeof(ExceptionContext))) - stack->stack;
 
-            if (except != nullptr && except->coffset != 0)
+            if (except->coffset != 0)
                 regs->IP.reg = (PtrSize) fiber->context.code->m_code + except->coffset;
 
             return true;
@@ -209,11 +186,6 @@ bool UnwindStack(Fiber *fiber) {
         }
 
         regs->IP.reg = (PtrSize) context->code->m_end;
-
-        while (SP > regs->SP.reg) {
-            SP -= sizeof(void *);
-            O_DECREF(*(OObject**)(stack->stack + SP));
-        }
     }
 
     return false;
@@ -361,7 +333,7 @@ int CallInit(Fiber *fiber, const Function *func, const unsigned short p_count, c
 
         // FIXME: Expand
         for (auto i = 0; i < args_diff; i++) {
-            *((OObject **) (fiber->vm.stack.stack + fiber->vm.regs.SP.reg)) = O_INCREF(rest->objects[i]);
+            *((OObject **) (fiber->vm.stack.stack + fiber->vm.regs.SP.reg)) = rest->objects[i];
             fiber->vm.regs.SP.reg += sizeof(void *);
         }
         // FIXME: EOL
@@ -508,10 +480,10 @@ int CallGenerator(Fiber *fiber, Generator *gen, const U16 total_args, const Call
 
     // Load context into fiber
     const auto func = gen->base;
-    fiber->context.context = O_FAST_INCREF(func->shared->context);
-    fiber->context.module = O_INCREF(func->shared->module);
-    fiber->context.code = O_FAST_INCREF(func->shared->code);
-    fiber->context.func = O_FAST_INCREF((OObject*)gen);
+    fiber->context.context = func->shared->context;
+    fiber->context.module = func->shared->module;
+    fiber->context.code = func->shared->code;
+    fiber->context.func = (OObject *) gen;
 
     regs->BP.reg = BP;
     regs->IP.reg = gen->IP;
@@ -582,17 +554,11 @@ OObject *LoadFromObjectProp(const Fiber *fiber, const Function *func, OObject *o
 
 void CallNative(Function *func, Registers *regs, const VMStack *stack, const U16 argc) {
     auto **args = (OObject **) (stack->stack + (regs->SP.reg - (argc * sizeof(void *))));
-    const auto old_sp = regs->SP.reg - (argc * sizeof(void *));
 
     const auto result = func->shared->func(func, args, args[argc], args[argc + 1], argc);
 
     regs->RR.reg = (PtrSize) result.get();
-
-    // Cleanup native call
-    while (regs->SP.reg > old_sp) {
-        regs->SP.reg -= sizeof(void *);
-        O_DECREF(*(OObject**)(stack->stack + regs->SP.reg));
-    }
+    regs->SP.reg -= (argc * sizeof(void *));
 }
 
 void ExecuteCleanupForPC(const Fiber *fiber) {
@@ -632,8 +598,6 @@ void ReleaseExceptionContext(Registers *regs) {
 
     regs->CP.reg = (PtrSize) ctx->prev;
 
-    O_DECREF((OObject*)ctx->ret_value); // TODO: remove once fully transitioned to GC.
-
     memory::MemoryZero(ctx, sizeof(ExceptionContext));
 }
 
@@ -645,10 +609,6 @@ void Return(Fiber *fiber, const U32 pops) {
     if (regs->BP.reg > 0)
         ExecuteCleanupForPC(fiber);
 
-    // Cleanup local variables
-    for (auto i = regs->BP.reg; i != regs->SP.reg; i += sizeof(void *))
-        O_DECREF(*(OObject**)(stack->stack + i));
-
     if (regs->BP.reg > 0) {
         regs->BP.reg -= sizeof(void *);
         regs->IP.reg = *((PtrSize *) (stack->stack + regs->BP.reg)) + sizeof(MachineWord);
@@ -658,21 +618,13 @@ void Return(Fiber *fiber, const U32 pops) {
 
         regs->BP.reg = *((PtrSize *) (stack->stack + regs->SP.reg));
 
-        O_FAST_DECREF(fiber->context.context);
-        O_DECREF(fiber->context.module);
-        O_FAST_DECREF(fiber->context.code);
-        O_DECREF(fiber->context.func);
-
         regs->SP.reg -= sizeof(FiberContext);
         stratum::util::MemoryCopy(&fiber->context.context,
                                   stack->stack + regs->SP.reg,
                                   sizeof(FiberContext));
 
         // Cleanup parameters
-        for (auto i = 0; i < pops; i++) {
-            regs->SP.reg -= sizeof(void *);
-            O_DECREF(*(OObject**)(stack->stack + regs->SP.reg));
-        }
+        regs->SP.reg -= pops * sizeof(void *);
 
         if (O_IS_TYPE(func, InstanceType::GENERATOR)) {
             ((Generator *) func)->state = GeneratorState::EXHAUSTED;
@@ -693,10 +645,6 @@ void SaveGenerator(Fiber *fiber) {
 
     auto *gen = (Generator *) fiber->context.func;
 
-    // About to save a new stack, decrement the reference count for each value in the previously saved stack
-    for (auto i = 0; i < gen->stack_size; i++)
-        O_DECREF(gen->stack[i]);
-
     // Store stack
     gen->stack_size = regs->SP.reg - regs->BP.reg;
     stratum::util::MemoryCopy(gen->stack, stack->stack + regs->BP.reg, gen->stack_size);
@@ -714,15 +662,10 @@ void SaveGenerator(Fiber *fiber) {
     regs->BP.reg = *((PtrSize *) (stack->stack + regs->SP.reg));
 
     // Restore the previous fiber context saved on the stack
-    O_DECREF(fiber->context.context);
-    O_DECREF(fiber->context.module);
-    O_DECREF(fiber->context.code);
-    O_DECREF(fiber->context.func);
-
     regs->SP.reg -= sizeof(FiberContext);
     stratum::util::MemoryCopy(&fiber->context.context, stack->stack + regs->SP.reg, sizeof(FiberContext));
 
-    // Remove the generator parameters from the stack without decrementing (ownership remains with Generator)
+    // Remove the generator parameters from the stack
     regs->SP.reg -= gen->stack - gen->params;
 
     // Dump the current registers into the generator
@@ -890,10 +833,6 @@ CATCH_FINALLY:
             TARGET_OP(RETSUB) {
                 const auto src = FETCH_R_SRC(instr);
 
-                // Cleanup local variables
-                for (auto i = regs->BP.reg; i != regs->SP.reg; i += sizeof(void *))
-                    O_DECREF(*(OObject**)(stack->stack + i));
-
                 REG_RR = REG_N(src);
 
                 REG_BP -= sizeof(void *);
@@ -905,8 +844,6 @@ CATCH_FINALLY:
                 REG_BP = *ACCESS_STACK_SP(0);
 
                 REG_SP -= sizeof(void *);
-
-                O_FAST_DECREF(fiber->context.code);
 
                 fiber->context.code = (Code *) *ACCESS_STACK_SP(0);
 
@@ -1007,6 +944,7 @@ CATCH_FINALLY:
             TARGET_OP(NTCALL) {
                 const auto src = FETCH_R_SRC(instr);
                 const auto p_count = FETCH_IMM(instr);
+                const auto old_SP = regs->SP.reg - (p_count * sizeof(void *));
 
                 const auto func = (Function *) REG_N(src);
 
@@ -1028,17 +966,13 @@ CATCH_FINALLY:
                 if (!native::CallFunction(fiber->isolate,
                                           res,
                                           (NativeFunc *) func,
-                                          (OObject **) (stack->stack + (regs->SP.reg - (p_count * sizeof(void *)))),
+                                          (OObject **) (stack->stack + old_SP),
                                           p_count))
                     goto ERROR;
 
                 REG_RR = (PtrSize) res.get();
 
-                for (auto i = 0; i < p_count; i++) {
-                    regs->SP.reg -= sizeof(void *);
-
-                    O_DECREF(*(OObject**)(stack->stack + regs->SP.reg));
-                }
+                regs->SP.reg = old_SP;
 
                 DISPATCH;
             }
@@ -1065,18 +999,12 @@ CATCH_FINALLY:
 
                 const auto size = res * sizeof(void *);
                 if (!Orbiter::GetInstance()->EvalAsync(func,
-                                                  (fiber->vm.stack.stack + regs->SP.reg) - size,
-                                                  size).get())
+                                                       (fiber->vm.stack.stack + regs->SP.reg) - size,
+                                                       size).get())
                     goto ERROR;
 
                 regs->RR.reg = 0;
-
-                // Cleanup this stack
-                while (regs->SP.reg > old_sp) {
-                    regs->SP.reg -= sizeof(void *);
-
-                    O_DECREF(*(OObject**)(fiber->vm.stack.stack + regs->SP.reg));
-                }
+                regs->SP.reg -= size;
 
                 DISPATCH;
             }
@@ -1095,7 +1023,7 @@ CATCH_FINALLY:
                 if (defer == nullptr)
                     goto ERROR;
 
-                defer->func = O_FAST_INCREF(func);
+                defer->func = func;
 
                 defer->argc = res;
 
@@ -1128,7 +1056,7 @@ CATCH_FINALLY:
 
                 regs->BP.reg = regs->SP.reg;
 
-                fiber->context.code = O_FAST_INCREF(sproc);
+                fiber->context.code = sproc;
                 code = sproc;
 
                 regs->IP.reg = (PtrSize) sproc->m_code;
@@ -1188,9 +1116,9 @@ CATCH_FINALLY:
                 if (O_IS_OBJECT(value)
                     && O_IS_TYPE(value, InstanceType::FUNCTION)
                     && ((Function *) value)->shared->IsMethod())
-                    ((Function *) value)->shared->owner_type = O_FAST_INCREF(tp);
+                    ((Function *) value)->shared->owner_type = tp;
 
-                prop->value = O_INCREF(value);
+                prop->value = value;
 
                 DISPATCH;
             }
@@ -1252,7 +1180,7 @@ CATCH_FINALLY:
                 const auto value = (OObject *) this_func->closure;
                 const auto target = (OObject **) (stack->stack + (REG_N(base) + slot));
 
-                *target = O_INCREF(value);
+                *target = value;
 
                 DISPATCH;
             }
@@ -1298,11 +1226,7 @@ CATCH_FINALLY:
 
                 const auto target = (OObject **) (stack->stack + (REG_N(base) + slot));
 
-                O_DECREF(*target);
-
                 *target = value;
-
-                O_INCREF(value);
 
                 DISPATCH;
             }
@@ -1365,22 +1289,10 @@ CATCH_FINALLY:
 
                 REG_N(dst) = (PtrSize) value;
 
-                O_DECREF(value);
-
                 DISPATCH;
             }
             TARGET_OP(POPN) {
-                const auto target = (OObject **) ACCESS_STACK_SP(0);
-
                 REG_SP -= FETCH_IMM(instr) * sizeof(void *);
-
-                auto cursor = (OObject **) ACCESS_STACK_SP(0);
-
-                while (cursor < target) {
-                    O_DECREF(*cursor);
-
-                    cursor++;
-                }
 
                 DISPATCH;
             }
@@ -1810,8 +1722,6 @@ CATCH_FINALLY:
                     goto BEGIN;
                 }
 
-                O_DECREF((OObject*)ctx->ret_value);
-
                 if (ctx->action != (U32) PendingAction::NONE) {
                     U32 target = ctx->ret_pops;
                     U32 action = ctx->action;
@@ -1855,18 +1765,11 @@ CATCH_FINALLY:
                 ctx->ret_pops = offset;
 
                 if (action == PendingAction::RETURN) {
-                    O_DECREF((OObject*)ctx->ret_value);
-
                     ctx->ret_value = REG_N(src);
-
-                    O_INCREF((OObject*)ctx->ret_value);
                 }
 
-                if (action != PendingAction::NONE) {
-                    O_DECREF((OObject*)ctx->ret_value);
-
+                if (action != PendingAction::NONE)
                     ctx->ret_pops = offset;
-                }
 
                 DISPATCH;
             }
