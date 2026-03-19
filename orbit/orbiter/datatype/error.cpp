@@ -125,3 +125,15 @@ void orbiter::datatype::ErrorSet(Isolate *isolate, const char *kind, OObject *de
 
     Orbiter::RuntimePanic(isolate, (OObject *) error.get());
 }
+
+void orbiter::datatype::ErrorSetWithObjType(Isolate *isolate, const char *kind, const char *format, const char *p1,
+                                     const OObject *target) {
+    char error[24];
+
+    GetTypeName(target, error, sizeof(error));
+
+    if (p1 == nullptr)
+        ErrorSet(isolate, kind, nullptr, format, error);
+    else
+        ErrorSet(isolate, kind, nullptr, format, p1, error);
+}

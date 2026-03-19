@@ -282,10 +282,10 @@ bool VMNeg(Fiber *fiber, OObject *value, const U8 dst) noexcept {
     }
 
     ErrorSetWithObjType(fiber->isolate,
-                 NotImplementedError::Details[NotImplementedError::Reason::ID],
-                 NotImplementedError::Details[NotImplementedError::Reason::UNARY_OPERATOR],
-                 "-",
-                 value);
+                        NotImplementedError::Details[NotImplementedError::Reason::ID],
+                        NotImplementedError::Details[NotImplementedError::Reason::UNARY_OPERATOR],
+                        "-",
+                        value);
 
     return false;
 }
@@ -308,15 +308,11 @@ bool VMGetIter(const Fiber *fiber, OObject *object, PtrSize *dst) {
         }
     }
 
-    char error[24];
-
-    GetTypeName(object, error, sizeof(error));
-
-    ErrorSet(fiber->isolate,
-             TypeError::Details[TypeError::Reason::ID],
-             nullptr,
-             TypeError::Details[TypeError::Reason::NON_ITERABLE],
-             error);
+    ErrorSetWithObjType(fiber->isolate,
+                        TypeError::Details[TypeError::Reason::ID],
+                        TypeError::Details[TypeError::Reason::NON_ITERABLE],
+                        nullptr,
+                        object);
 
     return false;
 }
@@ -326,15 +322,11 @@ int CallInit(Fiber *fiber, const Function *func, const unsigned short p_count, c
     auto *stack = &fiber->vm.stack;
 
     if (!O_IS_TYPE(func, InstanceType::FUNCTION)) {
-        char error[24];
-
-        GetTypeName((OObject *) func, error, sizeof(error));
-
-        ErrorSet(fiber->isolate,
-                 TypeError::Details[TypeError::Reason::ID],
-                 nullptr,
-                 TypeError::Details[TypeError::Reason::NON_CALLABLE],
-                 error);
+        ErrorSetWithObjType(fiber->isolate,
+                            TypeError::Details[TypeError::Reason::ID],
+                            TypeError::Details[TypeError::Reason::NON_CALLABLE],
+                            nullptr,
+                            (OObject *) func);
 
         return CALL_ERROR;
     }
@@ -586,15 +578,11 @@ int VMGetIterNext(Fiber *fiber, OObject *object, PtrSize *dst) {
             return type->ops.iter_next(object, (OObject **) &dst);
     }
 
-    char error[24];
-
-    GetTypeName(object, error, sizeof(error));
-
-    ErrorSet(fiber->isolate,
-             RuntimeError::Details[RuntimeError::Reason::ID],
-             nullptr,
-             RuntimeError::Details[RuntimeError::Reason::ITER_NEXT_NOT_IMPLEMENTED],
-             error);
+    ErrorSetWithObjType(fiber->isolate,
+                        RuntimeError::Details[RuntimeError::Reason::ID],
+                        RuntimeError::Details[RuntimeError::Reason::ITER_NEXT_NOT_IMPLEMENTED],
+                        nullptr,
+                        object);
 
     return CALL_ERROR;
 }
@@ -993,16 +981,11 @@ CATCH_FINALLY:
                 auto *future = (Future *) REG_N(src);
 
                 if (!O_IS_TYPE(future, InstanceType::FUTURE)) {
-                    char error[24];
-
-                    GetTypeName((OObject *) future, error, sizeof(error));
-
-                    ErrorSet(fiber->isolate,
-                             TypeError::Details[TypeError::Reason::ID],
-                             nullptr,
-                             TypeError::Details[TypeError::Reason::MISMATCH],
-                             InstanceTypeNames[(int) InstanceType::FUTURE],
-                             error);
+                    ErrorSetWithObjType(fiber->isolate,
+                                        TypeError::Details[TypeError::Reason::ID],
+                                        TypeError::Details[TypeError::Reason::MISMATCH],
+                                        InstanceTypeNames[(int) InstanceType::FUTURE],
+                                        (OObject *) future);
 
                     goto ERROR;
                 }
@@ -1077,14 +1060,11 @@ CATCH_FINALLY:
                 const auto func = (Function *) REG_N(src);
 
                 if (!O_IS_TYPE(func, InstanceType::NATIVE_FUNC)) {
-                    char error[24];
-
-                    GetTypeName((OObject *) func, error, sizeof(error));
-
-                    ErrorSet(fiber->isolate, TypeError::Details[TypeError::Reason::ID],
-                             nullptr,
-                             TypeError::Details[TypeError::Reason::NON_CALLABLE],
-                             error);
+                    ErrorSetWithObjType(fiber->isolate,
+                                        TypeError::Details[TypeError::Reason::ID],
+                                        TypeError::Details[TypeError::Reason::NON_CALLABLE],
+                                        nullptr,
+                                        (OObject *) func);
 
                     goto ERROR;
                 }
