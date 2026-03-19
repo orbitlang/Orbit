@@ -17,6 +17,7 @@ namespace orbiter {
 
 namespace orbiter::datatype {
     constexpr auto kOddBallMask = (MSize) memory::RCBitOffsets::InlineMask | memory::RCBitOffsets::StrongVFLAGMask;
+    constexpr auto kSMIMinSize = -(MSSize)(0x1ULL << ((sizeof(MSize) * 8) - 2));
     constexpr auto kSMIMaxSize = 0x1ULL << ((sizeof(MSize) * 8) - 1);
 
     constexpr auto kOddBallNIL = nullptr;
