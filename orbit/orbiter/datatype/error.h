@@ -19,6 +19,7 @@ namespace orbiter::datatype {
 
         OObject *details;
     };
+
     using HError = Handle<Error>;
 
     /**
@@ -86,7 +87,7 @@ namespace orbiter::datatype {
      * @return A handle to an `ORString` containing the error message. If no error occurred, a message indicating
      *         successful execution is returned.
      */
-    HORString ErrorGetMsgFromWinErr(Isolate *isolate);
+    HORString ErrorGetMsgFromWinErr(Isolate * isolate);
 #endif
 
     /**
@@ -114,6 +115,22 @@ namespace orbiter::datatype {
      * @param ... Additional arguments matching the format string to include in the error message
      */
     void ErrorSet(Isolate *isolate, const char *kind, OObject *details, const char *format, ...);
+
+    /**
+     * @brief Sets an error message with object type information
+     *
+     * Constructs an error message that incorporates the type information of the specified object.
+     * If a primary parameter (`p1`) is provided, it is included in the error message alongside
+     * the type information derived from the specified object. Otherwise, only the type information
+     * and error details defined by `format` are included.
+     *
+     * @param isolate Pointer to the Isolate instance used for context management
+     * @param kind A string describing the kind of error
+     * @param format Format string for the error description
+     * @param p1 Optional primary parameter to include in the error message
+     * @param target A pointer to the object from which type information will be extracted
+     */
+    void ErrorSetWithObjType(Isolate *isolate, const char *kind, const char *format, const char *p1, const OObject *target);
 }
 
 #endif // !ORBIT_ORBITER_DATATYPE_ERROR_H_

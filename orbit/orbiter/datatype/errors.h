@@ -38,7 +38,8 @@ namespace orbiter::datatype {
 
             DEFAULT,
             METHOD,
-            OPERATOR
+            OPERATOR,
+            UNARY_OPERATOR,
         };
 
         static constexpr const char *Details[] = {
@@ -46,7 +47,8 @@ namespace orbiter::datatype {
 
             (const char *) "not implemented",
             (const char *) "you must implement method %s",
-            (const char *) "operator '%s' not supported between '%s' and '%s'"
+            (const char *) "operator '%s' not supported between '%s' and '%s'",
+            (const char *) "operator '%s' not supported by '%s'"
         };
     };
 
