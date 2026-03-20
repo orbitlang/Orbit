@@ -261,6 +261,25 @@ bool VMDiv(Fiber *fiber, PtrSize left, const PtrSize right, const U8 dst, DivFla
     return {};
 }
 
+bool VMMoveNot(Fiber *fiber, OObject *value, const U8 dst) noexcept {
+    const auto r_dst = ((Register *) (&fiber->vm.regs)) + dst;
+
+    if (O_IS_OBJECT(value)) {
+        // TODO: impl ~
+        assert(false);
+
+        return true;
+    }
+
+    ErrorSetWithObjType(fiber->isolate,
+                        NotImplementedError::Details[NotImplementedError::Reason::ID],
+                        NotImplementedError::Details[NotImplementedError::Reason::UNARY_OPERATOR],
+                        "~",
+                        value);
+
+    return false;
+}
+
 bool VMNeg(Fiber *fiber, OObject *value, const U8 dst) noexcept {
     const auto r_dst = ((Register *) (&fiber->vm.regs)) + dst;
 
@@ -901,10 +920,24 @@ CATCH_FINALLY:
 
                 DISPATCH;
             }
-            TARGET_OP(NEG) {
+            TARGET_OP(MVN) {
                 const auto dst = FETCH_R_DST(instr);
+                const auto value = (OObject *) REG_N(FETCH_R_SRC(instr));
 
-                if (!VMNeg(fiber, (OObject *) REG_N(FETCH_R_SRC(instr)), dst))
+                // Fast path
+                if (O_IS_SMI(value)) {
+                    REG_N(dst) = (~((PtrSize) (value))) | 0x01;
+
+                    DISPATCH;
+                }
+
+                if (!VMMoveNot(fiber, value, dst))
+                    goto ERROR;
+
+                DISPATCH;
+            }
+            TARGET_OP(NEG) {
+                if (!VMNeg(fiber, (OObject *) REG_N(FETCH_R_SRC(instr)), FETCH_R_DST(instr)))
                     goto ERROR;
 
                 DISPATCH;
