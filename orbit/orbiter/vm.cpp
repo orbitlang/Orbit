@@ -191,23 +191,32 @@ bool UnwindStack(Fiber *fiber) {
     return false;
 }
 
-bool VMAdd(Fiber *fiber, PtrSize left, const PtrSize right, const U8 dst) {
+template<OPCode opcode>
+bool VMAddSub(Fiber *fiber, const PtrSize left, const PtrSize right, const U8 dst) {
     const auto r_dst = ((Register *) (&fiber->vm.regs)) + dst;
 
     if (O_IS_SMI(left) && O_IS_SMI(right)) {
-        left -= 1;
+        const MSSize na = (MSSize) left >> 1;
+        const MSSize nb = (MSSize) right >> 1;
 
-        const auto res = left + right;
-        if (res >= kSMIMaxSize) {
-            const auto result = IntNew(fiber->isolate,
-                                       (((IntegerUnderlying) left) >> 1) + (((IntegerUnderlying) right) >> 1));
+        MSSize res;
+
+        if constexpr (opcode == OPCode::ADD)
+            res = (MSSize) ((MSize) na + (MSize) nb);
+        else
+            res = (MSSize) ((MSize) na - (MSize) nb);
+
+        if (res < kSMIMinSize || res > kSMIMaxSize) [[unlikely]] {
+            const auto result = IntNew(fiber->isolate, res);
+            if (!result)
+                return false;
 
             r_dst->reg = (PtrSize) result.get();
 
             return true;
         }
 
-        r_dst->reg = (PtrSize) res;
+        r_dst->reg = (PtrSize) O_TO_SMI(res);
 
         return true;
     }
@@ -218,31 +227,11 @@ bool VMAdd(Fiber *fiber, PtrSize left, const PtrSize right, const U8 dst) {
     return {};
 }
 
-bool VMSub(Fiber *fiber, PtrSize left, const PtrSize right, const U8 dst) {
+template<OPCode opcode>
+bool VMAOX(Fiber *fiber, OObject *left, const OObject *right, const U8 dst) {
     const auto r_dst = ((Register *) (&fiber->vm.regs)) + dst;
 
-    if (O_IS_SMI(left) && O_IS_SMI(right)) {
-        left -= 1;
-
-        const auto res = left + right;
-        if (res >= kSMIMaxSize) {
-            const auto result = IntNew(fiber->isolate,
-                                       (((IntegerUnderlying) left) >> 1) + (((IntegerUnderlying) right) >> 1));
-
-            r_dst->reg = (PtrSize) result.get();
-
-            return true;
-        }
-
-        r_dst->reg = (PtrSize) res;
-
-        return true;
-    }
-
-    // TODO: NON SMI, Other object
     assert(false);
-
-    return {};
 }
 
 bool VMMul(Fiber *fiber, PtrSize left, const PtrSize right, const U8 dst) {
@@ -259,13 +248,6 @@ bool VMDiv(Fiber *fiber, PtrSize left, const PtrSize right, const U8 dst, DivFla
     assert(false);
 
     return {};
-}
-
-template<OPCode opcode>
-bool VMAOX(Fiber *fiber, OObject *left, const OObject *right, const U8 dst) {
-    const auto r_dst = ((Register *) (&fiber->vm.regs)) + dst;
-
-    assert(false);
 }
 
 bool VMMoveNot(Fiber *fiber, OObject *value, const U8 dst) noexcept {
@@ -291,11 +273,11 @@ bool VMNeg(Fiber *fiber, OObject *value, const U8 dst) noexcept {
     const auto r_dst = ((Register *) (&fiber->vm.regs)) + dst;
 
     if (O_IS_SMI(value)) {
-        const auto smi = SmiNeg(fiber->isolate, value);
-        if (!smi)
+        const auto result = IntNew(fiber->isolate, -((MSSize) value >> 1));
+        if (!result)
             return false;
 
-        r_dst->reg = (PtrSize) smi.get();
+        r_dst->reg = (PtrSize) result.get();
 
         return true;
     }
@@ -871,7 +853,7 @@ CATCH_FINALLY:
             TARGET_OP(ADD) {
                 const auto flag = (AddSubFlags) ((instr >> 8) & 0xFu);
 
-                if (!VMAdd(
+                if (!VMAddSub<OPCode::ADD>(
                     fiber,
                     REG_N(FETCH_R_SRC(instr)),
                     flag == AddSubFlags::IMM8 ? O_TO_SMI(instr & 0xFF) : REG_N(FETCH_R_RSRC(instr)),
@@ -883,7 +865,7 @@ CATCH_FINALLY:
             TARGET_OP(SUB) {
                 const auto flag = (AddSubFlags) ((instr >> 8) & 0xFu);
 
-                if (!VMSub(
+                if (!VMAddSub<OPCode::SUB>(
                     fiber,
                     REG_N(FETCH_R_SRC(instr)),
                     flag == AddSubFlags::IMM8 ? O_TO_SMI(instr & 0xFF) : REG_N(FETCH_R_RSRC(instr)),

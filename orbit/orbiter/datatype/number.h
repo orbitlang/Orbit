@@ -58,19 +58,6 @@ namespace orbiter::datatype {
     HNumber IntNew(Isolate *isolate, const char *string, int base);
 
     /**
-     * @brief Negate a signed integer stored in a small integer (SMI) representation
-     *
-     * This function negates the value held by a small integer (SMI) and returns it as a handle to a `Number` object.
-     * If the SMI value is the minimum possible value, it creates a new `Number` object to handle the negation safely.
-     *
-     * @param isolate Pointer to the `Isolate` object, which provides instance-specific execution context.
-     * @param value Pointer to an `OObject` containing the SMI value to be negated.
-     *
-     * @return A handle to a `Number` object containing the negated value. If the operation fails, an empty handle is returned.
-     */
-    HNumber SmiNeg(Isolate *isolate, OObject *value) noexcept;
-
-    /**
      * @brief Creates a new Number object with an unsigned integer value.
      *
      * @param isolate Pointer to the Isolate in which the number is being created.
