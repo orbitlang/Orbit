@@ -261,6 +261,13 @@ bool VMDiv(Fiber *fiber, PtrSize left, const PtrSize right, const U8 dst, DivFla
     return {};
 }
 
+template<OPCode opcode>
+bool VMAOX(Fiber *fiber, OObject *left, const OObject *right, const U8 dst) {
+    const auto r_dst = ((Register *) (&fiber->vm.regs)) + dst;
+
+    assert(false);
+}
+
 bool VMMoveNot(Fiber *fiber, OObject *value, const U8 dst) noexcept {
     const auto r_dst = ((Register *) (&fiber->vm.regs)) + dst;
 
@@ -862,44 +869,90 @@ CATCH_FINALLY:
 
         switch (FETCH_OP(instr)) {
             TARGET_OP(ADD) {
-                const auto dst = FETCH_R_DST(instr);
-                const auto src_l = FETCH_R_SRC(instr);
-                const auto src_r = FETCH_R_RSRC(instr);
                 const auto flag = (AddSubFlags) ((instr >> 8) & 0xFu);
 
-                if (!VMAdd(fiber,REG_N(src_l), flag == AddSubFlags::IMM8 ? O_TO_SMI(instr & 0xFF) : REG_N(src_r), dst))
+                if (!VMAdd(
+                    fiber,
+                    REG_N(FETCH_R_SRC(instr)),
+                    flag == AddSubFlags::IMM8 ? O_TO_SMI(instr & 0xFF) : REG_N(FETCH_R_RSRC(instr)),
+                    FETCH_R_DST(instr)))
                     goto ERROR;
 
                 DISPATCH;
             }
             TARGET_OP(SUB) {
-                const auto dst = FETCH_R_DST(instr);
-                const auto src_l = FETCH_R_SRC(instr);
-                const auto src_r = FETCH_R_RSRC(instr);
                 const auto flag = (AddSubFlags) ((instr >> 8) & 0xFu);
 
-                if (!VMSub(fiber,REG_N(src_l), flag == AddSubFlags::IMM8 ? O_TO_SMI(instr & 0xFF) : REG_N(src_r), dst))
+                if (!VMSub(
+                    fiber,
+                    REG_N(FETCH_R_SRC(instr)),
+                    flag == AddSubFlags::IMM8 ? O_TO_SMI(instr & 0xFF) : REG_N(FETCH_R_RSRC(instr)),
+                    FETCH_R_DST(instr)))
                     goto ERROR;
 
                 DISPATCH;
             }
             TARGET_OP(MUL) {
-                const auto dst = FETCH_R_DST(instr);
-                const auto src_l = FETCH_R_SRC(instr);
-                const auto src_r = FETCH_R_RSRC(instr);
-
-                if (!VMMul(fiber,REG_N(src_l), REG_N(src_r), dst))
+                if (!VMMul(fiber,REG_N(FETCH_R_SRC(instr)), REG_N(FETCH_R_RSRC(instr)), FETCH_R_DST(instr)))
                     goto ERROR;
 
                 DISPATCH;
             }
             TARGET_OP(DIV) {
-                const auto dst = FETCH_R_DST(instr);
-                const auto src_l = FETCH_R_SRC(instr);
-                const auto src_r = FETCH_R_RSRC(instr);
                 const auto flag = (DivFlags) ((instr >> 8) & 0xFu);
 
-                if (!VMDiv(fiber,REG_N(src_l), REG_N(src_r), dst, flag))
+                if (!VMDiv(fiber,REG_N(FETCH_R_SRC(instr)), REG_N(FETCH_R_RSRC(instr)), FETCH_R_DST(instr), flag))
+                    goto ERROR;
+
+                DISPATCH;
+            }
+            TARGET_OP(AND) {
+                const auto dst = FETCH_R_DST(instr);
+                const auto src_l = REG_N(FETCH_R_SRC(instr));
+                const auto src_r = REG_N(FETCH_R_RSRC(instr));
+
+                // Fast path
+                if (O_IS_SMI(src_l) && O_IS_SMI(src_r)) {
+                    REG_N(dst) = src_l & src_r;
+
+                    DISPATCH;
+                }
+
+                if (!VMAOX<OPCode::AND>(fiber, (OObject *) src_l, (OObject *) src_r, dst))
+                    goto ERROR;
+
+                DISPATCH;
+            }
+            TARGET_OP(OR) {
+                const auto dst = FETCH_R_DST(instr);
+                const auto src_l = REG_N(FETCH_R_SRC(instr));
+                const auto src_r = REG_N(FETCH_R_RSRC(instr));
+
+                // Fast path
+                if (O_IS_SMI(src_l) && O_IS_SMI(src_r)) {
+                    REG_N(dst) = src_l | src_r;
+
+                    DISPATCH;
+                }
+
+                if (!VMAOX<OPCode::OR>(fiber, (OObject *) src_l, (OObject *) src_r, dst))
+                    goto ERROR;
+
+                DISPATCH;
+            }
+            TARGET_OP(XOR) {
+                const auto dst = FETCH_R_DST(instr);
+                const auto src_l = REG_N(FETCH_R_SRC(instr));
+                const auto src_r = REG_N(FETCH_R_RSRC(instr));
+
+                // Fast path
+                if (O_IS_SMI(src_l) && O_IS_SMI(src_r)) {
+                    REG_N(dst) = (src_l ^ src_r) | 0x01;
+
+                    DISPATCH;
+                }
+
+                if (!VMAOX<OPCode::XOR>(fiber, (OObject *) src_l, (OObject *) src_r, dst))
                     goto ERROR;
 
                 DISPATCH;
