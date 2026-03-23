@@ -185,18 +185,31 @@ namespace orbiter::datatype {
     // HELPER FUNCTIONS
     // *****************************************************************************************************************
 
-    using DtorFn = bool (*)(OObject *);
-
+    // --- Lifecycle ---
+    using DtorFn          = bool (*)(OObject *);
     using GCTraceCallback = void (*)(OObject *, MSize);
-    using TraceFn = void (*)(const OObject *self, GCTraceCallback callback, MSize epoch);
-
+    using TraceFn         = void (*)(const OObject *self, GCTraceCallback callback, MSize epoch);
     using TypeInfoAUXDtor = bool (*)(struct TypeInfo *self);
 
+    // --- Comparison ---
     using CompareFn = int (*)(const OObject *, const OObject *);
-    using EqualFn = bool (*)(const OObject *, const OObject *);
-    using GetIterFn = OObject *(*)(OObject *);
+    using EqualFn   = bool (*)(const OObject *, const OObject *);
+
+    // --- Arithmetic & Bitwise ---
+    using BinaryFn = OObject *(*)(Isolate *, OObject *, OObject *);
+    using UnaryFn  = OObject *(*)(Isolate *, OObject *);
+
+    // --- Iteration ---
+    using GetIterFn  = OObject *(*)(OObject *);
     using IterNextFn = bool (*)(OObject *, OObject **);
+
+    // --- Conversion ---
     using ToNativeType = bool (*)(OObject *, void *, NativeType);
+    using ToBoolFn     = bool (*)(const OObject *);
+    using ToStrFn      = OObject *(*)(Isolate *, const OObject *);
+
+    // --- Runtime ---
+    using HashFn = MSize (*)(const OObject *);
 
     // *****************************************************************************************************************
     // TYPE INFORMATION AND OPERATIONS
@@ -246,11 +259,40 @@ namespace orbiter::datatype {
     };
 
     struct TypeOps {
+        // --- Comparison ---
         CompareFn compare;
-        EqualFn equal;
-        GetIterFn get_iter;
+        EqualFn   equal;
+
+        // --- Arithmetic ---
+        BinaryFn add;
+        BinaryFn sub;
+        BinaryFn mul;
+        BinaryFn div;
+        BinaryFn idiv;
+        BinaryFn mod;
+
+        // --- Bitwise ---
+        BinaryFn bit_and;
+        BinaryFn bit_or;
+        BinaryFn bit_xor;
+        BinaryFn lshift;
+        BinaryFn rshift;
+
+        // --- Unary ---
+        UnaryFn neg;
+        UnaryFn bit_not;
+
+        // --- Iteration ---
+        GetIterFn  get_iter;
         IterNextFn iter_next;
+
+        // --- Conversion ---
         ToNativeType to_native;
+        ToBoolFn     to_bool;
+        ToStrFn      to_string;
+
+        // --- Runtime ---
+        HashFn hash;
     };
 
     struct TypeInfoOps {
