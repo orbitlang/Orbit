@@ -17,6 +17,19 @@ using namespace orbiter::datatype;
 #define STR_BUF(str) ((str)->buffer)
 #define STR_LEN(str) ((str)->length)
 
+bool StrEqual(const ORString *left, const ORString *right) {
+    if (left == right)
+        return true;
+
+    if (!O_IS_TYPE(left, InstanceType::STRING) || !O_IS_TYPE(right, InstanceType::STRING))
+        return false;
+
+    if (STR_LEN(left) != STR_LEN(right))
+        return false;
+
+    return ORStringEqual(left, right) == 0;
+}
+
 bool StrToNative(ORString *self, void *out, const NativeType type) {
     if (type == NativeType::PTR) {
         *((PtrSize *) out) = (PtrSize) STR_BUF(self);
@@ -81,7 +94,11 @@ bool StringInitKind(ORString *string) {
 }
 
 bool orbiter::datatype::ORStringTypeSetup(TypeInfo *self) {
-    ((TypeInfoOps*)self)->ops.to_native = (ToNativeType) StrToNative;
+    auto &ops = ((TypeInfoOps *) self)->ops;
+
+    ops.equal = (EqualFn) StrEqual;
+    ops.to_native = (ToNativeType) StrToNative;
+
     return true;
 }
 

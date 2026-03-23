@@ -10,10 +10,39 @@
 using namespace orbiter::datatype;
 
 bool orbiter::datatype::Equal(const OObject *left, const OObject *right) {
+    if (left == right)
+        return true;
+
+    if (!O_IS_OBJECT(left) && !O_IS_OBJECT(right))
+        return false;
+
+    if (O_IS_OBJECT(left)) {
+        const auto &ops = O_GET_TYPE_OPS(left);
+
+        if (ops.equal != nullptr)
+            return ops.equal(left, right);
+    }
+
+    if (O_IS_OBJECT(right)) {
+        const auto &ops = O_GET_TYPE_OPS(right);
+        if (ops.equal != nullptr)
+            return ops.equal(right, left);
+    }
+
     return false;
 }
 
 bool orbiter::datatype::EqualStrict(const OObject *left, const OObject *right) {
+    if (left == right)
+        return true;
+
+    if (O_IS_OBJECT(left)) {
+        if (O_IS_OBJECT(right))
+            return (O_GET_TYPE(left) == O_GET_TYPE(right)) && Equal(left, right);
+
+        return false;
+    }
+
     return false;
 }
 
@@ -154,8 +183,14 @@ bool orbiter::datatype::TIPropertiesInit(Isolate *isolate, TypeInfo *type, U8 n)
 }
 
 MSize orbiter::datatype::Hash(const OObject *obj) {
-    // TODO: IMPL
-    return 0;
+    if (!O_IS_OBJECT(obj))
+        return ((MSSize) obj) >> 1;
+
+    const auto &ops = O_GET_TYPE_OPS(obj);
+    if (ops.hash != nullptr)
+        return ops.hash(obj);
+
+    return (MSSize) obj;
 }
 
 PropertyDescriptor *orbiter::datatype::TIFindLocalProperty(const TypeInfo *type, const char *name) {
