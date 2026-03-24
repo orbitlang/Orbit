@@ -6,6 +6,7 @@
 #define ORBIT_ORBITER_DATATYPE_OOBJECT_H_
 
 #include <orbit/orbiter/isolate.h>
+#include <orbit/orbiter/opcode.h>
 
 #include <orbit/orbiter/memory/gc.h>
 
@@ -112,9 +113,44 @@ namespace orbiter::datatype {
     // OOBJECT API
     // *****************************************************************************************************************
 
+    /**
+     * @brief Check equality between two objects
+     *
+     * Calls the type's equal operation if defined. If neither type defines equal,
+     * falls back to identity comparison (pointer equality).
+     *
+     * @param left Pointer to the left operand
+     * @param right Pointer to the right operand
+     *
+     * @return true if the two objects are considered equal, false otherwise
+     */
     bool Equal(const OObject *left, const OObject *right);
 
+    /**
+     * @brief Check strict equality between two objects
+     *
+     * Like Equal, but additionally requires both objects to be of the same type.
+     * A value of a different type will never be strictly equal to another, even
+     * if Equal would return true.
+     *
+     * @param left Pointer to the left operand
+     * @param right Pointer to the right operand
+     *
+     * @return true if the two objects are of the same type and are equal, false otherwise
+     */
     bool EqualStrict(const OObject *left, const OObject *right);
+
+    /**
+     * @brief Evaluate the boolean truth value of an object
+     *
+     * Calls the type's to_bool operation if defined. For SMI values, returns false
+     * only if the value is zero. If to_bool is not defined, returns false.
+     *
+     * @param object Pointer to the object to evaluate
+     *
+     * @return true if the object is considered truthy, false otherwise
+     */
+    bool IsTrue(const OObject *object);
 
     /**
      * @brief Checks if a type inherits or extends from a target type
@@ -211,6 +247,140 @@ namespace orbiter::datatype {
      * @return true if initialization was successful, false otherwise
      */
     bool TIPropertiesInit(Isolate *isolate, TypeInfo *type, U8 n);
+
+    /**
+     * @brief Perform addition between two objects
+     *
+     * @param isolate Pointer to the current Isolate
+     * @param left Pointer to the left operand
+     * @param right Pointer to the right operand
+     *
+     * @return A handle to the result object, or an empty handle if the operation failed
+     */
+    HOObject ObjectAdd(Isolate *isolate, const OObject *left, const OObject *right) noexcept;
+
+    /**
+     * @brief Perform subtraction between two objects
+     *
+     * @param isolate Pointer to the current Isolate
+     * @param left Pointer to the left operand
+     * @param right Pointer to the right operand
+     *
+     * @return A handle to the result object, or an empty handle if the operation failed
+     */
+    HOObject ObjectSub(Isolate *isolate, const OObject *left, const OObject *right) noexcept;
+
+    /**
+     * @brief Perform multiplication between two objects
+     *
+     * @param isolate Pointer to the current Isolate
+     * @param left Pointer to the left operand
+     * @param right Pointer to the right operand
+     *
+     * @return A handle to the result object, or an empty handle if the operation failed
+     */
+    HOObject ObjectMul(Isolate *isolate, const OObject *left, const OObject *right) noexcept;
+
+    /**
+     * @brief Perform a division operation between two objects
+     *
+     * The behavior is controlled by the flags parameter:
+     * - DivFlags::NONE: integer division
+     * - DivFlags::FLOAT: floating point division
+     * - DivFlags::DIV_REM: integer modulo
+     * - DivFlags::FLOAT | DivFlags::DIV_REM: floating point modulo (fmod)
+     *
+     * @param isolate Pointer to the current Isolate
+     * @param left Pointer to the left operand
+     * @param right Pointer to the right operand
+     * @param flags Flags controlling the division behavior
+     *
+     * @return A handle to the result object, or an empty handle if the operation failed
+     */
+    HOObject ObjectDiv(Isolate *isolate, const OObject *left, const OObject *right, DivFlags flags) noexcept;
+
+    /**
+     * @brief Perform bitwise AND between two objects
+     *
+     * @param isolate Pointer to the current Isolate
+     * @param left Pointer to the left operand
+     * @param right Pointer to the right operand
+     *
+     * @return A handle to the result object, or an empty handle if the operation failed
+     */
+    HOObject ObjectAnd(Isolate *isolate, const OObject *left, const OObject *right) noexcept;
+
+    /**
+     * @brief Perform bitwise OR between two objects
+     *
+     * @param isolate Pointer to the current Isolate
+     * @param left Pointer to the left operand
+     * @param right Pointer to the right operand
+     *
+     * @return A handle to the result object, or an empty handle if the operation failed
+     */
+    HOObject ObjectOr(Isolate *isolate, const OObject *left, const OObject *right) noexcept;
+
+    /**
+     * @brief Perform bitwise XOR between two objects
+     *
+     * @param isolate Pointer to the current Isolate
+     * @param left Pointer to the left operand
+     * @param right Pointer to the right operand
+     *
+     * @return A handle to the result object, or an empty handle if the operation failed
+     */
+    HOObject ObjectXor(Isolate *isolate, const OObject *left, const OObject *right) noexcept;
+
+    /**
+     * @brief Perform a left shift operation between two objects
+     *
+     * @param isolate Pointer to the current Isolate
+     * @param left Pointer to the left operand
+     * @param right Pointer to the shift amount
+     *
+     * @return A handle to the result object, or an empty handle if the operation failed
+     */
+    HOObject ObjectLShift(Isolate *isolate, const OObject *left, const OObject *right) noexcept;
+
+    /**
+     * @brief Perform a right shift operation between two objects
+     *
+     * @param isolate Pointer to the current Isolate
+     * @param left Pointer to the left operand
+     * @param right Pointer to the shift amount
+     *
+     * @return A handle to the result object, or an empty handle if the operation failed
+     */
+    HOObject ObjectRShift(Isolate *isolate, const OObject *left, const OObject *right) noexcept;
+
+    /**
+     * @brief Convert an object to its string representation
+     *
+     * Calls the type's to_string operation if defined. For SMI values the integer is formatted
+     * directly. If no to_string is defined, falls back to a default representation
+     * of the form '<TypeName at 0xADDR>'.
+     *
+     * @param isolate Pointer to the current Isolate
+     * @param object Pointer to the object to convert
+     *
+     * @return A handle to the resulting ORString, or an empty handle if the conversion failed
+     */
+    HOObject ToString(Isolate *isolate, const OObject *object) noexcept;
+
+    /**
+     * @brief Return the developer-facing representation of an object
+     *
+     * Calls the type's to_repr operation if defined. Unlike ToString, the result is intended
+     * to be unambiguous and suitable for use in a REPL or debug output (e.g. strings include
+     * surrounding quotes). Falls back to ToString if to_repr is not defined.
+     *
+     * @param isolate Pointer to the current Isolate
+     * @param object Pointer to the object to represent
+     *
+     * @return A handle to the resulting ORString, or an empty handle if the operation failed
+     */
+    HOObject Repr(Isolate *isolate, const OObject *object) noexcept;
 
     /**
      * @brief Create a new TypeInfo

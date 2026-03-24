@@ -196,8 +196,8 @@ namespace orbiter::datatype {
     using EqualFn   = bool (*)(const OObject *, const OObject *);
 
     // --- Arithmetic & Bitwise ---
-    using BinaryFn = OObject *(*)(Isolate *, OObject *, OObject *);
-    using UnaryFn  = OObject *(*)(Isolate *, OObject *);
+    using BinaryFn = bool(*)(const OObject *, const OObject *, OObject *&result);
+    using UnaryFn  = OObject *(*)(OObject *);
 
     // --- Iteration ---
     using GetIterFn  = OObject *(*)(OObject *);
@@ -290,6 +290,7 @@ namespace orbiter::datatype {
         ToNativeType to_native;
         ToBoolFn     to_bool;
         ToStrFn      to_string;
+        ToStrFn      to_repr;
 
         // --- Runtime ---
         HashFn hash;

@@ -77,7 +77,9 @@ namespace orbiter::datatype {
             NATIVE_LOAD_LIBRARY,
             NATIVE_LOAD_SYMBOL,
             NATIVE_UNLOAD_LIBRARY,
-            ITER_NEXT_NOT_IMPLEMENTED
+            ITER_NEXT_NOT_IMPLEMENTED,
+            ZERO_DIVISION,
+            NEGATIVE_SHIFT_COUNT
         };
 
         static constexpr const char *Details[] = {
@@ -86,7 +88,9 @@ namespace orbiter::datatype {
             (const char *) "failed to load native library '%s': %s",
             (const char *) "failed to load native symbol '%s': %s",
             (const char *) "failed to unload native library '%s': %s",
-            (const char *) "'%s' object passed iterator check but does not implement iter_next"
+            (const char *) "'%s' object passed iterator check but does not implement iter_next",
+            (const char *) "division by zero",
+            (const char *) "negative shift count"
         };
     };
 

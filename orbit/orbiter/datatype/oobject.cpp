@@ -5,46 +5,10 @@
 #include <cassert>
 
 #include <orbit/orbiter/datatype/function.h>
+
 #include <orbit/orbiter/datatype/oobject.h>
 
 using namespace orbiter::datatype;
-
-bool orbiter::datatype::Equal(const OObject *left, const OObject *right) {
-    if (left == right)
-        return true;
-
-    if (!O_IS_OBJECT(left) && !O_IS_OBJECT(right))
-        return false;
-
-    if (O_IS_OBJECT(left)) {
-        const auto &ops = O_GET_TYPE_OPS(left);
-
-        if (ops.equal != nullptr)
-            return ops.equal(left, right);
-    }
-
-    if (O_IS_OBJECT(right)) {
-        const auto &ops = O_GET_TYPE_OPS(right);
-        if (ops.equal != nullptr)
-            return ops.equal(right, left);
-    }
-
-    return false;
-}
-
-bool orbiter::datatype::EqualStrict(const OObject *left, const OObject *right) {
-    if (left == right)
-        return true;
-
-    if (O_IS_OBJECT(left)) {
-        if (O_IS_OBJECT(right))
-            return (O_GET_TYPE(left) == O_GET_TYPE(right)) && Equal(left, right);
-
-        return false;
-    }
-
-    return false;
-}
 
 bool orbiter::datatype::IsTypeExtends(const TypeInfo *type, const TypeInfo *target) {
     if (type == nullptr || target == nullptr)
@@ -182,15 +146,47 @@ bool orbiter::datatype::TIPropertiesInit(Isolate *isolate, TypeInfo *type, U8 n)
     return true;
 }
 
-MSize orbiter::datatype::Hash(const OObject *obj) {
-    if (!O_IS_OBJECT(obj))
-        return ((MSSize) obj) >> 1;
+HOType orbiter::datatype::MakeType(Isolate *isolate, TypeInfo *super, InstanceType type,
+                                   U8 headroom, U8 props, U8 slots) {
+    auto *ti = (TypeInfo *) isolate->gc->AllocObject(sizeof(TypeInfoOps));
+    if (ti == nullptr)
+        return {};
 
-    const auto &ops = O_GET_TYPE_OPS(obj);
-    if (ops.hash != nullptr)
-        return ops.hash(obj);
+    O_GET_HEAD(ti).type_ = nullptr;
+    O_GET_HEAD(ti).is_instance = false;
 
-    return (MSSize) obj;
+    U16 offset = sizeof(OObject);
+    if (super != nullptr) {
+        O_GET_HEAD(ti).type_ = O_INCREF(super);
+        offset = super->i_size;
+    }
+
+    ti->i_type = type;
+
+    ti->i_size = offset + headroom + (slots * sizeof(void *));
+    ti->offset = offset;
+
+    ti->headroom = headroom;
+
+    ti->mro = nullptr;
+    ti->isolate = isolate;
+    ti->trace = nullptr;
+
+    ti->aux.data = nullptr;
+    ti->aux.dtor = nullptr;
+
+    ti->properties.count = 0;
+    ti->properties.p_array = nullptr;
+
+    if (!TIPropertiesInit(isolate, ti, props)) {
+        isolate->gc->Free((OObject *) ti);
+
+        return {};
+    }
+
+    memory::MemoryZero(((unsigned char *) ti) + sizeof(TypeInfo), sizeof(TypeOps));
+
+    O_GC_TRACK_RETURN(isolate, ti, false);
 }
 
 PropertyDescriptor *orbiter::datatype::TIFindLocalProperty(const TypeInfo *type, const char *name) {
@@ -240,49 +236,6 @@ PropertyDescriptor *orbiter::datatype::TIFindProperty(const TypeInfo *type, cons
     }
 
     return prop;
-}
-
-HOType orbiter::datatype::MakeType(Isolate *isolate, TypeInfo *super, InstanceType type,
-                                   U8 headroom, U8 props, U8 slots) {
-    auto *ti = (TypeInfo *) isolate->gc->AllocObject(sizeof(TypeInfoOps));
-    if (ti == nullptr)
-        return {};
-
-    O_GET_HEAD(ti).type_ = nullptr;
-    O_GET_HEAD(ti).is_instance = false;
-
-    U16 offset = sizeof(OObject);
-    if (super != nullptr) {
-        O_GET_HEAD(ti).type_ = O_INCREF(super);
-        offset = super->i_size;
-    }
-
-    ti->i_type = type;
-
-    ti->i_size = offset + headroom + (slots * sizeof(void *));
-    ti->offset = offset;
-
-    ti->headroom = headroom;
-
-    ti->mro = nullptr;
-    ti->isolate = isolate;
-    ti->trace = nullptr;
-
-    ti->aux.data = nullptr;
-    ti->aux.dtor = nullptr;
-
-    ti->properties.count = 0;
-    ti->properties.p_array = nullptr;
-
-    if (!TIPropertiesInit(isolate, ti, props)) {
-        isolate->gc->Free((OObject *) ti);
-
-        return {};
-    }
-
-    memory::MemoryZero(((unsigned char *) ti) + sizeof(TypeInfo), sizeof(TypeOps));
-
-    O_GC_TRACK_RETURN(isolate, ti, false);
 }
 
 U32 orbiter::datatype::GetTypeName(const OObject *object, char *out_str, const U32 out_size) {

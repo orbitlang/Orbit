@@ -1,0 +1,449 @@
+// This source file is part of the Orbit project.
+//
+// Licensed under the Apache License v2.0
+
+#include <cassert>
+#include <cmath>
+
+#include <orbit/orbiter/datatype/decimal.h>
+#include <orbit/orbiter/datatype/error.h>
+#include <orbit/orbiter/datatype/errors.h>
+#include <orbit/orbiter/datatype/function.h>
+#include <orbit/orbiter/datatype/number.h>
+#include <orbit/orbiter/datatype/orstring.h>
+
+using namespace orbiter::datatype;
+
+bool Dispatch(orbiter::Isolate *isolate, const OObject *left, const OObject *right, OObject *&result,
+              const char *op_sym, const size_t offset) noexcept {
+#define GET_BINARY_OP(s, offset) *((const BinaryFn*)(((unsigned char *) s) + offset))
+
+    if (O_IS_OBJECT(left)) {
+        const auto ops = &O_GET_TYPE_OPS(left);
+        const auto op = GET_BINARY_OP(ops, offset);
+
+        if (op != nullptr) {
+            if (op(left, right, result))
+                return true;
+        }
+    }
+
+    if (O_IS_OBJECT(right)) {
+        const auto ops = &O_GET_TYPE_OPS(right);
+        const auto op = GET_BINARY_OP(ops, offset);
+
+        if (op != nullptr) {
+            if (op(left, right, result))
+                return true;
+        }
+    }
+
+    char lname[24];
+    char rname[24];
+
+    GetTypeName(left, lname, sizeof(lname));
+    GetTypeName(right, rname, sizeof(rname));
+
+    ErrorSet(isolate,
+             NotImplementedError::Details[NotImplementedError::Reason::ID],
+             nullptr,
+             NotImplementedError::Details[NotImplementedError::Reason::OPERATOR],
+             op_sym,
+             lname,
+             rname);
+
+    return false;
+
+#undef GET_BINARY_OP
+}
+
+template<orbiter::OPCode opcode>
+bool ObjectAddSubMul(orbiter::Isolate *isolate, const OObject *left, const OObject *right, OObject *&result) noexcept {
+    if (O_IS_SMI(left) && O_IS_SMI(right)) {
+        const MSSize na = (MSSize) left >> 1;
+        const MSSize nb = (MSSize) right >> 1;
+
+        MSSize res;
+
+        if constexpr (opcode == orbiter::OPCode::ADD)
+            res = (MSSize) ((MSize) na + (MSize) nb);
+        else if constexpr (opcode == orbiter::OPCode::SUB)
+            res = (MSSize) ((MSize) na - (MSize) nb);
+        else if constexpr (opcode == orbiter::OPCode::MUL)
+            res = (MSSize) ((MSize) na * (MSize) nb);
+        else
+            assert(false);
+
+        if (res < kSMIMinSize || res > kSMIMaxSize) [[unlikely]] {
+            const auto tmp = IntNew(isolate, res);
+            if (!tmp)
+                return false;
+
+            result = (OObject *) tmp.get();
+
+            return true;
+        }
+
+        result = (OObject *) O_TO_SMI(res);
+
+        return true;
+    }
+
+    if constexpr (opcode == orbiter::OPCode::ADD)
+        return Dispatch(isolate, left, right, result, "+", offsetof(TypeOps, add));
+    else if constexpr (opcode == orbiter::OPCode::SUB)
+        return Dispatch(isolate, left, right, result, "-", offsetof(TypeOps, sub));
+    else if constexpr (opcode == orbiter::OPCode::MUL)
+        return Dispatch(isolate, left, right, result, "*", offsetof(TypeOps, mul));
+    else
+        assert(false);
+}
+
+template<orbiter::DivFlags flags>
+bool ObjectDivImpl(orbiter::Isolate *isolate, const OObject *left, const OObject *right, OObject *&result) noexcept {
+    constexpr bool is_float = (((U8) flags) & ((U8) orbiter::DivFlags::FLOAT)) != 0;
+    constexpr bool is_rem = (((U8) flags) & ((U8) orbiter::DivFlags::DIV_REM)) != 0;
+
+    if (O_IS_SMI(left) && O_IS_SMI(right)) {
+        const MSSize na = (MSSize) left >> 1;
+        const MSSize nb = (MSSize) right >> 1;
+
+        if (nb == 0) [[unlikely]] {
+            ErrorSet(isolate,
+                     RuntimeError::Details[RuntimeError::Reason::ID],
+                     nullptr,
+                     RuntimeError::Details[RuntimeError::Reason::ZERO_DIVISION]);
+
+            return false;
+        }
+
+        if constexpr (is_float) {
+            const double res = is_rem
+                                   ? std::fmod((double) na, (double) nb)
+                                   : ((double) na / (double) nb);
+
+            const auto tmp = DecimalNew(isolate, res);
+            if (!tmp)
+                return false;
+
+            result = (OObject *) tmp.get();
+
+            return true;
+        } else {
+            result = (OObject *) O_TO_SMI(is_rem ? na % nb : na / nb);
+
+            return true;
+        }
+    }
+
+    if constexpr (is_float && !is_rem)
+        return Dispatch(isolate, left, right, result, "/", offsetof(TypeOps, div));
+    else if constexpr (!is_float && !is_rem)
+        return Dispatch(isolate, left, right, result, "//", offsetof(TypeOps, idiv));
+    else
+        return Dispatch(isolate, left, right, result, "%", offsetof(TypeOps, mod));
+}
+
+bool ObjectAdd(orbiter::Isolate *isolate, const OObject *left, const OObject *right, OObject *&result) noexcept {
+    return ObjectAddSubMul<orbiter::OPCode::ADD>(isolate, left, right, result);
+}
+
+bool ObjectSub(orbiter::Isolate *isolate, const OObject *left, const OObject *right, OObject *&result) noexcept {
+    return ObjectAddSubMul<orbiter::OPCode::SUB>(isolate, left, right, result);
+}
+
+bool ObjectMul(orbiter::Isolate *isolate, const OObject *left, const OObject *right, OObject *&result) noexcept {
+    return ObjectAddSubMul<orbiter::OPCode::MUL>(isolate, left, right, result);
+}
+
+bool ObjectDiv(orbiter::Isolate *isolate, const OObject *left, const OObject *right, OObject *&result) noexcept {
+    return ObjectDivImpl<orbiter::DivFlags::FLOAT>(isolate, left, right, result);
+}
+
+bool ObjectIDiv(orbiter::Isolate *isolate, const OObject *left, const OObject *right, OObject *&result) noexcept {
+    return ObjectDivImpl<orbiter::DivFlags::NONE>(isolate, left, right, result);
+}
+
+bool ObjectMod(orbiter::Isolate *isolate, const OObject *left, const OObject *right, OObject *&result) noexcept {
+    return ObjectDivImpl<orbiter::DivFlags::DIV_REM>(isolate, left, right, result);
+}
+
+bool ObjectModR(orbiter::Isolate *isolate, const OObject *left, const OObject *right, OObject *&result) noexcept {
+    const auto flags = (orbiter::DivFlags) ((U8) orbiter::DivFlags::FLOAT | (U8) orbiter::DivFlags::DIV_REM);
+    return ObjectDivImpl<flags>(isolate, left, right, result);
+}
+
+bool ObjectAnd(orbiter::Isolate *isolate, const OObject *left, const OObject *right, OObject *&result) noexcept {
+    if (O_IS_SMI(left) && O_IS_SMI(right)) {
+        result = (OObject *) ((PtrSize) left & (PtrSize) right);
+
+        return true;
+    }
+
+    return Dispatch(isolate, left, right, result, "&", offsetof(TypeOps, bit_and));
+}
+
+bool ObjectOr(orbiter::Isolate *isolate, const OObject *left, const OObject *right, OObject *&result) noexcept {
+    if (O_IS_SMI(left) && O_IS_SMI(right)) {
+        result = (OObject *) ((PtrSize) left | (PtrSize) right);
+
+        return true;
+    }
+
+    return Dispatch(isolate, left, right, result, "|",offsetof(TypeOps, bit_or));
+}
+
+bool ObjectXor(orbiter::Isolate *isolate, const OObject *left, const OObject *right, OObject *&result) noexcept {
+    if (O_IS_SMI(left) && O_IS_SMI(right)) {
+        result = (OObject *) (((PtrSize) left ^ (PtrSize) right) | 0x01);
+
+        return true;
+    }
+
+    return Dispatch(isolate, left, right, result, "^",offsetof(TypeOps, bit_xor));
+}
+
+bool ObjectLShift(orbiter::Isolate *isolate, const OObject *left, const OObject *right, OObject *&result) noexcept {
+    if (O_IS_SMI(left) && O_IS_SMI(right)) {
+        const MSSize na = (MSSize) left >> 1;
+        const MSSize nb = (MSSize) right >> 1;
+
+        if (nb < 0) [[unlikely]] {
+            ErrorSet(isolate,
+                     RuntimeError::Details[RuntimeError::Reason::ID],
+                     nullptr,
+                     RuntimeError::Details[RuntimeError::Reason::NEGATIVE_SHIFT_COUNT]);
+
+            return false;
+        }
+
+        if (nb >= (MSSize) (sizeof(MSize) * 8)) [[unlikely]] {
+            result = (OObject *) O_TO_SMI(0);
+            return true;
+        }
+
+        const MSSize res = (MSSize) ((MSize) na << nb);
+
+        if (res < kSMIMinSize || res > kSMIMaxSize) [[unlikely]] {
+            const auto tmp = IntNew(isolate, res);
+            if (!tmp)
+                return false;
+
+            result = (OObject *) tmp.get();
+
+            return true;
+        }
+
+        result = (OObject *) O_TO_SMI(res);
+
+        return true;
+    }
+
+    return Dispatch(isolate, left, right, result, "<<", offsetof(TypeOps, lshift));
+}
+
+bool ObjectRShift(orbiter::Isolate *isolate, const OObject *left, const OObject *right, OObject *&result) noexcept {
+    if (O_IS_SMI(left) && O_IS_SMI(right)) {
+        const MSSize na = (MSSize) left >> 1;
+        const MSSize nb = (MSSize) right >> 1;
+
+        if (nb < 0) [[unlikely]] {
+            ErrorSet(isolate,
+                     RuntimeError::Details[RuntimeError::Reason::ID],
+                     nullptr,
+                     RuntimeError::Details[RuntimeError::Reason::NEGATIVE_SHIFT_COUNT]);
+
+            return false;
+        }
+
+        // Clamp shift amount: nb >= 64 would be UB (undefined behavior); 
+        // shifting by 63 provides sign extension (yielding -1 or 0)
+        const MSSize shift = nb < (MSSize) (sizeof(MSSize) * 8) ? nb : (MSSize) (sizeof(MSSize) * 8) - 1;
+
+        result = (OObject *) O_TO_SMI(na >> shift);
+
+        return true;
+    }
+
+    return Dispatch(isolate, left, right, result, ">>", offsetof(TypeOps, rshift));
+}
+
+// *********************************************************************************************************************
+// PUBLIC
+// *********************************************************************************************************************
+
+bool orbiter::datatype::Equal(const OObject *left, const OObject *right) {
+    if (left == right)
+        return true;
+
+    if (!O_IS_OBJECT(left) && !O_IS_OBJECT(right))
+        return false;
+
+    if (O_IS_OBJECT(left)) {
+        const auto &ops = O_GET_TYPE_OPS(left);
+
+        if (ops.equal != nullptr)
+            return ops.equal(left, right);
+    }
+
+    if (O_IS_OBJECT(right)) {
+        const auto &ops = O_GET_TYPE_OPS(right);
+        if (ops.equal != nullptr)
+            return ops.equal(right, left);
+    }
+
+    return false;
+}
+
+bool orbiter::datatype::EqualStrict(const OObject *left, const OObject *right) {
+    if (left == right)
+        return true;
+
+    if (O_IS_OBJECT(left)) {
+        if (O_IS_OBJECT(right))
+            return (O_GET_TYPE(left) == O_GET_TYPE(right)) && Equal(left, right);
+
+        return false;
+    }
+
+    return false;
+}
+
+bool orbiter::datatype::IsTrue(const OObject *object) {
+    if (O_IS_SMI(object))
+        return ((MSSize) object) >> 1;
+
+    const auto &ops = O_GET_TYPE_OPS(object);
+    if (ops.to_bool != nullptr)
+        return ops.to_bool(object);
+
+    return false;
+}
+
+HOObject orbiter::datatype::ObjectAdd(Isolate *isolate, const OObject *left, const OObject *right) noexcept {
+    OObject *result = nullptr;
+
+    ::ObjectAdd(isolate, left, right, result);
+
+    return HOObject(result);
+}
+
+HOObject orbiter::datatype::ObjectSub(Isolate *isolate, const OObject *left, const OObject *right) noexcept {
+    OObject *result = nullptr;
+
+    ::ObjectSub(isolate, left, right, result);
+
+    return HOObject(result);
+}
+
+HOObject orbiter::datatype::ObjectMul(Isolate *isolate, const OObject *left, const OObject *right) noexcept {
+    OObject *result = nullptr;
+
+    ::ObjectMul(isolate, left, right, result);
+
+    return HOObject(result);
+}
+
+HOObject orbiter::datatype::ObjectDiv(Isolate *isolate, const OObject *left, const OObject *right,
+                                      const DivFlags flags) noexcept {
+    OObject *result = nullptr;
+
+    switch (flags) {
+        case DivFlags::NONE:
+            ::ObjectIDiv(isolate, left, right, result);
+            break;
+        case DivFlags::FLOAT:
+            ::ObjectDiv(isolate, left, right, result);
+            break;
+        case DivFlags::DIV_REM:
+            ::ObjectMod(isolate, left, right, result);
+            break;
+        default:
+            ::ObjectModR(isolate, left, right, result);
+            break;
+    }
+
+    return HOObject(result);
+}
+
+HOObject orbiter::datatype::ObjectAnd(Isolate *isolate, const OObject *left, const OObject *right) noexcept {
+    OObject *result = nullptr;
+
+    ::ObjectAnd(isolate, left, right, result);
+
+    return HOObject(result);
+}
+
+HOObject orbiter::datatype::ObjectOr(Isolate *isolate, const OObject *left, const OObject *right) noexcept {
+    OObject *result = nullptr;
+
+    ::ObjectOr(isolate, left, right, result);
+
+    return HOObject(result);
+}
+
+HOObject orbiter::datatype::ObjectXor(Isolate *isolate, const OObject *left, const OObject *right) noexcept {
+    OObject *result = nullptr;
+
+    ::ObjectXor(isolate, left, right, result);
+
+    return HOObject(result);
+}
+
+HOObject orbiter::datatype::ObjectLShift(Isolate *isolate, const OObject *left, const OObject *right) noexcept {
+    OObject *result = nullptr;
+
+    ::ObjectLShift(isolate, left, right, result);
+
+    return HOObject(result);
+}
+
+HOObject orbiter::datatype::ObjectRShift(Isolate *isolate, const OObject *left, const OObject *right) noexcept {
+    OObject *result = nullptr;
+
+    ::ObjectRShift(isolate, left, right, result);
+
+    return HOObject(result);
+}
+
+HOObject orbiter::datatype::ToString(Isolate *isolate, const OObject *object) noexcept {
+    if (O_IS_SMI(object)) {
+        const auto n = (MSSize) object >> 1;
+
+        return HOObject(ORStringFormat(isolate, "%lld", n));
+    }
+
+    if (O_IS_OBJECT(object)) {
+        const auto &ops = O_GET_TYPE_OPS(object);
+        if (ops.to_string != nullptr)
+            return HOObject(ops.to_string(isolate, object));
+    }
+
+    // Fallback: <TypeName at 0xADDR>
+    char type_name[24];
+
+    GetTypeName(object, type_name, sizeof(type_name));
+
+    return HOObject(ORStringFormat(isolate, "<%s at %p>", type_name, object));
+}
+
+HOObject orbiter::datatype::Repr(Isolate *isolate, const OObject *object) noexcept {
+    if (O_IS_OBJECT(object)) {
+        const auto &ops = O_GET_TYPE_OPS(object);
+        if (ops.to_repr != nullptr)
+            return HOObject(ops.to_repr(isolate, object));
+    }
+
+    return ToString(isolate, object);
+}
+
+MSize orbiter::datatype::Hash(const OObject *obj) {
+    if (!O_IS_OBJECT(obj))
+        return ((MSSize) obj) >> 1;
+
+    const auto &ops = O_GET_TYPE_OPS(obj);
+    if (ops.hash != nullptr)
+        return ops.hash(obj);
+
+    return (MSSize) obj;
+}
