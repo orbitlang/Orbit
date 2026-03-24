@@ -24,9 +24,9 @@ orbiter::OPCode InfixOp2OpCode(const scanner::TokenType tt, const bool imm, U8 &
         case scanner::TokenType::ASTERISK:
             return orbiter::OPCode::MUL;
         case scanner::TokenType::SLASH:
+            flags = (U8) orbiter::DivFlags::FLOAT;
             return orbiter::OPCode::DIV;
         case scanner::TokenType::SLASH_SLASH:
-            flags = (U8) orbiter::DivFlags::FLOAT;
             return orbiter::OPCode::DIV;
         case scanner::TokenType::PERCENT:
             flags = (U8) orbiter::DivFlags::DIV_REM;
