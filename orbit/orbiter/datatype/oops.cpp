@@ -169,7 +169,7 @@ bool ObjectMod(orbiter::Isolate *isolate, const OObject *left, const OObject *ri
 }
 
 bool ObjectModR(orbiter::Isolate *isolate, const OObject *left, const OObject *right, OObject *&result) noexcept {
-    const auto flags = (orbiter::DivFlags) ((U8) orbiter::DivFlags::FLOAT | (U8) orbiter::DivFlags::DIV_REM);
+    constexpr auto flags = (orbiter::DivFlags) ((U8) orbiter::DivFlags::FLOAT | (U8) orbiter::DivFlags::DIV_REM);
     return ObjectDivImpl<flags>(isolate, left, right, result);
 }
 
@@ -266,6 +266,50 @@ bool ObjectRShift(orbiter::Isolate *isolate, const OObject *left, const OObject 
     }
 
     return Dispatch(isolate, left, right, result, ">>", offsetof(TypeOps, rshift));
+}
+
+bool ObjectNeg(orbiter::Isolate *isolate, const OObject *object, OObject *&result) noexcept {
+    if (O_IS_SMI(object)) {
+        const auto tmp = IntNew(isolate, -((MSSize) object >> 1));
+        if (!tmp)
+            return false;
+
+        result = (OObject *) tmp.get();
+
+        return true;
+    }
+
+    const auto &ops = O_GET_TYPE_OPS(object);
+    if (ops.neg != nullptr)
+        return ops.neg(object, result);
+
+    ErrorSetWithObjType(isolate,
+                        NotImplementedError::Details[NotImplementedError::Reason::ID],
+                        NotImplementedError::Details[NotImplementedError::Reason::UNARY_OPERATOR],
+                        "-",
+                        object);
+
+    return false;
+}
+
+bool ObjectMoveNot(orbiter::Isolate *isolate, const OObject *object, OObject *&result) noexcept {
+    if (O_IS_SMI(object)) {
+        result = (OObject *) ((~((PtrSize) (object))) | 0x01);
+
+        return true;
+    }
+
+    const auto &ops = O_GET_TYPE_OPS(object);
+    if (ops.bit_not != nullptr)
+        return ops.bit_not(object, result);
+
+    ErrorSetWithObjType(isolate,
+                        NotImplementedError::Details[NotImplementedError::Reason::ID],
+                        NotImplementedError::Details[NotImplementedError::Reason::UNARY_OPERATOR],
+                        "~",
+                        object);
+
+    return false;
 }
 
 // *********************************************************************************************************************

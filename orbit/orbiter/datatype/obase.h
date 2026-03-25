@@ -197,7 +197,7 @@ namespace orbiter::datatype {
 
     // --- Arithmetic & Bitwise ---
     using BinaryFn = bool(*)(const OObject *, const OObject *, OObject *&result);
-    using UnaryFn  = OObject *(*)(OObject *);
+    using UnaryFn  = bool (*)(const OObject *, OObject *&result);
 
     // --- Iteration ---
     using GetIterFn  = OObject *(*)(OObject *);
