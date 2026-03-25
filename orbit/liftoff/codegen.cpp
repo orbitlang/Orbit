@@ -254,6 +254,10 @@ unsigned char *Codegen::EmitOpcodes(const BasicBlock *block, unsigned char *m_co
                                                             ((ir::OffsetInstruction *) instr)->offset);
                 break;
             case orbiter::OPCode::CLOSTR:
+                *(orbiter::MachineWord *) m_code = EMIT_SO(instr->opcode,
+                                                           ((Instruction*)instr->operands[0].value)->assigned_reg,
+                                                           ((ir::OffsetInstruction *) instr)->offset);
+                break;
             case orbiter::OPCode::STGBL:
             case orbiter::OPCode::STGOFF:
             case orbiter::OPCode::SKSTR:

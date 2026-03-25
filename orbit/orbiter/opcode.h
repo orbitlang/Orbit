@@ -184,7 +184,7 @@ namespace orbiter {
 
         CLONEW, // Create new closure object:       OPCODE | 4 DST | 4 RESERVED | 16 UNSIGNED SLOTS
         CLOLDR, // Load from closure object:        OPCODE | 4 DST | 4 RESERVED | 16 UNSIGNED OFFSET
-        CLOSTR, // Store to closure object:         OPCODE | 4 SRC | 4 RESERVED | 16 UNSIGNED OFFSET
+        CLOSTR, // Store to closure object:         OPCODE | 4 RESERVED | 4 SRC | 16 UNSIGNED OFFSET
 
         // Channel Operations
         CHRCV, // Recv from channel:                OPCODE | 4 DST          | 4 SRC     | 16 RESERVED
