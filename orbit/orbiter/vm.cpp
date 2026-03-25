@@ -13,7 +13,6 @@
 #include <orbit/orbiter/datatype/future.h>
 #include <orbit/orbiter/datatype/generator.h>
 #include <orbit/orbiter/datatype/nativefunc.h>
-#include <orbit/orbiter/datatype/number.h>
 #include <orbit/orbiter/datatype/tuple.h>
 
 #include <orbit/orbiter/native/ffi.h>
@@ -714,11 +713,6 @@ void StoreToObjectProp(const Fiber *fiber, const Function *func, OObject *obj, O
 }
 
 OObject *orbiter::eval(Fiber *fiber) {
-    auto *regs = &fiber->vm.regs;
-    auto *stack = &fiber->vm.stack;
-
-    fiber->state = FiberState::RUNNING;
-
 #define TARGET_OP(op)   case OPCode::op:
 #define CGOTO           continue
 #define DISPATCH        \
@@ -748,16 +742,22 @@ CGOTO
 #define FETCH_R_RSRC(instr)         ((instr >> 12) & 0xFu)
 #define FETCH_J_SRC(instr)          FETCH_R_DST(instr)
 #define FETCH_IMM(instr)            ((instr) & 0xFFFFu)
+#define FETCH_SMI_8BIT(instr)       O_TO_SMI(((instr) & 0xFFu))
 
 #define ACCESS_STACK_BP(offset) ((PtrSize *)(stack->stack + (regs->BP.reg + (offset))))
 #define ACCESS_STACK_SP(offset) ((PtrSize *)(stack->stack + (regs->SP.reg + (offset))))
 #define LOAD_FROM_STACK         ACCESS_STACK_SP((-sizeof(void *)))
 #define CHECK_PREEMPT           do {if(--fiber->vm.preempt_tick == 0) {fiber->state = FiberState::YIELDED; return nullptr;}} while(0)
 
+    auto *regs = &fiber->vm.regs;
+    auto *stack = &fiber->vm.stack;
+
+    OObject *result;
+
     U8 dst;
     U8 src;
 
-    OObject *result;
+    fiber->state = FiberState::RUNNING;
 
 BEGIN:
     auto *code = fiber->context.code;
@@ -786,7 +786,7 @@ CATCH_FINALLY:
                 if (!ObjectAdd(
                     fiber->isolate,
                     (OObject *) REG_N(FETCH_R_SRC(instr)),
-                    (OObject *) ((flag == AddSubFlags::IMM8) ? O_TO_SMI(instr & 0xFF) : REG_N(FETCH_R_RSRC(instr))),
+                    (OObject *) ((flag == AddSubFlags::IMM8) ? FETCH_SMI_8BIT(instr) : REG_N(FETCH_R_RSRC(instr))),
                     result))
                     goto ERROR;
 
@@ -800,7 +800,7 @@ CATCH_FINALLY:
                 if (!ObjectSub(
                     fiber->isolate,
                     (OObject *) REG_N(FETCH_R_SRC(instr)),
-                    (OObject *) ((flag == AddSubFlags::IMM8) ? O_TO_SMI(instr & 0xFF) : REG_N(FETCH_R_RSRC(instr))),
+                    (OObject *) ((flag == AddSubFlags::IMM8) ? FETCH_SMI_8BIT(instr) : REG_N(FETCH_R_RSRC(instr))),
                     result))
                     goto ERROR;
 
@@ -814,7 +814,7 @@ CATCH_FINALLY:
                 if (!ObjectMul(
                     fiber->isolate,
                     (OObject *) REG_N(FETCH_R_SRC(instr)),
-                    (OObject *) ((flag == AddSubFlags::IMM8) ? O_TO_SMI(instr & 0xFF) : REG_N(FETCH_R_RSRC(instr))),
+                    (OObject *) ((flag == AddSubFlags::IMM8) ? FETCH_SMI_8BIT(instr) : REG_N(FETCH_R_RSRC(instr))),
                     result))
                     goto ERROR;
 
@@ -827,7 +827,7 @@ CATCH_FINALLY:
                 auto right = (OObject *) REG_N(FETCH_R_RSRC(instr));
 
                 if (ENUMBITMASK_ISTRUE(flag, DivFlags::IMM8))
-                    right = (OObject *) ((PtrSize) O_TO_SMI(instr & 0xFF));
+                    right = (OObject *) ((PtrSize) FETCH_SMI_8BIT(instr));
 
                 if (flag == DivFlags::NONE) {
                     if (!ObjectIDiv(fiber->isolate, (OObject *) REG_N(FETCH_R_SRC(instr)), right, result))
@@ -846,7 +846,7 @@ CATCH_FINALLY:
                 auto right = (OObject *) REG_N(FETCH_R_RSRC(instr));
 
                 if (ENUMBITMASK_ISTRUE(flag, DivFlags::IMM8))
-                    right = (OObject *) ((PtrSize) O_TO_SMI(instr & 0xFF));
+                    right = (OObject *) ((PtrSize) FETCH_SMI_8BIT(instr));
 
                 if (ENUMBITMASK_ISTRUE(flag, DivFlags::FLOAT)) {
                     if (!ObjectModR(fiber->isolate, (OObject *) REG_N(FETCH_R_SRC(instr)), right, result))
