@@ -282,22 +282,33 @@ namespace orbiter::datatype {
     HOObject ObjectMul(Isolate *isolate, const OObject *left, const OObject *right) noexcept;
 
     /**
-     * @brief Perform a division operation between two objects
+     * @brief Perform division or integer division operation on two objects
      *
-     * The behavior is controlled by the flags parameter:
-     * - DivFlags::NONE: integer division
-     * - DivFlags::FLOAT: floating point division
-     * - DivFlags::DIV_REM: integer modulo
-     * - DivFlags::FLOAT | DivFlags::DIV_REM: floating point modulo (fmod)
+     * Executes either a division or integer division operation on the provided objects, depending on the
+     * value of the `fdiv` flag. The operation is executed within the context of a given isolate.
+     *
+     * @param isolate Pointer to the Isolate context in which the operation will be performed
+     * @param left Pointer to the left operand
+     * @param right Pointer to the right operand
+     * @param fdiv Flag determining the type of operation:
+     *             - true: Perform a division operation
+     *             - false: Perform an integer division operation
+     *
+     * @return Handle to an OObject representing the result of the requested division operation
+     */
+    HOObject ObjectDiv(Isolate *isolate, const OObject *left, const OObject *right, bool fdiv) noexcept;
+
+    /**
+     * @brief Perform modulo between two objects
      *
      * @param isolate Pointer to the current Isolate
      * @param left Pointer to the left operand
      * @param right Pointer to the right operand
-     * @param flags Flags controlling the division behavior
+     * @param fmod If true, computes floating-point modulo via fmod; otherwise computes integer remainder
      *
      * @return A handle to the result object, or an empty handle if the operation failed
      */
-    HOObject ObjectDiv(Isolate *isolate, const OObject *left, const OObject *right, DivFlags flags) noexcept;
+    HOObject ObjectMod(Isolate *isolate, const OObject *left, const OObject *right, bool fmod) noexcept;
 
     /**
      * @brief Perform bitwise AND between two objects

@@ -99,10 +99,9 @@ bool ObjectAddSubMul(orbiter::Isolate *isolate, const OObject *left, const OObje
         assert(false);
 }
 
-template<orbiter::DivFlags flags>
+template<orbiter::DivFlags flags, bool is_rem>
 bool ObjectDivImpl(orbiter::Isolate *isolate, const OObject *left, const OObject *right, OObject *&result) noexcept {
     constexpr bool is_float = (((U8) flags) & ((U8) orbiter::DivFlags::FLOAT)) != 0;
-    constexpr bool is_rem = (((U8) flags) & ((U8) orbiter::DivFlags::DIV_REM)) != 0;
 
     if (O_IS_SMI(left) && O_IS_SMI(right)) {
         const MSSize na = (MSSize) left >> 1;
@@ -157,20 +156,19 @@ bool ObjectMul(orbiter::Isolate *isolate, const OObject *left, const OObject *ri
 }
 
 bool ObjectDiv(orbiter::Isolate *isolate, const OObject *left, const OObject *right, OObject *&result) noexcept {
-    return ObjectDivImpl<orbiter::DivFlags::FLOAT>(isolate, left, right, result);
+    return ObjectDivImpl<orbiter::DivFlags::FLOAT, false>(isolate, left, right, result);
 }
 
 bool ObjectIDiv(orbiter::Isolate *isolate, const OObject *left, const OObject *right, OObject *&result) noexcept {
-    return ObjectDivImpl<orbiter::DivFlags::NONE>(isolate, left, right, result);
+    return ObjectDivImpl<orbiter::DivFlags::NONE, false>(isolate, left, right, result);
 }
 
 bool ObjectMod(orbiter::Isolate *isolate, const OObject *left, const OObject *right, OObject *&result) noexcept {
-    return ObjectDivImpl<orbiter::DivFlags::DIV_REM>(isolate, left, right, result);
+    return ObjectDivImpl<orbiter::DivFlags::NONE, true>(isolate, left, right, result);
 }
 
 bool ObjectModR(orbiter::Isolate *isolate, const OObject *left, const OObject *right, OObject *&result) noexcept {
-    constexpr auto flags = (orbiter::DivFlags) ((U8) orbiter::DivFlags::FLOAT | (U8) orbiter::DivFlags::DIV_REM);
-    return ObjectDivImpl<flags>(isolate, left, right, result);
+    return ObjectDivImpl<orbiter::DivFlags::FLOAT, true>(isolate, left, right, result);
 }
 
 bool ObjectAnd(orbiter::Isolate *isolate, const OObject *left, const OObject *right, OObject *&result) noexcept {
@@ -389,23 +387,25 @@ HOObject orbiter::datatype::ObjectMul(Isolate *isolate, const OObject *left, con
 }
 
 HOObject orbiter::datatype::ObjectDiv(Isolate *isolate, const OObject *left, const OObject *right,
-                                      const DivFlags flags) noexcept {
+                                      const bool fdiv) noexcept {
     OObject *result = nullptr;
 
-    switch (flags) {
-        case DivFlags::NONE:
-            ::ObjectIDiv(isolate, left, right, result);
-            break;
-        case DivFlags::FLOAT:
-            ::ObjectDiv(isolate, left, right, result);
-            break;
-        case DivFlags::DIV_REM:
-            ::ObjectMod(isolate, left, right, result);
-            break;
-        default:
-            ::ObjectModR(isolate, left, right, result);
-            break;
-    }
+    if (fdiv)
+        ::ObjectDiv(isolate, left, right, result);
+    else
+        ::ObjectIDiv(isolate, left, right, result);
+
+    return HOObject(result);
+}
+
+HOObject orbiter::datatype::ObjectMod(Isolate *isolate, const OObject *left, const OObject *right,
+                                      const bool fmod) noexcept {
+    OObject *result = nullptr;
+
+    if (fmod)
+        ::ObjectModR(isolate, left, right, result);
+    else
+        ::ObjectMod(isolate, left, right, result);
 
     return HOObject(result);
 }

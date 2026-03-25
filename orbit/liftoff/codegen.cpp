@@ -144,6 +144,7 @@ unsigned char *Codegen::EmitOpcodes(const BasicBlock *block, unsigned char *m_co
                 break;
             }
             case orbiter::OPCode::DIV:
+            case orbiter::OPCode::MOD:
                 *(orbiter::MachineWord *) m_code = EMIT_DSSF(instr->opcode,
                                                              instr->assigned_reg,
                                                              ((Instruction*)instr->operands[0].value)->assigned_reg,

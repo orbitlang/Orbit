@@ -821,28 +821,42 @@ CATCH_FINALLY:
                 DISPATCH;
             }
             TARGET_OP(DIV) {
-                const auto dst = FETCH_R_DST(instr);
                 const auto flag = (DivFlags) ((instr >> 8) & 0xFu);
-                bool ok;
+                auto right = (OObject *) REG_N(FETCH_R_RSRC(instr));
+
+                if (ENUMBITMASK_ISTRUE(flag, DivFlags::IMM8))
+                    right = (OObject *) ((PtrSize) O_TO_SMI(instr & 0xFF));
 
                 OObject *result;
-
                 if (flag == DivFlags::NONE) {
-                    ok = ObjectIDiv(fiber->isolate, (OObject *)
-                                    REG_N(FETCH_R_SRC(instr)),
-                                    (OObject *) REG_N(FETCH_R_RSRC(instr)),
-                                    result);
+                    if (!ObjectIDiv(fiber->isolate, (OObject *) REG_N(FETCH_R_SRC(instr)), right, result))
+                        goto ERROR;
                 } else {
-                    ok = ObjectDiv(fiber->isolate, (OObject *)
-                                   REG_N(FETCH_R_SRC(instr)),
-                                   (OObject *) REG_N(FETCH_R_RSRC(instr)),
-                                   result);
+                    if (!ObjectDiv(fiber->isolate, (OObject *) REG_N(FETCH_R_SRC(instr)), right, result))
+                        goto ERROR;
                 }
 
-                if (!ok)
-                    goto ERROR;
+                REG_N(FETCH_R_DST(instr)) = (PtrSize) result;
 
-                REG_N(dst) = (PtrSize) result;
+                DISPATCH;
+            }
+            TARGET_OP(MOD) {
+                const auto flag = (DivFlags) ((instr >> 8) & 0xFu);
+                auto right = (OObject *) REG_N(FETCH_R_RSRC(instr));
+
+                if (ENUMBITMASK_ISTRUE(flag, DivFlags::IMM8))
+                    right = (OObject *) ((PtrSize) O_TO_SMI(instr & 0xFF));
+
+                OObject *result;
+                if (ENUMBITMASK_ISTRUE(flag, DivFlags::FLOAT)) {
+                    if (!ObjectModR(fiber->isolate, (OObject *) REG_N(FETCH_R_SRC(instr)), right, result))
+                        goto ERROR;
+                } else {
+                    if (!ObjectMod(fiber->isolate, (OObject *) REG_N(FETCH_R_SRC(instr)), right, result))
+                        goto ERROR;
+                }
+
+                REG_N(FETCH_R_DST(instr)) = (PtrSize) result;
 
                 DISPATCH;
             }

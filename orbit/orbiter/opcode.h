@@ -21,14 +21,9 @@ namespace orbiter {
 
     enum class DivFlags : U8 {
         NONE = 0x0, // Default integer operation
-        DIV_REM = 0x1, // Store remainder instead of quotient (MOD operation)
-        FLOAT = 0x2 // Floating point operation
+        FLOAT = 0x1, // Floating point operation
 
-        // Combinations:
-        // FLOAT | DIV_REM = MODR (floating point modulo)
-        // FLOAT alone = DIVR (floating point division)
-        // DIV_REM alone = MOD (integer modulo)
-        // NONE = DIV (integer division)
+        IMM8 = 0x2
     };
 
     enum class CallMode : U8 {
@@ -121,6 +116,7 @@ namespace orbiter {
         SUB, // Subtract two values
         MUL, // Multiply two values
         DIV, // Divide two values (integer)
+        MOD, // Modulo two values
 
         // Bitwise Operations
         // Format: OPCODE | 4 DST | 4 SRC_L | 4 SRC_R | 12 RESERVED
