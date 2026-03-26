@@ -742,7 +742,10 @@ CGOTO
 #define FETCH_R_RSRC(instr)         ((instr >> 12) & 0xFu)
 #define FETCH_J_SRC(instr)          FETCH_R_DST(instr)
 #define FETCH_IMM(instr)            ((instr) & 0xFFFFu)
-#define FETCH_SMI_8BIT(instr)       O_TO_SMI(((instr) & 0xFFu))
+#define FETCH_SMI_8BIT(instr)       (O_TO_SMI(((instr) & 0xFFu)))
+
+#define ACCESS_REG_DST(inst)        (REG_N(FETCH_R_DST(inst)))
+#define ACCESS_REG_SRC(inst)        (REG_N(FETCH_R_SRC(inst)))
 
 #define ACCESS_STACK_BP(offset) ((PtrSize *)(stack->stack + (regs->BP.reg + (offset))))
 #define ACCESS_STACK_SP(offset) ((PtrSize *)(stack->stack + (regs->SP.reg + (offset))))
@@ -785,12 +788,12 @@ CATCH_FINALLY:
 
                 if (!ObjectAdd(
                     fiber->isolate,
-                    (OObject *) REG_N(FETCH_R_SRC(instr)),
+                    (OObject *) ACCESS_REG_SRC(instr),
                     (OObject *) ((flag == AddSubFlags::IMM8) ? FETCH_SMI_8BIT(instr) : REG_N(FETCH_R_RSRC(instr))),
                     result))
                     goto ERROR;
 
-                REG_N(FETCH_R_DST(instr)) = (PtrSize) result;
+                ACCESS_REG_DST(instr) = (PtrSize) result;
 
                 DISPATCH;
             }
@@ -799,12 +802,12 @@ CATCH_FINALLY:
 
                 if (!ObjectSub(
                     fiber->isolate,
-                    (OObject *) REG_N(FETCH_R_SRC(instr)),
+                    (OObject *) ACCESS_REG_SRC(instr),
                     (OObject *) ((flag == AddSubFlags::IMM8) ? FETCH_SMI_8BIT(instr) : REG_N(FETCH_R_RSRC(instr))),
                     result))
                     goto ERROR;
 
-                REG_N(FETCH_R_DST(instr)) = (PtrSize) result;
+                ACCESS_REG_DST(instr) = (PtrSize) result;
 
                 DISPATCH;
             }
@@ -813,12 +816,12 @@ CATCH_FINALLY:
 
                 if (!ObjectMul(
                     fiber->isolate,
-                    (OObject *) REG_N(FETCH_R_SRC(instr)),
+                    (OObject *) ACCESS_REG_SRC(instr),
                     (OObject *) ((flag == AddSubFlags::IMM8) ? FETCH_SMI_8BIT(instr) : REG_N(FETCH_R_RSRC(instr))),
                     result))
                     goto ERROR;
 
-                REG_N(FETCH_R_DST(instr)) = (PtrSize) result;
+                ACCESS_REG_DST(instr) = (PtrSize) result;
 
                 DISPATCH;
             }
@@ -830,14 +833,14 @@ CATCH_FINALLY:
                     right = (OObject *) ((PtrSize) FETCH_SMI_8BIT(instr));
 
                 if (flag == DivFlags::NONE) {
-                    if (!ObjectIDiv(fiber->isolate, (OObject *) REG_N(FETCH_R_SRC(instr)), right, result))
+                    if (!ObjectIDiv(fiber->isolate, (OObject *) ACCESS_REG_SRC(instr), right, result))
                         goto ERROR;
                 } else {
-                    if (!ObjectDiv(fiber->isolate, (OObject *) REG_N(FETCH_R_SRC(instr)), right, result))
+                    if (!ObjectDiv(fiber->isolate, (OObject *) ACCESS_REG_SRC(instr), right, result))
                         goto ERROR;
                 }
 
-                REG_N(FETCH_R_DST(instr)) = (PtrSize) result;
+                ACCESS_REG_DST(instr) = (PtrSize) result;
 
                 DISPATCH;
             }
@@ -849,104 +852,95 @@ CATCH_FINALLY:
                     right = (OObject *) ((PtrSize) FETCH_SMI_8BIT(instr));
 
                 if (ENUMBITMASK_ISTRUE(flag, DivFlags::FLOAT)) {
-                    if (!ObjectModR(fiber->isolate, (OObject *) REG_N(FETCH_R_SRC(instr)), right, result))
+                    if (!ObjectModR(fiber->isolate, (OObject *) ACCESS_REG_SRC(instr), right, result))
                         goto ERROR;
                 } else {
-                    if (!ObjectMod(fiber->isolate, (OObject *) REG_N(FETCH_R_SRC(instr)), right, result))
+                    if (!ObjectMod(fiber->isolate, (OObject *) ACCESS_REG_SRC(instr), right, result))
                         goto ERROR;
                 }
 
-                REG_N(FETCH_R_DST(instr)) = (PtrSize) result;
+                ACCESS_REG_DST(instr) = (PtrSize) result;
 
                 DISPATCH;
             }
             TARGET_OP(AND) {
                 if (!ObjectAnd(fiber->isolate,
-                               (OObject *) REG_N(FETCH_R_SRC(instr)),
+                               (OObject *) ACCESS_REG_SRC(instr),
                                (OObject *) REG_N(FETCH_R_RSRC(instr)),
                                result))
                     goto ERROR;
 
-                REG_N(FETCH_R_DST(instr)) = (PtrSize) result;
+                ACCESS_REG_DST(instr) = (PtrSize) result;
 
                 DISPATCH;
             }
             TARGET_OP(OR) {
                 if (!ObjectOr(fiber->isolate,
-                              (OObject *) REG_N(FETCH_R_SRC(instr)),
+                              (OObject *) ACCESS_REG_SRC(instr),
                               (OObject *) REG_N(FETCH_R_RSRC(instr)),
                               result))
                     goto ERROR;
 
-                REG_N(FETCH_R_DST(instr)) = (PtrSize) result;
+                ACCESS_REG_DST(instr) = (PtrSize) result;
 
                 DISPATCH;
             }
             TARGET_OP(XOR) {
                 if (!ObjectXor(fiber->isolate,
-                               (OObject *) REG_N(FETCH_R_SRC(instr)),
+                               (OObject *) ACCESS_REG_SRC(instr),
                                (OObject *) REG_N(FETCH_R_RSRC(instr)),
                                result))
                     goto ERROR;
 
-                REG_N(FETCH_R_DST(instr)) = (PtrSize) result;
+                ACCESS_REG_DST(instr) = (PtrSize) result;
 
                 DISPATCH;
             }
             TARGET_OP(SHLR) {
-                dst = FETCH_R_DST(instr);
-
                 if (!ObjectLShift(fiber->isolate,
-                                  (OObject *) REG_N(FETCH_R_SRC(instr)),
+                                  (OObject *) ACCESS_REG_SRC(instr),
                                   (OObject *) REG_N(FETCH_R_RSRC(instr)),
                                   result))
                     goto ERROR;
 
-                REG_N(dst) = (PtrSize) result;
+                ACCESS_REG_DST(instr) = (PtrSize) result;
 
                 DISPATCH;
             }
             TARGET_OP(SHLI) {
-                dst = FETCH_R_DST(instr);
-
                 if (!ObjectLShift(fiber->isolate,
-                                  (OObject *) REG_N(FETCH_R_SRC(instr)),
+                                  (OObject *) ACCESS_REG_SRC(instr),
                                   (OObject *) ((PtrSize) O_TO_SMI(FETCH_IMM(instr))),
                                   result))
                     goto ERROR;
 
-                REG_N(dst) = (PtrSize) result;
+                ACCESS_REG_DST(instr) = (PtrSize) result;
 
                 DISPATCH;
             }
             TARGET_OP(SHRR) {
-                dst = FETCH_R_DST(instr);
-
                 if (!ObjectRShift(fiber->isolate,
-                                  (OObject *) REG_N(FETCH_R_SRC(instr)),
+                                  (OObject *) ACCESS_REG_SRC(instr),
                                   (OObject *) REG_N(FETCH_R_RSRC(instr)),
                                   result))
                     goto ERROR;
 
-                REG_N(dst) = (PtrSize) result;
+                ACCESS_REG_DST(instr) = (PtrSize) result;
 
                 DISPATCH;
             }
             TARGET_OP(SHRI) {
-                dst = FETCH_R_DST(instr);
-
                 if (!ObjectRShift(fiber->isolate,
-                                  (OObject *) REG_N(FETCH_R_SRC(instr)),
+                                  (OObject *) ACCESS_REG_SRC(instr),
                                   (OObject *) ((PtrSize) O_TO_SMI(FETCH_IMM(instr))),
                                   result))
                     goto ERROR;
 
-                REG_N(dst) = (PtrSize) result;
+                ACCESS_REG_DST(instr) = (PtrSize) result;
 
                 DISPATCH;
             }
             TARGET_OP(EQ) {
-                dst = FETCH_R_DST(instr);
                 const auto src_l = FETCH_R_SRC(instr);
                 const auto src_r = FETCH_R_RSRC(instr);
                 const auto flags = (EqualityMode) ((instr >> 8) & 0xFu);
@@ -957,42 +951,37 @@ CATCH_FINALLY:
                 else
                     res = EqualStrict((const OObject *) REG_N(src_l), (const OObject *) REG_N(src_r));
 
-                REG_N(dst) = BOOL_TO_OBOOL(res);
+                ACCESS_REG_DST(instr) = BOOL_TO_OBOOL(res);
 
                 DISPATCH;
             }
             TARGET_OP(MVN) {
-                dst = FETCH_R_DST(instr);
-
-                if (!ObjectMoveNot(fiber->isolate, (OObject *) REG_N(FETCH_R_SRC(instr)), result))
+                if (!ObjectMoveNot(fiber->isolate, (OObject *) ACCESS_REG_SRC(instr), result))
                     goto ERROR;
 
-                REG_N(dst) = (PtrSize) result;
+                ACCESS_REG_DST(instr) = (PtrSize) result;
 
                 DISPATCH;
             }
             TARGET_OP(NEG) {
-                dst = FETCH_R_DST(instr);
-
-                if (!ObjectNeg(fiber->isolate, (OObject *) REG_N(FETCH_R_SRC(instr)), result))
+                if (!ObjectNeg(fiber->isolate, (OObject *) ACCESS_REG_SRC(instr), result))
                     goto ERROR;
 
-                REG_N(dst) = (PtrSize) result;
+                ACCESS_REG_DST(instr) = (PtrSize) result;
 
                 DISPATCH;
             }
             TARGET_OP(NOT) {
-                dst = FETCH_R_DST(instr);
+                auto *value = (OObject *) ACCESS_REG_SRC(instr);
 
-                auto *value = (OObject *) REG_N(FETCH_R_SRC(instr));
-
-                REG_N(dst) = ((MSize) value == kOddBallTRUE || O_IS_OBJECT(value)) ? kOddBallFALSE : kOddBallTRUE;
+                ACCESS_REG_DST(instr) = ((MSize) value == kOddBallTRUE || O_IS_OBJECT(value))
+                                            ? kOddBallFALSE
+                                            : kOddBallTRUE;
 
                 DISPATCH;
             }
             TARGET_OP(PANIC) {
-                src = FETCH_R_SRC(instr);
-                const auto value = (OObject *) REG_N(src);
+                const auto value = (OObject *) ACCESS_REG_SRC(instr);
 
                 if (!O_IS_OBJECT(value) || !O_IS_TYPE(value, InstanceType::ERROR)) {
                     ErrorSet(fiber->isolate,
@@ -1009,19 +998,16 @@ CATCH_FINALLY:
                 goto ERROR;
             }
             TARGET_OP(RET) {
-                src = FETCH_R_SRC(instr);
                 const auto pops = instr & 0xFFFF;
 
-                REG_RR = REG_N(src);
+                REG_RR = ACCESS_REG_SRC(instr);
 
                 Return(fiber, pops);
 
                 goto BEGIN;
             }
             TARGET_OP(RETSUB) {
-                src = FETCH_R_SRC(instr);
-
-                REG_RR = REG_N(src);
+                REG_RR = ACCESS_REG_SRC(instr);
 
                 REG_BP -= sizeof(void *);
                 REG_IP = *ACCESS_STACK_BP(0) + sizeof(MachineWord);
@@ -1040,17 +1026,14 @@ CATCH_FINALLY:
                 continue;
             }
             TARGET_OP(YLD) {
-                REG_RR = REG_N(FETCH_R_SRC(instr));
+                REG_RR = ACCESS_REG_SRC(instr);
 
                 SaveGenerator(fiber);
 
                 goto BEGIN;
             }
             TARGET_OP(AWAIT) {
-                dst = FETCH_R_DST(instr);
-                src = FETCH_R_SRC(instr);
-
-                auto *future = (Future *) REG_N(src);
+                auto *future = (Future *) ACCESS_REG_SRC(instr);
 
                 if (!O_IS_TYPE(future, InstanceType::FUTURE)) {
                     ErrorSetWithObjType(fiber->isolate,
@@ -1074,17 +1057,16 @@ CATCH_FINALLY:
                     goto ERROR;
                 }
 
-                REG_N(dst) = (PtrSize) future->result;
+                ACCESS_REG_DST(instr) = (PtrSize) future->result;
 
                 DISPATCH;
             }
             TARGET_OP(CALL) {
                 const auto flags = FETCH_F_DST(CallMode, instr);
-                src = FETCH_R_SRC(instr);
                 const auto p_count = FETCH_IMM(instr);
                 const auto SP = regs->SP.reg;
 
-                const auto func = (Function *) REG_N(src);
+                const auto func = (Function *) ACCESS_REG_SRC(instr);
 
                 int res;
 
@@ -1125,11 +1107,10 @@ CATCH_FINALLY:
                 DISPATCH;
             }
             TARGET_OP(NTCALL) {
-                src = FETCH_R_SRC(instr);
                 const auto p_count = FETCH_IMM(instr);
                 const auto old_SP = regs->SP.reg - (p_count * sizeof(void *));
 
-                const auto func = (Function *) REG_N(src);
+                const auto func = (Function *) ACCESS_REG_SRC(instr);
 
                 if (!O_IS_TYPE(func, InstanceType::NATIVE_FUNC)) {
                     ErrorSetWithObjType(fiber->isolate,
@@ -1160,7 +1141,7 @@ CATCH_FINALLY:
                 const auto flags = FETCH_F_DST(CallMode, instr);
                 const auto p_count = FETCH_IMM(instr);
 
-                const auto func = (Function *) REG_N(FETCH_R_SRC(instr));
+                const auto func = (Function *) ACCESS_REG_SRC(instr);
 
                 if (O_IS_TYPE(func, InstanceType::GENERATOR)) {
                     ErrorSet(fiber->isolate,
@@ -1190,7 +1171,7 @@ CATCH_FINALLY:
                 const auto flags = FETCH_F_DST(CallMode, instr);
                 const auto p_count = FETCH_IMM(instr);
 
-                const auto func = (Function *) REG_N(FETCH_R_SRC(instr));
+                const auto func = (Function *) ACCESS_REG_SRC(instr);
 
                 const auto res = CallInit(fiber, func, p_count, flags);
                 if (res == CALL_ERROR)
@@ -1220,9 +1201,7 @@ CATCH_FINALLY:
                 DISPATCH;
             }
             TARGET_OP(EXECSUB) {
-                src = FETCH_R_SRC(instr);
-
-                const auto sproc = (Code *) REG_N(src);
+                const auto sproc = (Code *) ACCESS_REG_SRC(instr);
 
                 if (!stack->Check(fiber->isolate, regs->SP.reg, sproc->stack_size + (3 * sizeof(void *))))
                     goto ERROR;
@@ -1243,23 +1222,22 @@ CATCH_FINALLY:
             TARGET_OP(LDCODE) {
                 const auto imm = FETCH_IMM(instr);
 
-                REG_N(FETCH_R_DST(instr)) = (PtrSize) code->codes->objects[imm];
+                ACCESS_REG_DST(instr) = (PtrSize) code->codes->objects[imm];
 
                 DISPATCH;
             }
             TARGET_OP(LDCST) {
-                dst = FETCH_R_DST(instr);
                 const auto flags = (LoadConstantMode) FETCH_R_SRC(instr);
                 const auto imm = FETCH_IMM(instr);
 
                 if (flags == LoadConstantMode::OFFSET)
-                    REG_N(dst) = (PtrSize) code->static_resources->objects[imm];
+                    ACCESS_REG_DST(instr) = (PtrSize) code->static_resources->objects[imm];
                 else if (flags == LoadConstantMode::TRUE)
-                    REG_N(dst) = kOddBallTRUE;
+                    ACCESS_REG_DST(instr) = kOddBallTRUE;
                 else if (flags == LoadConstantMode::FALSE)
-                    REG_N(dst) = kOddBallFALSE;
+                    ACCESS_REG_DST(instr) = kOddBallFALSE;
                 else if (flags == LoadConstantMode::NIL)
-                    REG_N(dst) = (PtrSize) kOddBallNIL;
+                    ACCESS_REG_DST(instr) = (PtrSize) kOddBallNIL;
 
                 DISPATCH;
             }
@@ -1267,16 +1245,18 @@ CATCH_FINALLY:
                 const auto imm = FETCH_IMM(instr);
                 const auto shift = (instr >> 16) & 0x0F;
 
-                REG_N(FETCH_R_DST(instr)) = shift == 0 ? imm : REG_N(dst) | (imm << (16 * shift));
+                dst = FETCH_R_DST(instr);
+
+                REG_N(dst) = shift == 0 ? imm : REG_N(dst) | (imm << (16 * shift));
 
                 DISPATCH;
             }
             TARGET_OP(SETPROP) {
                 const auto offset = FETCH_IMM(instr);
 
-                auto *tp = (TypeInfo *) REG_N(FETCH_R_DST(instr));
+                auto *tp = (TypeInfo *) ACCESS_REG_DST(instr);
                 const auto *key = (ORString *) code->unknown_symbols->objects[offset];
-                auto *value = (OObject *) REG_N(FETCH_R_SRC(instr));
+                auto *value = (OObject *) ACCESS_REG_SRC(instr);
 
                 auto prop = TIFindLocalProperty(tp, (const char *) key->buffer);
                 if (prop == nullptr) {
@@ -1297,7 +1277,7 @@ CATCH_FINALLY:
             }
             TARGET_OP(NGBLV) {
                 const auto flags = FETCH_F_DST(VariableFlags, instr);
-                const auto value = REG_N(FETCH_R_SRC(instr));
+                const auto value = ACCESS_REG_SRC(instr);
                 const auto k_index = FETCH_IMM(instr);
                 auto gbl_flags = (PropertyFlag) 0;
 
@@ -1317,7 +1297,7 @@ CATCH_FINALLY:
                 DISPATCH;
             }
             TARGET_OP(STGBL) {
-                const auto value = REG_N(FETCH_R_SRC(instr));
+                const auto value = ACCESS_REG_SRC(instr);
                 const auto k_index = FETCH_IMM(instr);
 
                 if (!ContextSet(fiber->context.context,
@@ -1329,7 +1309,7 @@ CATCH_FINALLY:
                 DISPATCH;
             }
             TARGET_OP(STGOFF) {
-                const auto value = REG_N(FETCH_R_SRC(instr));
+                const auto value = ACCESS_REG_SRC(instr);
                 const auto slot = FETCH_IMM(instr);
 
                 assert(module_slots != nullptr);
@@ -1357,7 +1337,6 @@ CATCH_FINALLY:
                 DISPATCH;
             }
             TARGET_OP(LDGBL) {
-                dst = FETCH_R_DST(instr);
                 const auto k_index = FETCH_IMM(instr);
                 HOObject out;
 
@@ -1367,7 +1346,7 @@ CATCH_FINALLY:
                     assert(false);
                 }
 
-                REG_N(dst) = (PtrSize) out.get();
+                ACCESS_REG_DST(instr) = (PtrSize) out.get();
 
                 DISPATCH;
             }
@@ -1383,18 +1362,16 @@ CATCH_FINALLY:
             }
             TARGET_OP(SKLDR) {
                 const auto base = FETCH_R_SRC(instr);
-                dst = FETCH_R_DST(instr);
                 auto slot = ((short) FETCH_IMM(instr)) * (short) sizeof(void *);
 
-                REG_N(dst) = *((PtrSize *) (stack->stack + (REG_N(base) + slot)));
+                ACCESS_REG_DST(instr) = *((PtrSize *) (stack->stack + (REG_N(base) + slot)));
 
                 DISPATCH;
             }
             TARGET_OP(SKSTR) {
                 const auto base = FETCH_R_DST(instr);
-                src = FETCH_R_SRC(instr);
                 auto slot = ((short) FETCH_IMM(instr)) * (short) sizeof(void *);
-                auto value = (OObject *) REG_N(src);
+                auto value = (OObject *) ACCESS_REG_SRC(instr);
 
                 const auto target = (OObject **) (stack->stack + (REG_N(base) + slot));
 
@@ -1403,8 +1380,7 @@ CATCH_FINALLY:
                 DISPATCH;
             }
             TARGET_OP(PUSH) {
-                src = FETCH_R_SRC(instr);
-                auto value = (OObject *) REG_N(src);
+                auto value = (OObject *) ACCESS_REG_SRC(instr);
 
                 if (!stack->Check(fiber->isolate, regs->SP.reg, sizeof(void *)))
                     goto ERROR;
@@ -1418,8 +1394,8 @@ CATCH_FINALLY:
                 DISPATCH;
             }
             TARGET_OP(PUSHIF) {
-                const auto value = (OObject *) REG_N(FETCH_R_DST(instr));
-                const auto target = (OObject *) REG_N(FETCH_R_SRC(instr));
+                const auto value = (OObject *) ACCESS_REG_DST(instr);
+                const auto target = (OObject *) ACCESS_REG_SRC(instr);
                 // const auto against = FETCH_R_RSRC(instr);
                 const auto flags = (PushIfFlags) (instr & 0xFu);
 
@@ -1451,7 +1427,6 @@ CATCH_FINALLY:
                 DISPATCH;
             }
             TARGET_OP(POP) {
-                dst = FETCH_R_DST(instr);
                 const auto target = (OObject **) LOAD_FROM_STACK;
                 auto value = *target;
 
@@ -1459,7 +1434,7 @@ CATCH_FINALLY:
 
                 REG_SP -= sizeof(void *);
 
-                REG_N(dst) = (PtrSize) value;
+                ACCESS_REG_DST(instr) = (PtrSize) value;
 
                 DISPATCH;
             }
@@ -1469,7 +1444,6 @@ CATCH_FINALLY:
                 DISPATCH;
             }
             TARGET_OP(CLONEW) {
-                dst = FETCH_R_DST(instr);
                 const auto slots = instr & 0xFFFF;
 
                 auto closure = ClosureNew(fiber->isolate, slots);
@@ -1477,17 +1451,16 @@ CATCH_FINALLY:
                     // FIXME: Error!
                 }
 
-                REG_N(dst) = (PtrSize) closure.get();
+                ACCESS_REG_DST(instr) = (PtrSize) closure.get();
 
                 DISPATCH;
             }
             TARGET_OP(CLOLDR) {
-                dst = FETCH_R_DST(instr);
                 auto slot = FETCH_IMM(instr);
 
                 auto *closure = *(Closure **) (stack->stack + regs->BP.reg + (code->vars_count * sizeof(void *)));
 
-                REG_N(dst) = (PtrSize) ClosureGet(closure, slot).get();
+                ACCESS_REG_DST(instr) = (PtrSize) ClosureGet(closure, slot).get();
 
                 DISPATCH;
             }
@@ -1496,7 +1469,7 @@ CATCH_FINALLY:
 
                 auto *closure = *(Closure **) (stack->stack + regs->BP.reg + (code->vars_count * sizeof(void *)));
 
-                ClosureSet(closure, slot, (OObject *) REG_N(FETCH_R_SRC(instr)));
+                ClosureSet(closure, slot, (OObject *) ACCESS_REG_SRC(instr));
 
                 DISPATCH;
             }
@@ -1536,8 +1509,6 @@ CATCH_FINALLY:
                 DISPATCH;
             }
             TARGET_OP(LDFUNC) {
-                dst = FETCH_R_DST(instr);
-                src = FETCH_R_SRC(instr);
                 const auto flags = (LoadFuncFlags) (instr & 0xFFF);
 
                 auto *closure = *(Closure **) (stack->stack + regs->BP.reg + (code->vars_count * sizeof(void *)));
@@ -1546,12 +1517,12 @@ CATCH_FINALLY:
                 if (ENUMBITMASK_ISTRUE(flags, LoadFuncFlags::NPARAMS))
                     defs = (Tuple *) REG_N(FETCH_R_RSRC(instr));
 
-                auto func = FunctionNew((Code *) REG_N(src), closure, defs, flags);
+                auto func = FunctionNew((Code *) ACCESS_REG_SRC(instr), closure, defs, flags);
                 if (!func) {
                     // TODO: error!
                 }
 
-                REG_N(dst) = (PtrSize) func.get();
+                ACCESS_REG_DST(instr) = (PtrSize) func.get();
 
                 DISPATCH;
             }
@@ -1561,19 +1532,17 @@ CATCH_FINALLY:
                 DISPATCH;
             }
             TARGET_OP(LDNAT) {
-                dst = FETCH_R_DST(instr);
                 const auto imm = FETCH_IMM(instr);
 
                 auto sym = fiber->isolate->loader_->Load(code->native.bindings + imm);
                 if (!sym)
                     goto ERROR;
 
-                REG_N(dst) = (PtrSize) sym.get();
+                ACCESS_REG_DST(instr) = (PtrSize) sym.get();
 
                 DISPATCH;
             }
             TARGET_OP(NDICT) {
-                dst = FETCH_R_DST(instr);
                 // const auto imm = FETCH_IMM(instr);
 
                 auto dict = DictNew(fiber->isolate);
@@ -1581,24 +1550,22 @@ CATCH_FINALLY:
                     // FIXME: Error!
                 }
 
-                REG_N(dst) = (PtrSize) dict.get();
+                ACCESS_REG_DST(instr) = (PtrSize) dict.get();
 
                 DISPATCH;
             }
             TARGET_OP(NERROR) {
-                dst = FETCH_R_DST(instr);
-                const auto kind = (Atom *) REG_N(FETCH_R_SRC(instr));
+                const auto kind = (Atom *) ACCESS_REG_SRC(instr);
                 const auto reason = (ORString *) REG_N(FETCH_R_RSRC(instr));
                 const auto details = (OObject *) REG_N(((instr >> 8) & 0xFu));
 
                 const auto err = ErrorNew(fiber->isolate, kind, reason, details);
 
-                REG_N(dst) = (PtrSize) err.get();
+                ACCESS_REG_DST(instr) = (PtrSize) err.get();
 
                 DISPATCH;
             }
             TARGET_OP(NLIST) {
-                dst = FETCH_R_DST(instr);
                 const auto imm = FETCH_IMM(instr);
 
                 auto list = ListNew(fiber->isolate, imm);
@@ -1606,7 +1573,7 @@ CATCH_FINALLY:
                     // FIXME: Error!
                 }
 
-                REG_N(dst) = (PtrSize) list.get();
+                ACCESS_REG_DST(instr) = (PtrSize) list.get();
 
                 DISPATCH;
             }
@@ -1620,7 +1587,6 @@ CATCH_FINALLY:
                 DISPATCH;
             }
             TARGET_OP(NTUPLE) {
-                dst = FETCH_R_DST(instr);
                 const auto imm = FETCH_IMM(instr);
 
                 auto tuple = TupleNew(fiber->isolate, imm);
@@ -1628,68 +1594,60 @@ CATCH_FINALLY:
                     // FIXME: Error!
                 }
 
-                REG_N(dst) = (PtrSize) tuple.get();
+                ACCESS_REG_DST(instr) = (PtrSize) tuple.get();
 
                 DISPATCH;
             }
             TARGET_OP(ADDELEM) {
-                dst = FETCH_R_DST(instr);
-                src = FETCH_R_SRC(instr);
-                const auto value = FETCH_R_RSRC(instr);
-
-                auto *obj = (OObject *) REG_N(dst);
+                auto *obj = (OObject *) ACCESS_REG_DST(instr);
+                auto *value = (OObject *) ACCESS_REG_SRC(instr);
 
                 if (O_IS_TYPE(obj, InstanceType::DICT)) {
-                    if (!DictInsert((Dict *) obj, (OObject *) REG_N(src), (OObject *) REG_N(value))) {
+                    if (!DictInsert((Dict *) obj, value, (OObject *) REG_N(FETCH_R_RSRC(instr)))) {
                         // FIXME: Error!
                     }
                 } else if (O_IS_TYPE(obj, InstanceType::LIST))
-                    ListAppend((List *) obj, (OObject *) REG_N(src));
+                    ListAppend((List *) obj, value);
                 else if (O_IS_TYPE(obj, InstanceType::TUPLE))
-                    TupleAppend((Tuple *) obj, (OObject *) REG_N(src));
+                    TupleAppend((Tuple *) obj, value);
                 else
                     assert(false);
 
                 DISPATCH;
             }
             TARGET_OP(LDINIT) {
-                dst = FETCH_R_DST(instr);
-                src = FETCH_R_SRC(instr);
-
-                const auto *tp = (TypeInfo *) REG_N(src);
+                const auto *tp = (TypeInfo *) ACCESS_REG_SRC(instr);
                 const auto *init = TIFindLocalProperty(tp, "init");
                 if (init == nullptr) {
                     // FIXME: error
                     assert(false);
                 }
 
-                REG_N(dst) = (PtrSize) init->value;
+                ACCESS_REG_DST(instr) = (PtrSize) init->value;
 
                 DISPATCH;
             }
             TARGET_OP(LDOBJP) {
-                const auto obj = (OObject *) REG_N(FETCH_R_SRC(instr));
+                const auto obj = (OObject *) ACCESS_REG_SRC(instr);
                 const auto flags = (LoadObjectPropFlags) FETCH_R_RSRC(instr);
                 const auto offset = instr & 0xFFF;
-
-                dst = FETCH_R_DST(instr);
 
                 // Fast path
                 if (((int) flags & 1) == (int) LoadObjectPropFlags::INLINE) {
                     auto *slot = O_SLOT(obj, this_func->shared->owner_type);
 
-                    REG_N(dst) = (PtrSize) slot[offset];
+                    ACCESS_REG_DST(instr) = (PtrSize) slot[offset];
 
                     DISPATCH;
                 }
 
-                REG_N(dst) = (PtrSize) LoadFromObjectProp(fiber, this_func, obj, flags, offset);
+                ACCESS_REG_DST(instr) = (PtrSize) LoadFromObjectProp(fiber, this_func, obj, flags, offset);
 
                 DISPATCH;
             }
             TARGET_OP(STOBJP) {
-                const auto obj = (OObject *) REG_N(FETCH_R_DST(instr));
-                const auto value = (OObject *) REG_N(FETCH_R_SRC(instr));
+                const auto obj = (OObject *) ACCESS_REG_DST(instr);
+                const auto value = (OObject *) ACCESS_REG_SRC(instr);
                 const auto flags = (LoadObjectPropFlags) FETCH_R_RSRC(instr);
                 const auto offset = instr & 0xFFF;
 
@@ -1707,7 +1665,6 @@ CATCH_FINALLY:
                 DISPATCH;
             }
             TARGET_OP(MKCLZ) {
-                dst = FETCH_R_DST(instr);
                 const auto flags = FETCH_F_SRC(ClassFlags, instr);
                 const auto impls = FETCH_IMM(instr);
 
@@ -1721,12 +1678,11 @@ CATCH_FINALLY:
                     // FIXME: Error!
                 }
 
-                REG_N(dst) = (PtrSize) clazz.get();
+                ACCESS_REG_DST(instr) = (PtrSize) clazz.get();
 
                 DISPATCH;
             }
             TARGET_OP(MKTRT) {
-                dst = FETCH_R_DST(instr);
                 const auto impls = FETCH_IMM(instr);
 
                 auto trait = TraitTypeNew(code, (TypeInfo **) ACCESS_STACK_SP(-(impls * sizeof(void*))), impls);
@@ -1734,25 +1690,21 @@ CATCH_FINALLY:
                     // FIXME: Error!
                 }
 
-                REG_N(dst) = (PtrSize) trait.get();
+                ACCESS_REG_DST(instr) = (PtrSize) trait.get();
 
                 DISPATCH;
             }
             TARGET_OP(NOBJ) {
-                dst = FETCH_R_DST(instr);
-                src = FETCH_R_SRC(instr);
+                auto *tp = (TypeInfo *) ACCESS_REG_SRC(instr);
 
-                auto *tp = (TypeInfo *) REG_N(src);
-
-                REG_N(dst) = (PtrSize) ClassNew(tp).get();
+                ACCESS_REG_DST(instr) = (PtrSize) ClassNew(tp).get();
 
                 DISPATCH;
             }
             TARGET_OP(GITR) {
                 dst = FETCH_R_DST(instr);
-                src = FETCH_R_SRC(instr);
 
-                if (!VMGetIter(fiber, (OObject *) REG_N(src), REGISTER_PTR(regs, dst)))
+                if (!VMGetIter(fiber, (OObject *) ACCESS_REG_SRC(instr), REGISTER_PTR(regs, dst)))
                     goto ERROR;
 
                 DISPATCH;
@@ -1761,7 +1713,7 @@ CATCH_FINALLY:
                 dst = FETCH_R_DST(instr);
                 const auto jmp = FETCH_IMM(instr);
 
-                int res = VMGetIterNext(fiber, (OObject *) REG_N(FETCH_R_SRC(instr)), REGISTER_PTR(regs, dst));
+                int res = VMGetIterNext(fiber, (OObject *) ACCESS_REG_SRC(instr), REGISTER_PTR(regs, dst));
                 if (res == CALL_ERROR)
                     goto ERROR;
                 if (res == CALL_CONTINUE)
@@ -1940,9 +1892,7 @@ CATCH_FINALLY:
                 DISPATCH;
             }
             TARGET_OP(LDEXC) {
-                dst = FETCH_R_DST(instr);
-
-                REG_N(dst) = ((ExceptionContext *) regs->CP.reg)->ret_value;
+                ACCESS_REG_DST(instr) = ((ExceptionContext *) regs->CP.reg)->ret_value;
 
                 DISPATCH;
             }
