@@ -97,16 +97,11 @@ bool ExecDefer(Fiber *fiber) {
         }
 
         // Store current context
-        stratum::util::MemoryCopy(fiber->vm.stack.stack + regs->SP.reg, &fiber->context.context, sizeof(FiberContext));
-        regs->SP.reg += sizeof(FiberContext);
+        regs->IP.reg -= sizeof(MachineWord); // Must re-execute the same opcode; PushState saves the next one
+        if (!fiber->PushState())
+            return false;
 
-        fiber->vm.Push(regs->BP.reg);
-        fiber->vm.Push(regs->IP.reg);
-
-        fiber->context.context = defer->func->shared->context;
-        fiber->context.module = defer->func->shared->module;
-        fiber->context.code = defer->func->shared->code;
-        fiber->context.func = (OObject *) defer->func;
+        fiber->SetContext(func);
 
         regs->r10.reg = defer->r10;
         regs->r11.reg = defer->r11;
@@ -143,21 +138,13 @@ bool Call(Fiber *fiber, Function *func, const U16 total_args) {
         return false;
     }
 
-    // Store current context
-    stratum::util::MemoryCopy(fiber->vm.stack.stack + regs->SP.reg, &fiber->context.context, sizeof(FiberContext));
-    regs->SP.reg += sizeof(FiberContext);
-
-    fiber->vm.Push(regs->BP.reg);
-    fiber->vm.Push(regs->IP.reg);
+    if (!fiber->PushState())
+        return false;
 
     // Load new context
-    regs->BP.reg = regs->SP.reg;
-    regs->IP.reg = (PtrSize) func->shared->code->m_code;
+    fiber->SetContext(func);
 
-    fiber->context.context = func->shared->context;
-    fiber->context.module = func->shared->module;
-    fiber->context.code = func->shared->code;
-    fiber->context.func = (OObject *) func;
+    regs->BP.reg = regs->SP.reg;
 
     return true;
 }
@@ -605,25 +592,13 @@ void ReleaseExceptionContext(Registers *regs) {
 
 void Return(Fiber *fiber, const U32 pops) {
     auto *regs = &fiber->vm.regs;
-    const auto *stack = &fiber->vm.stack;
     auto *func = fiber->context.func;
 
     if (regs->BP.reg > 0)
         ExecuteCleanupForPC(fiber);
 
     if (regs->BP.reg > 0) {
-        regs->BP.reg -= sizeof(void *);
-        regs->IP.reg = *((PtrSize *) (stack->stack + regs->BP.reg)) + sizeof(MachineWord);
-
-        regs->BP.reg -= sizeof(void *);
-        regs->SP.reg = regs->BP.reg;
-
-        regs->BP.reg = *((PtrSize *) (stack->stack + regs->SP.reg));
-
-        regs->SP.reg -= sizeof(FiberContext);
-        stratum::util::MemoryCopy(&fiber->context.context,
-                                  stack->stack + regs->SP.reg,
-                                  sizeof(FiberContext));
+        fiber->PopState();
 
         // Cleanup parameters
         regs->SP.reg -= pops * sizeof(void *);
@@ -1203,7 +1178,7 @@ CATCH_FINALLY:
             TARGET_OP(EXECSUB) {
                 const auto sproc = (Code *) ACCESS_REG_SRC(instr);
 
-                if (!stack->Check(fiber->isolate, regs->SP.reg, sproc->stack_size + (3 * sizeof(void *))))
+                if (!stack->Check(fiber->isolate, regs->SP.reg, sproc->stack_size + (3 * sizeof(PtrSize))))
                     goto ERROR;
 
                 fiber->vm.Push((OObject *) code);

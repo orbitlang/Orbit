@@ -58,7 +58,7 @@ namespace orbiter {
         U32 preempt_tick;
 
         bool Push(datatype::OObject *value) {
-            *((datatype::OObject **) (this->stack.stack + this->regs.SP.reg)) = O_INCREF(value);
+            *((datatype::OObject **) (this->stack.stack + this->regs.SP.reg)) = value;
             this->regs.SP.reg += sizeof(void *);
 
             return true;

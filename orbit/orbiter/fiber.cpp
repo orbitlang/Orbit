@@ -34,23 +34,29 @@ Fiber::~Fiber() {
 }
 
 bool Fiber::PushState() noexcept {
-    constexpr auto totalSize = sizeof(FiberContext) + sizeof(Registers);
-
-    if (!this->vm.stack.Check(this->isolate, this->vm.regs.SP.reg, totalSize))
-        return false;
-
     auto *stack = this->vm.stack.stack + this->vm.regs.SP.reg;
 
+    if (!this->vm.stack.Check(this->isolate, this->vm.regs.SP.reg, kStackPrologueOffset))
+        return false;
+
     memory::MemoryCopy(stack, &this->context, sizeof(FiberContext));
-    memory::MemoryCopy(stack + sizeof(FiberContext), &this->vm.regs, sizeof(Registers));
 
-    this->vm.regs.BP.reg = this->vm.regs.SP.reg;
-    this->vm.regs.SP.reg += totalSize;
+    // Why is this necessary? Since the stack is managed by the GC and these values are not in the correct format (SMI),
+    // they must be converted to a format that the GC can understand. As these are memory addresses and/or stack offsets,
+    // their least significant bit will always be zero. Therefore, it can be safely set to one (the SMI format for Orbit)
+    // so that the GC does not treat them as objects, which would inevitably lead to a crash.
+    assert((this->vm.regs.IP.reg & 0x01) == 0);
+    assert((this->vm.regs.BP.reg & 0x01) == 0);
 
-    for (auto i = 0; i < kGeneralPurposeRegistersCount + 1; i++) {
-        auto *value = (datatype::OObject *) *((PtrSize *) (((Register *) &this->vm.regs) + i));
-        O_INCREF(value);
-    }
+    stack += sizeof(FiberContext);
+
+    *((PtrSize *) stack) = this->vm.regs.BP.reg | 0x01;
+
+    stack += sizeof(PtrSize);
+
+    *((PtrSize *) stack) = (this->vm.regs.IP.reg + sizeof(MachineWord)) | 0x01;
+
+    this->vm.regs.SP.reg += kStackPrologueOffset;
 
     return true;
 }
@@ -130,19 +136,22 @@ void Fiber::Panic(datatype::OObject *error) noexcept {
 }
 
 void Fiber::PopState() noexcept {
-    const auto size = this->vm.regs.SP.reg - this->vm.regs.BP.reg;
+    auto *stack = this->vm.stack.stack + this->vm.regs.SP.reg;
 
-    assert(size == sizeof(FiberContext) + sizeof(Registers));
+    stack -= sizeof(PtrSize);
 
-    const auto *stack_base = this->vm.stack.stack + this->vm.regs.BP.reg;
+    this->vm.regs.IP.reg = *((PtrSize *) stack);
 
-    memory::MemoryCopy(&this->context, stack_base, sizeof(FiberContext));
-    memory::MemoryCopy(&this->vm.regs, stack_base + sizeof(FiberContext), sizeof(Registers));
+    stack -= sizeof(PtrSize);
 
-    this->vm.regs.SP.reg = this->vm.regs.BP.reg;
+    this->vm.regs.BP.reg = *((PtrSize *) stack);
 
-    for (auto i = 0; i < kGeneralPurposeRegistersCount + 1; i++) {
-        auto *value = (datatype::OObject *) *((PtrSize *) (((Register *) &this->vm.regs) + i));
-        O_DECREF(value);
-    }
+    this->vm.regs.IP.reg &= ~0x01;
+    this->vm.regs.BP.reg &= ~0x01;
+
+    stack -= sizeof(FiberContext);
+
+    memory::MemoryCopy(&this->context, stack, sizeof(FiberContext));
+
+    this->vm.regs.SP.reg -= kStackPrologueOffset;
 }

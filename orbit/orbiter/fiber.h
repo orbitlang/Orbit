@@ -68,14 +68,14 @@ namespace orbiter {
         ~Fiber();
 
         /**
-         * @brief Saves the current state of the Fiber onto its stack.
+         * @brief Saves the current fiber's execution state into its stack.
          *
-         * Pushes the current Fiber's context and general-purpose registers onto the stack,
-         * ensuring enough stack space exists beforehand. Updates the stack pointer (SP) and base
-         * pointer (BP) registers. Increments reference counts for object values referenced by
-         * saved registers.
+         * This method pushes the fiber's context and key register states
+         * (base pointer, instruction pointer (next instr)) onto its stack, preparing it
+         * for future restoration or continuation of its execution.
          *
-         * @return True if the state was successfully saved onto the stack, otherwise false.
+         * @return True if the state was successfully saved; false if there was
+         *         insufficient stack space or another error occurred.
          */
         bool PushState() noexcept;
 
@@ -145,12 +145,15 @@ namespace orbiter {
         void Panic(datatype::OObject *error) noexcept;
 
         /**
-         * @brief Restores the previously saved state of the Fiber from its stack.
+         * @brief Restores the fiber's execution state from its stack.
          *
-         * Copies the Fiber's context and general-purpose registers from the stack back into
-         * the respective fields. Validates the size of the data being restored to match the
-         * expected layout for a Fiber's context and registers. Decreases reference counts
-         * for object values referenced by restored registers, releasing resources as needed.
+         * This method retrieves the previously saved fiber context and register states,
+         * including the base pointer (BP) and instruction pointer (IP), from the fiber's
+         * stack. It prepares the fiber to resume execution from the point where it was
+         * previously suspended.
+         *
+         * This operation modifies the stack pointer (SP) to reflect the restored state
+         * and ensures the integrity of the fiber's execution environment.
          */
         void PopState() noexcept;
 
@@ -168,7 +171,10 @@ namespace orbiter {
 
             this->panic.Reset();
 
-            this->UnsetContext();
+            this->context.context = nullptr;
+            this->context.module = nullptr;
+            this->context.code = nullptr;
+            this->context.func = nullptr;
 
             this->vm.preempt_tick = kPreemptTick;
 
@@ -176,52 +182,54 @@ namespace orbiter {
         }
 
         /**
-         * @brief Updates the Fiber's execution context with the provided context, module, and code values.
+         * @brief Sets the execution context for the current Fiber instance.
          *
-         * Associates the Fiber's internal context with the provided `Context`, `Module`,
-         * and `Code` objects, incrementing their reference counts as needed to ensure
-         * proper lifecycle management. Additionally, updates the instruction pointer
-         * register (IP) to point to the code's memory location.
+         * Updates the context associated with the Fiber by assigning the provided Context,
+         * Module, and Code instances to the Fiber's internal state. Resets the function pointer
+         * to null and initializes the instruction pointer (IP) register to point to the start
+         * of the provided Code instance.
          *
-         * @param context A pointer to the Context object to associate with the Fiber.
-         * @param module A pointer to the Module object containing module-related data.
-         * @param code A pointer to the Code object containing executable code.
+         * @param context A pointer to the Context object representing the execution state.
+         * @param module A pointer to the Module object associated with the execution.
+         * @param code A pointer to the Code object containing the executable code. Must not be null.
          */
         void SetContext(datatype::Context *context, datatype::Module *module, datatype::Code *code) noexcept {
             assert(code != nullptr);
 
-            this->context.context = O_FAST_INCREF(context);
-            this->context.module = O_FAST_INCREF(module);
-            this->context.code = O_FAST_INCREF(code);
+            this->context.context = context;
+            this->context.module = module;
+            this->context.code = code;
             this->context.func = nullptr;
 
             this->vm.regs.IP.reg = (PtrSize) code->m_code;
         }
 
+        /**
+         * @brief Sets the execution context for the current Fiber instance.
+         *
+         * Updates the Fiber's context to align with the provided function. This includes
+         * setting the internal context, associated module, and code. Additionally, assigns
+         * the function to the context's function pointer for further execution tracking.
+         *
+         * @param func A pointer to the Function object containing context, module, and code
+         *             information to be applied to the Fiber.
+         */
         void SetContext(datatype::Function *func) noexcept {
             this->SetContext(func->shared->context, func->shared->module, func->shared->code);
 
             this->context.func = (datatype::OObject *) func;
         }
 
-        static void SetCurrent(Fiber *fiber) noexcept;
-
         /**
-         * @brief Releases the Fiber's current execution context and associated resources.
+         * @brief Sets the current thread-local Fiber instance.
          *
-         * Calls the `Release` function on the Fiber's internal `context`, `module`, and `code`
-         * fields to properly decrement reference counts or free resources. Ensures the Fiber's
-         * execution context is unset and its associated data is cleaned up.
+         * Updates the thread-local variable to point to the specified Fiber instance. This
+         * establishes the given Fiber as the currently active Fiber for the executing thread.
+         *
+         * @param fiber A pointer to the Fiber instance to set as the current thread-local instance.
+         *              Can be nullptr to clear the current Fiber instance.
          */
-        void UnsetContext() noexcept {
-            O_FAST_DECREF(this->context.context);
-            O_FAST_DECREF(this->context.module);
-            O_FAST_DECREF(this->context.code);
-
-            this->context.context = nullptr;
-            this->context.module = nullptr;
-            this->context.code = nullptr;
-        }
+        static void SetCurrent(Fiber *fiber) noexcept;
     };
 } // namespace orbiter
 
