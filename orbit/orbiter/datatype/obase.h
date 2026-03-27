@@ -99,6 +99,7 @@ namespace orbiter::datatype {
         NUMBER,
         OBJECT,
         RAWPTR,
+        RESULT,
         // SET,
         STRING,
         TRAIT,
@@ -128,13 +129,14 @@ namespace orbiter::datatype {
         "Number",
         "Object",
         "RawPtr",
+        "Result",
         //"Set",
         "String",
         "Trait",
         "Tuple"
     };
 
-    constexpr int kInstanceTypeCount = 25;
+    constexpr int kInstanceTypeCount = 26;
 
     enum class NativeType {
         BOOL,

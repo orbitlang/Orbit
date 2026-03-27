@@ -20,6 +20,7 @@
 #include <orbit/orbiter/datatype/number.h>
 #include <orbit/orbiter/datatype/orstring.h>
 #include <orbit/orbiter/datatype/rawptr.h>
+#include <orbit/orbiter/datatype/result.h>
 #include <orbit/orbiter/datatype/type.h>
 #include <orbit/orbiter/datatype/tuple.h>
 
@@ -98,6 +99,7 @@ Isolate *Isolate::New() {
     INIT_TYPE(InstanceType::NATIVE_FUNC, NativeFuncTypeInit);
     INIT_TYPE(InstanceType::NUMBER, NumberTypeInit);
     INIT_TYPE(InstanceType::RAWPTR, RawPtrTypeInit);
+    INIT_TYPE(InstanceType::RESULT, ResultTypeInit);
     INIT_TYPE(InstanceType::STRING, ORStringTypeInit);
     INIT_TYPE(InstanceType::TRAIT, TraitTypeInit);
     INIT_TYPE(InstanceType::TUPLE, TupleTypeInit);
@@ -122,6 +124,7 @@ Isolate *Isolate::New() {
     SETUP_TYPE(InstanceType::NATIVE_FUNC, NativeFuncTypeSetup);
     SETUP_TYPE(InstanceType::NUMBER, NumberTypeSetup);
     SETUP_TYPE(InstanceType::RAWPTR, RawPtrTypeSetup);
+    SETUP_TYPE(InstanceType::RESULT, ResultTypeSetup);
     SETUP_TYPE(InstanceType::STRING, ORStringTypeSetup);
     SETUP_TYPE(InstanceType::TRAIT, TraitTypeSetup);
     SETUP_TYPE(InstanceType::TUPLE, TupleTypeSetup);
