@@ -773,6 +773,8 @@ ASTHandle<ASTNode *> Parser::ParseTryCatchFinally() {
 
     tryb->try_block = this->ParseBlock(true).release();
 
+    this->EatNL();
+
     if (!this->Match(TokenType::KW_CATCH, TokenType::KW_FINALLY))
         throw ParserException(32);
 
@@ -796,10 +798,10 @@ ASTHandle<ASTNode *> Parser::ParseTryCatchFinally() {
 
         this->EatNL();
 
-        if (this->Match(TokenType::IDENTIFIER)) {
-            if (!this->sym_t_->CreateNestedScope(cb->loc.start.offset))
-                throw SymbolTableException();
+        if (!this->sym_t_->CreateNestedScope(cb->loc.start.offset))
+            throw SymbolTableException();
 
+        if (this->Match(TokenType::IDENTIFIER)) {
             auto err_name = ORStringNew(this->isolate_, this->tkcur_.buffer, this->tkcur_.length);
             if (!err_name)
                 throw DatatypeException();
@@ -816,10 +818,12 @@ ASTHandle<ASTNode *> Parser::ParseTryCatchFinally() {
 
             cb->err = identifier.release();
             cb->body = this->ParseBlock(false).release();
-
-            this->sym_t_->LeaveNestedScope(TKCUR_END.offset);
         } else
-            cb->body = this->ParseBlock(true).release();
+            cb->body = this->ParseBlock(false).release();
+
+        cb->loc.end = cb->body->loc.end;
+
+        this->sym_t_->LeaveNestedScope(cb->loc.end.offset);
 
         tryb->catches.emplace_back(cb.release());
 
