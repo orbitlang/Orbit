@@ -49,7 +49,7 @@ namespace liftoff::ir {
 
         Instruction *visitAssignment(parser::Assignment *node);
 
-        Instruction *visitBinary(parser::Binary *node);
+        Instruction *visitBinary(const parser::Binary *node);
 
         Instruction *visitBlock(const parser::Block *node);
 
@@ -63,11 +63,11 @@ namespace liftoff::ir {
 
         Instruction *visitConstruct(const parser::Construct *node);
 
-        Instruction *visitDecorator(parser::Decorator *node);
+        Instruction *visitDecorator(const parser::Decorator *node);
 
         Instruction *visitFunction(const parser::Function *node);
 
-        Instruction *visitIdentifier(parser::Identifier *node);
+        Instruction *visitIdentifier(const parser::Identifier *node);
 
         Instruction *visitImport(const parser::Import *node);
 

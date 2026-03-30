@@ -18,15 +18,30 @@ orbiter::OPCode InfixOp2OpCode(const scanner::TokenType tt, const bool imm, U8 &
 
     switch (tt) {
         case scanner::TokenType::PLUS:
+            if (imm)
+                flags |= (U8) orbiter::AddSubFlags::IMM8;
+
             return orbiter::OPCode::ADD;
         case scanner::TokenType::MINUS:
+            if (imm)
+                flags |= (U8) orbiter::AddSubFlags::IMM8;
+
             return orbiter::OPCode::SUB;
         case scanner::TokenType::ASTERISK:
+            if (imm)
+                flags |= (U8) orbiter::AddSubFlags::IMM8;
+
             return orbiter::OPCode::MUL;
         case scanner::TokenType::SLASH:
             flags = (U8) orbiter::DivFlags::FLOAT;
+
+            if (imm)
+                flags |= (U8) orbiter::DivFlags::IMM8;
+
             return orbiter::OPCode::DIV;
         case scanner::TokenType::SLASH_SLASH:
+            if (imm)
+                flags |= (U8) orbiter::DivFlags::IMM8;
             return orbiter::OPCode::DIV;
         case scanner::TokenType::PERCENT:
             return orbiter::OPCode::MOD;
@@ -106,19 +121,21 @@ Instruction *IRBuilder::BinaryOP(const parser::Binary *binary) {
         left2right = false;
     }
 
-    if (binary->right->node_type == parser::NodeType::LITERAL
-        && (binary->token_type == scanner::TokenType::SHL
-            || binary->token_type == scanner::TokenType::SHR)) {
+    if (binary->right->node_type == parser::NodeType::LITERAL) {
         const auto literal = (parser::Literal *) binary->right;
+        const auto tk_type = binary->token_type;
 
-        if (O_IS_SMI(literal->literal)) {
-            const auto number = ((PtrSize) literal->literal) >> 1;
+        const auto number = ((PtrSize) literal->literal) >> 1;
 
-            // Max immediate size: <= 0xFFFF
-            if (number <= 0xFFFF) {
-                right = (Instruction *) number;
-                r_ignore = true;
-            }
+        if ((tk_type == scanner::TokenType::SHL
+             || tk_type == scanner::TokenType::SHR)
+            && (O_IS_SMI(literal->literal) && number <= 0xFFFF)) {
+            right = (Instruction *) number;
+            r_ignore = true;
+        } else if ((tk_type >= scanner::TokenType::PLUS && tk_type <= scanner::TokenType::PERCENT)
+                   && (O_IS_SMI(literal->literal) && number <= 0xFF)) {
+            right = (Instruction *) number;
+            r_ignore = true;
         }
     }
 
@@ -231,7 +248,7 @@ Instruction *IRBuilder::CreateCall(const parser::Call *node, Instruction *f_src)
     return call;
 }
 
-Instruction *IRBuilder::CreateJumpForElvisOrNil(const parser::Binary *binary, orbiter::OPCode opcode) {
+Instruction *IRBuilder::CreateJumpForElvisOrNil(const parser::Binary *binary, const orbiter::OPCode opcode) {
     auto *left = this->visit(binary->left);
 
     auto *end = this->builder_.CreateBasicBlock();
@@ -278,7 +295,7 @@ Instruction *IRBuilder::LoadParameter(const Symbol *symbol) {
     return this->builder_.LoadFromStackOffset(kBaseStackPointerReg, (I16) -p_offset, false);
 }
 
-Instruction *IRBuilder::LoadSelfParam(MSize offset) {
+Instruction *IRBuilder::LoadSelfParam(const MSize offset) {
     const auto *self = this->sym_t_->Lookup("self", offset);
     if (self == nullptr)
         throw SymbolTableException();
@@ -549,7 +566,7 @@ Instruction *IRBuilder::visitAssignment(parser::Assignment *node) {
     return this->StoreVariable(sym, value, node->node_type == parser::NodeType::VAR_DECLARATION);
 }
 
-Instruction *IRBuilder::visitBinary(parser::Binary *node) {
+Instruction *IRBuilder::visitBinary(const parser::Binary *node) {
     Instruction *left;
     Instruction *right;
 
@@ -789,7 +806,7 @@ Instruction *IRBuilder::visitConstruct(const parser::Construct *node) {
     return this->StoreVariable(sym, value, true);
 }
 
-Instruction *IRBuilder::visitDecorator(parser::Decorator *node) {
+Instruction *IRBuilder::visitDecorator(const parser::Decorator *node) {
     auto *decorate = (parser::Function *) node->func;
     const auto back_a_flag = decorate->anon;
 
@@ -940,7 +957,7 @@ Instruction *IRBuilder::visitFunction(const parser::Function *node) {
     return this->StoreVariable(sym, func, true);
 }
 
-Instruction *IRBuilder::visitIdentifier(parser::Identifier *node) {
+Instruction *IRBuilder::visitIdentifier(const parser::Identifier *node) {
     const auto *sym = node->symbol;
 
     assert(sym != nullptr);

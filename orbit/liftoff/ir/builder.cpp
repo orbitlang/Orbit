@@ -123,7 +123,7 @@ Instruction *Builder::CreateBinaryOpFlags(const OPCode opcode, const U8 flags, I
 }
 
 Instruction *Builder::CreateBinaryOpFlags(const OPCode opcode, const U8 flags, Instruction *left, U16 right) {
-    return this->CreateObject<BinaryOpImmInstr>(opcode, flags, left, right);
+    return this->CreateInstruction<BinaryOpImmInstr>(opcode, flags, left, right);
 }
 
 Instruction *Builder::CreateBranch(const OPCode opcode, Instruction *value, BasicBlock *continuation,
