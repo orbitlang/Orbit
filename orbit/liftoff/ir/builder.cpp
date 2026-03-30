@@ -442,11 +442,23 @@ Instruction *Builder::LoadGlobal(datatype::ORString *id) {
     return this->LoadFromOffset(OPCode::LDGBL, 0, offset, 0);
 }
 
-Instruction *Builder::LoadImmediate(const MachineSize value) {
-    auto *instr = this->CreateInstruction<UnaryImmInstr>(OPCode::LDIMM, 0, value);
-    // TODO: check size, use shift to load whole value
+Instruction *Builder::LoadImmediate(const MSSize value) {
+    if ((value & ~(MSSize) 0xFFFF) == 0)
+        return this->CreateInstruction<UnaryImmInstr>(OPCode::LDIMM, 0, value & 0xFFFF);
 
-    return instr;
+    Instruction *acc = nullptr;
+
+    MSize uval = (MSize) value;
+    for (int shift = 0; uval != 0; uval >>= 16, shift++) {
+        auto *imm = this->CreateInstruction<UnaryImmInstr>(OPCode::LDIMM, shift, uval & 0xFFFF);
+
+        if (acc == nullptr)
+            acc = imm;
+        else
+            acc = this->CreatePhi()->AddTarget(acc)->AddTarget(imm);
+    }
+
+    return acc;
 }
 
 Instruction *Builder::LoadModule(datatype::ORString *path) {

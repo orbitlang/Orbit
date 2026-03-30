@@ -257,7 +257,7 @@ namespace liftoff::ir {
 
         Instruction *LoadGlobal(orbiter::datatype::ORString *id);
 
-        Instruction *LoadImmediate(MachineSize value);
+        Instruction *LoadImmediate(MSSize value);
 
         Instruction *LoadModule(orbiter::datatype::ORString *path);
 

@@ -507,7 +507,7 @@ namespace liftoff::ir {
             this->assigned_reg = reg;
 
             for (auto i = 0; i < this->index; i++)
-                ((Instruction *) this->operands[i].value)->assigned_reg = reg;
+                ((Instruction *) this->operands[i].value)->SetRegister(reg);
         }
     };
 }
