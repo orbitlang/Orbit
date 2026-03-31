@@ -11,7 +11,7 @@
 
 #include <orbit/orbiter/config.h>
 
-#include <orbit/orbiter/fqueue.h>
+#include <orbit/orbiter/fiber.h>
 
 namespace orbiter {
     constexpr unsigned int kVCoreDefault = 4;

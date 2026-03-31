@@ -5,6 +5,7 @@
 #ifndef ORBIT_ORBITER_FPOOL_H_
 #define ORBIT_ORBITER_FPOOL_H_
 
+#include <orbit/orbiter/fiber.h>
 #include <orbit/orbiter/fqueue.h>
 
 namespace orbiter {
