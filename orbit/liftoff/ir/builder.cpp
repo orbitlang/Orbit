@@ -696,13 +696,6 @@ void Builder::DeleteBasicBlock(BasicBlock *bb) const noexcept {
 }
 
 void Builder::LeaveContext() {
-    /*
-    bool changed = this->context->ComputeLiveness();
-
-    while (changed)
-        changed = this->context->ComputeLiveness();
-    */
-
     this->context->stack_push_count -= this->context->deferred_stack_count;
 
     assert(this->context->stack_push_count ==0);

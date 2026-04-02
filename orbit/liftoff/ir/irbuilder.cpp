@@ -355,8 +355,6 @@ Instruction *IRBuilder::LoadVariable(const Symbol *symbol) {
     ret = this->builder_.LoadFromStackOffset(kBaseStackPointerReg, offset, false);
 
 EXIT:
-    this->builder_.context->current_->UseVar(symbol);
-
     this->builder_.context->AddActiveVar(symbol, ret);
 
     return ret;
@@ -384,7 +382,7 @@ Instruction *IRBuilder::StoreVariable(const Symbol *symbol, Instruction *value, 
     if (symbol->location == StorageLocation::GLOBAL) {
         this->builder_.StoreGlobal(symbol->name, value);
 
-        goto EXIT;
+        return value;
     }
 
     // *** MODULE ***
@@ -393,7 +391,7 @@ Instruction *IRBuilder::StoreVariable(const Symbol *symbol, Instruction *value, 
             offset = (I16) this->builder_.context->PushUnknownProps(symbol->name);
             this->builder_.CreateStoreVariable(orbiter::OPCode::NGBLV, offset, (U8) v_flags, value);
 
-            goto EXIT;
+            return value;
         }
 
         if (!this->is_module_)
@@ -405,7 +403,7 @@ Instruction *IRBuilder::StoreVariable(const Symbol *symbol, Instruction *value, 
             this->builder_.CreateStoreVariable(orbiter::OPCode::STGOFF, offset, 0, value);
         }
 
-        goto EXIT;
+        return value;
     }
 
     // *** CLASS / TRAIT ***
@@ -433,7 +431,7 @@ Instruction *IRBuilder::StoreVariable(const Symbol *symbol, Instruction *value, 
     if (symbol->location == StorageLocation::CLOSURE) {
         this->builder_.StoreToClosureAtOffset(value, offset);
 
-        goto EXIT;
+        return value;
     }
 
     // *** STORE TO STACK ***
@@ -450,9 +448,6 @@ Instruction *IRBuilder::StoreVariable(const Symbol *symbol, Instruction *value, 
     }
 
     this->builder_.StoreToStackOffset(value, kBaseStackPointerReg, offset);
-
-EXIT:
-    this->builder_.context->current_->DefVar(symbol);
 
     return value;
 }

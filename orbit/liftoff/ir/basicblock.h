@@ -21,20 +21,6 @@ namespace liftoff::ir {
      * and usages within the block.
      */
     class BasicBlock final : public Object {
-        /// Represents the set of variables defined within a basic block.
-        std::unordered_set<const Symbol *> def_;
-
-        /// Represents the set of variables used within a basic block.
-        std::unordered_set<const Symbol *> use_;
-
-        /// Represents the set of variables that are live at the entry point of the basic block.
-        std::unordered_set<const Symbol *> live_in_;
-
-        /// Represents the set of variables that are live at the exit point of the basic block.
-        std::unordered_set<const Symbol *> live_out_;
-
-        friend class IRContext;
-
     public:
         /// Pointer to the next basic block in the control flow.
         BasicBlock *next = nullptr;
@@ -192,29 +178,6 @@ namespace liftoff::ir {
                 this->instr.tail = prev;
 
             this->size -= 4;
-        }
-
-        /**
-         * @brief Marks a variable as defined in the basic block.
-         *
-         * @param sym Pointer to the `Symbol` representing the variable.
-         */
-        void DefVar(const Symbol *sym) {
-            this->def_.insert(sym);
-        }
-
-        /**
-         * @brief Marks a variable as used in the basic block.
-         *
-         * @param sym Pointer to the `Symbol` representing the variable being used.
-         *
-         * @details
-         * If the variable was defined in the same block, it is not added to the
-         * `use_` set since it is already defined.
-         */
-        void UseVar(const Symbol *sym) {
-            if (this->def_.find(sym) == this->def_.end())
-                this->use_.insert(sym);
         }
     };
 }
