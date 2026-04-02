@@ -11,6 +11,7 @@
 #include <orbit/liftoff/ir/linearscan.h>
 
 #include <orbit/liftoff/codegen.h>
+#include <orbit/liftoff/optimizer.h>
 
 #include <orbit/liftoff/compiler.h>
 
@@ -47,9 +48,10 @@ orbiter::datatype::HCode Compiler::Compile(IRContext *ir) {
      */
 
     // Step 1: Optimization
-    // TODO: Implement optimization phase here...
+    Optimizer optimizer(ir, this->level_);
+    optimizer.Optimize();
 
-    // Step 2-3-4: Perform Liveness Analysis -> Allocate Registers -> Phi resolution
+    // Step 2-3-4: Perform Liveness Analysis / Allocate Registers / Phi resolution
     LinearScan(ir, orbiter::kGeneralPurposeRegistersCount).Allocate();
 
     // Step 5: Generate machine code
@@ -75,7 +77,7 @@ orbiter::datatype::HCode Compiler::Compile(const char *filename, scanner::Scanne
         assert(false);
     }
 
-    IRBuilder builder(this->isolate_, this->level_, this->is_module_);
+    IRBuilder builder(this->isolate_, this->is_module_);
 
     const auto ir = builder.Generate(ast);
     if (!ir)

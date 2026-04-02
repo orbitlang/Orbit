@@ -21,8 +21,6 @@ namespace liftoff::ir {
 
         SymbolTable *sym_t_ = nullptr;
 
-        OptimizationLevel level_;
-
         bool is_module_;
 
         friend class ASTVisitor;
@@ -132,10 +130,8 @@ namespace liftoff::ir {
 
     public:
         explicit IRBuilder(orbiter::Isolate *isolate,
-                           const OptimizationLevel level,
                            const bool is_module) noexcept : builder_(isolate),
                                                             isolate_(isolate),
-                                                            level_(level),
                                                             is_module_(is_module) {
         }
 
