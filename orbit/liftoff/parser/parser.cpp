@@ -2185,7 +2185,7 @@ ASTHandle<Parameter *> Parser::PushSelfParam(const Loc &loc) const {
     if (sym == nullptr)
         throw SymbolTableException();
 
-    sym->flags = SymbolFlags::SELF | SymbolFlags::SYNTHETIC;
+    sym->flags = SymbolFlags::INITIALIZED | SymbolFlags::SELF | SymbolFlags::SYNTHETIC;
 
     auto param = MakeParameter(this->isolate_, loc, NodeType::PARAM);
 
