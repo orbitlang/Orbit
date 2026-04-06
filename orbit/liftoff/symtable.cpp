@@ -87,12 +87,6 @@ void SymbolTable::ComputeLocalVarOffset(const SubScope *s_scope) const noexcept 
             child = child->next_sibling;
         }
 
-        if (symbol->type == SymbolType::CLASS || symbol->type == SymbolType::TRAIT) {
-            symbol->offset = this->scope->static_count++;
-
-            continue;
-        }
-
         if (symbol->type == SymbolType::PARAMETER) {
             symbol->offset = this->scope->parameter_count++;
 
@@ -102,8 +96,12 @@ void SymbolTable::ComputeLocalVarOffset(const SubScope *s_scope) const noexcept 
         if (symbol->type == SymbolType::UNKNOWN)
             symbol->location = StorageLocation::GLOBAL;
 
-        if (ENUMBITMASK_ISTRUE(symbol->flags, SymbolFlags::CONST))
+        if (ENUMBITMASK_ISTRUE(symbol->flags, SymbolFlags::CONST)) {
             symbol->offset = this->scope->static_count++;
+
+            if (symbol->decl_scope->type == ScopeType::CLASS || symbol->decl_scope->type == ScopeType::TRAIT)
+                continue;
+        }
 
         switch (symbol->location) {
             case StorageLocation::AUTO:
