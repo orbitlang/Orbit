@@ -412,7 +412,7 @@ Instruction *IRBuilder::StoreVariable(const Symbol *symbol, Instruction *value, 
         // since variables are not managed this way. (Yes, functions and methods are treated as constants)
         v_flags |= orbiter::VariableFlags::CONSTANT;
 
-        if (ENUMBITMASK_ISFALSE(symbol->flags, SymbolFlags::CONST) && symbol->defining_scope->type ==
+        if (ENUMBITMASK_ISFALSE(symbol->flags, SymbolFlags::CONST) && symbol->decl_scope->type ==
             ScopeType::CLASS) {
             v_flags |= orbiter::VariableFlags::CP_INLINE;
 
@@ -532,7 +532,7 @@ Instruction *IRBuilder::visitAssignment(parser::Assignment *node) {
             return this->StoreVariable(sym, value, node->node_type == parser::NodeType::VAR_DECLARATION);
         }
 
-        if (sym->type == SymbolType::VARIABLE && sym->defining_scope->type != ScopeType::TRAIT) {
+        if (sym->type == SymbolType::VARIABLE && sym->decl_scope->type != ScopeType::TRAIT) {
             auto v_flags = orbiter::VariableFlags::VARIABLE;
 
             if (sym->access == AccessModifier::PUBLIC)
@@ -551,9 +551,6 @@ Instruction *IRBuilder::visitAssignment(parser::Assignment *node) {
 
         assert(false);
     }
-
-    if (ENUMBITMASK_ISTRUE(sym->flags, SymbolFlags::CONST))
-        assert(false); // TODO: Constant error
 
     if (node->value != nullptr)
         value = this->visit(node->value);
