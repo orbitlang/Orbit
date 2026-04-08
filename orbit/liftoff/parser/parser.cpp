@@ -943,10 +943,9 @@ ASTHandle<ASTNode *> Parser::ParseVarDecl(const Position &start, const AccessMod
 
 ASTHandle<ASTNode *> Parser::ParseANPST() {
     const auto start_pos = TKCUR_LOC.start;
-    const auto tk_type = TKCUR_TYPE;
 
     auto node_type = NodeType::ASSIGNMENT;
-    switch (tk_type) {
+    switch (TKCUR_TYPE) {
         case TokenType::KW_AWAIT:
             node_type = NodeType::AWAIT;
             break;
@@ -970,6 +969,25 @@ ASTHandle<ASTNode *> Parser::ParseANPST() {
 
     this->Eat(true);
 
+    // 'new' requires special treatment: parse the callee allowing member
+    // access (.) but not call (), then consume the () explicitly.
+    // This ensures that post-construction chains like new Obj().method() bind
+    // to the new expression — i.e. (new Obj()).method() — not to the callee.
+    if (node_type == NodeType::NEW) {
+        auto callee = this->ParseExpression(PeekPrecedence(TokenType::LEFT_ROUND));
+        if (!this->Match(TokenType::LEFT_ROUND))
+            throw ParserException(78);
+
+        auto call = this->ParseFuncCall(callee);
+
+        auto ret = MakeUnary(this->isolate_, TKCUR_LOC, node_type);
+        ret->value = call.release();
+        ret->loc.start = start_pos;
+        ret->loc.end = call->loc.end;
+
+        return ret;
+    }
+
     auto right = this->ParseExpression(TokenType::COMMA);
 
     if (right->node_type == node_type)
@@ -977,9 +995,6 @@ ASTHandle<ASTNode *> Parser::ParseANPST() {
 
     if (node_type == NodeType::SPAWN && right->node_type != NodeType::CALL)
         throw ParserException(27);
-
-    if (node_type == NodeType::NEW && right->node_type != NodeType::CALL)
-        throw ParserException(78);
 
     const auto &unary = (ASTHandle<Unary *> &) right;
     if (unary->node_type == NodeType::NIL_SAFE && unary->value->node_type == node_type) {
