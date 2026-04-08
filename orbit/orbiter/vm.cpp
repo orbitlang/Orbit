@@ -470,7 +470,7 @@ int CallGenerator(Fiber *fiber, Generator *gen, const U16 total_args, const Call
     regs->SP.reg += sizeof(FiberContext);
 
     fiber->vm.Push(regs->BP.reg); // Store BP
-    fiber->vm.Push(regs->IP.reg); // Store IP
+    fiber->vm.Push(regs->IP.reg + sizeof(MachineWord)); // Store IP
 
     const auto BP = regs->SP.reg;
 
@@ -536,8 +536,8 @@ OObject *LoadFromObjectProp(const Fiber *fiber, const Function *func, OObject *o
     if (ENUMBITMASK_ISFALSE(prop->detail, PropertyFlag::IS_PUBLIC)) {
         if (func == nullptr
             || func->shared->owner_type == nullptr
-            || ENUMBITMASK_ISFALSE(prop->detail, PropertyFlag::IS_PROTECTED)
-            || !IsTypeExtends(type, func->shared->owner_type))
+            || (ENUMBITMASK_ISFALSE(prop->detail, PropertyFlag::IS_PROTECTED)
+                && !IsTypeExtends(type, func->shared->owner_type)))
             assert(false); // FIXME
     }
 
@@ -640,7 +640,7 @@ void SaveGenerator(Fiber *fiber) {
     gen->IP = regs->IP.reg + sizeof(MachineWord);
 
     // Restore the caller's IP (saved before entering the generator) and advance to the next instruction
-    regs->IP.reg = *((PtrSize *) (stack->stack + regs->SP.reg)) + sizeof(MachineWord);
+    regs->IP.reg = *((PtrSize *) (stack->stack + regs->SP.reg));
 
     // Restore BP
     regs->SP.reg -= sizeof(void *);
@@ -751,7 +751,7 @@ BEGIN:
         return (OObject *) regs->RR.reg;
 
     auto *this_func = (Function *) fiber->context.func;
-    if (this_func != nullptr && !O_IS_TYPE(this_func, InstanceType::GENERATOR))
+    if (this_func != nullptr && O_IS_TYPE(this_func, InstanceType::GENERATOR))
         this_func = ((Generator *) this_func)->base;
 
     OObject **module_slots = nullptr;
@@ -1376,9 +1376,6 @@ CATCH_FINALLY:
                 *ACCESS_STACK_SP(0) = (PtrSize) value;
                 REG_SP += sizeof(void *);
 
-                if (O_IS_OBJECT(value))
-                    O_GET_RC(value).IncStrong();
-
                 DISPATCH;
             }
             TARGET_OP(PUSHIF) {
@@ -1408,9 +1405,6 @@ CATCH_FINALLY:
 
                 *ACCESS_STACK_SP(0) = (PtrSize) value;
                 REG_SP += sizeof(void *);
-
-                if (O_IS_OBJECT(value))
-                    O_GET_RC(value).IncStrong();
 
                 DISPATCH;
             }
