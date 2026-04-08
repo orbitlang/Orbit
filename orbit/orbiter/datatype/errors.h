@@ -153,6 +153,24 @@ namespace orbiter::datatype {
         };
     };
 
+    struct AttributeError {
+        enum Reason : U8 {
+            ID,
+
+            NOT_FOUND,
+            PRIVATE_ACCESS,
+            CONSTANT_ASSIGN,
+        };
+
+        static constexpr const char *Details[] = {
+            (const char *) "AttributeError",
+
+            (const char *) "'%s' object has no property '%s'",
+            (const char *) "cannot access private property '%s' of '%s'",
+            (const char *) "cannot assign to constant property '%s'"
+        };
+    };
+
     struct ValueError {
         enum Reason : U8 {
             ID,

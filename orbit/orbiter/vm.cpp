@@ -529,16 +529,32 @@ OObject *LoadFromObjectProp(const Fiber *fiber, const Function *func, OObject *o
     const TypeInfo *target_type = nullptr;
     prop = TIFindProperty(type, &target_type, (const char *) key->buffer);
     if (prop == nullptr) {
-        // FIXME ERROR
-        assert(false);
+        char error[24];
+
+        GetTypeName(fiber->isolate, obj, error, sizeof(error));
+
+        ErrorSet(fiber->isolate,
+                 AttributeError::Details[AttributeError::Reason::ID],
+                 nullptr,
+                 AttributeError::Details[AttributeError::Reason::NOT_FOUND],
+                 error,
+                 (const char *) key->buffer);
+
+        return nullptr;
     }
 
     if (ENUMBITMASK_ISFALSE(prop->detail, PropertyFlag::IS_PUBLIC)) {
         if (func == nullptr
             || func->shared->owner_type == nullptr
             || (ENUMBITMASK_ISFALSE(prop->detail, PropertyFlag::IS_PROTECTED)
-                && !IsTypeExtends(type, func->shared->owner_type)))
-            assert(false); // FIXME
+                && !IsTypeExtends(type, func->shared->owner_type))) {
+            ErrorSetWithObjType(fiber->isolate,
+                                AttributeError::Details[AttributeError::Reason::ID],
+                                AttributeError::Details[AttributeError::Reason::PRIVATE_ACCESS],
+                                (const char *) key->buffer, obj);
+
+            return nullptr;
+        }
     }
 
     if (ENUMBITMASK_ISTRUE(prop->detail, PropertyFlag::IN_OBJECT)) {
@@ -673,20 +689,43 @@ void StoreToObjectProp(const Fiber *fiber, const Function *func, OObject *obj, O
     const TypeInfo *target_type = nullptr;
     prop = TIFindProperty(type, &target_type, (const char *) key->buffer);
     if (prop == nullptr) {
-        // FIXME ERROR
-        assert(false);
+        char error[24];
+
+        GetTypeName(fiber->isolate, obj, error, sizeof(error));
+
+        ErrorSet(fiber->isolate,
+                 AttributeError::Details[AttributeError::Reason::ID],
+                 nullptr,
+                 AttributeError::Details[AttributeError::Reason::NOT_FOUND],
+                 error,
+                 (const char *) key->buffer);
+
+        return;
     }
 
     if (ENUMBITMASK_ISFALSE(prop->detail, PropertyFlag::IS_PUBLIC)) {
         if (func == nullptr
             || func->shared->owner_type == nullptr
             || ENUMBITMASK_ISFALSE(prop->detail, PropertyFlag::IS_PROTECTED)
-            || !IsTypeExtends(type, func->shared->owner_type))
-            assert(false); // FIXME
+            || !IsTypeExtends(type, func->shared->owner_type)) {
+            ErrorSetWithObjType(fiber->isolate,
+                                AttributeError::Details[AttributeError::Reason::ID],
+                                AttributeError::Details[AttributeError::Reason::PRIVATE_ACCESS],
+                                (const char *) key->buffer, obj);
+
+            return;
+        }
     }
 
-    if (ENUMBITMASK_ISTRUE(prop->detail, PropertyFlag::IS_CONSTANT))
-        assert(false);
+    if (ENUMBITMASK_ISTRUE(prop->detail, PropertyFlag::IS_CONSTANT)) {
+        ErrorSet(fiber->isolate,
+                 AttributeError::Details[AttributeError::Reason::ID],
+                 nullptr,
+                 AttributeError::Details[AttributeError::Reason::CONSTANT_ASSIGN],
+                 (const char *) key->buffer);
+
+        return;
+    }
 
     if (ENUMBITMASK_ISTRUE(prop->detail, PropertyFlag::IN_OBJECT)) {
         auto *slot = O_SLOT(obj, target_type);
@@ -1623,7 +1662,11 @@ CATCH_FINALLY:
                     DISPATCH;
                 }
 
-                ACCESS_REG_DST(instr) = (PtrSize) LoadFromObjectProp(fiber, this_func, obj, flags, offset);
+                result = LoadFromObjectProp(fiber, this_func, obj, flags, offset);
+                if (fiber->panic.current_ != nullptr)
+                    goto ERROR;
+
+                ACCESS_REG_DST(instr) = (PtrSize) result;
 
                 DISPATCH;
             }
@@ -1643,6 +1686,8 @@ CATCH_FINALLY:
                 }
 
                 StoreToObjectProp(fiber, this_func, obj, value, flags, offset);
+                if (fiber->panic.current_ != nullptr)
+                    goto ERROR;
 
                 DISPATCH;
             }
