@@ -28,11 +28,12 @@ bool InitObjectBlueprint(orbiter::Isolate *isolate, TypeInfo *type) {
 
     orbiter::memory::IsolateAllocator allocator(isolate);
 
-    auto *blueprint = allocator.calloc<unsigned char>(type->i_size - sizeof(OObject));
+    const auto slots_size = type->i_size - (type->offset + type->headroom);
+    auto *blueprint = allocator.calloc<unsigned char>(slots_size);
     if (blueprint == nullptr)
         return {};
 
-    auto **slot = (OObject **) (blueprint + (type->offset - sizeof(OObject)) + type->headroom);
+    auto **slot = (OObject **) blueprint;
     for (auto i = 0; i < type->properties.count; i++) {
         const auto *property = type->properties.p_array + i;
 
@@ -47,7 +48,7 @@ bool InitObjectBlueprint(orbiter::Isolate *isolate, TypeInfo *type) {
                 return false;
         }
 
-        orbiter::memory::MemoryCopy(blueprint, super->aux.data, type->offset - sizeof(OObject));
+        orbiter::memory::MemoryCopy(blueprint, super->aux.data, slots_size);
     }
 
     type->aux.data = blueprint;
@@ -105,9 +106,9 @@ HClass orbiter::datatype::ClassNew(TypeInfo *type) {
     if (clazz == nullptr)
         return {};
 
-    memory::MemoryCopy(((unsigned char *) clazz) + sizeof(OObject),
+    memory::MemoryCopy(((unsigned char *) clazz) + type->offset + type->headroom,
                        type->aux.data,
-                       type->i_size - sizeof(OObject));
+                       type->i_size - (type->offset + type->headroom));
 
     O_GC_TRACK_RETURN(isolate, clazz, true);
 }
