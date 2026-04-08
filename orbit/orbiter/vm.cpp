@@ -282,8 +282,15 @@ int CallInit(Fiber *fiber, const Function *func, const unsigned short p_count, c
             // Check object is instance
             const auto args = *((OObject **) ((fiber->vm.stack.stack + fiber->vm.regs.SP.reg)
                                               - (total_args * sizeof(void *))));
-            if (!O_GET_RC(args).IsInstance())
-                assert(false); // FIXME: error!
+            if (!O_GET_RC(args).IsInstance()) {
+                ErrorSetWithObjType(fiber->isolate,
+                                    TypeError::Details[TypeError::Reason::ID],
+                                    TypeError::Details[TypeError::Reason::METHOD_RECEIVER],
+                                    nullptr,
+                                    args);
+
+                return CALL_ERROR;
+            }
         } else
             total_args -= 1;
     }
@@ -1364,13 +1371,18 @@ CATCH_FINALLY:
                 DISPATCH;
             }
             TARGET_OP(LDGBL) {
-                const auto k_index = FETCH_IMM(instr);
+                const auto key = (ORString *) code->unknown_symbols->objects[FETCH_IMM(instr)];
+
                 HOObject out;
 
-                if (!ContextLookup(fiber->context.context, (ORString *) code->unknown_symbols->objects[k_index],
-                                   out, nullptr)) {
-                    // TODO: Error!
-                    assert(false);
+                if (!ContextLookup(fiber->context.context, key, out, nullptr)) {
+                    ErrorSet(fiber->isolate,
+                             NameError::Details[NameError::Reason::ID],
+                             nullptr,
+                             NameError::Details[NameError::Reason::NOT_DEFINED],
+                             ORSTRING_TO_CSTR(key));
+
+                    goto ERROR;
                 }
 
                 ACCESS_REG_DST(instr) = (PtrSize) out.get();
@@ -1420,15 +1432,17 @@ CATCH_FINALLY:
             TARGET_OP(PUSHIF) {
                 const auto value = (OObject *) ACCESS_REG_DST(instr);
                 const auto target = (OObject *) ACCESS_REG_SRC(instr);
-                // const auto against = FETCH_R_RSRC(instr);
                 const auto flags = (PushIfFlags) (instr & 0xFu);
-
-                // auto aobj = (OObject *) REG_N(against);
 
                 if (flags == PushIfFlags::METHOD) {
                     if (!O_IS_OBJECT(target) || !O_IS_TYPE(target, InstanceType::FUNCTION)) {
-                        // FIXME: Error!
-                        assert(false);
+                        ErrorSetWithObjType(fiber->isolate,
+                                            TypeError::Details[TypeError::Reason::ID],
+                                            TypeError::Details[TypeError::Reason::NON_CALLABLE],
+                                            nullptr,
+                                            target);
+
+                        goto ERROR;
                     }
 
                     if (!((Function *) target)->shared->IsMethod()) {
@@ -1468,9 +1482,8 @@ CATCH_FINALLY:
                 const auto slots = instr & 0xFFFF;
 
                 auto closure = ClosureNew(fiber->isolate, slots);
-                if (!closure) {
-                    // FIXME: Error!
-                }
+                if (!closure)
+                    goto ERROR;
 
                 ACCESS_REG_DST(instr) = (PtrSize) closure.get();
 
@@ -1539,9 +1552,8 @@ CATCH_FINALLY:
                     defs = (Tuple *) REG_N(FETCH_R_RSRC(instr));
 
                 auto func = FunctionNew((Code *) ACCESS_REG_SRC(instr), closure, defs, flags);
-                if (!func) {
-                    // TODO: error!
-                }
+                if (!func)
+                    goto ERROR;
 
                 ACCESS_REG_DST(instr) = (PtrSize) func.get();
 
@@ -1567,9 +1579,8 @@ CATCH_FINALLY:
                 // const auto imm = FETCH_IMM(instr);
 
                 auto dict = DictNew(fiber->isolate);
-                if (!dict) {
-                    // FIXME: Error!
-                }
+                if (!dict)
+                    goto ERROR;
 
                 ACCESS_REG_DST(instr) = (PtrSize) dict.get();
 
@@ -1590,9 +1601,8 @@ CATCH_FINALLY:
                 const auto imm = FETCH_IMM(instr);
 
                 auto list = ListNew(fiber->isolate, imm);
-                if (!list) {
-                    // FIXME: Error!
-                }
+                if (!list)
+                    goto ERROR;
 
                 ACCESS_REG_DST(instr) = (PtrSize) list.get();
 
@@ -1611,9 +1621,8 @@ CATCH_FINALLY:
                 const auto imm = FETCH_IMM(instr);
 
                 auto tuple = TupleNew(fiber->isolate, imm);
-                if (!tuple) {
-                    // FIXME: Error!
-                }
+                if (!tuple)
+                    goto ERROR;
 
                 ACCESS_REG_DST(instr) = (PtrSize) tuple.get();
 
@@ -1624,9 +1633,8 @@ CATCH_FINALLY:
                 auto *value = (OObject *) ACCESS_REG_SRC(instr);
 
                 if (O_IS_TYPE(obj, InstanceType::DICT)) {
-                    if (!DictInsert((Dict *) obj, value, (OObject *) REG_N(FETCH_R_RSRC(instr)))) {
-                        // FIXME: Error!
-                    }
+                    if (!DictInsert((Dict *) obj, value, (OObject *) REG_N(FETCH_R_RSRC(instr))))
+                        goto ERROR;
                 } else if (O_IS_TYPE(obj, InstanceType::LIST))
                     ListAppend((List *) obj, value);
                 else if (O_IS_TYPE(obj, InstanceType::TUPLE))
@@ -1638,9 +1646,11 @@ CATCH_FINALLY:
             }
             TARGET_OP(LDINIT) {
                 const auto *tp = (TypeInfo *) ACCESS_REG_SRC(instr);
+
                 const auto *init = TIFindLocalProperty(tp, "init");
                 if (init == nullptr) {
-                    // FIXME: error
+                    // Every Class type always defines 'init'; null here means the
+                    // compiler emitted LDINIT for a non-type value — VM bug.
                     assert(false);
                 }
 
@@ -1701,9 +1711,8 @@ CATCH_FINALLY:
                                               : nullptr,
                                           (TypeInfo **) ACCESS_STACK_SP(-(impls * sizeof(void*))),
                                           impls);
-                if (!clazz) {
-                    // FIXME: Error!
-                }
+                if (!clazz)
+                    goto ERROR;
 
                 ACCESS_REG_DST(instr) = (PtrSize) clazz.get();
 
@@ -1713,9 +1722,8 @@ CATCH_FINALLY:
                 const auto impls = FETCH_IMM(instr);
 
                 auto trait = TraitTypeNew(code, (TypeInfo **) ACCESS_STACK_SP(-(impls * sizeof(void*))), impls);
-                if (!trait) {
-                    // FIXME: Error!
-                }
+                if (!trait)
+                    goto ERROR;
 
                 ACCESS_REG_DST(instr) = (PtrSize) trait.get();
 
@@ -1724,7 +1732,11 @@ CATCH_FINALLY:
             TARGET_OP(NOBJ) {
                 auto *tp = (TypeInfo *) ACCESS_REG_SRC(instr);
 
-                ACCESS_REG_DST(instr) = (PtrSize) ClassNew(tp).get();
+                auto instance = ClassNew(tp);
+                if (!instance)
+                    goto ERROR;
+
+                ACCESS_REG_DST(instr) = (PtrSize) instance.get();
 
                 DISPATCH;
             }

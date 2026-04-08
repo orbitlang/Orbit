@@ -134,7 +134,8 @@ namespace orbiter::datatype {
             GENERATOR_INVALID_CALL,
             INVALID_NATIVE_TYPE,
             GENERATOR_SPAWN,
-            NON_SYNCHRONIZABLE
+            NON_SYNCHRONIZABLE,
+            METHOD_RECEIVER,
         };
 
         static constexpr const char *Details[] = {
@@ -149,7 +150,22 @@ namespace orbiter::datatype {
             (const char *) "invalid call: native functions can only be called within their defining module by directly "
             "invoking the symbol (indirect calls are not allowed)",
             (const char *) "'spawn' does not support generator functions",
-            (const char *) "'%s' object cannot be used as a sync target"
+            (const char *) "'%s' object cannot be used as a sync target",
+            (const char *) "method call requires '%s' instance as receiver"
+        };
+    };
+
+    struct NameError {
+        enum Reason : U8 {
+            ID,
+
+            NOT_DEFINED,
+        };
+
+        static constexpr const char *Details[] = {
+            (const char *) "NameError",
+
+            (const char *) "name '%s' is not defined"
         };
     };
 
