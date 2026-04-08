@@ -1064,7 +1064,7 @@ CATCH_FINALLY:
             TARGET_OP(AWAIT) {
                 auto *future = (Future *) ACCESS_REG_SRC(instr);
 
-                if (!O_IS_TYPE(future, InstanceType::FUTURE)) {
+                if (!O_IS_OBJECT(future) || !O_IS_TYPE(future, InstanceType::FUTURE)) {
                     ErrorSetWithObjType(fiber->isolate,
                                         TypeError::Details[TypeError::Reason::ID],
                                         TypeError::Details[TypeError::Reason::MISMATCH],
@@ -1099,7 +1099,7 @@ CATCH_FINALLY:
 
                 int res;
 
-                if (O_IS_TYPE(func, InstanceType::GENERATOR)) {
+                if (func != nullptr && O_IS_TYPE(func, InstanceType::GENERATOR)) {
                     res = CallGenerator(fiber, (Generator *) func, p_count, flags, true);
                     if (res == CALL_ERROR)
                         goto ERROR;
@@ -1141,7 +1141,7 @@ CATCH_FINALLY:
 
                 const auto func = (Function *) ACCESS_REG_SRC(instr);
 
-                if (!O_IS_TYPE(func, InstanceType::NATIVE_FUNC)) {
+                if (!O_IS_OBJECT(func) || !O_IS_TYPE(func, InstanceType::NATIVE_FUNC)) {
                     ErrorSetWithObjType(fiber->isolate,
                                         TypeError::Details[TypeError::Reason::ID],
                                         TypeError::Details[TypeError::Reason::NON_CALLABLE],
@@ -1172,7 +1172,7 @@ CATCH_FINALLY:
 
                 const auto func = (Function *) ACCESS_REG_SRC(instr);
 
-                if (O_IS_TYPE(func, InstanceType::GENERATOR)) {
+                if (func != nullptr && O_IS_TYPE(func, InstanceType::GENERATOR)) {
                     ErrorSet(fiber->isolate,
                              TypeError::Details[TypeError::Reason::ID],
                              nullptr,
@@ -1631,6 +1631,8 @@ CATCH_FINALLY:
             TARGET_OP(ADDELEM) {
                 auto *obj = (OObject *) ACCESS_REG_DST(instr);
                 auto *value = (OObject *) ACCESS_REG_SRC(instr);
+
+                assert(O_IS_OBJECT(obj));
 
                 if (O_IS_TYPE(obj, InstanceType::DICT)) {
                     if (!DictInsert((Dict *) obj, value, (OObject *) REG_N(FETCH_R_RSRC(instr))))
