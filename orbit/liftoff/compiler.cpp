@@ -58,19 +58,6 @@ orbiter::datatype::HCode Compiler::Compile(IRContext *ir) {
     auto intervals = ir->ComputeLiveIntervals();
     LinearScan(ir, orbiter::kGeneralPurposeRegistersCount).Allocate(intervals);
 
-    for (auto *b_cursor = ir->entry_; b_cursor != nullptr; b_cursor = b_cursor->next) {
-        printf("===== New %s =====\n", ir->name ? (const char *) ir->name.get()->buffer : "noname");
-        for (auto cursor = b_cursor->instr.head; cursor != nullptr; cursor = cursor->next) {
-            if (cursor->type() == ObjectType::VIRT_INSTRUCTION) {
-                printf("VIRT: Phi, Join point\n");
-                continue;
-            }
-            printf("OP: %s, REG: %d, spilled: %d\n",
-                   orbiter::OPCODE_STRINGS[(int) ((PhysInstruction *) cursor)->opcode],
-                   cursor->assigned_reg, cursor->stack_slot > -1);
-        }
-    }
-
     // Step 5: Generate machine code
     auto code = Codegen(ir).Generate();
     if (code) {
