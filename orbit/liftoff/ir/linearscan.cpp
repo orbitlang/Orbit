@@ -256,6 +256,9 @@ void LinearScan::SpillToStackAndReloadUses(Instruction *instruction) {
         use = instruction->use_list;
 
         inserted++;
+
+        if (use == nullptr)
+            break;
     }
 
     // No SKSTR needed if:
