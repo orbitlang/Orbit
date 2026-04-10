@@ -136,7 +136,7 @@ void Fiber::Panic(datatype::OObject *error) noexcept {
 }
 
 void Fiber::PopState() noexcept {
-    auto *stack = this->vm.stack.stack + this->vm.regs.SP.reg;
+    auto *stack = this->vm.stack.stack + this->vm.regs.BP.reg;
 
     stack -= sizeof(PtrSize);
 
