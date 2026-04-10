@@ -61,71 +61,6 @@ has been collected.
     return HOObject(std::move(n));
 }
 
-RUNTIME_METHOD(type_str, str,
-               R"DOC(
-@brief Return a human-readable string representation of the object.
-
-Calls the type's to_string operation when defined.  Falls back to a default
-representation of the form "<TypeName at 0xADDR>" when no to_string is
-registered for the type.
-
-@return A String describing the object.
-
-@see repr
-
-@example
-    (42).str()         // "42"
-    true.str()         // "true"
-    [1, 2, 3].str()    // "[1, 2, 3]"
-)DOC", 1, false, false) {
-    return ToString(O_GET_ISOLATE(_func), argv[0]);
-}
-
-RUNTIME_METHOD(type_repr, repr,
-               R"DOC(
-@brief Return a developer-oriented representation of the object.
-
-Calls the type's to_repr operation when defined.  Falls back to str() when
-no to_repr is registered, and ultimately to the default "<TypeName at 0xADDR>"
-form.  The repr string is intended for debugging and should ideally be valid
-Orbit syntax that reconstructs the value.
-
-@return A String with the debug representation.
-
-@see str
-
-@example
-    "hello".repr()    // '"hello"'  (includes quotes)
-    [1, 2].repr()     // "[1, 2]"
-)DOC", 1, false, false) {
-    return Repr(O_GET_ISOLATE(_func), argv[0]);
-}
-
-RUNTIME_METHOD(type_type, type,
-               R"DOC(
-@brief Return the name of the object's runtime type.
-
-@return A String containing the type name (e.g. "String", "List", "Number").
-
-@see is
-
-@example
-    "hi".type()        // "String"
-    (3.14).type()      // "Decimal"
-    [].type()          // "List"
-)DOC", 1, false, false) {
-    auto *isolate = O_GET_ISOLATE(_func);
-
-    char name[64];
-    GetTypeName(isolate, argv[0], name, sizeof(name));
-
-    auto s = ORStringNew(isolate, name);
-    if (!s)
-        return {};
-
-    return HOObject(std::move(s));
-}
-
 RUNTIME_METHOD(type_is, is,
                R"DOC(
 @brief Return true if the object is an instance of the given type.
@@ -160,13 +95,78 @@ integers, booleans, and nil that are not heap-allocated always return false.
     return HOObject((OObject *) BOOL_TO_OBOOL(self_type == target || IsTypeExtends(self_type, target)));
 }
 
+RUNTIME_METHOD(type_repr, repr,
+               R"DOC(
+@brief Return a developer-oriented representation of the object.
+
+Calls the type's to_repr operation when defined.  Falls back to str() when
+no to_repr is registered, and ultimately to the default "<TypeName at 0xADDR>"
+form.  The repr string is intended for debugging and should ideally be valid
+Orbit syntax that reconstructs the value.
+
+@return A String with the debug representation.
+
+@see str
+
+@example
+    "hello".repr()    // '"hello"'  (includes quotes)
+    [1, 2].repr()     // "[1, 2]"
+)DOC", 1, false, false) {
+    return Repr(O_GET_ISOLATE(_func), argv[0]);
+}
+
+RUNTIME_METHOD(type_str, str,
+               R"DOC(
+@brief Return a human-readable string representation of the object.
+
+Calls the type's to_string operation when defined.  Falls back to a default
+representation of the form "<TypeName at 0xADDR>" when no to_string is
+registered for the type.
+
+@return A String describing the object.
+
+@see repr
+
+@example
+    (42).str()         // "42"
+    true.str()         // "true"
+    [1, 2, 3].str()    // "[1, 2, 3]"
+)DOC", 1, false, false) {
+    return ToString(O_GET_ISOLATE(_func), argv[0]);
+}
+
+RUNTIME_METHOD(type_type, type,
+               R"DOC(
+@brief Return the name of the object's runtime type.
+
+@return A String containing the type name (e.g. "String", "List", "Number").
+
+@see is
+
+@example
+    "hi".type()        // "String"
+    (3.14).type()      // "Decimal"
+    [].type()          // "List"
+)DOC", 1, false, false) {
+    auto *isolate = O_GET_ISOLATE(_func);
+
+    char name[64];
+    GetTypeName(isolate, argv[0], name, sizeof(name));
+
+    auto s = ORStringNew(isolate, name);
+    if (!s)
+        return {};
+
+    return HOObject(std::move(s));
+}
+
 constexpr FunctionDef type_methods[] = {
     type_hash,
     type_id,
-    type_str,
-    type_repr,
-    type_type,
     type_is,
+    type_repr,
+    type_str,
+    type_type,
 
     FUNCTIONDEF_SENTINEL
 };
