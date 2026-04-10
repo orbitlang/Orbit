@@ -30,6 +30,14 @@ public:
     }
 };
 
+bool AtomDtor(Atom *self) {
+    O_FAST_DECREF(self->id);
+
+    self->id = nullptr;
+
+    return true;
+}
+
 bool AtomGATDtor(TypeInfo *self) {
     auto *gat = (GAT *) self->aux.data;
 
@@ -113,6 +121,8 @@ bool orbiter::datatype::AtomTypeSetup(TypeInfo *self) {
 
         return false;
     }
+
+    self->dtor = (DtorFn) AtomDtor;
 
     self->aux.data = gat;
     self->aux.dtor = AtomGATDtor;
