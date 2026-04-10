@@ -7,9 +7,13 @@
 
 #include <orbit/orbiter/datatype/oobject.h>
 
+#include <orbit/orbiter/sync/asyncrwlock.h>
+
 namespace orbiter::datatype {
     struct Closure {
         OROBJ_HEAD;
+
+        sync::AsyncRWLock lock;
 
         U16 slots;
     };
@@ -48,17 +52,16 @@ namespace orbiter::datatype {
     HClosure ClosureNew(Isolate *isolate, U16 slots);
 
     /**
-     * @brief Retrieves an object from the specified slot in a closure
+     * @brief Retrieves an object from the specified closure at the given index
      *
-     * This function accesses a closure's internal storage and retrieves the object
-     * located at the given slot index. The object is wrapped in a handle to ensure
-     * proper reference counting and memory management. The slot index must be within
-     * the valid range of slots allocated for the closure.
+     * This function accesses a closure's internal slots to retrieve an object
+     * stored at the specified index. The function ensures thread-safe access by
+     * acquiring a shared lock on the closure before performing the retrieval.
      *
-     * @param closure Pointer to the closure from which the object will be retrieved
-     * @param index Slot index within the closure whose object is to be fetched
+     * @param closure Pointer to the Closure structure containing the target slots
+     * @param index The zero-based index specifying the position of the object to retrieve
      *
-     * @return A handle to the object retrieved from the specified slot in the closure
+     * @return The retrieved object as an HOObject
      */
     HOObject ClosureGet(Closure *closure, U16 index);
 
@@ -75,16 +78,15 @@ namespace orbiter::datatype {
     HOType ClosureTypeInit(Isolate *isolate);
 
     /**
-     * @brief Sets an object in the specified slot of a closure
+     * @brief Assigns an object to a specified slot within a closure.
      *
-     * This function updates the closure by setting a new object at the given slot index.
-     * If a previous object already exists in the slot, its reference count is decremented
-     * before assigning the new object. The new object's reference count is incremented
-     * to ensure proper memory management.
+     * This function updates the slot at the given index within the specified closure
+     * by safely assigning it the provided object. The operation is performed
+     * while holding a lock to ensure thread safety.
      *
-     * @param closure Pointer to the closure in which the object will be set
-     * @param index Slot index within the closure where the object is to be assigned
-     * @param object Pointer to the object to be assigned to the specified slot
+     * @param closure Pointer to the Closure structure containing the slot array.
+     * @param index The index of the slot within the closure to be updated.
+     * @param object Pointer to the object to be assigned to the specified slot.
      */
     void ClosureSet(Closure *closure, U16 index, OObject *object);
 }

@@ -2,32 +2,31 @@
 //
 // Licensed under the Apache License v2.0
 
+#include <shared_mutex>
+
 #include <orbit/orbiter/datatype/closure.h>
 #include <orbit/orbiter/datatype/function.h>
 
 using namespace orbiter::datatype;
 
-// TODO: Mutex lock
-
-bool ClosureDtor(const Closure *self) {
+void ClosureTrace(const Closure *self, const GCTraceCallback callback, const MSize epoch) {
     const auto slots = (OObject **) ((unsigned char *) self + sizeof(Closure));
 
     for (int i = 0; i < self->slots; i++)
-        O_DECREF(slots[i]);
-
-    return true;
+        callback(slots[i], epoch);
 }
 
 bool orbiter::datatype::ClosureTypeSetup(TypeInfo *self) {
-    self->dtor = (DtorFn) ClosureDtor;
+    self->trace = (TraceFn) ClosureTrace;
 
     return true;
 }
 
-HClosure orbiter::datatype::ClosureNew(Isolate *isolate, U16 slots) {
-    auto closure = MakeObject<Closure>(isolate, InstanceType::CLOSURE, slots * sizeof(void *));
-
+HClosure orbiter::datatype::ClosureNew(Isolate *isolate, const U16 slots) {
+    const auto closure = MakeObject<Closure>(isolate, InstanceType::CLOSURE, slots * sizeof(void *));
     if (closure != nullptr) {
+        new(&closure->lock)sync::AsyncRWLock();
+
         closure->slots = slots;
 
         stratum::util::MemoryZero(((unsigned char *) closure) + sizeof(Closure), slots * sizeof(void *));
@@ -37,21 +36,23 @@ HClosure orbiter::datatype::ClosureNew(Isolate *isolate, U16 slots) {
     O_GC_TRACK_RETURN(isolate, closure, false);
 }
 
-HOObject orbiter::datatype::ClosureGet(Closure *closure, U16 index) {
+HOObject orbiter::datatype::ClosureGet(Closure *closure, const U16 index) {
     const auto slots = (OObject **) ((unsigned char *) closure + sizeof(Closure));
+
+    std::shared_lock _(closure->lock);
 
     return HOObject(slots[index]);
 }
 
 HOType orbiter::datatype::ClosureTypeInit(Isolate *isolate) {
-    auto type = MakeType(isolate, "Closure", InstanceType::CLOSURE, sizeof(Closure) - sizeof(OObject), 0, 0);
-    return type;
+    auto closure = MakeType(isolate, "Closure", InstanceType::CLOSURE, sizeof(Closure) - sizeof(OObject), 0, 0);
+    return closure;
 }
 
-void orbiter::datatype::ClosureSet(Closure *closure, U16 index, OObject *object) {
+void orbiter::datatype::ClosureSet(Closure *closure, const U16 index, OObject *object) {
     const auto slots = (OObject **) ((unsigned char *) closure + sizeof(Closure));
 
-    O_DECREF(slots[index]);
+    std::unique_lock _(closure->lock);
 
-    slots[index] = O_INCREF(object);
+    slots[index] = object;
 }
