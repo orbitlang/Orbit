@@ -66,6 +66,53 @@ static bool DictInsertLocked(Dict *dst, OObject *key, OObject *value) {
 }
 
 // *********************************************************************************************************************
+// TYPE OPS — COMPARISON
+// *********************************************************************************************************************
+
+/// Two dicts are equal when they have the same length and every key present in
+/// left maps to an equal value in right.  Uses the generic Equal() dispatch so
+/// that nested objects are compared by their own TypeOps.equal rules.
+static bool DictEqual(const OObject *left, const OObject *right) {
+    if (left == right)
+        return true;
+
+    if (!O_IS_OBJECT(right) || !O_IS_TYPE(right, InstanceType::DICT))
+        return false;
+
+    auto *a = (Dict *) left;
+    auto *b = (Dict *) right;
+
+    std::shared_lock la(a->lock);
+    std::shared_lock lb(b->lock);
+
+    if (a->dict.length != b->dict.length)
+        return false;
+
+    for (const auto *cur = a->dict.iter_begin; cur != nullptr; cur = cur->iter_next) {
+        ORHEntry *entry;
+
+        if (!b->dict.Lookup(cur->key, &entry))
+            return false;
+
+        if (!Equal(cur->value, entry->value))
+            return false;
+    }
+
+    return true;
+}
+
+// *********************************************************************************************************************
+// TYPE OPS — CONVERSION
+// *********************************************************************************************************************
+
+/// A non-empty dict is truthy; an empty dict is falsy.
+/// Reads length without the lock — single word reads are practically safe and
+/// consistent with how dict_is_empty/dict_length behave.
+static bool DictToBool(const OObject *self) {
+    return ((const Dict *) self)->dict.length != 0;
+}
+
+// *********************************************************************************************************************
 // RUNTIME METHODS
 // *********************************************************************************************************************
 
@@ -525,8 +572,13 @@ bool orbiter::datatype::DictRemove(Dict *dict, const char *key) {
 }
 
 bool orbiter::datatype::DictTypeSetup(TypeInfo *self) {
-    self->dtor = (DtorFn) DictDtor;
+    self->dtor  = (DtorFn)  DictDtor;
     self->trace = (TraceFn) DictTrace;
+
+    auto &ops = ((TypeInfoOps *) self)->ops;
+
+    ops.equal   = DictEqual;
+    ops.to_bool = DictToBool;
 
     return TIPropertyAdd(self, dict_methods, PropertyFlag::IS_PUBLIC);
 }
