@@ -146,6 +146,19 @@ namespace orbiter::datatype {
     }
 
     /**
+     * @brief Creates a new dictionary object based on the provided object
+     *
+     * This function creates a new dictionary that copies the contents of an existing dictionary
+     * if the input object is of dictionary type. If the object is not compatible or unsupported,
+     * the function returns an empty handle and sets the appropriate error.
+     *
+     * @param object Pointer to the source object. It must be of a supported type (e.g., dictionary, list, ...).
+     *
+     * @return A handle to the newly created dictionary if successful. Returns an empty handle ({}) if the object is not compatible.
+     */
+    HDict DictNew(OObject *object);
+
+    /**
      * @brief Initialize and create the specified type
      *
      * This function creates a new TypeInfo object representing the specific type.

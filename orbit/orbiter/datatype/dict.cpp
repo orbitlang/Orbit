@@ -106,21 +106,7 @@ reference the same objects.
     b.set("y", 2)
     a.has("y")    // false
 )DOC", 1, false, false) {
-    auto *self = (Dict *) argv[0];
-    auto *isolate = O_GET_ISOLATE(self);
-
-    std::shared_lock self_lock(self->lock);
-
-    auto copy = DictNew(isolate, (U32) self->dict.length);
-    if (!copy)
-        return {};
-
-    for (const auto *cur = self->dict.iter_begin; cur != nullptr; cur = cur->iter_next) {
-        if (!DictInsert(copy.get(), cur->key, cur->value))
-            return {};
-    }
-
-    return HOObject(std::move(copy));
+    return HOObject(DictNew(argv[0]));
 }
 
 RUNTIME_METHOD(dict_delete, delete,
@@ -425,7 +411,7 @@ No-op when other is self.
             return {};
     }
 
-    return HOObject( kOddBallNIL);
+    return HOObject(kOddBallNIL);
 }
 
 RUNTIME_METHOD(dict_values, values,
@@ -562,6 +548,37 @@ HDict orbiter::datatype::DictNew(Isolate *isolate, const U32 size) {
     }
 
     O_GC_TRACK_RETURN(isolate, dict, true);
+}
+
+HDict orbiter::datatype::DictNew(OObject *object) {
+    if (O_IS_SMI(object))
+        assert(false);
+
+    auto *isolate = O_GET_ISOLATE(object);
+
+    if (O_IS_TYPE(object, InstanceType::DICT)) {
+        auto *other = (Dict *) object;
+
+        std::shared_lock _(other->lock);
+
+        auto copy = DictNew(isolate, (U32) other->dict.length);
+        if (!copy)
+            return {};
+
+        const auto copy_raw = copy.get();
+        for (const auto *cur = other->dict.iter_begin; cur != nullptr; cur = cur->iter_next) {
+            if (!DictInsert(copy_raw, cur->key, cur->value))
+                return {};
+        }
+
+        return copy;
+    }
+
+    if (O_IS_TYPE(object, InstanceType::LIST)) {
+        assert(false);
+    }
+
+    assert(false);
 }
 
 HOType orbiter::datatype::DictTypeInit(Isolate *isolate) {
