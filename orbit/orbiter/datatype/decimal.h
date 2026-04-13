@@ -34,8 +34,30 @@ namespace orbiter::datatype {
      */
     bool DecimalTypeSetup(TypeInfo *self);
 
+    /**
+     * @brief Creates a new Decimal object and initializes it with the specified value
+     *
+     * This function creates a new Decimal instance within the given isolate and assigns
+     * the provided numeric value to it.
+     *
+     * @param isolate The isolate in which the Decimal object will be created
+     * @param number The initial value to assign to the newly created Decimal object
+     *
+     * @return A handle to the newly created Decimal object, or an empty handle if creation fails
+     */
     HDecimal DecimalNew(Isolate *isolate, DecimalUnderlying number);
 
+    /**
+     * @brief Creates a new Decimal object and initializes it with a string representation of its value
+     *
+     * This function constructs a new Decimal object within the given isolate and parses the provided string
+     * to initialize its value.
+     *
+     * @param isolate The isolate in which the Decimal object will be created
+     * @param string Null-terminated string representing the decimal value to be set
+     *
+     * @return Handle to the newly created Decimal object if successful, or an empty handle if the object creation fails
+     */
     HDecimal DecimalNew(Isolate *isolate, const char *string);
 
     /**
