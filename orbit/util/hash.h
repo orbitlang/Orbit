@@ -17,7 +17,7 @@
 #define FNV_OFFSET_BASIS 14695981039346656037ULL
 #endif
 
-inline MSize fnv1_hash(const unsigned char *data, MSize length) {
+inline MSize fnv1_hash(const unsigned char *data, const MSize length) {
     auto hash = FNV_OFFSET_BASIS;
 
     for (MSize i = 0; i < length; i++) {

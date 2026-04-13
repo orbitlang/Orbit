@@ -3,7 +3,12 @@
 // Licensed under the Apache License v2.0
 
 #include <cmath>
+#include <cstring>
 #include <cstdlib>
+
+#include <orbit/util/hash.h>
+
+#include <orbit/orbiter/fiber.h>
 
 #include <orbit/orbiter/datatype/function.h>
 #include <orbit/orbiter/datatype/number.h>
@@ -13,6 +18,215 @@
 #include <orbit/orbiter/datatype/decimal.h>
 
 using namespace orbiter::datatype;
+
+// *********************************************************************************************************************
+// TYPE OPS HELPERS
+// *********************************************************************************************************************
+
+/// Extract a DecimalUnderlying from any numeric object (Decimal, Number heap object, or SMI).
+/// Returns false when `obj` is not a numeric type — the caller should return false to trigger
+/// the NotImplementedError path in the dispatcher.
+static bool DecimalExtract(const OObject *obj, DecimalUnderlying &out) {
+    if (O_IS_SMI(obj)) {
+        out = (DecimalUnderlying) ((MSSize) (MSize) obj >> 1);
+
+        return true;
+    }
+
+    if (O_IS_OBJECT(obj)) {
+        if (O_IS_TYPE(obj, InstanceType::DECIMAL)) {
+            out = ((const Decimal *) obj)->value;
+
+            return true;
+        }
+
+        if (O_IS_TYPE(obj, InstanceType::NUMBER)) {
+            out = (DecimalUnderlying) ((const Number *) obj)->sint;
+
+            return true;
+        }
+    }
+
+    return false;
+}
+
+// *********************************************************************************************************************
+// TYPE OPS — COMPARISON
+// *********************************************************************************************************************
+
+static int DecimalCompare(const OObject *left, const OObject *right) {
+    DecimalUnderlying a, b;
+
+    if (!DecimalExtract(left, a) || !DecimalExtract(right, b))
+        return 0;
+
+    if (a < b) return -1;
+    if (a > b) return 1;
+
+    return 0;
+}
+
+static bool DecimalEqual(const OObject *left, const OObject *right) {
+    DecimalUnderlying a, b;
+
+    if (!DecimalExtract(left, a) || !DecimalExtract(right, b))
+        return false;
+
+    // NaN != NaN per IEEE 754
+    return a == b;
+}
+
+// *********************************************************************************************************************
+// TYPE OPS — ARITHMETIC
+// *********************************************************************************************************************
+
+static bool DecimalAdd(const OObject *left, const OObject *right, OObject *&result) {
+    DecimalUnderlying a, b;
+
+    if (!DecimalExtract(left, a) || !DecimalExtract(right, b))
+        return false;
+
+    const auto n = DecimalNew(orbiter::Fiber::Current()->isolate, a + b);
+    if (!n) return false;
+
+    result = (OObject *) n.get();
+
+    return true;
+}
+
+static bool DecimalSub(const OObject *left, const OObject *right, OObject *&result) {
+    DecimalUnderlying a, b;
+
+    if (!DecimalExtract(left, a) || !DecimalExtract(right, b))
+        return false;
+
+    const auto n = DecimalNew(orbiter::Fiber::Current()->isolate, a - b);
+    if (!n) return false;
+
+    result = (OObject *) n.get();
+
+    return true;
+}
+
+static bool DecimalMul(const OObject *left, const OObject *right, OObject *&result) {
+    DecimalUnderlying a, b;
+
+    if (!DecimalExtract(left, a) || !DecimalExtract(right, b))
+        return false;
+
+    const auto n = DecimalNew(orbiter::Fiber::Current()->isolate, a * b);
+    if (!n) return false;
+
+    result = (OObject *) n.get();
+
+    return true;
+}
+
+static bool DecimalDiv(const OObject *left, const OObject *right, OObject *&result) {
+    DecimalUnderlying a, b;
+
+    if (!DecimalExtract(left, a) || !DecimalExtract(right, b))
+        return false;
+
+    const auto n = DecimalNew(orbiter::Fiber::Current()->isolate, a / b);
+    if (!n) return false;
+
+    result = (OObject *) n.get();
+
+    return true;
+}
+
+/// Integer (floor) division: ⌊a / b⌋ — rounds towards negative infinity.
+static bool DecimalIDiv(const OObject *left, const OObject *right, OObject *&result) {
+    DecimalUnderlying a, b;
+
+    if (!DecimalExtract(left, a) || !DecimalExtract(right, b))
+        return false;
+
+    const auto n = DecimalNew(orbiter::Fiber::Current()->isolate, floorl(a / b));
+    if (!n) return false;
+
+    result = (OObject *) n.get();
+
+    return true;
+}
+
+static bool DecimalMod(const OObject *left, const OObject *right, OObject *&result) {
+    DecimalUnderlying a, b;
+
+    if (!DecimalExtract(left, a) || !DecimalExtract(right, b))
+        return false;
+
+    const auto n = DecimalNew(orbiter::Fiber::Current()->isolate, fmodl(a, b));
+    if (!n) return false;
+
+    result = (OObject *) n.get();
+
+    return true;
+}
+
+// *********************************************************************************************************************
+// TYPE OPS — UNARY
+// *********************************************************************************************************************
+
+static bool DecimalNeg(const OObject *self, OObject *&result) {
+    const auto n = DecimalNew(O_GET_ISOLATE(self), -((const Decimal *) self)->value);
+    if (!n) return false;
+
+    result = (OObject *) n.get();
+
+    return true;
+}
+
+// *********************************************************************************************************************
+// TYPE OPS — CONVERSION
+// *********************************************************************************************************************
+
+static bool DecimalToBool(const OObject *self) {
+    return ((const Decimal *) self)->value != 0.0L;
+}
+
+/// Formats the value with up to 10 significant digits (trailing zeros removed).
+static OObject *DecimalToString(orbiter::Isolate *isolate, const OObject *self) {
+    const auto s = ORStringFormat(isolate, "%.10Lg", ((const Decimal *) self)->value);
+    return s ? (OObject *) s.get() : nullptr;
+}
+
+static bool DecimalToNative(const OObject *self, void *out, const NativeType type) {
+    const auto v = ((const Decimal *) self)->value;
+
+    switch (type) {
+        case NativeType::F32:
+            *((float *) out) = (float) v;
+            break;
+        case NativeType::F64:
+            *((double *) out) = (double) v;
+            break;
+        default:
+            return false;
+    }
+
+    return true;
+}
+
+// *********************************************************************************************************************
+// TYPE OPS — RUNTIME
+// *********************************************************************************************************************
+
+/// FNV-1a hash over the raw bytes of the long double value.
+/// NaN is canonicalised to hash 0 so that all NaN representations collide consistently.
+static MSize DecimalHash(const OObject *self) {
+    const auto v = ((const Decimal *) self)->value;
+
+    if (std::isnan(v))
+        return 0;
+
+    return fnv1_hash((unsigned char *) &v, sizeof(DecimalUnderlying));
+}
+
+// *********************************************************************************************************************
+// RUNTIME METHODS
+// *********************************************************************************************************************
 
 RUNTIME_METHOD(decimal_abs, abs,
                R"DOC(
@@ -75,7 +289,7 @@ RUNTIME_METHOD(decimal_clamp, clamp,
                    PCHECK_DEF("hi", false, InstanceType::DECIMAL));
     PCHECK_CHECK(params);
 
-    const auto v  = ((Decimal *) argv[0])->value;
+    const auto v = ((Decimal *) argv[0])->value;
     const auto lo = ((Decimal *) argv[1])->value;
     const auto hi = ((Decimal *) argv[2])->value;
 
@@ -233,7 +447,7 @@ and NaN for negative self, following IEEE 754 semantics.
                    PCHECK_DEF("base", false, InstanceType::DECIMAL));
     PCHECK_CHECK(params);
 
-    const auto x    = ((Decimal *) argv[0])->value;
+    const auto x = ((Decimal *) argv[0])->value;
     const auto base = ((Decimal *) argv[1])->value;
 
     auto n = DecimalNew(O_GET_ISOLATE(_func), logl(x) / logl(base));
@@ -324,7 +538,7 @@ RUNTIME_METHOD(decimal_pow, pow,
     PCHECK_CHECK(params);
 
     const auto base = ((Decimal *) argv[0])->value;
-    const auto exp  = ((Decimal *) argv[1])->value;
+    const auto exp = ((Decimal *) argv[1])->value;
 
     auto n = DecimalNew(O_GET_ISOLATE(_func), powl(base, exp));
     if (!n)
@@ -409,11 +623,7 @@ large or very small values.
     (3.14).str()      // "3.14"
     (1000000.0).str() // "1e+06"
 )DOC", 1, false, false) {
-    auto s = ORStringFormat(O_GET_ISOLATE(_func), "%.10Lg", ((Decimal *) argv[0])->value);
-    if (!s)
-        return {};
-
-    return HOObject(std::move(s));
+    return ToString(O_GET_ISOLATE(_func), argv[0]);
 }
 
 RUNTIME_METHOD(decimal_tan, tan,
@@ -461,6 +671,23 @@ constexpr FunctionDef decimal_methods[] = {
 };
 
 bool orbiter::datatype::DecimalTypeSetup(TypeInfo *self) {
+    auto &ops = ((TypeInfoOps *) self)->ops;
+
+    ops.compare = DecimalCompare;
+    ops.equal = DecimalEqual;
+    ops.add = DecimalAdd;
+    ops.sub = DecimalSub;
+    ops.mul = DecimalMul;
+    ops.div = DecimalDiv;
+    ops.idiv = DecimalIDiv;
+    ops.mod = DecimalMod;
+    ops.neg = DecimalNeg;
+    ops.to_bool = DecimalToBool;
+    ops.to_string = DecimalToString;
+    ops.to_repr = DecimalToString;
+    ops.to_native = (ToNativeType) DecimalToNative;
+    ops.hash = DecimalHash;
+
     return TIPropertyAdd(self, decimal_methods, PropertyFlag::IS_PUBLIC);
 }
 
@@ -481,6 +708,6 @@ HDecimal orbiter::datatype::DecimalNew(Isolate *isolate, const char *string) {
 }
 
 HOType orbiter::datatype::DecimalTypeInit(Isolate *isolate) {
-    auto decimal = MakeType(isolate, "Decimal", InstanceType::DECIMAL, sizeof(Decimal) - sizeof(OObject), 19, 0);
+    auto decimal = MakeType(isolate, "Decimal", InstanceType::DECIMAL, sizeof(Decimal) - sizeof(OObject), 18, 0);
     return decimal;
 }
