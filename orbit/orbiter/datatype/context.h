@@ -8,6 +8,8 @@
 #include <orbit/orbiter/datatype/hashmap.h>
 #include <orbit/orbiter/datatype/orstring.h>
 
+#include <orbit/orbiter/sync/asyncrwlock.h>
+
 namespace orbiter::datatype {
     class PropertyDetail {
     public:
@@ -39,7 +41,7 @@ namespace orbiter::datatype {
 
     class PropertyStore {
     public:
-        OObject *value;
+        OObject *value = nullptr;
 
         PropertyDetail detail;
     };
@@ -56,6 +58,8 @@ namespace orbiter::datatype {
         OROBJ_HEAD;
 
         CtxHMap names;
+
+        sync::AsyncRWLock lock;
     };
 
     using HContext = Handle<Context>;
@@ -105,7 +109,7 @@ namespace orbiter::datatype {
      *
      * @return true if the property was found and successfully retrieved, false otherwise
      */
-    bool ContextLookup(const Context *context, ORString *name, HOObject &out_value, PropertyDetail *out_detail);
+    bool ContextLookup(Context *context, ORString *name, HOObject &out_value, PropertyDetail *out_detail);
 
     /**
      * @brief Look up a property within a context by its name
@@ -120,7 +124,7 @@ namespace orbiter::datatype {
      *
      * @return true if the property is successfully found, false otherwise
      */
-    bool ContextLookup(const Context *context, const char *name, HOObject &out_value, PropertyDetail *out_detail);
+    bool ContextLookup(Context *context, const char *name, HOObject &out_value, PropertyDetail *out_detail);
 
     /**
      * @brief Updates the value associated with a given name in the specified context.
@@ -136,7 +140,7 @@ namespace orbiter::datatype {
      * @return true if the value was successfully updated, false if the name was not found
      *         or the entry is marked as constant.
      */
-    bool ContextSet(const Context *context, ORString *name, OObject *value);
+    bool ContextSet(Context *context, ORString *name, OObject *value);
 
     /**
      * @brief Set up additional features and properties for the specified type

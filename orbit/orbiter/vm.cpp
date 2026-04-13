@@ -1375,15 +1375,8 @@ CATCH_FINALLY:
 
                 HOObject out;
 
-                if (!ContextLookup(fiber->context.context, key, out, nullptr)) {
-                    ErrorSet(fiber->isolate,
-                             NameError::Details[NameError::Reason::ID],
-                             nullptr,
-                             NameError::Details[NameError::Reason::NOT_DEFINED],
-                             ORSTRING_TO_CSTR(key));
-
+                if (!ContextLookup(fiber->context.context, key, out, nullptr))
                     goto ERROR;
-                }
 
                 ACCESS_REG_DST(instr) = (PtrSize) out.get();
 

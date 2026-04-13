@@ -2,12 +2,25 @@
 //
 // Licensed under the Apache License v2.0
 
+#include <shared_mutex>
+
+#include <orbit/orbiter/datatype/error.h>
+#include <orbit/orbiter/datatype/errors.h>
+
 #include <orbit/orbiter/datatype/context.h>
 
 using namespace orbiter::datatype;
 
-void ContextTrace(const Context *self, GCTraceCallback callback, MSize epoch) {
-    // TODO: Sync?!
+bool ContextDtor(Context *self) {
+    self->names.Finalize(nullptr);
+    self->names.~CtxHMap();
+
+    self->lock.~AsyncRWLock();
+
+    return true;
+}
+
+void ContextTrace(const Context *self, const GCTraceCallback callback, const MSize epoch) {
     for (const auto *cursor = self->names.iter_begin; cursor != nullptr; cursor = cursor->iter_next) {
         callback((OObject *) cursor->key, epoch);
 
@@ -16,6 +29,8 @@ void ContextTrace(const Context *self, GCTraceCallback callback, MSize epoch) {
 }
 
 bool orbiter::datatype::ContextDefine(Context *context, ORString *name, OObject *value, PropertyFlag flags) {
+    std::unique_lock _(context->lock);
+
     CtxHEntry *entry;
 
     context->names.Lookup(name, &entry);
@@ -35,7 +50,13 @@ bool orbiter::datatype::ContextDefine(Context *context, ORString *name, OObject 
     entry->value.value = value;
     entry->value.detail = flags;
 
-    return context->names.Insert(entry);
+    if (!context->names.Insert(entry)) {
+        context->names.FreeHEntry(entry);
+
+        return false;
+    }
+
+    return true;
 }
 
 bool orbiter::datatype::ContextDefine(Context *context, const char *name, OObject *value, PropertyFlag flags) {
@@ -47,12 +68,19 @@ bool orbiter::datatype::ContextDefine(Context *context, const char *name, OObjec
     return false;
 }
 
-bool orbiter::datatype::ContextLookup(const Context *context, ORString *name, HOObject &out_value,
+bool orbiter::datatype::ContextLookup(Context *context, ORString *name, HOObject &out_value,
                                       PropertyDetail *out_detail) {
+    std::shared_lock _(context->lock);
+
     CtxHEntry *entry;
 
     if (!context->names.Lookup(name, &entry)) {
-        // TODO: Not found
+        ErrorSet(O_GET_ISOLATE(context),
+                 NameError::Details[NameError::Reason::ID],
+                 nullptr,
+                 NameError::Details[NameError::Reason::NOT_DEFINED],
+                 ORSTRING_TO_CSTR(name));
+
         return false;
     }
 
@@ -64,23 +92,37 @@ bool orbiter::datatype::ContextLookup(const Context *context, ORString *name, HO
     return true;
 }
 
-bool orbiter::datatype::ContextLookup(const Context *context, const char *name, HOObject &out_value,
+bool orbiter::datatype::ContextLookup(Context *context, const char *name, HOObject &out_value,
                                       PropertyDetail *out_detail) {
     auto oname = ORStringNew(O_GET_ISOLATE(context), name);
+    if (oname)
+        return ContextLookup(context, oname.get(), out_value, out_detail);
 
-    return ContextLookup(context, oname.get(), out_value, out_detail);
+    return false;
 }
 
-bool orbiter::datatype::ContextSet(const Context *context, ORString *name, OObject *value) {
+bool orbiter::datatype::ContextSet(Context *context, ORString *name, OObject *value) {
+    std::unique_lock _(context->lock);
+
     CtxHEntry *entry;
 
     if (!context->names.Lookup(name, &entry)) {
-        // TODO: Not found
+        ErrorSet(O_GET_ISOLATE(context),
+                 NameError::Details[NameError::Reason::ID],
+                 nullptr,
+                 NameError::Details[NameError::Reason::NOT_DEFINED],
+                 ORSTRING_TO_CSTR(name));
+
         return false;
     }
 
     if (entry->value.detail.IsConstant()) {
-        // TODO: Is Constant
+        ErrorSet(O_GET_ISOLATE(context),
+                 AttributeError::Details[AttributeError::Reason::ID],
+                 nullptr,
+                 AttributeError::Details[AttributeError::Reason::CONSTANT_ASSIGN],
+                 ORSTRING_TO_CSTR(name));
+
         return false;
     }
 
@@ -90,6 +132,7 @@ bool orbiter::datatype::ContextSet(const Context *context, ORString *name, OObje
 }
 
 bool orbiter::datatype::ContextSetup(TypeInfo *self) {
+    self->dtor = (DtorFn) ContextDtor;
     self->trace = (TraceFn) ContextTrace;
 
     return true;
@@ -105,6 +148,8 @@ HContext orbiter::datatype::ContextNew(Isolate *isolate) {
 
             return {};
         }
+
+        new(&context->lock)sync::AsyncRWLock();
 
         O_GC_TRACK_RETURN(isolate, context, true);
     }
