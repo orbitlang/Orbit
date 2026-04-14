@@ -146,8 +146,8 @@ const OPropertyEntry error_props[] = {
 };
 
 bool orbiter::datatype::ErrorTypeSetup(TypeInfo *self) {
-    // No destructor or GC support function is needed here, since this object stores its data in GC-managed slots.
-
+    // Error stores kind, reason, and details directly in GC-managed slots.
+    // The GC automatically traces slot-held references, so no destructor or custom trace callback is needed.
     if (!TIPropertyAdd(self, error_props))
         return false;
 
@@ -171,9 +171,9 @@ HError ErrorNewVA(orbiter::Isolate *isolate, const char *kind, OObject *details,
 HError orbiter::datatype::ErrorNew(Isolate *isolate, Atom *kind, ORString *reason, OObject *details) {
     const auto error = MakeObject<Error>(isolate, InstanceType::ERROR);
     if (error != nullptr) {
-        error->kind = O_FAST_INCREF(kind);
-        error->reason = O_INCREF(reason);
-        error->details = O_INCREF(details);
+        error->kind = kind;
+        error->reason = reason;
+        error->details = details;
     }
 
     O_GC_TRACK_RETURN(isolate, error, false);
