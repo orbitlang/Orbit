@@ -6,6 +6,7 @@
 #include <orbit/orbiter/runtime.h>
 
 #include <orbit/orbiter/datatype/function.h>
+#include <orbit/orbiter/datatype/orstring.h>
 
 #include <orbit/orbiter/datatype/future.h>
 
@@ -21,6 +22,48 @@ bool FutureDtor(Future *self) {
     self->waiters.~FiberQueue();
 
     return true;
+}
+
+// *********************************************************************************************************************
+// TYPE OPS — COMPARISON
+// *********************************************************************************************************************
+
+/// Futures are unique handles to async computations — identity equality only.
+static bool FutureEqual(const OObject *left, const OObject *right) {
+    return left == right;
+}
+
+// *********************************************************************************************************************
+// TYPE OPS — CONVERSION
+// *********************************************************************************************************************
+
+/// A future is truthy only when it has resolved successfully.
+/// Pending and rejected futures are falsy.
+static bool FutureToBool(const OObject *self) {
+    return ((const Future *) self)->state == FutureState::RESOLVED;
+}
+
+/// Format:
+///   resolved  → "future <TypeName> resolved at 0xADDR"
+///   rejected  → "future <TypeName> rejected at 0xADDR"
+///   pending   → "future <?> pending at 0xADDR"
+static OObject *FutureToString(orbiter::Isolate *isolate, const OObject *self) {
+    const auto *future = (const Future *) self;
+
+    HORString s;
+
+    if (future->state == FutureState::PENDING) {
+        s = ORStringFormat(isolate, "future <?> pending at %p", self);
+    } else {
+        char type_name[24];
+        GetTypeName(isolate, future->result, type_name, sizeof(type_name));
+
+        const char *state_str = future->state == FutureState::RESOLVED ? "resolved" : "rejected";
+
+        s = ORStringFormat(isolate, "future <%s> %s at %p", type_name, state_str, self);
+    }
+
+    return s ? (OObject *) s.get() : nullptr;
 }
 
 // *********************************************************************************************************************
@@ -52,6 +95,10 @@ constexpr FunctionDef future_methods[] = {
     FUNCTIONDEF_SENTINEL
 };
 
+// *********************************************************************************************************************
+// PUBLIC API
+// *********************************************************************************************************************
+
 bool orbiter::datatype::FutureAsyncAwait(Future *future) {
     std::unique_lock _(future->mutex);
 
@@ -65,6 +112,12 @@ bool orbiter::datatype::FutureAsyncAwait(Future *future) {
 
 bool orbiter::datatype::FutureTypeSetup(TypeInfo *self) {
     self->dtor = (DtorFn) FutureDtor;
+
+    auto &ops = ((TypeInfoOps *) self)->ops;
+
+    ops.equal     = FutureEqual;
+    ops.to_bool   = FutureToBool;
+    ops.to_string = FutureToString;
 
     return TIPropertyAdd(self, future_methods, PropertyFlag::IS_PUBLIC);
 }
