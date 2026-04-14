@@ -4,9 +4,62 @@
 
 #include <orbit/orbiter/fiber.h>
 
+#include <orbit/orbiter/datatype/orstring.h>
+
 #include <orbit/orbiter/datatype/generator.h>
 
 using namespace orbiter::datatype;
+
+// *********************************************************************************************************************
+// TYPE OPS — COMPARISON
+// *********************************************************************************************************************
+
+/// Generators are stateful execution contexts — identity equality only.
+static bool GeneratorEqual(const OObject *left, const OObject *right) {
+    return left == right;
+}
+
+// *********************************************************************************************************************
+// TYPE OPS — ITERATION
+// *********************************************************************************************************************
+
+/// A generator is its own iterator.
+static OObject *GeneratorGetIter(OObject *self) {
+    return self;
+}
+
+// *********************************************************************************************************************
+// TYPE OPS — CONVERSION
+// *********************************************************************************************************************
+
+/// A generator is truthy as long as it has not been exhausted.
+static bool GeneratorToBool(const OObject *self) {
+    return ((const Generator *) self)->state.load(std::memory_order_relaxed) != GeneratorState::EXHAUSTED;
+}
+
+/// Format: "generator <name> ready/running/exhausted at 0xADDR"
+static OObject *GeneratorToString(orbiter::Isolate *isolate, const OObject *self) {
+    const auto *gen = (const Generator *) self;
+
+    const char *state_str;
+
+    switch (gen->state.load(std::memory_order_relaxed)) {
+        case GeneratorState::READY:     state_str = "ready";     break;
+        case GeneratorState::RUNNING:   state_str = "running";   break;
+        case GeneratorState::EXHAUSTED: state_str = "exhausted"; break;
+        default:                        state_str = "unknown";   break;
+    }
+
+    const auto *fn_name = ORSTRING_TO_CSTR(gen->base->shared->name);
+
+    const auto s = ORStringFormat(isolate, "generator <%s> %s at %p", fn_name, state_str, self);
+
+    return s ? (OObject *) s.get() : nullptr;
+}
+
+// *********************************************************************************************************************
+// INTERNAL
+// *********************************************************************************************************************
 
 bool GeneratorDtor(const Generator *self) {
     const orbiter::memory::IsolateAllocator allocator(O_GET_ISOLATE(self));
@@ -40,8 +93,16 @@ void GeneratorTrace(const Generator *self, const GCTraceCallback callback, const
 }
 
 bool orbiter::datatype::GeneratorTypeSetup(TypeInfo *self) {
-    self->dtor = (DtorFn) GeneratorDtor;
+    self->dtor  = (DtorFn)  GeneratorDtor;
     self->trace = (TraceFn) GeneratorTrace;
+
+    auto &ops = ((TypeInfoOps *) self)->ops;
+
+    ops.equal    = GeneratorEqual;
+    ops.get_iter = GeneratorGetIter;
+    ops.to_bool  = GeneratorToBool;
+    ops.to_string = GeneratorToString;
+    ops.to_repr   = GeneratorToString;
 
     return true;
 }
