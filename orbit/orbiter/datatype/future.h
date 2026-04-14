@@ -62,18 +62,6 @@ namespace orbiter::datatype {
     bool FutureTypeSetup(TypeInfo *self);
 
     /**
-     * @brief Initialize and create the specified type
-     *
-     * This function creates a new TypeInfo object representing the specific type.
-     * It sets up the basic structure and core properties of the type.
-     *
-     * @param isolate Pointer to the Isolate in which the type is being created
-     *
-     * @return Handle to the newly created TypeInfo for the type, or an empty handle if creation failed
-     */
-    HOType FutureTypeInit(Isolate *isolate);
-
-    /**
      * @brief Creates and initializes a new Future object.
      *
      * This function allocates and sets up a Future object within the specified
@@ -86,6 +74,29 @@ namespace orbiter::datatype {
      * @return A handle to the newly created Future object (`HFuture`), or nullptr if creation fails.
      */
     HFuture FutureNew(Isolate *isolate);
+
+    /**
+     * @brief Initialize and create the specified type
+     *
+     * This function creates a new TypeInfo object representing the specific type.
+     * It sets up the basic structure and core properties of the type.
+     *
+     * @param isolate Pointer to the Isolate in which the type is being created
+     *
+     * @return Handle to the newly created TypeInfo for the type, or an empty handle if creation failed
+     */
+    HOType FutureTypeInit(Isolate *isolate);
+
+    /**
+     * @brief Blocks execution until the specified Future is resolved.
+     *
+     * This function waits for a Future to transition from the PENDING state
+     * to a resolved state (e.g., COMPLETED or FAILED). It uses a condition
+     * variable to block the current thread until the Future's state changes.
+     *
+     * @param future Pointer to the Future object to wait on.
+     */
+    void FutureAwait(Future *future);
 
     /**
      * @brief Mark a Future as rejected with the specified result
@@ -114,17 +125,6 @@ namespace orbiter::datatype {
      * @param result Pointer to the result object to be stored within the future
      */
     void FutureResolve(Future *future, OObject *result);
-
-    /**
-     * @brief Blocks execution until the specified Future is resolved.
-     *
-     * This function waits for a Future to transition from the PENDING state
-     * to a resolved state (e.g., COMPLETED or FAILED). It uses a condition
-     * variable to block the current thread until the Future's state changes.
-     *
-     * @param future Pointer to the Future object to wait on.
-     */
-    void FutureAwait(Future *future);
 }
 
 #endif // !ORBIT_ORBITER_DATATYPE_FUTURE_H_
