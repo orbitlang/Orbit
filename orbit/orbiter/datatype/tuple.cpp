@@ -3,10 +3,19 @@
 // Licensed under the Apache License v2.0
 
 #include <orbit/orbiter/datatype/dict.h>
+#include <orbit/orbiter/datatype/error.h>
+#include <orbit/orbiter/datatype/errors.h>
+#include <orbit/orbiter/datatype/function.h>
+#include <orbit/orbiter/datatype/number.h>
+#include <orbit/orbiter/datatype/pcheck.h>
 
 #include <orbit/orbiter/datatype/tuple.h>
 
 using namespace orbiter::datatype;
+
+// *********************************************************************************************************************
+// INTERNAL
+// *********************************************************************************************************************
 
 bool TupleDtor(const Tuple *self) {
     const orbiter::memory::IsolateAllocator allocator(O_GET_ISOLATE(self));
@@ -25,6 +34,280 @@ void TupleTrace(const Tuple *self, const GCTraceCallback callback, const MSize e
     }
 }
 
+// *********************************************************************************************************************
+// TYPE OPS — COMPARISON
+// *********************************************************************************************************************
+
+/// Structural equality: same length and element-wise Equal.
+static bool TupleEqual(const OObject *left, const OObject *right) {
+    if (left == right)
+        return true;
+
+    if (!O_IS_OBJECT(left) || !O_IS_OBJECT(right))
+        return false;
+
+    if (!O_IS_TYPE(left, InstanceType::TUPLE) || !O_IS_TYPE(right, InstanceType::TUPLE))
+        return false;
+
+    const auto *l = (const Tuple *) left;
+    const auto *r = (const Tuple *) right;
+
+    if (l->length != r->length)
+        return false;
+
+    for (MSize i = 0; i < l->length; i++) {
+        if (!Equal(l->objects[i], r->objects[i]))
+            return false;
+    }
+
+    return true;
+}
+
+// *********************************************************************************************************************
+// TYPE OPS — ARITHMETIC
+// *********************************************************************************************************************
+
+/// Concatenation: (a, b) + (c, d) → (a, b, c, d).
+static bool TupleAdd(const OObject *left, const OObject *right, OObject *&result) {
+    if (!O_IS_OBJECT(left) || !O_IS_OBJECT(right))
+        return false;
+
+    if (!O_IS_TYPE(left, InstanceType::TUPLE) || !O_IS_TYPE(right, InstanceType::TUPLE))
+        return false;
+
+    const auto *l = (const Tuple *) left;
+    const auto *r = (const Tuple *) right;
+    const auto length = l->length + r->length;
+
+    const auto t = TupleNew(O_GET_ISOLATE(left), length);
+    if (!t)
+        return false;
+
+    for (MSize i = 0; i < l->length; i++)
+        t->objects[i] = l->objects[i];
+
+    for (MSize i = 0; i < r->length; i++)
+        t->objects[l->length + i] = r->objects[i];
+
+    t->length = length;
+
+    result = (OObject *) t.get();
+
+    return true;
+}
+
+// *********************************************************************************************************************
+// TYPE OPS — CONVERSION
+// *********************************************************************************************************************
+
+/// A non-empty tuple is truthy.
+static bool TupleToBool(const OObject *self) {
+    return ((const Tuple *) self)->length != 0;
+}
+
+static OObject *TupleToString(orbiter::Isolate *isolate, const OObject *self) {
+    assert(false);
+}
+
+// *********************************************************************************************************************
+// TYPE OPS — RUNTIME
+// *********************************************************************************************************************
+
+/// Polynomial hash of all element hashes, cached in self->hash.
+static MSize TupleHash(const OObject *self) {
+    auto *tuple = const_cast<Tuple *>((const Tuple *) self);
+
+    if (tuple->hash != 0)
+        return tuple->hash;
+
+    MSize h = 0;
+    for (MSize i = 0; i < tuple->length; i++)
+        h = h * 31 + Hash(tuple->objects[i]);
+
+    if (h == 0 || h == HASH_ERROR)
+        h = 1;
+
+    tuple->hash = h;
+
+    return tuple->hash;
+}
+
+// *********************************************************************************************************************
+// RUNTIME METHODS
+// *********************************************************************************************************************
+
+RUNTIME_METHOD(tuple_contains, contains,
+               R"DOC(
+@brief Return true if the tuple contains the given value.
+
+Uses structural equality (==) for comparison.
+
+@param value  The value to search for.
+
+@return true if found, false otherwise.
+
+@see count, index
+
+@example
+    (1, 2, 3).contains(2)    // true
+    (1, 2, 3).contains(9)    // false
+)DOC", 2, false, false) {
+    return HOObject((OObject *) BOOL_TO_OBOOL(TupleContains((const Tuple *) argv[0], argv[1]) >= 0));
+}
+
+RUNTIME_METHOD(tuple_count, count,
+               R"DOC(
+@brief Return the number of times a value appears in the tuple.
+
+Uses structural equality (==) for comparison.
+
+@param value  The value to count.
+
+@return A non-negative Int.
+
+@see contains, index
+
+@example
+    (1, 2, 2, 3).count(2)    // 2
+    (1, 2, 3).count(9)        // 0
+)DOC", 2, false, false) {
+    const auto *self = (const Tuple *) argv[0];
+    auto *isolate = O_GET_ISOLATE(self);
+
+    IntegerUnderlying n = 0;
+
+    for (MSize i = 0; i < self->length; i++) {
+        if (Equal(self->objects[i], argv[1]))
+            n++;
+    }
+
+    auto result = IntNew(isolate, n);
+    if (!result)
+        return {};
+
+    return HOObject(std::move(result));
+}
+
+RUNTIME_METHOD(tuple_get, get,
+               R"DOC(
+@brief Return the element at the given index.
+
+Supports negative indices: -1 refers to the last element.
+
+@param index  Integer position. Must be in [-length, length).
+
+@return The element at that position.
+
+@panic ValueError  When `index` is out of range.
+@panic TypeError   When `index` is not an integer.
+
+@see length, index
+
+@example
+    (10, 20, 30).get(0)     // 10
+    (10, 20, 30).get(-1)    // 30
+)DOC", 2, false, false) {
+    PCHECK_ENTRIES(params,
+                   PCHECK_DEF("index", false, InstanceType::NUMBER)
+    );
+    PCHECK_CHECK(params);
+
+    const auto *self = (const Tuple *) argv[0];
+    auto *isolate = O_GET_ISOLATE(self);
+
+    IntegerUnderlying index;
+    NumberExtract(argv[1], index);
+
+    if (index < 0)
+        index += (IntegerUnderlying) self->length;
+
+    if (index < 0 || index >= (IntegerUnderlying) self->length) {
+        ErrorSet(isolate,
+                 ValueError::Details[ValueError::Reason::ID],
+                 nullptr,
+                 "tuple index %lld out of range [0, %lld)",
+                 (long long) index, (long long) self->length);
+
+        return {};
+    }
+
+    return HOObject(self->objects[index]);
+}
+
+RUNTIME_METHOD(tuple_index, index,
+               R"DOC(
+@brief Return the index of the first occurrence of a value.
+
+Uses structural equality (==) for comparison.
+
+@param value  The value to search for.
+
+@return The Int index of the first match.
+
+@panic ValueError  When `value` is not found in the tuple.
+
+@see contains, count
+
+@example
+    (10, 20, 30).index(20)    // 1
+    (10, 20, 30).index(99)    // panic!
+)DOC", 2, false, false) {
+    const auto *self = (const Tuple *) argv[0];
+    auto *isolate = O_GET_ISOLATE(self);
+
+    const auto i = TupleContains(self, argv[1]);
+
+    if (i < 0) {
+        ErrorSet(isolate,
+                 ValueError::Details[ValueError::Reason::ID],
+                 nullptr,
+                 "value not found in tuple");
+
+        return {};
+    }
+
+    auto n = IntNew(isolate, (IntegerUnderlying) i);
+    if (!n)
+        return {};
+
+    return HOObject(std::move(n));
+}
+
+RUNTIME_METHOD(tuple_length, length,
+               R"DOC(
+@brief Return the number of elements in the tuple.
+
+@return A non-negative Int.
+
+@see get
+
+@example
+    (1, 2, 3).length()    // 3
+    ().length()            // 0
+)DOC", 1, false, false) {
+    const auto *self = (const Tuple *) argv[0];
+
+    auto n = IntNew(O_GET_ISOLATE(self), (IntegerUnderlying) self->length);
+    if (!n)
+        return {};
+
+    return HOObject(std::move(n));
+}
+
+constexpr FunctionDef tuple_methods[] = {
+    tuple_contains,
+    tuple_count,
+    tuple_get,
+    tuple_index,
+    tuple_length,
+
+    FUNCTIONDEF_SENTINEL
+};
+
+// *********************************************************************************************************************
+// PUBLIC API
+// *********************************************************************************************************************
+
 bool orbiter::datatype::TupleAppend(Tuple *tuple, OObject *item) {
     if (tuple->length == tuple->capacity)
         return false;
@@ -40,11 +323,20 @@ bool orbiter::datatype::TupleTypeSetup(TypeInfo *self) {
     self->dtor = (DtorFn) TupleDtor;
     self->trace = (TraceFn) TupleTrace;
 
-    return true;
+    auto &ops = ((TypeInfoOps *) self)->ops;
+
+    ops.equal = TupleEqual;
+    ops.add = TupleAdd;
+    ops.to_bool = TupleToBool;
+    ops.to_string = TupleToString;
+    ops.to_repr = TupleToString;
+    ops.hash = TupleHash;
+
+    return TIPropertyAdd(self, tuple_methods, PropertyFlag::IS_PUBLIC);
 }
 
 HOType orbiter::datatype::TupleTypeInit(Isolate *isolate) {
-    auto tuple = MakeType(isolate, "Tuple", InstanceType::TUPLE, sizeof(Tuple) - sizeof(OObject), 0, 0);
+    auto tuple = MakeType(isolate, "Tuple", InstanceType::TUPLE, sizeof(Tuple) - sizeof(OObject), 6, 0);
     return tuple;
 }
 
@@ -118,4 +410,13 @@ HTuple orbiter::datatype::TupleNewFromList(HList &list) {
     }
 
     O_GC_TRACK_RETURN(isolate, tuple, true);
+}
+
+MSSize orbiter::datatype::TupleContains(const Tuple *tuple, const OObject *value) {
+    for (MSize i = 0; i < tuple->length; i++) {
+        if (Equal(tuple->objects[i], value))
+            return (MSSize) i;
+    }
+
+    return -1;
 }

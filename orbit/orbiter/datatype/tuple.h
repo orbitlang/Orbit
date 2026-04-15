@@ -123,6 +123,19 @@ namespace orbiter::datatype {
      * @return A handle to the newly created Tuple object, or nullptr if initialization fails
      */
     HTuple TupleNewFromList(HList &list);
+
+    /**
+     * @brief Return the index of the first element equal to @p value, or -1.
+     *
+     * Performs a linear scan using structural equality (Equal).
+     * Callers that only need a presence check can compare the result with -1.
+     *
+     * @param tuple  The tuple to search.
+     * @param value  The value to look for.
+     *
+     * @return The index of the first match, or -1 if not found.
+     */
+    MSSize TupleContains(const Tuple *tuple, const OObject *value);
 }
 
 #endif // !ORBIT_ORBITER_DATATYPE_TUPLE_H_
