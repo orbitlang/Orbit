@@ -21,25 +21,6 @@ using namespace orbiter::datatype;
 // TYPE OPS HELPERS
 // *********************************************************************************************************************
 
-/// Extract an IntegerUnderlying from any numeric object (Number heap object or SMI).
-/// Returns false when `obj` is not a numeric type — the caller should return false to trigger
-/// the NotImplementedError path in the dispatcher.
-static bool NumberExtract(const OObject *obj, IntegerUnderlying &out) {
-    if (O_IS_SMI(obj)) {
-        out = (IntegerUnderlying) ((MSSize) (MSize) obj >> 1);
-
-        return true;
-    }
-
-    if (O_IS_OBJECT(obj) && O_IS_TYPE(obj, InstanceType::NUMBER)) {
-        out = ((const Number *) obj)->sint;
-
-        return true;
-    }
-
-    return false;
-}
-
 /// Return the integer value of any numeric OObject (Number heap or SMI).
 /// Precondition: `obj` must be a Number or SMI (guaranteed by method dispatch / PCHECK).
 static IntegerUnderlying NumberVal(const OObject *obj) {
@@ -731,6 +712,22 @@ constexpr FunctionDef number_methods[] = {
 
     FUNCTIONDEF_SENTINEL
 };
+
+bool orbiter::datatype::NumberExtract(const OObject *obj, IntegerUnderlying &out) {
+    if (O_IS_SMI(obj)) {
+        out = (IntegerUnderlying) ((MSSize) (MSize) obj >> 1);
+
+        return true;
+    }
+
+    if (O_IS_OBJECT(obj) && O_IS_TYPE(obj, InstanceType::NUMBER)) {
+        out = ((const Number *) obj)->sint;
+
+        return true;
+    }
+
+    return false;
+}
 
 bool orbiter::datatype::NumberTypeSetup(TypeInfo *self) {
     auto &ops = ((TypeInfoOps *) self)->ops;

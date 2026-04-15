@@ -23,6 +23,20 @@ namespace orbiter::datatype {
     using HNumber = Handle<Number>;
 
     /**
+     * @brief Extract the integer value from a SMI or Number heap object.
+     *
+     * Handles both the SMI fast path (tagged pointer) and heap-allocated Number
+     * objects.  Returns false — without modifying @p out — for any other type,
+     * letting the caller surface a NotImplementedError.
+     *
+     * @param obj  Object to extract from.
+     * @param out  Receives the signed integer value on success.
+     *
+     * @return true if extraction succeeded, false if @p obj is not an integer type.
+     */
+    bool NumberExtract(const OObject *obj, IntegerUnderlying &out);
+
+    /**
      * @brief Set up additional features and properties for the specified type
      *
      * This function enriches the previously created type with various functionalities.
@@ -36,6 +50,7 @@ namespace orbiter::datatype {
      *
      * @return true if setup was successful, false otherwise
      */
+
     bool NumberTypeSetup(TypeInfo *self);
 
     /**
