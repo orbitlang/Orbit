@@ -11,9 +11,9 @@ namespace orbiter::datatype {
     struct Result {
         OROBJ_HEAD;
 
-        OObject *value;
-
         bool ok;
+
+        OObject *value;
     };
 
     using HResult = Handle<Result>;
