@@ -5,7 +5,7 @@
 #ifndef ORBIT_ORBITER_DATATYPE_ATOM_H_
 #define ORBIT_ORBITER_DATATYPE_ATOM_H_
 
-#include <orbit/orbiter/datatype/oobject.h>
+#include <orbit/orbiter/datatype/orstring.h>
 
 namespace orbiter::datatype {
     struct Atom {

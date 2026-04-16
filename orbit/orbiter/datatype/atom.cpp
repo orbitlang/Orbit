@@ -7,7 +7,6 @@
 
 #include <orbit/orbiter/datatype/function.h>
 #include <orbit/orbiter/datatype/hashmap.h>
-#include <orbit/orbiter/datatype/orstring.h>
 
 #include <orbit/orbiter/datatype/atom.h>
 
