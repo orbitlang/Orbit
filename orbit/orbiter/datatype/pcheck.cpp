@@ -37,29 +37,18 @@ bool orbiter::datatype::CheckParameter(const Parameter *parameters, OObject **ar
         const auto *value = argv[index];
 
         if (value != nullptr) {
-            for (const auto type: cursor->types) {
-                if (O_IS_OBJECT(value)) {
-                    if (O_IS_TYPE(value, type)) {
+            if (O_IS_OBJECT(value)) {
+                if ((cursor->types >> (U32) O_GET_TYPE(value)->i_type) & 1)
+                    ok = true;
+            } else {
+                if ((cursor->types >> (U32) InstanceType::NUMBER) & 1) {
+                    if (O_IS_SMI(value))
                         ok = true;
+                }
 
-                        break;
-                    }
-                } else {
-                    if (type == InstanceType::NUMBER) {
-                        if (O_IS_SMI(value)) {
-                            ok = true;
-
-                            break;
-                        }
-                    }
-
-                    if (type == InstanceType::BOOLEAN) {
-                        if (O_IS_ODDBALL(value)) {
-                            ok = true;
-
-                            break;
-                        }
-                    }
+                if ((cursor->types >> (U32) InstanceType::BOOLEAN) & 1) {
+                    if (O_IS_ODDBALL(value))
+                        ok = true;
                 }
             }
         } else if (cursor->optional)

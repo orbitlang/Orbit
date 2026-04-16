@@ -5,13 +5,18 @@
 #ifndef ORBIT_ORBITER_DATATYPE_PCHECK_H_
 #define ORBIT_ORBITER_DATATYPE_PCHECK_H_
 
-#include <initializer_list>
-
 #include <orbit/orbiter/datatype/oobject.h>
 
 namespace orbiter::datatype {
 #define PCHECK_ENTRIES(name, ...)       static constexpr Parameter name[] = {__VA_ARGS__, {{}, nullptr, false}}
-#define PCHECK_DEF(name, optional, ...) {{__VA_ARGS__}, name, true, optional}
+#define PCHECK_DEF(name, optional, ...)                                         \
+    {[]() constexpr -> U32 {                                                    \
+        U32 m = 0;                                                              \
+        for (const auto t : std::initializer_list<InstanceType>{__VA_ARGS__})   \
+            m |= (1u << (U32)t);                                                \
+                                                                                \
+        return m;                                                               \
+    }(), name, true, optional}
 
 #define PCHECK_CHECK(name)                                          \
     do {                                                            \
@@ -20,7 +25,7 @@ namespace orbiter::datatype {
     } while(0)
 
     struct Parameter {
-        const std::initializer_list<InstanceType> types;
+        U32 types;
 
         const char *name;
 
