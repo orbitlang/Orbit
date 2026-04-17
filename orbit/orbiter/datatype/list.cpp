@@ -5,10 +5,20 @@
 #include <cassert>
 #include <shared_mutex>
 
+#include <orbit/orbiter/datatype/error.h>
+#include <orbit/orbiter/datatype/errors.h>
+#include <orbit/orbiter/datatype/function.h>
+#include <orbit/orbiter/datatype/number.h>
+#include <orbit/orbiter/datatype/pcheck.h>
 #include <orbit/orbiter/datatype/tuple.h>
+
 #include <orbit/orbiter/datatype/list.h>
 
 using namespace orbiter::datatype;
+
+// *********************************************************************************************************************
+// INTERNAL
+// *********************************************************************************************************************
 
 bool ListCheckSize(List *list, const MSize count) {
     if (list->length + count < list->capacity)
@@ -39,6 +49,8 @@ bool ListDtor(const List *self) {
 
     allocator.free(self->objects);
 
+    self->lock.~AsyncRWLock();
+
     return true;
 }
 
@@ -50,6 +62,482 @@ void ListTrace(const List *self, GCTraceCallback callback, const MSize epoch) {
             callback(obj, epoch);
     }
 }
+
+// *********************************************************************************************************************
+// TYPE OPS — COMPARISON
+// *********************************************************************************************************************
+
+/// Structural equality: same length and element-wise Equal.
+static bool ListEqual(const OObject *left, const OObject *right) {
+    if (left == right)
+        return true;
+
+    if (!O_IS_OBJECT(left) || !O_IS_OBJECT(right))
+        return false;
+
+    if (!O_IS_TYPE(left, InstanceType::LIST) || !O_IS_TYPE(right, InstanceType::LIST))
+        return false;
+
+    auto *l = (List *) left;
+    auto *r = (List *) right;
+
+    std::shared_lock ll(l->lock);
+    std::shared_lock lr(r->lock);
+
+    if (l->length != r->length)
+        return false;
+
+    for (MSize i = 0; i < l->length; i++) {
+        if (!Equal(l->objects[i], r->objects[i]))
+            return false;
+    }
+
+    return true;
+}
+
+// *********************************************************************************************************************
+// TYPE OPS — ARITHMETIC
+// *********************************************************************************************************************
+
+/// Concatenation: [a, b] + [c, d] → [a, b, c, d].
+static bool ListAdd(const OObject *left, const OObject *right, OObject *&result) {
+    if (!O_IS_OBJECT(right))
+        return false;
+
+    if (!O_IS_TYPE(right, InstanceType::LIST) && !O_IS_TYPE(right, InstanceType::TUPLE))
+        return false;
+
+    HList new_list;
+    MSize total = 0;
+
+    auto *l = (List *) left;
+
+    std::shared_lock ll(l->lock);
+
+    if (O_IS_TYPE(right, InstanceType::TUPLE)) {
+        const auto *r = (Tuple *) right;
+
+        total = l->length + r->length;
+        new_list = ListNew(O_GET_ISOLATE(left), total > 0 ? total : kListInitialCapacity);
+        if (!new_list)
+            return false;
+
+        for (MSize i = 0; i < l->length; i++)
+            new_list->objects[i] = l->objects[i];
+
+        for (MSize i = 0; i < r->length; i++)
+            new_list->objects[l->length + i] = r->objects[i];
+    } else {
+        auto *r = (List *) right;
+
+        std::shared_lock lr(r->lock, std::defer_lock);
+
+        if (l != r)
+            lr.lock();
+
+        total = l->length + r->length;
+
+        new_list = ListNew(O_GET_ISOLATE(left), total > 0 ? total : kListInitialCapacity);
+        if (!new_list)
+            return false;
+
+        for (MSize i = 0; i < l->length; i++)
+            new_list->objects[i] = l->objects[i];
+
+        for (MSize i = 0; i < r->length; i++)
+            new_list->objects[l->length + i] = r->objects[i];
+    }
+
+    new_list->length = total;
+
+    result = (OObject *) new_list.get();
+
+    return true;
+}
+
+// *********************************************************************************************************************
+// TYPE OPS — CONVERSION
+// *********************************************************************************************************************
+
+/// A non-empty list is truthy.
+static bool ListToBool(const OObject *self) {
+    return ((const List *) self)->length != 0;
+}
+
+static OObject *ListToString(orbiter::Isolate *isolate, const OObject *self) {
+    assert(false);
+}
+
+// *********************************************************************************************************************
+// RUNTIME METHODS
+// *********************************************************************************************************************
+
+RUNTIME_METHOD(list_append, append,
+               R"DOC(
+@brief Append an object to the end of the list.
+
+@param object  The value to append.
+
+@see prepend, insert, extend
+
+@example
+    let l = []
+    l.append(1)
+    l.append(2)
+    l.length()    // 2
+)DOC", 2, false, false) {
+    PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::LIST));
+    PCHECK_CHECK(params);
+
+    auto *self = (List *) argv[0];
+
+    if (!ListAppend(self, argv[1]))
+        return {};
+
+    return HOObject(kOddBallNIL);
+}
+
+RUNTIME_METHOD(list_clear, clear,
+               R"DOC(
+@brief Remove all elements from the list in-place.
+
+The backing buffer is retained for reuse; only the length is reset to zero.
+
+@see copy, length
+
+@example
+    let l = [1, 2, 3]
+    l.clear()
+    l.length()    // 0
+)DOC", 1, false, false) {
+    PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::LIST));
+    PCHECK_CHECK(params);
+
+    auto *self = (List *) argv[0];
+
+    std::unique_lock _(self->lock);
+
+    self->length = 0;
+
+    return HOObject(kOddBallNIL);
+}
+
+RUNTIME_METHOD(list_contains, contains,
+               R"DOC(
+@brief Return true if the list contains the given value.
+
+Uses structural equality (==) for comparison.
+
+@param value  The value to search for.
+
+@return true if found, false otherwise.
+
+@see count, index
+
+@example
+    [1, 2, 3].contains(2)    // true
+    [1, 2, 3].contains(9)    // false
+)DOC", 2, false, false) {
+    PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::LIST));
+    PCHECK_CHECK(params);
+
+    auto *self = (List *) argv[0];
+
+    std::shared_lock _(self->lock);
+
+    for (MSize i = 0; i < self->length; i++) {
+        if (Equal(self->objects[i], argv[1]))
+            return HOObject((OObject *) BOOL_TO_OBOOL(true));
+    }
+
+    return HOObject((OObject *) BOOL_TO_OBOOL(false));
+}
+
+RUNTIME_METHOD(list_count, count,
+               R"DOC(
+@brief Return the number of times a value appears in the list.
+
+Uses structural equality (==) for comparison.
+
+@param value  The value to count.
+
+@return A non-negative Int.
+
+@see contains, index
+
+@example
+    [1, 2, 2, 3].count(2)    // 2
+    [1, 2, 3].count(9)        // 0
+)DOC", 2, false, false) {
+    PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::LIST));
+    PCHECK_CHECK(params);
+
+    auto *self = (List *) argv[0];
+    auto *isolate = O_GET_ISOLATE(self);
+
+    std::shared_lock _(self->lock);
+
+    IntegerUnderlying n = 0;
+
+    for (MSize i = 0; i < self->length; i++) {
+        if (Equal(self->objects[i], argv[1]))
+            n++;
+    }
+
+    auto result = IntNew(isolate, n);
+    if (!result)
+        return {};
+
+    return HOObject(std::move(result));
+}
+
+RUNTIME_METHOD(list_extend, extend,
+               R"DOC(
+@brief Extend the list by appending all elements from another List or Tuple.
+
+@param other  The source List or Tuple whose elements are appended.
+
+@panic TypeError   When `other` is neither a List nor a Tuple.
+
+@see append, copy
+
+@example
+    let l = [1, 2]
+    l.extend([3, 4])
+    l.length()    // 4
+)DOC", 2, false, false) {
+    PCHECK_ENTRIES(params,
+                   PCHECK_DEF("self", false, InstanceType::LIST),
+                   PCHECK_DEF("other", false, InstanceType::LIST, InstanceType::TUPLE)
+    );
+    PCHECK_CHECK(params);
+
+    auto *self = (List *) argv[0];
+
+    if (!ListExtend(self, argv[1]))
+        return {};
+
+    return HOObject(kOddBallNIL);
+}
+
+RUNTIME_METHOD(list_get, get,
+               R"DOC(
+@brief Return the element at the given index.
+
+Supports negative indices: -1 refers to the last element.
+
+@param index  Integer position. Must be in [-length, length).
+
+@return The element at that position.
+
+@panic ValueError  When `index` is out of range.
+@panic TypeError   When `index` is not an integer.
+
+@see length, insert, remove
+
+@example
+    [10, 20, 30].get(0)     // 10
+    [10, 20, 30].get(-1)    // 30
+)DOC", 2, false, false) {
+    PCHECK_ENTRIES(params,
+                   PCHECK_DEF("self", false, InstanceType::LIST),
+                   PCHECK_DEF("index", false, InstanceType::NUMBER));
+    PCHECK_CHECK(params);
+
+    auto *self = (List *) argv[0];
+    auto *isolate = O_GET_ISOLATE(self);
+
+    IntegerUnderlying index;
+    NumberExtract(argv[1], index);
+
+    bool success;
+    auto result = ListGet(self, &success, index);
+    if (!success) {
+        ErrorSet(isolate,
+                 ValueError::Details[ValueError::Reason::ID],
+                 nullptr,
+                 "list index %lld out of range [0, %lld)",
+                 (long long) index, (long long) self->length);
+
+        return {};
+    }
+
+    return result;
+}
+
+RUNTIME_METHOD(list_index, index,
+               R"DOC(
+@brief Return the index of the first occurrence of a value.
+
+Uses structural equality (==) for comparison.
+
+@param value  The value to search for.
+
+@return The Int index of the first match, -1 otherwise.
+
+@see contains, count
+
+@example
+    [10, 20, 30].index(20)    // 1
+    [10, 20, 30].index(99)    // -1
+)DOC", 2, false, false) {
+    PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::LIST));
+    PCHECK_CHECK(params);
+
+    auto *self = (List *) argv[0];
+    auto *isolate = O_GET_ISOLATE(self);
+
+    std::shared_lock _(self->lock);
+
+    for (MSize i = 0; i < self->length; i++) {
+        if (Equal(self->objects[i], argv[1])) {
+            auto n = IntNew(isolate, (IntegerUnderlying) i);
+            if (!n)
+                return {};
+
+            return HOObject(std::move(n));
+        }
+    }
+
+    return HOObject((OObject *) O_TO_SMI(-1));
+}
+
+RUNTIME_METHOD(list_insert, insert,
+               R"DOC(
+@brief Insert an object at the given index.
+
+Supports negative indices: -1 inserts before the last element.
+If `index` is beyond the end of the list the element is appended.
+
+@param index   Integer position.
+@param object  The value to insert.
+
+@panic TypeError   When `index` is not an integer.
+
+@see append, prepend, remove
+
+@example
+    let l = [1, 3]
+    l.insert(1, "hello")
+    l.get(1)    // "hello"
+)DOC", 3, false, false) {
+    PCHECK_ENTRIES(params,
+                   PCHECK_DEF("self", false, InstanceType::LIST),
+                   PCHECK_DEF("index", false, InstanceType::NUMBER)
+    );
+    PCHECK_CHECK(params);
+
+    auto *self = (List *) argv[0];
+
+    IntegerUnderlying index;
+    NumberExtract(argv[1], index);
+
+    if (!ListInsert(self, argv[2], index))
+        return {};
+
+    return HOObject(kOddBallNIL);
+}
+
+RUNTIME_METHOD(list_length, length,
+               R"DOC(
+@brief Return the number of elements in the list.
+
+@return A non-negative Int.
+
+@see get, clear
+
+@example
+    [1, 2, 3].length()    // 3
+    [].length()            // 0
+)DOC", 1, false, false) {
+    PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::LIST));
+    PCHECK_CHECK(params);
+
+    const auto *self = (const List *) argv[0];
+
+    auto n = IntNew(O_GET_ISOLATE(self), (IntegerUnderlying) self->length);
+    if (!n)
+        return {};
+
+    return HOObject(std::move(n));
+}
+
+RUNTIME_METHOD(list_prepend, prepend,
+               R"DOC(
+@brief Insert an object at the beginning of the list.
+
+@param object  The value to prepend.
+
+@see append, insert
+
+@example
+    let l = [2, 3]
+    l.prepend(1)
+    l.get(0)    // 1
+)DOC", 2, false, false) {
+    PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::LIST));
+    PCHECK_CHECK(params);
+
+    auto *self = (List *) argv[0];
+
+    if (!ListPrepend(self, argv[1]))
+        return {};
+
+    return HOObject(kOddBallNIL);
+}
+
+RUNTIME_METHOD(list_remove, remove,
+               R"DOC(
+@brief Remove the element at the given index.
+
+Supports negative indices: -1 removes the last element.
+If the index is out of range the list is left unchanged.
+
+@param index  Integer position.
+
+@panic TypeError  When `index` is not an integer.
+
+@see insert, clear
+
+@example
+    let l = [1, 2, 3]
+    l.remove(1)
+    l.length()    // 2
+)DOC", 2, false, false) {
+    PCHECK_ENTRIES(params,
+                   PCHECK_DEF("self", false, InstanceType::LIST),
+                   PCHECK_DEF("index", false, InstanceType::NUMBER));
+    PCHECK_CHECK(params);
+
+    auto *self = (List *) argv[0];
+
+    IntegerUnderlying index;
+    NumberExtract(argv[1], index);
+
+    ListRemove(self, index);
+
+    return HOObject(kOddBallNIL);
+}
+
+constexpr FunctionDef list_methods[] = {
+    list_append,
+    list_clear,
+    list_contains,
+    list_count,
+    list_extend,
+    list_get,
+    list_index,
+    list_insert,
+    list_length,
+    list_prepend,
+    list_remove,
+
+    FUNCTIONDEF_SENTINEL
+};
+
+// *********************************************************************************************************************
+// PUBLIC API
+// *********************************************************************************************************************
 
 bool orbiter::datatype::ListAppend(List *list, OObject *object) {
     std::unique_lock _(list->lock);
@@ -85,7 +573,7 @@ bool orbiter::datatype::ListAppend(List *list, List *other) {
 
 bool orbiter::datatype::ListExtend(List *list, OObject *other) {
     if (O_IS_TYPE(other, InstanceType::LIST))
-        return ListAppend(list, other);
+        return ListAppend(list, (List *) other);
 
     if (O_IS_TYPE(other, InstanceType::TUPLE)) {
         std::unique_lock _(list->lock);
@@ -146,7 +634,15 @@ bool orbiter::datatype::ListTypeSetup(TypeInfo *self) {
     self->dtor = (DtorFn) ListDtor;
     self->trace = (TraceFn) ListTrace;
 
-    return true;
+    auto &ops = ((TypeInfoOps *) self)->ops;
+
+    ops.equal = ListEqual;
+    ops.add = ListAdd;
+    ops.to_bool = ListToBool;
+    ops.to_string = ListToString;
+    ops.to_repr = ListToString;
+
+    return TIPropertyAdd(self, list_methods, PropertyFlag::IS_PUBLIC);
 }
 
 HList orbiter::datatype::ListNew(Isolate *isolate, const MSize capacity) {
@@ -154,7 +650,6 @@ HList orbiter::datatype::ListNew(Isolate *isolate, const MSize capacity) {
     if (list == nullptr)
         return {};
 
-    new(&list->lock)std::shared_mutex;
     list->objects = nullptr;
     list->capacity = capacity;
     list->length = 0;
@@ -169,6 +664,8 @@ HList orbiter::datatype::ListNew(Isolate *isolate, const MSize capacity) {
             return {};
         }
     }
+
+    new(&list->lock)sync::AsyncRWLock();
 
     O_GC_TRACK_RETURN(isolate, list, true);
 }
@@ -189,7 +686,7 @@ HOObject orbiter::datatype::ListGet(List *list, bool *success, MSSize index) {
 }
 
 HOType orbiter::datatype::ListTypeInit(Isolate *isolate) {
-    auto list = MakeType(isolate, "List", InstanceType::LIST, sizeof(List) - sizeof(OObject), 0, 0);
+    auto list = MakeType(isolate, "List", InstanceType::LIST, sizeof(List) - sizeof(OObject), 11, 0);
     return list;
 }
 
