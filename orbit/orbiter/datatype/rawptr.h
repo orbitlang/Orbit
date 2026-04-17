@@ -5,13 +5,15 @@
 #ifndef ORBIT_ORBITER_DATATYPE_RAWPTR_H_
 #define ORBIT_ORBITER_DATATYPE_RAWPTR_H_
 
+#include <atomic>
+
 #include <orbit/orbiter/datatype/oobject.h>
 
 namespace orbiter::datatype {
     struct RawPtr {
         OROBJ_HEAD;
 
-        void *ptr;
+        std::atomic<PtrSize> ptr;
     };
 
     using HRawPtr = Handle<RawPtr>;

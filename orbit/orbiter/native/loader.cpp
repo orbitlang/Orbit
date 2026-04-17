@@ -42,7 +42,7 @@ DLHandle Loader::LoadLibrary(ORString *name, bool &closable) {
 
         HOObject out_value_;
         if (DictLookup(this->lib_cache_.get(), (OObject *) name, out_value_))
-            return ((RawPtr *) out_value_.get())->ptr;
+            return (DLHandle) ((RawPtr *) out_value_.get())->ptr.load(std::memory_order_relaxed);
     }
 
     auto lib = OpenLibrary(this->isolate_, library);
@@ -59,7 +59,7 @@ DLHandle Loader::LoadLibrary(ORString *name, bool &closable) {
 
         HOObject out_value_;
         if (DictLookup(this->lib_cache_.get(), (OObject *) name, out_value_))
-            return ((RawPtr *) out_value_.get())->ptr;
+            return (DLHandle) ((RawPtr *) out_value_.get())->ptr.load(std::memory_order_relaxed);
 
         lib = OpenLibrary(this->isolate_, library);
         if (lib == DLHandleError)
@@ -78,7 +78,7 @@ DLHandle Loader::LoadLibrary(ORString *name, bool &closable) {
 
     closable = true;
 
-    return ret->ptr;
+    return (DLHandle) ret->ptr.load(std::memory_order_relaxed);
 }
 
 HOObject Loader::Load(NativeBinding *binding) {
