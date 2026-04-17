@@ -130,6 +130,27 @@ namespace orbiter::datatype {
             return false;
         }
 
+        template<typename Equal, typename Hash, typename Key>
+        bool Lookup(Equal equal, Hash hash, Key key, MSize key_length, HEntry **entry) const {
+            *entry = nullptr;
+
+            auto index = hash(key, key_length);
+            if (index == HASH_ERROR)
+                return false;
+
+            index %= this->capacity;
+
+            for (HEntry *cur = this->map[index]; cur != nullptr; cur = cur->next) {
+                if (equal(cur->key, key, key_length)) {
+                    *entry = cur;
+
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
         bool Remove(K key, HEntry **entry) {
             *entry = nullptr;
 
