@@ -4,6 +4,7 @@
 
 #include <cassert>
 #include <cstdarg>
+#include <shared_mutex>
 
 #include <orbit/util/hash.h>
 
@@ -19,6 +20,47 @@ using namespace orbiter::datatype;
 #define STR_BUF(str) ((str)->buffer)
 #define STR_LEN(str) ((str)->length)
 
+using StringEntry = HEntry<ORString *, ORString *>;
+using StringMap = HashMap<
+    ORString *,
+    ORString *,
+    static_cast<bool (*)(const ORString *, const ORString *)>(ORStringEqual),
+    ORStringHash
+>;
+
+class GST {
+public:
+    std::shared_mutex lock;
+    StringMap map;
+
+    explicit GST(orbiter::Isolate *isolate) : map(isolate) {
+    }
+};
+
+bool StrDtor(const ORString *self) {
+    const orbiter::memory::IsolateAllocator allocator(O_GET_ISOLATE(self));
+
+    allocator.free(self->buffer);
+
+    return true;
+}
+
+bool StrGSTDtor(TypeInfo *self) {
+    auto *gst = (GST *) self->aux.data;
+
+    gst->map.Finalize([](const StringEntry *entry) {
+        O_FAST_DECREF(entry->key);
+        O_FAST_DECREF(entry->value);
+    });
+
+    const orbiter::memory::IsolateAllocator allocator(self->isolate);
+    allocator.FreeObject(gst);
+
+    self->aux.data = nullptr;
+
+    return true;
+}
+
 bool StrEqual(const ORString *left, const ORString *right) {
     if (left == right)
         return true;
@@ -30,6 +72,10 @@ bool StrEqual(const ORString *left, const ORString *right) {
         return false;
 
     return ORStringEqual(left, right);
+}
+
+bool StrRawEqual(const ORString *left, const unsigned char *right, const MSize length) {
+    return ORStringCompare(left, (const char *) right, length) == 0;
 }
 
 bool StrToNative(ORString *self, void *out, const NativeType type) {
@@ -53,8 +99,8 @@ bool StringInitKind(ORString *string) {
     while (index < string->length) {
         if (!CheckUnicodeCharSequence(&kind, &cp_length, nullptr, 0, string->buffer[index], index)) {
             const auto reason = (index == cp_length)
-                ? UnicodeError::Reason::INVALID_START_BYTE
-                : UnicodeError::Reason::INVALID_CONTINUATION_BYTE;
+                                    ? UnicodeError::Reason::INVALID_START_BYTE
+                                    : UnicodeError::Reason::INVALID_CONTINUATION_BYTE;
 
             ErrorSet(O_GET_ISOLATE(string),
                      UnicodeError::Details[UnicodeError::Reason::ID],
@@ -105,7 +151,17 @@ ORString *MkStringContainer(orbiter::Isolate *isolate, const MSize len, bool mkb
     return str;
 }
 
+MSize StrHash(const unsigned char *buffer, const MSize length) {
+    auto hash = fnv1_hash(buffer, length);
+    if (hash == 0 || hash == HASH_ERROR)
+        hash = 1;
+
+    return hash;
+}
+
 bool orbiter::datatype::ORStringTypeSetup(TypeInfo *self) {
+    self->dtor = (DtorFn) StrDtor;
+
     auto &ops = ((TypeInfoOps *) self)->ops;
 
     ops.equal = (EqualFn) StrEqual;
@@ -182,8 +238,62 @@ HORString orbiter::datatype::ORStringFormat(Isolate *isolate, const char *format
 }
 
 HORString orbiter::datatype::ORStringIntern(Isolate *isolate, const unsigned char *string, const MSize length) {
-    // TODO: IMPL THIS!
-    return ORStringNew(isolate, string, length);
+    auto *gst = (GST *) isolate->primitive[(int) InstanceType::STRING]->aux.data;
+    assert(gst != nullptr);
+
+    StringEntry *entry;
+
+    std::shared_lock shared_lock(gst->lock);
+
+    auto ok = gst->map.Lookup(
+        StrRawEqual,
+        StrHash,
+        string,
+        length,
+        &entry
+    );
+    if (ok)
+        return HORString(entry->value);
+
+    shared_lock.unlock();
+
+    std::unique_lock lock(gst->lock);
+
+    ok = gst->map.Lookup(
+        StrRawEqual,
+        StrHash,
+        string,
+        length,
+        &entry
+    );
+    if (ok)
+        return HORString(entry->value);
+
+    if ((entry = gst->map.AllocHEntry()) == nullptr)
+        return {};
+
+    auto str = ORStringNew(isolate, string, length);
+    if (!str) {
+        gst->map.FreeHEntry(entry);
+
+        return {};
+    }
+
+    entry->key = str.get();
+    entry->value = str.get();
+
+    if (gst->map.Insert(entry)) {
+        O_FAST_INCREF(entry->key);
+        O_FAST_INCREF(entry->value);
+
+        str->intern = true;
+
+        return str;
+    }
+
+    gst->map.FreeHEntry(entry);
+
+    return {};
 }
 
 HORString orbiter::datatype::ORStringNew(Isolate *isolate, unsigned char *string, const MSize length,
@@ -247,16 +357,33 @@ MSize orbiter::datatype::ORStringHash(ORString *string) {
     if (string->hash != 0)
         return string->hash;
 
-    auto hash = fnv1_hash(STR_BUF(string), STR_LEN(string));
-    if (hash == 0 || hash == HASH_ERROR)
-        hash = 1;
+    string->hash = StrHash(STR_BUF(string), STR_LEN(string));
 
-    string->hash = hash;
-
-    return hash;
+    return string->hash;
 }
 
 HOType orbiter::datatype::ORStringTypeInit(Isolate *isolate) {
+    memory::IsolateAllocator allocator(isolate);
+
+    auto *gst = allocator.AllocObject<GST>(isolate);
+    if (gst == nullptr)
+        return {};
+
+    if (!gst->map.Initialize()) {
+        allocator.FreeObject(gst);
+
+        return {};
+    }
+
     auto string = MakeType(isolate, "String", InstanceType::STRING, sizeof(ORString) - sizeof(OObject), 0, 0);
+    if (!string) {
+        allocator.FreeObject(gst);
+
+        return {};
+    }
+
+    string->aux.data = gst;
+    string->aux.dtor = (TypeInfoAUXDtor) StrGSTDtor;
+
     return string;
 }
