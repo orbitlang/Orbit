@@ -202,6 +202,22 @@ namespace orbiter::datatype {
             (const char *) "missing required parameter '%s' at position %d"
         };
     };
+
+    struct UnicodeError {
+        enum Reason : U8 {
+            ID,
+
+            INVALID_START_BYTE,
+            INVALID_CONTINUATION_BYTE,
+        };
+
+        static constexpr const char *Details[] = {
+            (const char *) "UnicodeError",
+
+            (const char *) "can't decode byte 0x%02x: invalid start byte",
+            (const char *) "can't decode byte 0x%02x: invalid continuation byte",
+        };
+    };
 }
 
 #endif // !ORBIT_ORBITER_DATATYPE_ERRORS_H_

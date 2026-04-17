@@ -7,6 +7,8 @@
 
 #include <orbit/util/hash.h>
 
+#include <orbit/orbiter/datatype/error.h>
+#include <orbit/orbiter/datatype/errors.h>
 #include <orbit/orbiter/datatype/stringbuilder.h>
 
 #include <orbit/orbiter/datatype/orstring.h>
@@ -21,13 +23,13 @@ bool StrEqual(const ORString *left, const ORString *right) {
     if (left == right)
         return true;
 
-    if (!O_IS_TYPE(left, InstanceType::STRING) || !O_IS_TYPE(right, InstanceType::STRING))
+    if (!O_IS_TYPE(right, InstanceType::STRING))
         return false;
 
     if (STR_LEN(left) != STR_LEN(right))
         return false;
 
-    return ORStringEqual(left, right) == 0;
+    return ORStringEqual(left, right);
 }
 
 bool StrToNative(ORString *self, void *out, const NativeType type) {
@@ -38,6 +40,39 @@ bool StrToNative(ORString *self, void *out, const NativeType type) {
     }
 
     return false;
+}
+
+bool StringInitKind(ORString *string) {
+    auto kind = StringKind::ASCII;
+
+    MSize index = 0;
+    MSize cp_length = 0;
+
+    string->cp_length = 0;
+
+    while (index < string->length) {
+        if (!CheckUnicodeCharSequence(&kind, &cp_length, nullptr, 0, string->buffer[index], index)) {
+            const auto reason = (index == cp_length)
+                ? UnicodeError::Reason::INVALID_START_BYTE
+                : UnicodeError::Reason::INVALID_CONTINUATION_BYTE;
+
+            ErrorSet(O_GET_ISOLATE(string),
+                     UnicodeError::Details[UnicodeError::Reason::ID],
+                     nullptr,
+                     UnicodeError::Details[reason],
+                     string->buffer[index]);
+
+            return false;
+        }
+
+        if (kind > string->kind)
+            string->kind = kind;
+
+        if (++index == cp_length)
+            string->cp_length++;
+    }
+
+    return true;
 }
 
 ORString *MkStringContainer(orbiter::Isolate *isolate, const MSize len, bool mkbuf) {
@@ -70,29 +105,6 @@ ORString *MkStringContainer(orbiter::Isolate *isolate, const MSize len, bool mkb
     return str;
 }
 
-bool StringInitKind(ORString *string) {
-    StringKind kind = StringKind::ASCII;
-    MSize index = 0;
-    MSize cp_length = 0;
-
-    string->cp_length = 0;
-
-    while (index < string->length) {
-        if (!CheckUnicodeCharSequence(&kind, &cp_length, nullptr, 0, string->buffer[index], index)) {
-            // TODO: error!
-            return false;
-        }
-
-        if (kind > string->kind)
-            string->kind = kind;
-
-        if (++index == cp_length)
-            string->cp_length++;
-    }
-
-    return true;
-}
-
 bool orbiter::datatype::ORStringTypeSetup(TypeInfo *self) {
     auto &ops = ((TypeInfoOps *) self)->ops;
 
@@ -119,7 +131,7 @@ int orbiter::datatype::ORStringCompare(const ORString *left, const ORString *rig
     return 0;
 }
 
-int orbiter::datatype::ORStringCompare(const ORString *left, const char *right, MSize length) {
+int orbiter::datatype::ORStringCompare(const ORString *left, const char *right, const MSize length) {
     const auto compare = strncmp((const char *) STR_BUF(left), right, std::min(STR_LEN(left), length));
 
     if (compare == 0) {
@@ -130,7 +142,7 @@ int orbiter::datatype::ORStringCompare(const ORString *left, const char *right, 
     return compare;
 }
 
-int orbiter::datatype::ORStringCompare(const char *left, const ORString *right, MSize length) {
+int orbiter::datatype::ORStringCompare(const char *left, const ORString *right, const MSize length) {
     const auto compare = strncmp(left, (const char *) STR_BUF(right), std::min(STR_LEN(right), length));
 
     if (compare == 0) {
@@ -169,19 +181,19 @@ HORString orbiter::datatype::ORStringFormat(Isolate *isolate, const char *format
     O_GC_TRACK_RETURN(isolate, str, false);
 }
 
-HORString orbiter::datatype::ORStringIntern(Isolate *isolate, const unsigned char *string, MSize length) {
+HORString orbiter::datatype::ORStringIntern(Isolate *isolate, const unsigned char *string, const MSize length) {
     // TODO: IMPL THIS!
     return ORStringNew(isolate, string, length);
 }
 
-HORString orbiter::datatype::ORStringNew(Isolate *isolate, unsigned char *buffer, MSize length,
-                                         MSize cp_length,
-                                         StringKind kind) {
-    assert(buffer[length] == '\0');
+HORString orbiter::datatype::ORStringNew(Isolate *isolate, unsigned char *string, const MSize length,
+                                         const MSize cp_length,
+                                         const StringKind kind) {
+    assert(string[length] == '\0');
 
     auto *str = MkStringContainer(isolate, length, false);
     if (str != nullptr) {
-        str->buffer = buffer;
+        str->buffer = string;
         str->cp_length = cp_length;
         str->kind = kind;
     }
@@ -189,7 +201,7 @@ HORString orbiter::datatype::ORStringNew(Isolate *isolate, unsigned char *buffer
     O_GC_TRACK_RETURN(isolate, str, false);
 }
 
-HORString orbiter::datatype::ORStringNew(Isolate *isolate, const unsigned char *string, MSize length) {
+HORString orbiter::datatype::ORStringNew(Isolate *isolate, const unsigned char *string, const MSize length) {
     StringBuilder builder(isolate);
     StringKind kind;
     MSize len;
@@ -212,12 +224,12 @@ HORString orbiter::datatype::ORStringNew(Isolate *isolate, const unsigned char *
     return str;
 }
 
-HORString orbiter::datatype::ORStringNewHoldBuffer(Isolate *isolate, unsigned char *string, MSize length) {
-    assert(string[length] == '\0');
+HORString orbiter::datatype::ORStringNewHoldBuffer(Isolate *isolate, unsigned char *buffer, const MSize length) {
+    assert(buffer[length] == '\0');
 
     auto *str = MkStringContainer(isolate, length, false);
     if (str != nullptr) {
-        str->buffer = string;
+        str->buffer = buffer;
 
         if (!StringInitKind(str)) {
             str->buffer = nullptr;

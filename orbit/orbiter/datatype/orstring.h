@@ -258,18 +258,21 @@ namespace orbiter::datatype {
     /**
      * @brief Create a new string object using the buffer parameter as an internal buffer
      *
-     * The new string object becomes the owner of the buffer passed as a parameter
+     * Ownership of the buffer is transferred to the new string object **only if the function
+     * succeeds** (i.e. returns a non-empty handle). If the function fails, the caller retains
+     * ownership of the buffer and is responsible for releasing it.
      *
-     * @warning: Buffer must be zero terminated, the value of length MUST NOT include the terminator character,
-     * so the buffer must pass the following assertion: buffer[length] == '\0'.
-     * Obviously the size of the allocated buffer must be sufficient to also contain the terminator character
+     * @warning: Buffer must be zero terminated, the value of length MUST NOT include the terminator
+     * character, so the buffer must pass the following assertion: buffer[length] == '\0'.
+     * Obviously the size of the allocated buffer must be sufficient to also contain the terminator
+     * character.
      *
      * @param isolate Pointer to the Isolate
-     * @param buffer Raw buffer containing the string
-     * (ownership of the buffer will be transferred to the created object).
-     * @param length Length of the buffer.
+     * @param buffer Raw buffer containing the string. Ownership is transferred on success.
+     * @param length Length of the buffer, not including the null terminator.
      *
-     * @return Handle to ORString object
+     * @return Handle to the new ORString object, or an empty handle on failure.
+     *         On failure the caller still owns @p buffer.
      */
     HORString ORStringNewHoldBuffer(Isolate *isolate, unsigned char *buffer, MSize length);
 
