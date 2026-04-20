@@ -348,7 +348,7 @@ RUNTIME_METHOD(string_contains, contains,
 @example
     "hello".contains("ell")    // true
     "hello".contains("xyz")    // false
-)DOC", 2, false, false) {
+)DOC", 2, nullptr, false, false) {
     PCHECK_ENTRIES(params,
                    PCHECK_DEF("self", false, InstanceType::STRING),
                    PCHECK_DEF("sub", false, InstanceType::STRING));
@@ -380,7 +380,7 @@ Returns 0 when sub is empty.
     "banana".count("an")    // 2
     "hello".count("l")      // 2
     "hello".count("x")      // 0
-)DOC", 2, false, false) {
+)DOC", 2, nullptr, false, false) {
     PCHECK_ENTRIES(params,
                    PCHECK_DEF("self", false, InstanceType::STRING),
                    PCHECK_DEF("sub", false, InstanceType::STRING));
@@ -427,7 +427,7 @@ RUNTIME_METHOD(string_ends_with, ends_with,
 @example
     "hello".ends_with("llo")    // true
     "hello".ends_with("hel")    // false
-)DOC", 2, false, false) {
+)DOC", 2, nullptr, false, false) {
     PCHECK_ENTRIES(params,
                    PCHECK_DEF("self", false, InstanceType::STRING),
                    PCHECK_DEF("suffix", false, InstanceType::STRING));
@@ -460,7 +460,7 @@ RUNTIME_METHOD(string_find, find,
 @example
     "hello".find("ll")    // 2
     "hello".find("x")     // -1
-)DOC", 2, false, false) {
+)DOC", 2, nullptr, false, false) {
     PCHECK_ENTRIES(params,
                    PCHECK_DEF("self", false, InstanceType::STRING),
                    PCHECK_DEF("sub", false, InstanceType::STRING));
@@ -489,7 +489,7 @@ RUNTIME_METHOD(string_is_ascii, is_ascii,
 @example
     "hello".is_ascii()    // true
     "héllo".is_ascii()    // false
-)DOC", 1, false, false) {
+)DOC", 1, nullptr, false, false) {
     return HOObject((OObject *) BOOL_TO_OBOOL(((ORString *) argv[0])->kind == StringKind::ASCII));
 }
 
@@ -506,7 +506,7 @@ For ASCII strings this equals the byte length.
 @example
     "hello".length()    // 5
     "".length()         // 0
-)DOC", 1, false, false) {
+)DOC", 1, nullptr, false, false) {
     const auto *self = (ORString *) argv[0];
 
     auto result = IntNew(O_GET_ISOLATE(self), (IntegerUnderlying) self->cp_length);
@@ -529,7 +529,7 @@ Non-ASCII bytes are passed through unchanged.
 @example
     "Hello World".lower()    // "hello world"
     "ABC123".lower()         // "abc123"
-)DOC", 1, false, false) {
+)DOC", 1, nullptr, false, false) {
     const auto *self = (ORString *) argv[0];
     auto *isolate = O_GET_ISOLATE(_func);
 
@@ -565,7 +565,7 @@ Whitespace is determined by std::isspace (ASCII only).
 @example
     "  hello  ".lstrip()    // "hello  "
     "hello".lstrip()        // "hello"
-)DOC", 1, false, false) {
+)DOC", 1, nullptr, false, false) {
     const auto *self = (ORString *) argv[0];
     auto *isolate = O_GET_ISOLATE(_func);
 
@@ -604,7 +604,7 @@ Returns self unchanged when old is empty.
 @example
     "hello".replace("l", "r")       // "herro"
     "aabbcc".replace("bb", "XX")    // "aaXXcc"
-)DOC", 3, false, false) {
+)DOC", 3, nullptr, false, false) {
     PCHECK_ENTRIES(params,
                    PCHECK_DEF("self", false, InstanceType::STRING),
                    PCHECK_DEF("old", false, InstanceType::STRING),
@@ -675,7 +675,7 @@ RUNTIME_METHOD(string_rfind, rfind,
 @example
     "hello".rfind("l")    // 3
     "hello".rfind("x")    // -1
-)DOC", 2, false, false) {
+)DOC", 2, nullptr, false, false) {
     PCHECK_ENTRIES(params,
                    PCHECK_DEF("self", false, InstanceType::STRING),
                    PCHECK_DEF("sub", false, InstanceType::STRING));
@@ -706,7 +706,7 @@ Whitespace is determined by std::isspace (ASCII only).
 @example
     "  hello  ".rstrip()    // "  hello"
     "hello".rstrip()        // "hello"
-)DOC", 1, false, false) {
+)DOC", 1, nullptr, false, false) {
     const auto *self = (ORString *) argv[0];
     auto *isolate = O_GET_ISOLATE(_func);
 
@@ -746,7 +746,7 @@ RUNTIME_METHOD(string_split, split,
 @example
     "a,b,c".split(",")    // ["a", "b", "c"]
     "hello".split("l")    // ["he", "", "o"]
-)DOC", 2, false, false) {
+)DOC", 2, nullptr, false, false) {
     PCHECK_ENTRIES(params,
                    PCHECK_DEF("self", false, InstanceType::STRING),
                    PCHECK_DEF("sep", false, InstanceType::STRING));
@@ -788,7 +788,7 @@ RUNTIME_METHOD(string_starts_with, starts_with,
 @example
     "hello".starts_with("hel")    // true
     "hello".starts_with("llo")    // false
-)DOC", 2, false, false) {
+)DOC", 2, nullptr, false, false) {
     PCHECK_ENTRIES(params,
                    PCHECK_DEF("self", false, InstanceType::STRING),
                    PCHECK_DEF("prefix", false, InstanceType::STRING));
@@ -818,7 +818,7 @@ Whitespace is determined by std::isspace (ASCII only).
 @example
     "  hello  ".strip()    // "hello"
     "hello".strip()        // "hello"
-)DOC", 1, false, false) {
+)DOC", 1, nullptr, false, false) {
     const auto *self = (ORString *) argv[0];
     auto *isolate = O_GET_ISOLATE(_func);
 
@@ -856,7 +856,7 @@ Non-ASCII bytes are passed through unchanged.
 @example
     "Hello World".upper()    // "HELLO WORLD"
     "abc123".upper()         // "ABC123"
-)DOC", 1, false, false) {
+)DOC", 1, nullptr, false, false) {
     const auto *self = (ORString *) argv[0];
     auto *isolate = O_GET_ISOLATE(_func);
 

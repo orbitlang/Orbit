@@ -151,7 +151,7 @@ Uses structural equality (==) for comparison.
 @example
     (1, 2, 3).contains(2)    // true
     (1, 2, 3).contains(9)    // false
-)DOC", 2, false, false) {
+)DOC", 2, nullptr, false, false) {
     return HOObject((OObject *) BOOL_TO_OBOOL(TupleContains((const Tuple *) argv[0], argv[1]) >= 0));
 }
 
@@ -170,7 +170,7 @@ Uses structural equality (==) for comparison.
 @example
     (1, 2, 2, 3).count(2)    // 2
     (1, 2, 3).count(9)        // 0
-)DOC", 2, false, false) {
+)DOC", 2, nullptr, false, false) {
     const auto *self = (const Tuple *) argv[0];
     auto *isolate = O_GET_ISOLATE(self);
 
@@ -206,7 +206,7 @@ Supports negative indices: -1 refers to the last element.
 @example
     (10, 20, 30).get(0)     // 10
     (10, 20, 30).get(-1)    // 30
-)DOC", 2, false, false) {
+)DOC", 2, nullptr, false, false) {
     PCHECK_ENTRIES(params,
                    PCHECK_DEF("index", false, InstanceType::NUMBER)
     );
@@ -251,7 +251,7 @@ Uses structural equality (==) for comparison.
 @example
     (10, 20, 30).index(20)    // 1
     (10, 20, 30).index(99)    // panic!
-)DOC", 2, false, false) {
+)DOC", 2, nullptr, false, false) {
     const auto *self = (const Tuple *) argv[0];
     auto *isolate = O_GET_ISOLATE(self);
 
@@ -284,7 +284,7 @@ RUNTIME_METHOD(tuple_length, length,
 @example
     (1, 2, 3).length()    // 3
     ().length()            // 0
-)DOC", 1, false, false) {
+)DOC", 1, nullptr, false, false) {
     const auto *self = (const Tuple *) argv[0];
 
     auto n = IntNew(O_GET_ISOLATE(self), (IntegerUnderlying) self->length);

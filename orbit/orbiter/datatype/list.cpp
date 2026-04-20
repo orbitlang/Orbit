@@ -185,7 +185,7 @@ RUNTIME_METHOD(list_append, append,
     l.append(1)
     l.append(2)
     l.length()    // 2
-)DOC", 2, false, false) {
+)DOC", 2, nullptr, false, false) {
     PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::LIST));
     PCHECK_CHECK(params);
 
@@ -209,7 +209,7 @@ The backing buffer is retained for reuse; only the length is reset to zero.
     let l = [1, 2, 3]
     l.clear()
     l.length()    // 0
-)DOC", 1, false, false) {
+)DOC", 1, nullptr, false, false) {
     PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::LIST));
     PCHECK_CHECK(params);
 
@@ -237,7 +237,7 @@ Uses structural equality (==) for comparison.
 @example
     [1, 2, 3].contains(2)    // true
     [1, 2, 3].contains(9)    // false
-)DOC", 2, false, false) {
+)DOC", 2, nullptr, false, false) {
     PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::LIST));
     PCHECK_CHECK(params);
 
@@ -268,7 +268,7 @@ Uses structural equality (==) for comparison.
 @example
     [1, 2, 2, 3].count(2)    // 2
     [1, 2, 3].count(9)        // 0
-)DOC", 2, false, false) {
+)DOC", 2, nullptr, false, false) {
     PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::LIST));
     PCHECK_CHECK(params);
 
@@ -305,7 +305,7 @@ RUNTIME_METHOD(list_extend, extend,
     let l = [1, 2]
     l.extend([3, 4])
     l.length()    // 4
-)DOC", 2, false, false) {
+)DOC", 2, nullptr, false, false) {
     PCHECK_ENTRIES(params,
                    PCHECK_DEF("self", false, InstanceType::LIST),
                    PCHECK_DEF("other", false, InstanceType::LIST, InstanceType::TUPLE)
@@ -338,7 +338,7 @@ Supports negative indices: -1 refers to the last element.
 @example
     [10, 20, 30].get(0)     // 10
     [10, 20, 30].get(-1)    // 30
-)DOC", 2, false, false) {
+)DOC", 2, nullptr, false, false) {
     PCHECK_ENTRIES(params,
                    PCHECK_DEF("self", false, InstanceType::LIST),
                    PCHECK_DEF("index", false, InstanceType::NUMBER));
@@ -380,7 +380,7 @@ Uses structural equality (==) for comparison.
 @example
     [10, 20, 30].index(20)    // 1
     [10, 20, 30].index(99)    // -1
-)DOC", 2, false, false) {
+)DOC", 2, nullptr, false, false) {
     PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::LIST));
     PCHECK_CHECK(params);
 
@@ -420,7 +420,7 @@ If `index` is beyond the end of the list the element is appended.
     let l = [1, 3]
     l.insert(1, "hello")
     l.get(1)    // "hello"
-)DOC", 3, false, false) {
+)DOC", 3, nullptr, false, false) {
     PCHECK_ENTRIES(params,
                    PCHECK_DEF("self", false, InstanceType::LIST),
                    PCHECK_DEF("index", false, InstanceType::NUMBER)
@@ -449,7 +449,7 @@ RUNTIME_METHOD(list_length, length,
 @example
     [1, 2, 3].length()    // 3
     [].length()            // 0
-)DOC", 1, false, false) {
+)DOC", 1, nullptr, false, false) {
     PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::LIST));
     PCHECK_CHECK(params);
 
@@ -474,7 +474,7 @@ RUNTIME_METHOD(list_prepend, prepend,
     let l = [2, 3]
     l.prepend(1)
     l.get(0)    // 1
-)DOC", 2, false, false) {
+)DOC", 2, nullptr, false, false) {
     PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::LIST));
     PCHECK_CHECK(params);
 
@@ -503,7 +503,7 @@ If the index is out of range the list is left unchanged.
     let l = [1, 2, 3]
     l.remove(1)
     l.length()    // 2
-)DOC", 2, false, false) {
+)DOC", 2, nullptr, false, false) {
     PCHECK_ENTRIES(params,
                    PCHECK_DEF("self", false, InstanceType::LIST),
                    PCHECK_DEF("index", false, InstanceType::NUMBER));

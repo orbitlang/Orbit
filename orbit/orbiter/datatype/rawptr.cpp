@@ -70,7 +70,7 @@ RUNTIME_METHOD(rawptr_address, address,
 @return The pointer value as an unsigned Int.
 
 @see is_null
-)DOC", 1, false, false) {
+)DOC", 1, nullptr, false, false) {
     PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::RAWPTR));
     PCHECK_CHECK(params);
 
@@ -94,7 +94,7 @@ Supports negative offsets to move backwards.
 @return nil
 
 @see sub, offset
-)DOC", 2, false, false) {
+)DOC", 2, nullptr, false, false) {
     PCHECK_ENTRIES(params,
                    PCHECK_DEF("self", false, InstanceType::RAWPTR),
                    PCHECK_DEF("bytes", false, InstanceType::NUMBER));
@@ -118,7 +118,7 @@ The pointer is zeroed after the call to prevent use-after-free.
 Has no effect if the pointer is already null.
 
 @see address, is_null
-)DOC", 1, false, false) {
+)DOC", 1, nullptr, false, false) {
     PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::RAWPTR));
     PCHECK_CHECK(params);
 
@@ -139,7 +139,7 @@ RUNTIME_METHOD(rawptr_is_null, is_null,
 @return true if the address is zero, false otherwise.
 
 @see address
-)DOC", 1, false, false) {
+)DOC", 1, nullptr, false, false) {
     PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::RAWPTR));
     PCHECK_CHECK(params);
 
@@ -161,7 +161,7 @@ Supports negative offsets to move backwards.
 @panic TypeError  When `bytes` is not an integer.
 
 @see add, sub, address, read_ptr
-)DOC", 2, false, false) {
+)DOC", 2, nullptr, false, false) {
     PCHECK_ENTRIES(params,
                    PCHECK_DEF("self", false, InstanceType::RAWPTR),
                    PCHECK_DEF("bytes", false, InstanceType::NUMBER));
@@ -192,7 +192,7 @@ RUNTIME_METHOD(rawptr_read_bytes, read_bytes,
 @panic RuntimeError  When the pointer is null.
 
 @see read_i8, read_i64
-)DOC", 2, false, false) {
+)DOC", 2, nullptr, false, false) {
     // TODO: implement once Bytes type is available
     assert(false);
 }
@@ -206,7 +206,7 @@ RUNTIME_METHOD(rawptr_read_f64, read_f64,
 @panic RuntimeError  When the pointer is null.
 
 @see read_i64, write_f64
-)DOC", 1, false, false) {
+)DOC", 1, nullptr, false, false) {
     PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::RAWPTR));
     PCHECK_CHECK(params);
 
@@ -244,7 +244,7 @@ RUNTIME_METHOD(rawptr_read_i8, read_i8,
 @panic RuntimeError  When the pointer is null.
 
 @see read_i16, read_i32, read_i64, read_u8
-)DOC", 1, false, false) {
+)DOC", 1, nullptr, false, false) {
     PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::RAWPTR));
     PCHECK_CHECK(params);
 
@@ -276,7 +276,7 @@ RUNTIME_METHOD(rawptr_read_i16, read_i16,
 @panic RuntimeError  When the pointer is null.
 
 @see read_i8, read_i32, read_i64, read_u16
-)DOC", 1, false, false) {
+)DOC", 1, nullptr, false, false) {
     PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::RAWPTR));
     PCHECK_CHECK(params);
 
@@ -308,7 +308,7 @@ RUNTIME_METHOD(rawptr_read_i32, read_i32,
 @panic RuntimeError  When the pointer is null.
 
 @see read_i8, read_i16, read_i64, read_u32
-)DOC", 1, false, false) {
+)DOC", 1, nullptr, false, false) {
     PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::RAWPTR));
     PCHECK_CHECK(params);
 
@@ -346,7 +346,7 @@ RUNTIME_METHOD(rawptr_read_i64, read_i64,
 @panic RuntimeError  When the pointer is null.
 
 @see read_i8, read_i16, read_i32, read_u64
-)DOC", 1, false, false) {
+)DOC", 1, nullptr, false, false) {
     PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::RAWPTR));
     PCHECK_CHECK(params);
 
@@ -384,7 +384,7 @@ RUNTIME_METHOD(rawptr_read_ptr, read_ptr,
 @panic RuntimeError  When the pointer is null.
 
 @see offset, address
-)DOC", 1, false, false) {
+)DOC", 1, nullptr, false, false) {
     PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::RAWPTR));
     PCHECK_CHECK(params);
 
@@ -422,7 +422,7 @@ RUNTIME_METHOD(rawptr_read_u8, read_u8,
 @panic RuntimeError  When the pointer is null.
 
 @see read_u16, read_u32, read_u64, read_i8
-)DOC", 1, false, false) {
+)DOC", 1, nullptr, false, false) {
     PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::RAWPTR));
     PCHECK_CHECK(params);
 
@@ -454,7 +454,7 @@ RUNTIME_METHOD(rawptr_read_u16, read_u16,
 @panic RuntimeError  When the pointer is null.
 
 @see read_u8, read_u32, read_u64, read_i16
-)DOC", 1, false, false) {
+)DOC", 1, nullptr, false, false) {
     PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::RAWPTR));
     PCHECK_CHECK(params);
 
@@ -486,7 +486,7 @@ RUNTIME_METHOD(rawptr_read_u32, read_u32,
 @panic RuntimeError  When the pointer is null.
 
 @see read_u8, read_u16, read_u64, read_i32
-)DOC", 1, false, false) {
+)DOC", 1, nullptr, false, false) {
     PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::RAWPTR));
     PCHECK_CHECK(params);
 
@@ -524,7 +524,7 @@ RUNTIME_METHOD(rawptr_read_u64, read_u64,
 @panic RuntimeError  When the pointer is null.
 
 @see read_u8, read_u16, read_u32, read_i64
-)DOC", 1, false, false) {
+)DOC", 1, nullptr, false, false) {
     PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::RAWPTR));
     PCHECK_CHECK(params);
 
@@ -564,7 +564,7 @@ Supports negative offsets to move forwards.
 @return nil
 
 @see add, offset
-)DOC", 2, false, false) {
+)DOC", 2, nullptr, false, false) {
     PCHECK_ENTRIES(params,
                    PCHECK_DEF("self", false, InstanceType::RAWPTR),
                    PCHECK_DEF("bytes", false, InstanceType::NUMBER));
@@ -590,7 +590,7 @@ RUNTIME_METHOD(rawptr_write_f64, write_f64,
 @panic TypeError     When `value` is not a Decimal.
 
 @see write_i32, read_f64
-)DOC", 2, false, false) {
+)DOC", 2, nullptr, false, false) {
     PCHECK_ENTRIES(params,
                    PCHECK_DEF("self", false, InstanceType::RAWPTR),
                    PCHECK_DEF("value", false, InstanceType::DECIMAL));
@@ -626,7 +626,7 @@ Only the lower 8 bits of `value` are written.
 @panic TypeError     When `value` is not an integer.
 
 @see write_i16, write_i32, write_i64, write_u8
-)DOC", 2, false, false) {
+)DOC", 2, nullptr, false, false) {
     PCHECK_ENTRIES(params,
                    PCHECK_DEF("self", false, InstanceType::RAWPTR),
                    PCHECK_DEF("value", false, InstanceType::NUMBER));
@@ -665,7 +665,7 @@ Only the lower 16 bits of `value` are written.
 @panic TypeError     When `value` is not an integer.
 
 @see write_i8, write_i32, write_i64, write_u16
-)DOC", 2, false, false) {
+)DOC", 2, nullptr, false, false) {
     PCHECK_ENTRIES(params,
                    PCHECK_DEF("self", false, InstanceType::RAWPTR),
                    PCHECK_DEF("value", false, InstanceType::NUMBER));
@@ -704,7 +704,7 @@ Only the lower 32 bits of `value` are written.
 @panic TypeError     When `value` is not an integer.
 
 @see write_f64, write_i8, write_i16, write_i64, read_i32
-)DOC", 2, false, false) {
+)DOC", 2, nullptr, false, false) {
     PCHECK_ENTRIES(params,
                    PCHECK_DEF("self", false, InstanceType::RAWPTR),
                    PCHECK_DEF("value", false, InstanceType::NUMBER));
@@ -741,7 +741,7 @@ RUNTIME_METHOD(rawptr_write_i64, write_i64,
 @panic TypeError     When `value` is not an integer.
 
 @see write_i8, write_i16, write_i32, write_u64
-)DOC", 2, false, false) {
+)DOC", 2, nullptr, false, false) {
     PCHECK_ENTRIES(params,
                    PCHECK_DEF("self", false, InstanceType::RAWPTR),
                    PCHECK_DEF("value", false, InstanceType::NUMBER));
@@ -780,7 +780,7 @@ Only the lower 8 bits of `value` are written.
 @panic TypeError     When `value` is not an integer.
 
 @see write_u16, write_u32, write_u64, write_i8
-)DOC", 2, false, false) {
+)DOC", 2, nullptr, false, false) {
     PCHECK_ENTRIES(params,
                    PCHECK_DEF("self", false, InstanceType::RAWPTR),
                    PCHECK_DEF("value", false, InstanceType::NUMBER));
@@ -819,7 +819,7 @@ Only the lower 16 bits of `value` are written.
 @panic TypeError     When `value` is not an integer.
 
 @see write_u8, write_u32, write_u64, write_i16
-)DOC", 2, false, false) {
+)DOC", 2, nullptr, false, false) {
     PCHECK_ENTRIES(params,
                    PCHECK_DEF("self", false, InstanceType::RAWPTR),
                    PCHECK_DEF("value", false, InstanceType::NUMBER));
@@ -858,7 +858,7 @@ Only the lower 32 bits of `value` are written.
 @panic TypeError     When `value` is not an integer.
 
 @see write_u8, write_u16, write_u64, write_i32
-)DOC", 2, false, false) {
+)DOC", 2, nullptr, false, false) {
     PCHECK_ENTRIES(params,
                    PCHECK_DEF("self", false, InstanceType::RAWPTR),
                    PCHECK_DEF("value", false, InstanceType::NUMBER));
@@ -895,7 +895,7 @@ RUNTIME_METHOD(rawptr_write_u64, write_u64,
 @panic TypeError     When `value` is not an integer.
 
 @see write_u8, write_u16, write_u32, write_i64
-)DOC", 2, false, false) {
+)DOC", 2, nullptr, false, false) {
     PCHECK_ENTRIES(params,
                    PCHECK_DEF("self", false, InstanceType::RAWPTR),
                    PCHECK_DEF("value", false, InstanceType::NUMBER));

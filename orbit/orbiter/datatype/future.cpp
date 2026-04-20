@@ -83,7 +83,7 @@ a future cannot transition back to PENDING.
     let f = async_func()
     f.is_done()         // false
     f.is_done()         // true
-)DOC", 1, false, false) {
+)DOC", 1, nullptr, false, false) {
     const auto *self = (const Future *) argv[0];
 
     return HOObject((OObject *) BOOL_TO_OBOOL(self->state != FutureState::PENDING));

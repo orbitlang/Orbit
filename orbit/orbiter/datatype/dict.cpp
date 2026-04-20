@@ -126,7 +126,7 @@ RUNTIME_METHOD(dict_clear, clear,
     let d = { a: 1, b: 2 }
     d.clear()
     d.is_empty()    // true
-)DOC", 1, false, false) {
+)DOC", 1, nullptr, false, false) {
     auto *self = (Dict *) argv[0];
 
     std::unique_lock _(self->lock);
@@ -152,7 +152,7 @@ reference the same objects.
     let b = a.copy()
     b.set("y", 2)
     a.has("y")    // false
-)DOC", 1, false, false) {
+)DOC", 1, nullptr, false, false) {
     return HOObject(DictNew(argv[0]));
 }
 
@@ -170,7 +170,7 @@ RUNTIME_METHOD(dict_delete, delete,
     let d = { a: 1 }
     d.delete("a")    // true
     d.delete("a")    // false (already gone)
-)DOC", 2, false, false) {
+)DOC", 2, nullptr, false, false) {
     auto *self = (Dict *) argv[0];
 
     return HOObject((OObject *) BOOL_TO_OBOOL(DictRemove(self, argv[1])));
@@ -189,7 +189,7 @@ The order matches the insertion order of the dictionary.
 @example
     let d = { a: 1, b: 2 }
     d.entries()    // [("a", 1), ("b", 2)]
-)DOC", 1, false, false) {
+)DOC", 1, nullptr, false, false) {
     auto *self = (Dict *) argv[0];
     auto *isolate = O_GET_ISOLATE(self);
 
@@ -230,7 +230,7 @@ RUNTIME_METHOD(dict_get, get,
     d.get("x")          // 10
     d.get("y")          // nil
     d.get("y", 0)       // 0
-)DOC", 3, false, false) {
+)DOC", 3, nullptr, false, false) {
     auto *self = (Dict *) argv[0];
 
     HOObject value;
@@ -255,7 +255,7 @@ RUNTIME_METHOD(dict_has, has,
     let d = { a: 1 }
     d.has("a")    // true
     d.has("b")    // false
-)DOC", 2, false, false) {
+)DOC", 2, nullptr, false, false) {
     auto *self = (Dict *) argv[0];
 
     HOObject dummy;
@@ -274,7 +274,7 @@ RUNTIME_METHOD(dict_is_empty, is_empty,
 @example
     ({}).is_empty()         // true
     ({ a: 1 }).is_empty()   // false
-)DOC", 1, false, false) {
+)DOC", 1, nullptr, false, false) {
     const auto *self = (const Dict *) argv[0];
 
     return HOObject((OObject *) BOOL_TO_OBOOL(self->dict.length == 0));
@@ -290,7 +290,7 @@ RUNTIME_METHOD(dict_keys, keys,
 
 @example
     { a: 1, b: 2 }.keys()    // ["a", "b"]
-)DOC", 1, false, false) {
+)DOC", 1, nullptr, false, false) {
     return DictKeys((Dict *) argv[0]);
 }
 
@@ -305,7 +305,7 @@ RUNTIME_METHOD(dict_length, length,
 @example
     { a: 1, b: 2 }.length()    // 2
     ({}).length()               // 0
-)DOC", 1, false, false) {
+)DOC", 1, nullptr, false, false) {
     const auto *self = (const Dict *) argv[0];
 
     auto n = IntNew(O_GET_ISOLATE(self), (IntegerUnderlying) self->dict.length);
@@ -332,7 +332,7 @@ Entries from other take precedence when the same key exists in both.
 @example
     { a: 1 }.merge({ b: 2 })        // { a: 1, b: 2 }
     { a: 1 }.merge({ a: 99, b: 2 }) // { a: 99, b: 2 }
-)DOC", 2, false, false) {
+)DOC", 2, nullptr, false, false) {
     auto *self = (Dict *) argv[0];
     auto *isolate = O_GET_ISOLATE(self);
 
@@ -386,7 +386,7 @@ created.
     let d = {}
     d.set("x", 42)
     d.get("x")    // 42
-)DOC", 3, false, false) {
+)DOC", 3, nullptr, false, false) {
     auto *self = (Dict *) argv[0];
 
     if (!DictInsert(self, argv[1], argv[2]))
@@ -415,7 +415,7 @@ No-op when other is self.
     d.update({ b: 2, a: 99 })
     d.get("a")    // 99
     d.get("b")    // 2
-)DOC", 2, false, false) {
+)DOC", 2, nullptr, false, false) {
     auto *self = (Dict *) argv[0];
     auto *isolate = O_GET_ISOLATE(self);
 
@@ -457,7 +457,7 @@ RUNTIME_METHOD(dict_values, values,
 
 @example
     { a: 1, b: 2 }.values()    // [1, 2]
-)DOC", 1, false, false) {
+)DOC", 1, nullptr, false, false) {
     auto *self = (Dict *) argv[0];
     auto *isolate = O_GET_ISOLATE(self);
 

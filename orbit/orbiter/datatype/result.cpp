@@ -113,7 +113,7 @@ error result raises a TypeError.
 @example
     Result.ok(42).unwrap()      // 42
     Result.error(42).unwrap()   // panic!
-)DOC", 1, false, false) {
+)DOC", 1, nullptr, false, false) {
     const auto *self = (const Result *) argv[0];
     auto *isolate = O_GET_ISOLATE(self);
 
@@ -145,7 +145,7 @@ an ok result raises a TypeError.
 @example
     Result.error(42).unwrap_err()   // 42
     Result.ok(42).unwrap_err()      // panic!
-)DOC", 1, false, false) {
+)DOC", 1, nullptr, false, false) {
     const auto *self = (const Result *) argv[0];
     auto *isolate = O_GET_ISOLATE(self);
 
@@ -177,7 +177,7 @@ provided `default` is returned instead.
 @example
     Result.ok(42).unwrap_or(0)      // 42
     Result.error(42).unwrap_or(0)   // 0
-)DOC", 2, false, false) {
+)DOC", 2, nullptr, false, false) {
     const auto *self = (const Result *) argv[0];
 
     return HOObject(self->ok ? self->value : argv[1]);

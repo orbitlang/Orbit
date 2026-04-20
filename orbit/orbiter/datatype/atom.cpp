@@ -67,7 +67,7 @@ Orbit source code to reconstruct the same atom.
 @example
     @hello.repr()    // "@hello"
     @IOError.repr() // "@IOError"
-)DOC", 1, false, false) {
+)DOC", 1, nullptr, false, false) {
     const auto *self = (Atom *) argv[0];
 
     auto s = ORStringFormat(O_GET_ISOLATE(_func), "@%s", ORSTRING_TO_CSTR(self->id));
@@ -91,7 +91,7 @@ the leading 'at' used in Orbit source literals.
 @example
     @hello.str()    // "hello"
     @IOError.str() // "IOError"
-)DOC", 1, false, false) {
+)DOC", 1, nullptr, false, false) {
     return HOObject((OObject *) ((Atom *) argv[0])->id);
 }
 

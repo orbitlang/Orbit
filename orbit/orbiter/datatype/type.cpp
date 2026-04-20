@@ -27,7 +27,7 @@ identity address is used as a fallback.
 @example
     "hello".hash()   // deterministic hash of the string
     (42).hash()      // 42
-)DOC", 1, false, false) {
+)DOC", 1, nullptr, false, false) {
     auto n = UIntNew(O_GET_ISOLATE(_func), Hash(argv[0]));
     if (!n)
         return {};
@@ -53,7 +53,7 @@ has been collected.
     let b = SomeClass()
     a.id() == b.id()   // false — distinct objects
     a.id() == a.id()   // true  — same object
-)DOC", 1, false, false) {
+)DOC", 1, nullptr, false, false) {
     auto n = UIntNew(O_GET_ISOLATE(_func), (PtrSize) argv[0]);
     if (!n)
         return {};
@@ -79,7 +79,7 @@ integers, booleans, and nil that are not heap-allocated always return false.
     "hi".is(String)         // true
     (1).is(String)          // false
     MySubClass().is(Base)   // true  (subclass satisfies base check)
-)DOC", 2, false, false) {
+)DOC", 2, nullptr, false, false) {
     PCHECK_ENTRIES(params,
                    PCHECK_DEF("t", false, InstanceType::TYPE));
 
@@ -111,7 +111,7 @@ Orbit syntax that reconstructs the value.
 @example
     "hello".repr()    // '"hello"'  (includes quotes)
     [1, 2].repr()     // "[1, 2]"
-)DOC", 1, false, false) {
+)DOC", 1, nullptr, false, false) {
     return Repr(O_GET_ISOLATE(_func), argv[0]);
 }
 
@@ -131,7 +131,7 @@ registered for the type.
     (42).str()         // "42"
     true.str()         // "true"
     [1, 2, 3].str()    // "[1, 2, 3]"
-)DOC", 1, false, false) {
+)DOC", 1, nullptr, false, false) {
     return ToString(O_GET_ISOLATE(_func), argv[0]);
 }
 
@@ -147,7 +147,7 @@ RUNTIME_METHOD(type_type, type,
     "hi".type()        // "String"
     (3.14).type()      // "Decimal"
     [].type()          // "List"
-)DOC", 1, false, false) {
+)DOC", 1, nullptr, false, false) {
     auto *isolate = O_GET_ISOLATE(_func);
 
     char name[64];

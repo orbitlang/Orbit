@@ -64,7 +64,7 @@ Because atoms are interned, the comparison is a fast pointer equality check.
     let e = Error.create(@IOError, "file not found")
     e.is(@IOError)   // true
     e.is(@NIOError)  // false
-)DOC", 2, false, false) {
+)DOC", 2, nullptr, false, false) {
     PCHECK_ENTRIES(params,
                    PCHECK_DEF("kind", false, InstanceType::ATOM));
 
@@ -88,7 +88,7 @@ by a colon, a space, and the human-readable reason message.
 @example
     let e = Error.create(@IOError, "file not found")
     e.message()   // "IOError: file not found"
-)DOC", 1, false, false) {
+)DOC", 1, nullptr, false, false) {
     const auto *self = (Error *) argv[0];
 
     auto s = ORStringFormat(O_GET_ISOLATE(_func), "%s: %s",
@@ -118,7 +118,7 @@ new object; only the `details` field is swapped.
     let rich = base.with_details({ path: "/tmp/x" })
     rich.details   // { path: "/tmp/x" }
     base.details   // nil  (original unchanged)
-)DOC", 2, false, false) {
+)DOC", 2, nullptr, false, false) {
     const auto *self = (Error *) argv[0];
 
     auto error = ErrorNew(O_GET_ISOLATE(_func), self->kind, self->reason, argv[1]);

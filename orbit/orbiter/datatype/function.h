@@ -274,9 +274,9 @@ HOObject name##_fn(orbiter::datatype::Function *_func, OObject **argv, OObject *
 constexpr FunctionDef name = {#exported_name, doc, defaults, name##_fn, params, false, varargs, _kwargs};           \
 HOObject name##_fn(orbiter::datatype::Function *_func, OObject **argv, OObject *rest, OObject *kwargs, U16 argc)
 
-#define RUNTIME_METHOD(name, exported_name, doc, params, varargs, _kwargs)                                          \
+#define RUNTIME_METHOD(name, exported_name, doc, params, defaults, varargs, _kwargs)                                \
 HOObject name##_fn(orbiter::datatype::Function *_func, OObject **argv, OObject *rest, OObject *kwargs, U16 argc);   \
-constexpr FunctionDef name = {#exported_name, doc, nullptr, name##_fn, params, true, varargs, _kwargs};             \
+constexpr FunctionDef name = {#exported_name, doc, defaults, name##_fn, params, true, varargs, _kwargs};            \
 HOObject name##_fn(orbiter::datatype::Function *_func, OObject **argv, OObject *rest, OObject *kwargs, U16 argc)
 
 #endif // !ORBIT_ORBITER_DATATYPE_FUNCTION_H_
