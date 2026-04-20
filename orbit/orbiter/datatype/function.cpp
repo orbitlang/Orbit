@@ -4,9 +4,47 @@
 
 #include <orbit/orbiter/fiber.h>
 
+#include <orbit/orbiter/datatype/support/byteops.h>
+
 #include <orbit/orbiter/datatype/function.h>
 
 using namespace orbiter::datatype;
+
+HTuple MakeDefaultTuple(orbiter::Isolate *isolate, const char *defaults, const MSize length) {
+    const auto comma_count = support::Count((const unsigned char *) defaults, length, (const unsigned char *) ",", 1);
+
+    auto tuple = TupleNew(isolate, (comma_count + 1) * 2);
+
+    const char *p = defaults;
+    const char *end = defaults + length;
+    while (p < end) {
+        auto comma = (const char *) memchr(p, ',', end - p);
+        const char *tok_end = comma ? comma : end;
+
+        // Trim leading/trailing whitespace
+        while (p < tok_end && std::isspace((unsigned char) *p))
+            p++;
+
+        while (tok_end > p && std::isspace((unsigned char) tok_end[-1]))
+            tok_end--;
+
+        if (tok_end > p) {
+            auto str = ORStringNew(isolate, p, (MSize) (tok_end - p));
+            if (!str)
+                return {};
+
+            if (!TupleAppend(tuple.get(), (OObject *) str.get()))
+                return {};
+
+            if (!TupleAppend(tuple.get(), (OObject *) kOddBallSentinel))
+                return {};
+        }
+
+        p = comma ? comma + 1 : end;
+    }
+
+    return tuple;
+}
 
 FuncShared *FunSharedNew(orbiter::Isolate *isolate, const char *name, const char *doc,
                          U16 arity, FunctionPtr func, FunctionKind kind) {
@@ -80,6 +118,15 @@ HFunction orbiter::datatype::FunctionNew(Isolate *isolate, const TypeInfo *owner
     auto *f_shared = FunSharedNew(isolate, def->name, def->doc, def->params, def->func, kind);
     if (f_shared == nullptr)
         return {};
+
+    if (def->defaults != nullptr) {
+        f_shared->defaults = MakeDefaultTuple(isolate, def->defaults, strlen(def->defaults)).get();
+        if (f_shared->defaults == nullptr) {
+            FunSharedDel(isolate, f_shared);
+
+            return {};
+        }
+    }
 
     if (def->method)
         f_shared->owner_type = owner;

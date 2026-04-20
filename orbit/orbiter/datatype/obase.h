@@ -23,6 +23,7 @@ namespace orbiter::datatype {
     constexpr auto kOddBallNIL = nullptr;
     constexpr auto kOddBallFALSE = 0x08u | kOddBallMask;
     constexpr auto kOddBallTRUE = 0x10u | kOddBallMask;
+    constexpr auto kOddBallSentinel = 0x21u | kOddBallMask;
 
 #define BOOL_TO_OBOOL(value) ((value) ? kOddBallTRUE : kOddBallFALSE)
 #define OBOOL_TO_BOOL(value) ((value) == kOddBallTRUE)
@@ -325,8 +326,8 @@ namespace orbiter::datatype {
 #define O_SLOT(object, tp_info)             ((orbiter::datatype::OObject **) (O_CAST(object, tp_info, unsigned char) + (tp_info)->headroom))
 #define O_SLOT_COUNT(object, tp_info)       (((tp_info)->i_size - (tp_info)->offset - (tp_info)->headroom) / sizeof(void *))
 
-#define O_IS_SMI(object)                    (((MSize)object & 0x01u) != 0)
-#define O_IS_ODDBALL(object)                ((object == nullptr) || ((!O_IS_SMI(object)) && (((MSize)object & orbiter::datatype::kOddBallMask) == orbiter::datatype::kOddBallMask)))
+#define O_IS_SMI(object)                    ((((MSize)object) & orbiter::datatype::kOddBallMask) == 0x01)
+#define O_IS_ODDBALL(object)                (((OObject *)object == nullptr) || ((!O_IS_SMI(object)) && (((MSize)object & orbiter::datatype::kOddBallMask) == orbiter::datatype::kOddBallMask)))
 #define O_IS_OBJECT(object)                 ((object != nullptr) && ((!O_IS_SMI(object)) && (((MSize)object & orbiter::datatype::kOddBallMask) != orbiter::datatype::kOddBallMask)))
 #define O_TO_SMI(num)                       ((MSize)(((MSize)(MSSize)(num) << 1u) | 0x01u))
 

@@ -32,7 +32,7 @@ RUNTIME_FUNCTION(error_create, create,
 @example
     Error.create(@IOError, "file not found")
     Error.create(@NIOError, "connection refused", { url: "..." })
-)DOC", 3, false, false) {
+)DOC", 2, "details", false, false) {
     PCHECK_ENTRIES(params,
                    PCHECK_DEF("kind", false, InstanceType::ATOM),
                    PCHECK_DEF("reason", false, InstanceType::STRING),

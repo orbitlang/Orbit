@@ -76,7 +76,7 @@ RUNTIME_FUNCTION(result_ok, ok,
 @example
     let r = Result.ok(42)
     r.unwrap()    // 42
-)DOC", 1, false, false) {
+)DOC", 1, nullptr, false, false) {
     return HOObject(ResultNew(O_GET_ISOLATE(_func), argv[0], true));
 }
 
@@ -93,7 +93,7 @@ RUNTIME_FUNCTION(result_error, error,
 @example
     let r = Result.error("something went wrong")
     r.unwrap_err()    // "something went wrong"
-)DOC", 1, false, false) {
+)DOC", 1, nullptr, false, false) {
     return HOObject(ResultNew(O_GET_ISOLATE(_func), argv[0], false));
 }
 
