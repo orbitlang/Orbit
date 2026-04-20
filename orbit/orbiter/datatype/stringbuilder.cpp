@@ -391,8 +391,10 @@ unsigned char *StringBuilder::BuildString(MSize *cap, MSize *len, MSize *cp_len,
     *cp_len = this->cp_len_;
     *kind = this->kind_;
 
-    if (this->buffer_ == nullptr || this->len_ == 0)
-        return (unsigned char *) "";
+    if (this->buffer_ == nullptr || this->len_ == 0) {
+        if (!this->BufferResize(1))
+            return nullptr;
+    }
 
     assert(this->len_ < this->cap_);
 
