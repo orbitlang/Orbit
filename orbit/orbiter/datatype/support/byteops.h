@@ -139,6 +139,49 @@ namespace orbiter::datatype::support {
     }
 
     /**
+     * @brief Count non-overlapping occurrences of @p pattern in @p buf.
+     *
+     * After each match the cursor advances by @p plen, so "aaaa" / "aa" yields 2.
+     * Uses Search() internally — same BMH/memchr dispatch applies.
+     *
+     * @tparam T  Byte-sized element type (sizeof(T) must be 1).
+     *
+     * @param buf     Buffer to search in.
+     * @param blen    Length of the buffer in elements.
+     * @param pattern Pattern to search for.
+     * @param plen    Length of the pattern in elements.
+     * @param cap     Maximum count to return. Negative = unlimited (default).
+     *                When @p cap matches are found the scan stops early.
+     *
+     * @return Number of non-overlapping matches, capped at @p cap if non-negative.
+     *         Returns 0 if @p plen is 0 or @p plen > @p blen.
+     */
+    template<typename T>
+    MSize Count(const T *buf, const MSize blen, const T *pattern, const MSize plen, const MSSize cap = -1) {
+        static_assert(sizeof(T) == 1, "Count requires a byte-sized element type");
+
+        if (plen == 0 || plen > blen)
+            return 0;
+
+        MSize count = 0;
+        MSize pos = 0;
+
+        while (pos + plen <= blen) {
+            if (cap >= 0 && count >= (MSize) cap)
+                break;
+
+            const MSSize idx = Search(buf + pos, blen - pos, pattern, plen);
+            if (idx < 0)
+                break;
+
+            count++;
+            pos += (MSize) idx + plen;
+        }
+
+        return count;
+    }
+
+    /**
      * @brief Search for the last (rightmost) occurrence of @p pattern in @p buf.
      *
      * Dispatches to the fastest strategy based on pattern length:

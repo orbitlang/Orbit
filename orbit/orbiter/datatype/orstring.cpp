@@ -19,6 +19,7 @@
 #include <orbit/orbiter/datatype/stringformatter.h>
 
 #include <orbit/orbiter/datatype/support/byteops.h>
+#include <orbit/orbiter/datatype/support/common.h>
 
 #include <orbit/orbiter/datatype/orstring.h>
 
@@ -764,33 +765,10 @@ RUNTIME_METHOD(string_split, split,
         return {};
     }
 
-    auto list = ListNew(isolate);
+    auto list = support::Split<ORString>(isolate,STR_BUF(self), STR_LEN(self),STR_BUF(sep), STR_LEN(sep), ORStringNew);
+
     if (!list)
         return {};
-
-    MSize pos = 0;
-
-    while (true) {
-        const MSize remaining = STR_LEN(self) - pos;
-        const auto idx = support::Search(STR_BUF(self) + pos, remaining, STR_BUF(sep), STR_LEN(sep));
-
-        const auto part_len = idx < 0 ? remaining : (MSize) idx;
-
-        HORString part = part_len == 0
-                             ? ORStringNew(isolate, "", 0)
-                             : ORStringNew(isolate, STR_BUF(self) + pos, part_len);
-
-        if (!part)
-            return {};
-
-        if (!ListAppend(list.get(), (OObject *) part.get()))
-            return {};
-
-        if (idx < 0)
-            break;
-
-        pos += part_len + STR_LEN(sep);
-    }
 
     return HOObject(std::move(list));
 }
@@ -888,8 +866,8 @@ Non-ASCII bytes are passed through unchanged.
 
     for (MSize i = 0; i < STR_LEN(self); i++)
         STR_BUF(result)[i] = STR_BUF(self)[i] < 0x80u
-                                ? (unsigned char) std::toupper(STR_BUF(self)[i])
-                                : STR_BUF(self)[i];
+                                 ? (unsigned char) std::toupper(STR_BUF(self)[i])
+                                 : STR_BUF(self)[i];
 
     STR_BUF(result)[STR_LEN(self)] = '\0';
 
