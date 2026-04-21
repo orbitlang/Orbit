@@ -39,8 +39,8 @@ namespace orbiter {
             return this->caught_error != nullptr;
         }
 
-        [[nodiscard]] datatype::OObject *GetError() const noexcept {
-            return O_INCREF(this->caught_error->error);
+        [[nodiscard]] datatype::HOObject GetError() const noexcept {
+            return datatype::HOObject(this->caught_error->error);
         }
 
         ~TryCatch() {
