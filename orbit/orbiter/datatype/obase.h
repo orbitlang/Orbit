@@ -195,6 +195,7 @@ namespace orbiter::datatype {
 
     // --- Comparison ---
     using CompareFn = int (*)(const OObject *, const OObject *);
+    using ContainsFn = bool (*)(const OObject *, const OObject *, bool &);
     using EqualFn = bool (*)(const OObject *, const OObject *);
 
     // --- Arithmetic & Bitwise ---
@@ -265,6 +266,7 @@ namespace orbiter::datatype {
     struct TypeOps {
         // --- Comparison ---
         CompareFn compare;
+        ContainsFn contains;
         EqualFn equal;
 
         // --- Arithmetic ---

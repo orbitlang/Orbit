@@ -70,6 +70,8 @@ bool ObjectNeg(Isolate *isolate, const OObject *object, OObject *&result) noexce
 
 bool ObjectMoveNot(Isolate *isolate, const OObject *object, OObject *&result) noexcept;
 
+bool ObjectContains(Isolate *isolate, const OObject *container, const OObject *value, bool &out) noexcept;
+
 // Internal
 
 void CallNative(Function *func, Registers *regs, const VMStack *stack, U16 argc);
@@ -969,6 +971,23 @@ CATCH_FINALLY:
                     goto ERROR;
 
                 ACCESS_REG_DST(instr) = (PtrSize) result;
+
+                DISPATCH;
+            }
+            TARGET_OP(MEMB) {
+                const auto flags = (MembershipFlags) ((instr >> 8) & 0xFu);
+                bool out;
+
+                if (!ObjectContains(fiber->isolate,
+                                    (OObject *) REG_N(FETCH_R_SRC(instr)),
+                                    (OObject *) REG_N(FETCH_R_RSRC(instr)),
+                                    out))
+                    goto ERROR;
+
+                if (flags == MembershipFlags::NOT_IN)
+                    out = !out;
+
+                ACCESS_REG_DST(instr) = (PtrSize) BOOL_TO_OBOOL(out);
 
                 DISPATCH;
             }

@@ -249,6 +249,21 @@ namespace orbiter::datatype {
     bool TIPropertiesInit(Isolate *isolate, TypeInfo *type, U8 n);
 
     /**
+     * @brief Determines if a value is contained within a container object
+     *
+     * Checks if the specified value exists within the given container object.
+     * The result is encapsulated in an HOObject and returned.
+     *
+     * @param isolate Pointer to the current Isolate
+     * @param container Pointer to the container object to search within
+     * @param value Pointer to the value to search for in the container
+     *
+     * @return An HOObject encapsulating a boolean value indicating
+     *         whether the container contains the specified value
+     */
+    HOObject ObjectContains(Isolate *isolate, const OObject *container, const OObject *value) noexcept;
+
+    /**
      * @brief Perform addition between two objects
      *
      * @param isolate Pointer to the current Isolate

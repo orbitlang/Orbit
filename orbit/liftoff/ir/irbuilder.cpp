@@ -627,7 +627,7 @@ Instruction *IRBuilder::visitBinary(const parser::Binary *node) {
             left = this->visit(node->left);
             right = this->visit(node->right);
 
-            return this->builder_.CreateBinaryOpFlags(orbiter::OPCode::MEMB, (U8) flags, left, right);
+            return this->builder_.CreateBinaryOpFlags(orbiter::OPCode::MEMB, (U8) flags, right, left);
         case parser::NodeType::SYNC_BLOCK:
             return this->visitSyncBlock(node);
         default:

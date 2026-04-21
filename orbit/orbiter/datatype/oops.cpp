@@ -310,6 +310,30 @@ bool ObjectMoveNot(orbiter::Isolate *isolate, const OObject *object, OObject *&r
     return false;
 }
 
+bool ObjectContains(orbiter::Isolate *isolate, const OObject *container, const OObject *value, bool &out) noexcept {
+    if (O_IS_OBJECT(container)) {
+        const auto &ops = O_GET_TYPE_OPS(container);
+        if (ops.contains != nullptr)
+            return ops.contains(container, value, out);
+    }
+
+    char lname[24];
+    char rname[24];
+
+    GetTypeName(isolate, container, lname, sizeof(lname));
+    GetTypeName(isolate, value, rname, sizeof(rname));
+
+    ErrorSet(isolate,
+             NotImplementedError::Details[NotImplementedError::Reason::ID],
+             nullptr,
+             NotImplementedError::Details[NotImplementedError::Reason::OPERATOR],
+             "in",
+             lname,
+             rname);
+
+    return false;
+}
+
 // *********************************************************************************************************************
 // PUBLIC
 // *********************************************************************************************************************
@@ -360,6 +384,14 @@ bool orbiter::datatype::IsTrue(const OObject *object) {
         return ops.to_bool(object);
 
     return false;
+}
+
+HOObject orbiter::datatype::ObjectContains(Isolate *isolate, const OObject *container, const OObject *value) noexcept {
+    bool result;
+
+    ::ObjectContains(isolate, container, value, result);
+
+    return HOObject((OObject *) BOOL_TO_OBOOL(result));
 }
 
 HOObject orbiter::datatype::ObjectAdd(Isolate *isolate, const OObject *left, const OObject *right) noexcept {
