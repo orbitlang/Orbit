@@ -32,10 +32,10 @@ using namespace orbiter::datatype;
 
 enum CallResult : int {
     CALL_ERROR = -1,
-    CALL_BUSY = 0,
-    CALL_CONTINUE = 1,
-    CALL_DONE = 2,
-    CALL_EXHAUST = 3
+    CALL_BUSY = -2,
+    CALL_CONTINUE = -3,
+    CALL_DONE = -4,
+    CALL_EXHAUST = -5
 };
 
 // *** Prototypes
@@ -376,6 +376,8 @@ int CallInit(Fiber *fiber, const Function *func, const unsigned short p_count, c
         for (auto i = 0; i < defaults->length; i += 2) {
             HOObject out;
 
+            total_args += 1;
+
             if (call_mode_is_nargs && DictLookup(nargs, defaults->objects[i], out)) {
                 fiber->vm.Push(out.get());
 
@@ -392,6 +394,7 @@ int CallInit(Fiber *fiber, const Function *func, const unsigned short p_count, c
         }
     } else if (call_mode_is_nargs) {
         // TODO: This function doesn't accept named args
+        assert(false);
     }
 
     // *****************************************************************************************************************
@@ -1116,6 +1119,10 @@ CATCH_FINALLY:
                 if (res == CALL_ERROR)
                     goto ERROR;
 
+                if (res == CALL_DONE) {
+                    DISPATCH;
+                }
+
                 if (func->shared->IsGenerator()) {
                     const auto param_size = (REG_SP - SP) + p_count * sizeof(void *);
                     REG_RR = (PtrSize) GeneratorNew(fiber, func, param_size).get();
@@ -1811,7 +1818,7 @@ CATCH_FINALLY:
             TARGET_OP(SYNC_ENTER) {
                 result = (OObject *) ACCESS_REG_SRC(instr);
 
-                if (O_IS_SMI(result)) {
+                if (!O_IS_OBJECT(result)) {
                     ErrorSetWithObjType(fiber->isolate,
                                         TypeError::Details[TypeError::Reason::ID],
                                         TypeError::Details[TypeError::Reason::NON_SYNCHRONIZABLE],
