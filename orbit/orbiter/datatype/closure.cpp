@@ -32,8 +32,7 @@ HClosure orbiter::datatype::ClosureNew(Isolate *isolate, const U16 slots) {
         stratum::util::MemoryZero(((unsigned char *) closure) + sizeof(Closure), slots * sizeof(void *));
     }
 
-    // This is treated as a non-container object for garbage collection purposes
-    O_GC_TRACK_RETURN(isolate, closure, false);
+    O_GC_TRACK_RETURN(isolate, closure, true);
 }
 
 HOObject orbiter::datatype::ClosureGet(Closure *closure, const U16 index) {
