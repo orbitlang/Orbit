@@ -1089,7 +1089,7 @@ HORString orbiter::datatype::ORStringIntern(Isolate *isolate, const unsigned cha
         length,
         &entry
     );
-    if (ok)
+    if (ok == LookupResult::OK)
         return HORString(entry->value);
 
     shared_lock.unlock();
@@ -1103,7 +1103,7 @@ HORString orbiter::datatype::ORStringIntern(Isolate *isolate, const unsigned cha
         length,
         &entry
     );
-    if (ok)
+    if (ok == LookupResult::OK)
         return HORString(entry->value);
 
     if ((entry = gst->map.AllocHEntry()) == nullptr)
@@ -1136,7 +1136,7 @@ HORString orbiter::datatype::ORStringIntern(Isolate *isolate, const unsigned cha
     entry->key = str.get();
     entry->value = str.get();
 
-    if (gst->map.Insert(entry)) {
+    if (gst->map.Insert(entry) == LookupResult::OK) {
         O_FAST_INCREF(entry->key);
         O_FAST_INCREF(entry->value);
 

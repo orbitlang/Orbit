@@ -266,7 +266,7 @@ bool SymbolTable::EnterNestedScope(const MSize offset) const noexcept {
 bool SymbolTable::EnterScope(ORString *name) noexcept {
     STHEntry *entry;
 
-    if (!this->scope->active->symbols.Lookup(name, &entry)) {
+    if (this->scope->active->symbols.Lookup(name, &entry) != LookupResult::OK) {
         this->status = SymbolTableError::SYMBOL_NOT_FOUND;
 
         return false;
@@ -300,7 +300,7 @@ Symbol *SymbolTable::Declare(ORString *name, const SymbolType type, const Storag
     auto *table = this->scope->active;
 
     STHEntry *entry;
-    if (table->symbols.Lookup(name, &entry)) {
+    if (table->symbols.Lookup(name, &entry) == LookupResult::OK) {
         auto *value = entry->value;
 
         if (value->decl_offset != offset) {
@@ -351,7 +351,7 @@ Symbol *SymbolTable::Declare(ORString *name, const SymbolType type, const Storag
         return nullptr;
     }
 
-    if (!table->symbols.Insert(entry)) {
+    if (table->symbols.Insert(entry) != LookupResult::OK) {
         O_FAST_DECREF(entry->key);
 
         SymbolDel(entry->value);
@@ -387,7 +387,7 @@ Symbol *SymbolTable::DeclareSymbolScope(ORString *name, const SymbolType type, c
     if (new_scope == nullptr) {
         STHEntry *entry;
 
-        if (table->symbols.Remove(sym->name, &entry)) {
+        if (table->symbols.Remove(sym->name, &entry) == LookupResult::OK) {
             O_FAST_DECREF(entry->key);
 
             table->symbols.FreeHEntry(entry);
@@ -457,7 +457,7 @@ Symbol *SymbolTable::Lookup(ORString *name, const MSize offset) noexcept {
             }
 
             STHEntry *entry;
-            if (inner_scope->symbols.Lookup(name, &entry)) {
+            if (inner_scope->symbols.Lookup(name, &entry) == LookupResult::OK) {
                 auto *sym = entry->value;
 
                 if (include_members)
@@ -535,7 +535,7 @@ Symbol *SymbolTable::LookupMember(ORString *name) {
     const auto *inner_scope = class_scope->active;
     while (inner_scope != nullptr) {
         STHEntry *entry;
-        if (inner_scope->symbols.Lookup(name, &entry))
+        if (inner_scope->symbols.Lookup(name, &entry) == LookupResult::OK)
             return entry->value;
 
         inner_scope = inner_scope->parent;

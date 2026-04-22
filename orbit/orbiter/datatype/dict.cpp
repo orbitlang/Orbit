@@ -59,8 +59,9 @@ static bool DictInsertLocked(Dict *dst, OObject *key, OObject *value) {
     entry->key = key;
     entry->value = value;
 
-    if (!dst->dict.Insert(entry)) {
+    if (dst->dict.Insert(entry) != LookupResult::OK) {
         dst->dict.FreeHEntry(entry);
+
         return false;
     }
 
@@ -93,7 +94,7 @@ static bool DictEqual(const OObject *left, const OObject *right) {
     for (const auto *cur = a->dict.iter_begin; cur != nullptr; cur = cur->iter_next) {
         ORHEntry *entry;
 
-        if (!b->dict.Lookup(cur->key, &entry))
+        if (b->dict.Lookup(cur->key, &entry) != LookupResult::OK)
             return false;
 
         if (!Equal(cur->value, entry->value))
@@ -616,7 +617,7 @@ bool orbiter::datatype::DictLookup(Dict *dict, OObject *key, HOObject &out_value
 
     ORHEntry *entry;
 
-    if (dict->dict.Lookup(key, &entry)) {
+    if (dict->dict.Lookup(key, &entry) == LookupResult::OK) {
         out_value = Handle(entry->value);
 
         return true;
@@ -639,7 +640,7 @@ bool orbiter::datatype::DictRemove(Dict *dict, OObject *key) {
 
     ORHEntry *out;
 
-    if (!dict->dict.Remove(key, &out))
+    if (dict->dict.Remove(key, &out) != LookupResult::OK)
         return false;
 
     dict->dict.FreeHEntry(out);

@@ -148,14 +148,14 @@ HAtom orbiter::datatype::AtomNew(Isolate *isolate, ORString *id) {
 
     std::shared_lock shared_lock(gat->lock);
 
-    if (gat->map.Lookup(id, &entry))
+    if (gat->map.Lookup(id, &entry) == LookupResult::OK)
         return HAtom(entry->value);
 
     shared_lock.unlock();
 
     std::unique_lock lock(gat->lock);
 
-    if (gat->map.Lookup(id, &entry))
+    if (gat->map.Lookup(id, &entry) == LookupResult::OK)
         return HAtom(entry->value);
 
     if ((entry = gat->map.AllocHEntry()) == nullptr)
@@ -171,7 +171,7 @@ HAtom orbiter::datatype::AtomNew(Isolate *isolate, ORString *id) {
     entry->key = id;
     entry->value = atom;
 
-    if (gat->map.Insert(entry)) {
+    if (gat->map.Insert(entry) == LookupResult::OK) {
         atom->id = O_FAST_INCREF(id);
 
         O_FAST_INCREF(id); // GAT key

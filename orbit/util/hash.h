@@ -17,6 +17,8 @@
 #define FNV_OFFSET_BASIS 14695981039346656037ULL
 #endif
 
+static constexpr MSize HASH_ERROR = std::numeric_limits<MSize>::max();
+
 inline MSize fnv1_hash(const unsigned char *data, const MSize length) {
     auto hash = FNV_OFFSET_BASIS;
 

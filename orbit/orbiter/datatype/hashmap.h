@@ -6,12 +6,19 @@
 #define ORBIT_ORBITER_DATATYPE_HASHMAP_H_
 
 #include <functional>
-#include <cstring>
+
+#include <orbit/util/hash.h>
 
 #include <orbit/orbiter/memory/iallocator.h>
 #include <orbit/orbiter/datatype/oobject.h>
 
 namespace orbiter::datatype {
+    enum class LookupResult : U8 {
+        OK,
+        NOT_FOUND,
+        ERROR,
+    };
+
     template<typename K, typename V>
     struct HEntry {
         std::atomic_int ref;
@@ -40,8 +47,6 @@ namespace orbiter::datatype {
         Allocator allocator_;
 
     public:
-        static constexpr size_t HASH_ERROR = std::numeric_limits<size_t>::max();
-
         using HEntry = HEntry<K, V>;
 
         HEntry **map = nullptr;
@@ -84,13 +89,13 @@ namespace orbiter::datatype {
             return this->Initialize(kHashMapInitialSize, kHashMapFreeNodeDefault);
         }
 
-        bool Insert(HEntry *entry) {
+        LookupResult Insert(HEntry *entry) {
             if (!this->Resize())
-                return false;
+                return LookupResult::ERROR;
 
             auto index = HashFn(entry->key);
             if (index == HASH_ERROR)
-                return false;
+                return LookupResult::ERROR;
 
             index %= this->capacity;
 
@@ -107,15 +112,15 @@ namespace orbiter::datatype {
 
             this->AppendIterItem(entry);
 
-            return true;
+            return LookupResult::OK;
         }
 
-        bool Lookup(K key, HEntry **entry) const {
+        LookupResult Lookup(K key, HEntry **entry) const {
             *entry = nullptr;
 
             auto index = HashFn(key);
             if (index == HASH_ERROR)
-                return false;
+                return LookupResult::ERROR;
 
             index %= this->capacity;
 
@@ -123,20 +128,20 @@ namespace orbiter::datatype {
                 if (EqualFn(key, cur->key)) {
                     *entry = cur;
 
-                    return true;
+                    return LookupResult::OK;
                 }
             }
 
-            return false;
+            return LookupResult::NOT_FOUND;
         }
 
         template<typename Equal, typename Hash, typename Key>
-        bool Lookup(Equal equal, Hash hash, Key key, MSize key_length, HEntry **entry) const {
+        LookupResult Lookup(Equal equal, Hash hash, Key key, MSize key_length, HEntry **entry) const {
             *entry = nullptr;
 
             auto index = hash(key, key_length);
             if (index == HASH_ERROR)
-                return false;
+                return LookupResult::ERROR;
 
             index %= this->capacity;
 
@@ -144,19 +149,19 @@ namespace orbiter::datatype {
                 if (equal(cur->key, key, key_length)) {
                     *entry = cur;
 
-                    return true;
+                    return LookupResult::OK;
                 }
             }
 
-            return false;
+            return LookupResult::NOT_FOUND;
         }
 
-        bool Remove(K key, HEntry **entry) {
+        LookupResult Remove(K key, HEntry **entry) {
             *entry = nullptr;
 
             auto index = HashFn(key);
             if (index == HASH_ERROR)
-                return false;
+                return LookupResult::ERROR;
 
             index %= this->capacity;
 
@@ -173,11 +178,11 @@ namespace orbiter::datatype {
 
                     *entry = cur;
 
-                    break;
+                    return LookupResult::OK;
                 }
             }
 
-            return true;
+            return LookupResult::NOT_FOUND;
         }
 
         bool Resize() {
@@ -349,8 +354,6 @@ namespace orbiter::datatype {
         OObject *,
         Equal,
         Hash>;
-
-    inline auto HASH_ERROR = ORHMap::HASH_ERROR;
 }
 
 #endif // !ORBIT_ORBITER_DATATYPE_HASHMAP_H_

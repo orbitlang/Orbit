@@ -50,7 +50,7 @@ bool orbiter::datatype::ContextDefine(Context *context, ORString *name, OObject 
     entry->value.value = value;
     entry->value.detail = flags;
 
-    if (!context->names.Insert(entry)) {
+    if (context->names.Insert(entry) != LookupResult::OK) {
         context->names.FreeHEntry(entry);
 
         return false;
@@ -73,15 +73,19 @@ bool orbiter::datatype::ContextLookup(Context *context, ORString *name, HOObject
     std::shared_lock _(context->lock);
 
     CtxHEntry *entry;
+    switch (context->names.Lookup(name, &entry)) {
+        case LookupResult::OK:
+            break;
+        case LookupResult::NOT_FOUND:
+            ErrorSet(O_GET_ISOLATE(context),
+                     NameError::Details[NameError::Reason::ID],
+                     nullptr,
+                     NameError::Details[NameError::Reason::NOT_DEFINED],
+                     ORSTRING_TO_CSTR(name));
 
-    if (!context->names.Lookup(name, &entry)) {
-        ErrorSet(O_GET_ISOLATE(context),
-                 NameError::Details[NameError::Reason::ID],
-                 nullptr,
-                 NameError::Details[NameError::Reason::NOT_DEFINED],
-                 ORSTRING_TO_CSTR(name));
-
-        return false;
+            return false;
+        case LookupResult::ERROR:
+            return false;
     }
 
     out_value = Handle(entry->value.value);
@@ -105,15 +109,19 @@ bool orbiter::datatype::ContextSet(Context *context, ORString *name, OObject *va
     std::unique_lock _(context->lock);
 
     CtxHEntry *entry;
+    switch (context->names.Lookup(name, &entry)) {
+        case LookupResult::OK:
+            break;
+        case LookupResult::NOT_FOUND:
+            ErrorSet(O_GET_ISOLATE(context),
+                     NameError::Details[NameError::Reason::ID],
+                     nullptr,
+                     NameError::Details[NameError::Reason::NOT_DEFINED],
+                     ORSTRING_TO_CSTR(name));
 
-    if (!context->names.Lookup(name, &entry)) {
-        ErrorSet(O_GET_ISOLATE(context),
-                 NameError::Details[NameError::Reason::ID],
-                 nullptr,
-                 NameError::Details[NameError::Reason::NOT_DEFINED],
-                 ORSTRING_TO_CSTR(name));
-
-        return false;
+            return false;
+        case LookupResult::ERROR:
+            return false;
     }
 
     if (entry->value.detail.IsConstant()) {
