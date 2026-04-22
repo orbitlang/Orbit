@@ -10,6 +10,8 @@
 #include <orbit/orbiter/datatype/list.h>
 #include <orbit/orbiter/datatype/number.h>
 #include <orbit/orbiter/datatype/orstring.h>
+#include <orbit/orbiter/datatype/rguard.h>
+#include <orbit/orbiter/datatype/stringbuilder.h>
 #include <orbit/orbiter/datatype/tuple.h>
 
 #include <orbit/orbiter/datatype/dict.h>
@@ -117,6 +119,62 @@ static bool DictOpContains(const OObject *container, const OObject *value, bool 
 /// consistent with how dict_is_empty/dict_length behave.
 static bool DictToBool(const OObject *self) {
     return ((const Dict *) self)->dict.length != 0;
+}
+
+/// Empty dict renders as `{}`; a dict that (directly or transitively) references
+/// itself renders the self-reference as `{...}`, detected via the fiber-local
+/// ReprGuard stack before recursing into a value.
+static OObject *DictToString(orbiter::Isolate *isolate, Dict *self) {
+    const ReprGuard guard((OObject *) self);
+
+    if (guard.IsError())
+        return nullptr;
+
+    if (guard.IsCyclic())
+        return (OObject *) ORStringNew(isolate, "{...}", 5).get();
+
+    std::shared_lock _(self->lock);
+
+    StringBuilder builder(isolate);
+
+    constexpr unsigned char open_brace[] = {'{'};
+    constexpr unsigned char close_brace[] = {'}'};
+    constexpr unsigned char item_sep[] = {',', ' '};
+    constexpr unsigned char kv_sep[] = {':', ' '};
+
+    // Rough hint: 16 bytes per entry for the initial buffer.
+    if (!builder.Write(open_brace, 1, self->dict.length * 16 + 1))
+        return nullptr;
+
+    bool first = true;
+    for (const auto *cur = self->dict.iter_begin; cur != nullptr; cur = cur->iter_next) {
+        if (!first && !builder.Write(item_sep, 2, 0))
+            return nullptr;
+
+        first = false;
+
+        auto k = Repr(isolate, cur->key);
+        if (!k)
+            return nullptr;
+
+        if (!builder.Write((const ORString *) k.get(), 0))
+            return nullptr;
+
+        if (!builder.Write(kv_sep, 2, 0))
+            return nullptr;
+
+        auto v = Repr(isolate, cur->value);
+        if (!v)
+            return nullptr;
+
+        if (!builder.Write((const ORString *) v.get(), 0))
+            return nullptr;
+    }
+
+    if (!builder.Write(close_brace, 1, 0))
+        return nullptr;
+
+    return (OObject *) ORStringNew(isolate, builder).get();
 }
 
 // *********************************************************************************************************************
@@ -581,6 +639,7 @@ bool orbiter::datatype::DictTypeSetup(TypeInfo *self) {
     ops.contains = DictOpContains;
     ops.equal = DictEqual;
     ops.to_bool = DictToBool;
+    ops.to_string = (ToStrFn) DictToString;
 
     return TIPropertyAdd(self, dict_methods, PropertyFlag::IS_PUBLIC);
 }

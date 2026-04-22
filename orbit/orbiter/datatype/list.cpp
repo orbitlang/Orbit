@@ -9,7 +9,10 @@
 #include <orbit/orbiter/datatype/errors.h>
 #include <orbit/orbiter/datatype/function.h>
 #include <orbit/orbiter/datatype/number.h>
+#include <orbit/orbiter/datatype/orstring.h>
 #include <orbit/orbiter/datatype/pcheck.h>
+#include <orbit/orbiter/datatype/rguard.h>
+#include <orbit/orbiter/datatype/stringbuilder.h>
 #include <orbit/orbiter/datatype/tuple.h>
 
 #include <orbit/orbiter/datatype/list.h>
@@ -164,8 +167,44 @@ static bool ListToBool(const OObject *self) {
     return ((const List *) self)->length != 0;
 }
 
-static OObject *ListToString(orbiter::Isolate *isolate, const OObject *self) {
-    assert(false);
+/// Empty list renders as `[]`; a list that (directly or transitively) references
+/// itself renders the self-reference as `[...]`, detected via the fiber-local
+/// ReprGuard stack before recursing into an element.
+static OObject *ListToString(orbiter::Isolate *isolate, List *self) {
+    const ReprGuard guard((OObject *) self);
+    if (guard.IsError())
+        return nullptr;
+    if (guard.IsCyclic())
+        return (OObject *) ORStringNew(isolate, "[...]", 5).get();
+
+    std::shared_lock _(self->lock);
+
+    StringBuilder builder(isolate);
+
+    constexpr unsigned char open_bracket[] = {'['};
+    constexpr unsigned char close_bracket[] = {']'};
+    constexpr unsigned char item_sep[] = {',', ' '};
+
+    // Rough hint: 8 bytes per element for the initial buffer.
+    if (!builder.Write(open_bracket, 1, self->length * 8 + 1))
+        return nullptr;
+
+    for (MSize i = 0; i < self->length; i++) {
+        if (i > 0 && !builder.Write(item_sep, 2, 0))
+            return nullptr;
+
+        auto v = Repr(isolate, self->objects[i]);
+        if (!v)
+            return nullptr;
+
+        if (!builder.Write((const ORString *) v.get(), 0))
+            return nullptr;
+    }
+
+    if (!builder.Write(close_bracket, 1, 0))
+        return nullptr;
+
+    return (OObject *) ORStringNew(isolate, builder).get();
 }
 
 // *********************************************************************************************************************
@@ -639,8 +678,7 @@ bool orbiter::datatype::ListTypeSetup(TypeInfo *self) {
     ops.equal = ListEqual;
     ops.add = ListAdd;
     ops.to_bool = ListToBool;
-    ops.to_string = ListToString;
-    ops.to_repr = ListToString;
+    ops.to_string = (ToStrFn) ListToString;
 
     return TIPropertyAdd(self, list_methods, PropertyFlag::IS_PUBLIC);
 }

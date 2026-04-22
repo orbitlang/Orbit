@@ -7,7 +7,10 @@
 #include <orbit/orbiter/datatype/errors.h>
 #include <orbit/orbiter/datatype/function.h>
 #include <orbit/orbiter/datatype/number.h>
+#include <orbit/orbiter/datatype/orstring.h>
 #include <orbit/orbiter/datatype/pcheck.h>
+#include <orbit/orbiter/datatype/rguard.h>
+#include <orbit/orbiter/datatype/stringbuilder.h>
 
 #include <orbit/orbiter/datatype/tuple.h>
 
@@ -105,8 +108,39 @@ static bool TupleToBool(const OObject *self) {
     return ((const Tuple *) self)->length != 0;
 }
 
-static OObject *TupleToString(orbiter::Isolate *isolate, const OObject *self) {
-    assert(false);
+static OObject *TupleToString(orbiter::Isolate *isolate, const Tuple *self) {
+    constexpr unsigned char open_paren[] = {'('};
+    constexpr unsigned char close_paren[] = {')'};
+    constexpr unsigned char close_single[] = {',', ')'};
+    constexpr unsigned char item_sep[] = {',', ' '};
+
+    StringBuilder builder(isolate);
+
+    // Rough hint: 8 bytes per element for the initial buffer.
+    if (!builder.Write(open_paren, 1, self->length * 8 + 2))
+        return nullptr;
+
+    for (MSize i = 0; i < self->length; i++) {
+        if (i > 0 && !builder.Write(item_sep, 2, 0))
+            return nullptr;
+
+        auto v = Repr(isolate, self->objects[i]);
+        if (!v)
+            return nullptr;
+
+        if (!builder.Write((const ORString *) v.get(), 0))
+            return nullptr;
+    }
+
+    if (self->length == 1) {
+        if (!builder.Write(close_single, 2, 0))
+            return nullptr;
+    } else {
+        if (!builder.Write(close_paren, 1, 0))
+            return nullptr;
+    }
+
+    return (OObject *) ORStringNew(isolate, builder).get();
 }
 
 // *********************************************************************************************************************
@@ -328,8 +362,7 @@ bool orbiter::datatype::TupleTypeSetup(TypeInfo *self) {
     ops.equal = TupleEqual;
     ops.add = TupleAdd;
     ops.to_bool = TupleToBool;
-    ops.to_string = TupleToString;
-    ops.to_repr = TupleToString;
+    ops.to_string = (ToStrFn) TupleToString;
     ops.hash = TupleHash;
 
     return TIPropertyAdd(self, tuple_methods, PropertyFlag::IS_PUBLIC);
