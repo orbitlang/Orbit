@@ -187,6 +187,14 @@ namespace orbiter::datatype {
     // HELPER FUNCTIONS
     // *****************************************************************************************************************
 
+    enum class CallResult : I16 {
+        ERROR = -1,
+        BUSY = -2,
+        CONTINUE = -3,
+        DONE = -4,
+        EXHAUST = -5
+    };
+
     // --- Lifecycle ---
     using DtorFn = bool (*)(OObject *);
     using GCTraceCallback = void (*)(OObject *, MSize);
@@ -205,7 +213,7 @@ namespace orbiter::datatype {
 
     // --- Iteration ---
     using GetIterFn = OObject *(*)(OObject *);
-    using IterNextFn = bool (*)(OObject *, OObject **);
+    using IterNextFn = CallResult (*)(OObject *, OObject **);
 
     // --- Conversion ---
     using ToNativeType = bool (*)(OObject *, void *, NativeType);

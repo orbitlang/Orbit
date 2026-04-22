@@ -30,14 +30,6 @@
 using namespace orbiter;
 using namespace orbiter::datatype;
 
-enum CallResult : int {
-    CALL_ERROR = -1,
-    CALL_BUSY = -2,
-    CALL_CONTINUE = -3,
-    CALL_DONE = -4,
-    CALL_EXHAUST = -5
-};
-
 // *** Prototypes
 
 // External
@@ -274,7 +266,7 @@ int CallInit(Fiber *fiber, const Function *func, const unsigned short p_count, c
                             nullptr,
                             (OObject *) func);
 
-        return CALL_ERROR;
+        return (int) CallResult::ERROR;
     }
 
     const auto *fn_shared = func->shared;
@@ -307,7 +299,7 @@ int CallInit(Fiber *fiber, const Function *func, const unsigned short p_count, c
                                     nullptr,
                                     args);
 
-                return CALL_ERROR;
+                return (int) CallResult::ERROR;
             }
         } else
             total_args -= 1;
@@ -351,7 +343,7 @@ int CallInit(Fiber *fiber, const Function *func, const unsigned short p_count, c
 
             regs->RR.reg = (PtrSize) FunctionNew(func, args, total_args).get();
 
-            return CALL_DONE;
+            return (int) CallResult::DONE;
         }
 
         if (!func->shared->IsVariadic() && rest->length > args_diff) {
@@ -464,25 +456,25 @@ int CallGenerator(Fiber *fiber, Generator *gen, const U16 total_args, const Call
                  nullptr,
                  TypeError::Details[TypeError::Reason::GENERATOR_INVALID_CALL]);
 
-        return CALL_ERROR;
+        return (int) CallResult::ERROR;
     }
 
     PtrSize actual = 0;
     if (!gen->acquired.compare_exchange_strong(actual, (PtrSize) fiber))
-        return CALL_BUSY;
+        return (int) CallResult::BUSY;
 
     if (gen->state == GeneratorState::EXHAUSTED) {
         gen->acquired = 0;
 
         if (!exhausted_error)
-            return CALL_EXHAUST;
+            return (int) CallResult::EXHAUST;
 
         ErrorSet(fiber->isolate,
                  StopIterationError::Details[StopIterationError::Reason::ID],
                  nullptr,
                  StopIterationError::Details[StopIterationError::Reason::GENERATOR_EXHAUSTED]);
 
-        return CALL_ERROR;
+        return (int) CallResult::ERROR;
     }
 
     // Load registers
@@ -520,7 +512,7 @@ int CallGenerator(Fiber *fiber, Generator *gen, const U16 total_args, const Call
 
     gen->state = GeneratorState::RUNNING;
 
-    return CALL_CONTINUE;
+    return (int) CallResult::CONTINUE;
 }
 
 int VMGetIterNext(Fiber *fiber, OObject *object, PtrSize *dst) {
@@ -528,10 +520,9 @@ int VMGetIterNext(Fiber *fiber, OObject *object, PtrSize *dst) {
         if (O_IS_TYPE(object, InstanceType::GENERATOR))
             return CallGenerator(fiber, (Generator *) object, 0, CallMode::FASTCALL, false);
 
-        const auto type = (TypeInfoOps *) O_GET_TYPE(object);
-
-        if (type->ops.iter_next != nullptr)
-            return type->ops.iter_next(object, (OObject **) dst);
+        const auto &ops = O_GET_TYPE_OPS(object);
+        if (ops.iter_next != nullptr)
+            return (int) ops.iter_next(object, (OObject **) dst);
     }
 
     ErrorSetWithObjType(fiber->isolate,
@@ -540,7 +531,7 @@ int VMGetIterNext(Fiber *fiber, OObject *object, PtrSize *dst) {
                         nullptr,
                         object);
 
-    return CALL_ERROR;
+    return (int) CallResult::ERROR;
 }
 
 OObject *LoadFromObjectProp(const Fiber *fiber, const Function *func, OObject *obj, const LoadObjectPropFlags flags,
@@ -1139,10 +1130,10 @@ CATCH_FINALLY:
 
                 if (func != nullptr && O_IS_TYPE(func, InstanceType::GENERATOR)) {
                     res = CallGenerator(fiber, (Generator *) func, p_count, flags, true);
-                    if (res == CALL_ERROR)
+                    if (res == (int) CallResult::ERROR)
                         goto ERROR;
 
-                    if (res == CALL_BUSY) {
+                    if (res == (int) CallResult::BUSY) {
                         fiber->state = FiberState::YIELDED;
                         return nullptr;
                     }
@@ -1151,10 +1142,10 @@ CATCH_FINALLY:
                 }
 
                 res = CallInit(fiber, func, p_count, flags);
-                if (res == CALL_ERROR)
+                if (res == (int) CallResult::ERROR)
                     goto ERROR;
 
-                if (res == CALL_DONE) {
+                if (res == (int) CallResult::DONE) {
                     DISPATCH;
                 }
 
@@ -1224,7 +1215,7 @@ CATCH_FINALLY:
                 }
 
                 auto res = CallInit(fiber, func, p_count, flags);
-                if (res == CALL_ERROR)
+                if (res == (int) CallResult::ERROR)
                     goto ERROR;
 
                 const auto size = res * sizeof(void *);
@@ -1245,7 +1236,7 @@ CATCH_FINALLY:
                 const auto func = (Function *) ACCESS_REG_SRC(instr);
 
                 const auto res = CallInit(fiber, func, p_count, flags);
-                if (res == CALL_ERROR)
+                if (res == (int) CallResult::ERROR)
                     goto ERROR;
 
                 auto *defer = fiber->isolate->dpool_->NewDefer();
@@ -1789,12 +1780,13 @@ CATCH_FINALLY:
                 dst = FETCH_R_DST(instr);
                 const auto jmp = FETCH_IMM(instr);
 
-                int res = VMGetIterNext(fiber, (OObject *) ACCESS_REG_SRC(instr), REGISTER_PTR(regs, dst));
-                if (res == CALL_ERROR)
+                auto res = (CallResult)
+                        VMGetIterNext(fiber, (OObject *) ACCESS_REG_SRC(instr), REGISTER_PTR(regs, dst));
+                if (res == CallResult::ERROR)
                     goto ERROR;
-                if (res == CALL_CONTINUE)
+                if (res == CallResult::CONTINUE)
                     goto BEGIN;
-                if (res == CALL_EXHAUST) {
+                if (res == CallResult::EXHAUST) {
                     JMP_TO(jmp);
 
                     continue;
