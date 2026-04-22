@@ -87,8 +87,6 @@ namespace orbiter {
         }
 
         void DeleteDefer(Defer *defer) {
-            O_DECREF(defer->func);
-
             std::unique_lock _(this->lock_);
 
             if (this->pool_size_ < this->pool_limit_) {
