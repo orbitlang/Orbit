@@ -10,6 +10,7 @@
 #include <orbit/orbiter/datatype/context.h>
 #include <orbit/orbiter/datatype/function.h>
 #include <orbit/orbiter/datatype/module.h>
+#include <orbit/orbiter/datatype/rguard.h>
 
 #include <orbit/orbiter/defer.h>
 #include <orbit/orbiter/panic.h>
@@ -41,9 +42,11 @@ namespace orbiter {
 
         FiberContext context{};
 
-        PanicContainer panic;
+        PanicContainer panic{};
 
-        DeferStack defer_stack;
+        DeferStack defer_stack{};
+
+        datatype::RGuard rguard{};
 
         Isolate *isolate = nullptr;
 

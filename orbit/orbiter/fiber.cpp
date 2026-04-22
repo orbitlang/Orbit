@@ -22,6 +22,7 @@ thread_local Fiber *thl_fiber = nullptr;
 
 Fiber::~Fiber() {
     this->vm.stack.Cleanup(this->isolate);
+    this->rguard.Cleanup(this->isolate);
 
     const memory::IsolateAllocator allocator(this->isolate);
     while (this->panic_cache != nullptr) {
@@ -90,6 +91,13 @@ Fiber *Fiber::New(Isolate *isolate, const MSize stack_size, const MSize stack_li
 
         fiber->panic_cache->prev = allocator.calloc<struct Panic>(sizeof(struct Panic));
         if (fiber->panic_cache->prev == nullptr) {
+            allocator.FreeObject(fiber);
+
+            return nullptr;
+        }
+
+        new(&fiber->rguard) datatype::RGuard();
+        if (!fiber->rguard.Reserve(isolate, datatype::kRGuardInitialCapacity)) {
             allocator.FreeObject(fiber);
 
             return nullptr;
