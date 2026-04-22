@@ -29,7 +29,10 @@ MSize GC::Collect(int start, int end) noexcept {
     // Move to the next epoch to avoid revisiting old objects
     this->NextEpoch();
 
-    // 1) Scan active fibers and VMs for reachable objects
+    // 1) Scan isolate
+    this->ScanIsolate();
+
+    // 2) Scan active fibers and VMs for reachable objects
     this->ScanFibers();
 
     for (auto i = start; i < end; i++) {
@@ -50,10 +53,10 @@ MSize GC::Collect(int start, int end) noexcept {
         // Increment the number of times this generation has been collected
         selected->times += 1;
 
-        // 2) Scan root elements (objects directly accessible from the generation)
+        // 3) Scan root elements (objects directly accessible from the generation)
         ScanRoots(selected);
 
-        // 3) Trace and classify unreachable objects
+        // 4) Trace and classify unreachable objects
         TraceRoots(selected, &nextgen[1 - chg], &unreachable);
 
         // Promote objects from the previous generation to the current generation
@@ -193,6 +196,16 @@ void GC::ScanFibers() const noexcept {
         this->ScanVMRegisters(cursor);
         this->ScanVMStack(cursor);
     }
+}
+
+void GC::ScanIsolate() const noexcept {
+    const auto *isolate = this->allocator_.GetIsolate();
+
+    Visit(isolate->oom_error_, this->epoch_);
+
+    // PanicContainer
+    for (const auto *panic = *isolate->panic.r_current_; panic != nullptr; panic = panic->prev)
+        Visit(panic->error, this->epoch_);
 }
 
 void GC::ScanVMRegisters(Fiber *fiber) const noexcept {

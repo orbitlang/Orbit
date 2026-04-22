@@ -294,6 +294,8 @@ namespace orbiter {
 
             void ScanFibers() const noexcept;
 
+            void ScanIsolate() const noexcept;
+
             void ScanVMRegisters(Fiber *fiber) const noexcept;
 
             void ScanVMStack(const Fiber *fiber) const noexcept;

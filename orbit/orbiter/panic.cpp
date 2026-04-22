@@ -28,7 +28,7 @@ Panic *PanicContainer::CreatePanic(Isolate *isolate, Panic **panic_cache, dataty
     }
 
     panic->prev = *this->r_current_;
-    panic->error = O_FAST_INCREF(error);
+    panic->error = error;
     panic->frame = 0; // Managed externally by Fiber::Panic or other components as needed
 
     *this->r_current_ = panic;
@@ -45,9 +45,6 @@ Panic *PanicContainer::CreateOOMPanic(const Isolate *isolate, Panic **panic_cach
     panic->prev = *this->r_current_;
     panic->error = isolate->oom_error_;
 
-    // Creates a virtually immortal object
-    O_UNSAFE_GET_RC(isolate->oom_error_) = 0xFFFFFFA;
-
     *this->r_current_ = panic;
 
     return panic;
@@ -59,8 +56,6 @@ void PanicContainer::DiscardPanic(Panic **panic_cache) const noexcept {
 
     auto *chain = *this->r_current_;
     while (chain != nullptr) {
-        O_FAST_DECREF(chain->error);
-
         chain->error = nullptr;
 
         auto *prev = chain->prev;
