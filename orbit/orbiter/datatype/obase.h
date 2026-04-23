@@ -28,8 +28,14 @@ namespace orbiter::datatype {
 #define BOOL_TO_OBOOL(value) ((value) ? kOddBallTRUE : kOddBallFALSE)
 #define OBOOL_TO_BOOL(value) (((MSize)value) == kOddBallTRUE)
 
-    // Orbit uses signed SMI (Small Integers) by default
-    constexpr auto kSMIBit = (sizeof(MSize) * 8) - 1;
+    // Orbit uses signed SMIs (Small Integers). The low two bits of a pointer-sized value are reserved for type tagging:
+    //   bit 0 = SMI tag (1 = tagged immediate, 0 = heap pointer)
+    //   bit 1 = oddball discriminator (1 = true/false/nil, 0 = SMI)
+    //
+    // This leaves (sizeof(MSize) * 8 - 2) bits for the SMI payload (including sign),
+    // so on a 64-bit machine the effective range is [-(1<<61), (1<<61)-1].
+    // Use O_TO_SMI / O_FROM_SMI rather than raw shifts to insulate callers from the tag layout.
+    constexpr auto kSMIBit = (sizeof(MSize) * 8) - 2;
     constexpr auto kSMIMinSize = -(static_cast<MSSize>(1) << (kSMIBit - 1));
     constexpr auto kSMIMaxSize = (static_cast<MSSize>(1) << (kSMIBit - 1)) - 1;
 
@@ -344,7 +350,16 @@ namespace orbiter::datatype {
 #define O_IS_SMI(object)                    ((((MSize)object) & orbiter::datatype::kOddBallMask) == 0x01)
 #define O_IS_ODDBALL(object)                (((OObject *)object == nullptr) || ((!O_IS_SMI(object)) && (((MSize)object & orbiter::datatype::kOddBallMask) == orbiter::datatype::kOddBallMask)))
 #define O_IS_OBJECT(object)                 ((object != nullptr) && ((!O_IS_SMI(object)) && (((MSize)object & orbiter::datatype::kOddBallMask) != orbiter::datatype::kOddBallMask)))
-#define O_TO_SMI(num)                       ((MSize)(((MSize)(MSSize)(num) << 1u) | 0x01u))
+
+// Encode a signed integer into a tagged SMI.
+// The caller is responsible for ensuring `num` fits in [kSMIMinSize, kSMIMaxSize];
+// out-of-range values silently truncate the high bits.
+#define O_TO_SMI(num)                       ((MSize)(((MSize)(MSSize)(num) << 2u) | 0x01u))
+
+// Decode a tagged SMI back to its signed integer value. Arithmetic right shift preserves the sign.
+// Callers must have already verified O_IS_SMI!
+// This macro makes no attempt to distinguish SMIs from oddballs or heap pointers.
+#define O_FROM_SMI(object)                  (((MSSize)(MSize)(object)) >> 2)
 
 #define O_IS_FALSE(object)                  ((MSize)(object) == orbiter::datatype::kOddBallFALSE)
 #define O_IS_TRUE(object)                   ((MSize)(object) == orbiter::datatype::kOddBallTRUE)

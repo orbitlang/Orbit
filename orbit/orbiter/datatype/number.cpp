@@ -25,7 +25,7 @@ using namespace orbiter::datatype;
 /// Precondition: `obj` must be a Number or SMI (guaranteed by method dispatch / PCHECK).
 static IntegerUnderlying NumberVal(const OObject *obj) {
     if (O_IS_SMI(obj))
-        return ((MSSize) (MSize) obj >> 1);
+        return O_FROM_SMI(obj);
 
     return ((const Number *) obj)->sint;
 }
@@ -715,7 +715,7 @@ constexpr FunctionDef number_methods[] = {
 
 bool orbiter::datatype::NumberExtract(const OObject *obj, IntegerUnderlying &out) {
     if (O_IS_SMI(obj)) {
-        out = (IntegerUnderlying) ((MSSize) (MSize) obj >> 1);
+        out = (IntegerUnderlying) O_FROM_SMI(obj);
 
         return true;
     }

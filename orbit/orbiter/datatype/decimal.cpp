@@ -28,7 +28,7 @@ using namespace orbiter::datatype;
 /// the NotImplementedError path in the dispatcher.
 static bool DecimalExtract(const OObject *obj, DecimalUnderlying &out) {
     if (O_IS_SMI(obj)) {
-        out = (DecimalUnderlying) ((MSSize) (MSize) obj >> 1);
+        out = (DecimalUnderlying) O_FROM_SMI(obj);
 
         return true;
     }

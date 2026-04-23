@@ -26,10 +26,15 @@ namespace orbiter::memory {
         static constexpr unsigned char SMITagBits = 1;
         static constexpr uintptr_t SMITagMask = Mask(SMITag);
 
-        // Bit N-1 (MSB) — oddball high bit.
-        // When this bit is set together with SMITagMask the value is an oddball
-        // (true, false, nil). See kOddBallMask in obase.h.
-        static constexpr unsigned char OddBallShift = (sizeof(uintptr_t) * 8) - 1;
+        // Bit 1 — oddball discriminator.
+        // SMI tag (bit 0) set with this bit clear → tagged small integer (SMI).
+        // SMI tag (bit 0) set with this bit set  → oddball (true, false, nil).
+        // Heap pointers have bit 0 clear (guaranteed by alignment), so this
+        // bit is irrelevant for them. Keeping the discriminator in the low
+        // bits (instead of the MSB) lets negative SMIs keep their sign bit
+        // in the MSB without colliding with the oddball pattern.
+        // See kOddBallMask in obase.h.
+        static constexpr unsigned char OddBallShift = After(SMITag);
         static constexpr unsigned char OddBallBits = 1;
         static constexpr uintptr_t OddBallMask = Mask(OddBall);
     };

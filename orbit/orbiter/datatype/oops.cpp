@@ -60,8 +60,8 @@ bool Dispatch(orbiter::Isolate *isolate, const OObject *left, const OObject *rig
 template<orbiter::OPCode opcode>
 bool ObjectAddSubMul(orbiter::Isolate *isolate, const OObject *left, const OObject *right, OObject *&result) noexcept {
     if (O_IS_SMI(left) && O_IS_SMI(right)) {
-        const MSSize na = (MSSize) left >> 1;
-        const MSSize nb = (MSSize) right >> 1;
+        const MSSize na = O_FROM_SMI(left);
+        const MSSize nb = O_FROM_SMI(right);
 
         MSSize res;
 
@@ -104,8 +104,8 @@ bool ObjectDivImpl(orbiter::Isolate *isolate, const OObject *left, const OObject
     constexpr bool is_float = (((U8) flags) & ((U8) orbiter::DivFlags::FLOAT)) != 0;
 
     if (O_IS_SMI(left) && O_IS_SMI(right)) {
-        const MSSize na = (MSSize) left >> 1;
-        const MSSize nb = (MSSize) right >> 1;
+        const MSSize na = O_FROM_SMI(left);
+        const MSSize nb = O_FROM_SMI(right);
 
         if (nb == 0) [[unlikely]] {
             ErrorSet(isolate,
@@ -203,8 +203,8 @@ bool ObjectXor(orbiter::Isolate *isolate, const OObject *left, const OObject *ri
 
 bool ObjectLShift(orbiter::Isolate *isolate, const OObject *left, const OObject *right, OObject *&result) noexcept {
     if (O_IS_SMI(left) && O_IS_SMI(right)) {
-        const MSSize na = (MSSize) left >> 1;
-        const MSSize nb = (MSSize) right >> 1;
+        const MSSize na = O_FROM_SMI(left);
+        const MSSize nb = O_FROM_SMI(right);
 
         if (nb < 0) [[unlikely]] {
             ErrorSet(isolate,
@@ -220,7 +220,7 @@ bool ObjectLShift(orbiter::Isolate *isolate, const OObject *left, const OObject 
             return true;
         }
 
-        const MSSize res = (MSSize) ((MSize) na << nb);
+        const auto res = (MSSize) ((MSize) na << nb);
 
         if (res < kSMIMinSize || res > kSMIMaxSize) [[unlikely]] {
             const auto tmp = IntNew(isolate, res);
@@ -242,8 +242,8 @@ bool ObjectLShift(orbiter::Isolate *isolate, const OObject *left, const OObject 
 
 bool ObjectRShift(orbiter::Isolate *isolate, const OObject *left, const OObject *right, OObject *&result) noexcept {
     if (O_IS_SMI(left) && O_IS_SMI(right)) {
-        const MSSize na = (MSSize) left >> 1;
-        const MSSize nb = (MSSize) right >> 1;
+        const MSSize na = O_FROM_SMI(left);
+        const MSSize nb = O_FROM_SMI(right);
 
         if (nb < 0) [[unlikely]] {
             ErrorSet(isolate,
@@ -268,7 +268,7 @@ bool ObjectRShift(orbiter::Isolate *isolate, const OObject *left, const OObject 
 
 bool ObjectNeg(orbiter::Isolate *isolate, const OObject *object, OObject *&result) noexcept {
     if (O_IS_SMI(object)) {
-        const auto tmp = IntNew(isolate, -((MSSize) object >> 1));
+        const auto tmp = IntNew(isolate, -O_FROM_SMI(object));
         if (!tmp)
             return false;
 
@@ -292,7 +292,7 @@ bool ObjectNeg(orbiter::Isolate *isolate, const OObject *object, OObject *&resul
 
 bool ObjectMoveNot(orbiter::Isolate *isolate, const OObject *object, OObject *&result) noexcept {
     if (O_IS_SMI(object)) {
-        result = (OObject *) ((~((PtrSize) (object))) | 0x01);
+        result = (OObject *) O_TO_SMI(~O_FROM_SMI(((PtrSize)object)));
 
         return true;
     }
@@ -377,7 +377,7 @@ bool orbiter::datatype::EqualStrict(const OObject *left, const OObject *right) {
 
 bool orbiter::datatype::IsTrue(const OObject *object) {
     if (O_IS_SMI(object))
-        return ((MSSize) object) >> 1;
+        return O_FROM_SMI(object);
 
     const auto &ops = O_GET_TYPE_OPS(object);
     if (ops.to_bool != nullptr)
@@ -483,11 +483,8 @@ HOObject orbiter::datatype::ObjectRShift(Isolate *isolate, const OObject *left, 
 }
 
 HOObject orbiter::datatype::ToString(Isolate *isolate, const OObject *object) noexcept {
-    if (O_IS_SMI(object)) {
-        const auto n = (MSSize) object >> 1;
-
-        return HOObject(ORStringFormat(isolate, "%lld", n));
-    }
+    if (O_IS_SMI(object))
+        return HOObject(ORStringFormat(isolate, "%lld", O_FROM_SMI(object)));
 
     if (O_IS_OBJECT(object)) {
         const auto &ops = O_GET_TYPE_OPS(object);
@@ -514,12 +511,26 @@ HOObject orbiter::datatype::Repr(Isolate *isolate, const OObject *object) noexce
 }
 
 MSize orbiter::datatype::Hash(const OObject *obj) {
-    if (!O_IS_OBJECT(obj))
-        return ((MSSize) obj) >> 1;
+    if (O_IS_SMI(obj) || O_IS_ODDBALL(obj))
+        return O_FROM_SMI(obj);
 
     const auto &ops = O_GET_TYPE_OPS(obj);
     if (ops.hash != nullptr)
         return ops.hash(obj);
+
+    // No custom hash: identity-hash is safe only when equality is also identity.
+    // A type that overrides `equal` without providing a compatible `hash` would
+    // silently break the `a == b ⇒ hash(a) == hash(b)` invariant (e.g. a mutable
+    // List with structural equality): mark it as unhashable.
+    if (ops.equal != nullptr) {
+        ErrorSetWithObjType(O_GET_ISOLATE(obj),
+                            TypeError::Details[TypeError::Reason::ID],
+                            TypeError::Details[TypeError::Reason::UNHASHABLE],
+                            nullptr,
+                            obj);
+
+        return HASH_ERROR;
+    }
 
     return (MSSize) obj;
 }

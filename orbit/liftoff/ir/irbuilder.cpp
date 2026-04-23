@@ -125,15 +125,14 @@ Instruction *IRBuilder::BinaryOP(const parser::Binary *binary) {
         const auto literal = (parser::Literal *) binary->right;
         const auto tk_type = binary->token_type;
 
-        const auto number = ((PtrSize) literal->literal) >> 1;
+        const auto number = (PtrSize) O_FROM_SMI((PtrSize) literal->literal);
 
-        if ((tk_type == scanner::TokenType::SHL
-             || tk_type == scanner::TokenType::SHR)
-            && (O_IS_SMI(literal->literal) && number <= 0xFFFF)) {
-            right = (Instruction *) number;
-            r_ignore = true;
-        } else if ((tk_type >= scanner::TokenType::PLUS && tk_type <= scanner::TokenType::PERCENT)
-                   && (O_IS_SMI(literal->literal) && number <= 0xFF)) {
+        if (((tk_type == scanner::TokenType::SHL
+              || tk_type == scanner::TokenType::SHR)
+             && (O_IS_SMI(literal->literal) && number <= 0xFFFF))
+            || ((tk_type >= scanner::TokenType::PLUS
+                 && tk_type <= scanner::TokenType::PERCENT)
+                && (O_IS_SMI(literal->literal) && number <= 0xFF))) {
             right = (Instruction *) number;
             r_ignore = true;
         }

@@ -8,7 +8,7 @@
 #include <orbit/orbiter/isolate.h>
 
 namespace orbiter {
-    constexpr PtrSize kExceptionContextTag = (0xECECEC << 1) | 0x1;
+    constexpr PtrSize kExceptionContextTag = (0xECECEC << 2) | 0x1;
 
     struct ExceptionContext {
         PtrSize _sentinel_;

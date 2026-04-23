@@ -54,7 +54,7 @@ bool orbiter::native::PrepareCall(Isolate *isolate, const NativeFunc *func, Para
             case NativeType::U64:
             case NativeType::USIZE:
                 if (O_IS_SMI(args[i])) {
-                    dst[d_index++].value = (void *) (((PtrSize) args[i]) >> 1);
+                    dst[d_index++].value = (void *) (O_FROM_SMI((PtrSize) args[i]));
                     continue;
                 }
             case NativeType::F32:
