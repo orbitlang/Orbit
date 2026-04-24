@@ -708,6 +708,6 @@ HDecimal orbiter::datatype::DecimalNew(Isolate *isolate, const char *string) {
 }
 
 HOType orbiter::datatype::DecimalTypeInit(Isolate *isolate) {
-    auto decimal = MakeType(isolate, "Decimal", InstanceType::DECIMAL, sizeof(Decimal) - sizeof(OObject), 18, 0);
+    auto decimal = MakeType(isolate, "Decimal", InstanceType::DECIMAL, sizeof(Decimal) - sizeof(OObject), 19, 0);
     return decimal;
 }
