@@ -280,7 +280,6 @@ unsigned char *Codegen::EmitOpcodes(const BasicBlock *block, unsigned char *m_co
                                                             ((ir::OffsetInstruction *) instr)->offset);
                 break;
             case orbiter::OPCode::NERROR:
-            case orbiter::OPCode::STIDX:
             case orbiter::OPCode::LDSBSCR:
                 *(orbiter::MachineWord *) m_code = EMIT_DSSS(instr->opcode,
                                                              instr->assigned_reg,
@@ -335,6 +334,7 @@ unsigned char *Codegen::EmitOpcodes(const BasicBlock *block, unsigned char *m_co
             }
             case orbiter::OPCode::ADDELEM:
             case orbiter::OPCode::CHSND:
+            case orbiter::OPCode::STIDX:
                 *(orbiter::MachineWord *) m_code = EMIT_DSS(instr->opcode,
                                                             ((Instruction*)instr->operands[0].value)->assigned_reg,
                                                             ((Instruction*)instr->operands[1].value)->assigned_reg,
