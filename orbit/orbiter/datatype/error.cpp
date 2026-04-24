@@ -15,6 +15,10 @@
 
 using namespace orbiter::datatype;
 
+// *********************************************************************************************************************
+// RUNTIME METHODS
+// *********************************************************************************************************************
+
 RUNTIME_FUNCTION(error_create, create,
                  R"DOC(
 @brief Create a new error object with the specified kind, message, and optional details.
@@ -38,7 +42,6 @@ RUNTIME_FUNCTION(error_create, create,
                    PCHECK_DEF("reason", false, InstanceType::STRING),
                    PCHECK_DEF("details", true)
     );
-
     PCHECK_CHECK(params);
 
     auto error = ErrorNew(O_GET_ISOLATE(*argv), (Atom *) argv[0], (ORString *) argv[1], argv[2]);
@@ -66,8 +69,9 @@ Because atoms are interned, the comparison is a fast pointer equality check.
     e.is(@NIOError)  // false
 )DOC", 2, nullptr, false, false) {
     PCHECK_ENTRIES(params,
-                   PCHECK_DEF("kind", false, InstanceType::ATOM));
-
+                   PCHECK_DEF("self", false, InstanceType::ATOM),
+                   PCHECK_DEF("kind", false, InstanceType::ATOM)
+    );
     PCHECK_CHECK(params);
 
     const auto *self = (Error *) argv[0];
@@ -89,6 +93,9 @@ by a colon, a space, and the human-readable reason message.
     let e = Error.create(@IOError, "file not found")
     e.message()   // "IOError: file not found"
 )DOC", 1, nullptr, false, false) {
+    PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::ATOM));
+    PCHECK_CHECK(params);
+
     const auto *self = (Error *) argv[0];
 
     auto s = ORStringFormat(O_GET_ISOLATE(_func), "%s: %s",
@@ -102,14 +109,14 @@ by a colon, a space, and the human-readable reason message.
 
 RUNTIME_METHOD(error_with_details, with_details,
                R"DOC(
-@brief Return a copy of the error with the details field replaced by `v`.
+@brief Return a copy of the error with the details field replaced by `details`.
 
 The original error is not mutated.  `kind` and `reason` are shared with the
 new object; only the `details` field is swapped.
 
-@param v  The new details value (any type, including nil).
+@param details  The new details value (any type, including nil).
 
-@return A new Error with the same kind and reason but with `details` set to `v`.
+@return A new Error with the same kind and reason but with `details` set to `details`.
 
 @see details, create
 
@@ -119,6 +126,12 @@ new object; only the `details` field is swapped.
     rich.details   // { path: "/tmp/x" }
     base.details   // nil  (original unchanged)
 )DOC", 2, nullptr, false, false) {
+    PCHECK_ENTRIES(params,
+                   PCHECK_DEF("self", false, InstanceType::ATOM),
+                   PCHECK_DEF("details", false)
+    );
+    PCHECK_CHECK(params);
+
     const auto *self = (Error *) argv[0];
 
     auto error = ErrorNew(O_GET_ISOLATE(_func), self->kind, self->reason, argv[1]);
@@ -144,6 +157,10 @@ const OPropertyEntry error_props[] = {
 
     OPROPERTY_SENTINEL
 };
+
+// *********************************************************************************************************************
+// PUBLIC API
+// *********************************************************************************************************************
 
 bool orbiter::datatype::ErrorTypeSetup(TypeInfo *self) {
     // Error stores kind, reason, and details directly in GC-managed slots.
