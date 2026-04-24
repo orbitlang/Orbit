@@ -214,7 +214,7 @@ namespace orbiter::datatype {
 
     // --- Arithmetic & Bitwise ---
     using BinaryFn = bool(*)(const OObject *, const OObject *, OObject *&result);
-    using TernaryFn = bool(*)(const OObject *, const OObject *, const OObject *);
+    using TernaryFn = bool(*)(const OObject *, const OObject *, OObject *);
     using UnaryFn = bool (*)(const OObject *, OObject *&result);
 
     // --- Iteration ---

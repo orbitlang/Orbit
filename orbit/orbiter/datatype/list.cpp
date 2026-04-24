@@ -195,6 +195,26 @@ static bool ListLoadIndex(const OObject *self, const OObject *index, OObject *&r
     return true;
 }
 
+/// `list[index] = value`: integer indexing with negative-wrap semantics, symmetric
+/// to ListLoadIndex. Out-of-range raises IndexError; a non-integer index raises
+/// TypeError.
+static bool ListStoreIndex(const OObject *self, const OObject *index, OObject *value) {
+    auto *isolate = O_GET_ISOLATE(self);
+
+    IntegerUnderlying i;
+    if (!NumberExtract(index, i)) {
+        ErrorSetWithObjType(isolate,
+                            TypeError::Details[TypeError::Reason::ID],
+                            TypeError::Details[TypeError::Reason::MISMATCH],
+                            isolate->primitive[(int) InstanceType::NUMBER]->name,
+                            index);
+
+        return false;
+    }
+
+    return ListInsert((List *) self, value, i);
+}
+
 // *********************************************************************************************************************
 // TYPE OPS — CONVERSION
 // *********************************************************************************************************************
@@ -669,6 +689,7 @@ bool orbiter::datatype::ListTypeSetup(TypeInfo *self) {
     ops.equal = ListEqual;
     ops.add = ListAdd;
     ops.load_index = ListLoadIndex;
+    ops.store_index = ListStoreIndex;
     ops.to_bool = ListToBool;
     ops.to_string = (ToStrFn) ListToString;
 
@@ -716,7 +737,7 @@ HOObject orbiter::datatype::ListGet(List *list, bool *success, MSSize index) {
 }
 
 HOType orbiter::datatype::ListTypeInit(Isolate *isolate) {
-    auto list = MakeType(isolate, "List", InstanceType::LIST, sizeof(List) - sizeof(OObject), 11, 0);
+    auto list = MakeType(isolate, "List", InstanceType::LIST, sizeof(List) - sizeof(OObject), 10, 0);
     return list;
 }
 

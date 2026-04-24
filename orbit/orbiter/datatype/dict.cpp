@@ -156,8 +156,8 @@ static bool DictLoadIndex(const OObject *self, const OObject *key, OObject *&res
 /// `dict[key] = value`: inserts or updates the entry associated with `key`.
 /// Errors from the underlying hashmap (unhashable key, allocation failure)
 /// are propagated as-is with the fiber error already set.
-static bool DictStoreIndex(const OObject *self, const OObject *key, const OObject *value) {
-    return DictInsert((Dict *) self, (OObject *) key, (OObject *) value);
+static bool DictStoreIndex(const OObject *self, const OObject *key, OObject *value) {
+    return DictInsert((Dict *) self, (OObject *) key, value);
 }
 
 // *********************************************************************************************************************
