@@ -1756,8 +1756,8 @@ ASTHandle<ASTNode *> Parser::ParsePipeline(ASTHandle<ASTNode *> &left) {
     call->loc.start = left->loc.start;
     call->loc.end = right->loc.end;
 
-    call->left = left.release();
-    call->args.push_back(std::move(right));
+    call->left = right.release();
+    call->args.push_back(std::move(left));
 
     return call;
 }
@@ -2339,6 +2339,7 @@ Parser::NudMeth Parser::LookupNUD(TokenType token) noexcept {
         case TokenType::IDENTIFIER:
         case TokenType::SELF:
         case TokenType::SUPER:
+        case TokenType::KW_DEFAULT: // In expressions, 'default' can be used as a variable name
             return &Parser::ParseIdentifier;
 
         // Grouping and composite types
