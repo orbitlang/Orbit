@@ -5,7 +5,6 @@
 #include <cassert>
 #include <shared_mutex>
 
-#include <orbit/orbiter/datatype/function.h>
 #include <orbit/orbiter/datatype/hashmap.h>
 
 #include <orbit/orbiter/datatype/atom.h>
@@ -53,54 +52,16 @@ bool AtomGATDtor(TypeInfo *self) {
     return true;
 }
 
-RUNTIME_METHOD(atom_repr, repr,
-               R"DOC(
-@brief Return the Orbit source-literal representation of the atom.
-
-Produces the canonical `"@name"` form that can be pasted directly back into
-Orbit source code to reconstruct the same atom.
-
-@return A String of the form `"@name"`.
-
-@see str
-
-@example
-    @hello.repr()    // "@hello"
-    @IOError.repr() // "@IOError"
-)DOC", 1, nullptr, false, false) {
-    const auto *self = (Atom *) argv[0];
-
-    auto s = ORStringFormat(O_GET_ISOLATE(_func), "@%s", ORSTRING_TO_CSTR(self->id));
-    if (!s)
-        return {};
-
-    return HOObject(std::move(s));
+/// `str(@name)`: returns just the identifier, without the leading `@`.
+static OObject *AtomToString(orbiter::Isolate *isolate, const OObject *self) {
+    return (OObject *) ((const Atom *) self)->id;
 }
 
-RUNTIME_METHOD(atom_str, str,
-               R"DOC(
-@brief Return the atom's name as a plain String.
-
-The returned string contains only the identifier part of the atom, without
-the leading 'at' used in Orbit source literals.
-
-@return A String equal to the atom's name.
-
-@see repr
-
-@example
-    @hello.str()    // "hello"
-    @IOError.str() // "IOError"
-)DOC", 1, nullptr, false, false) {
-    return HOObject((OObject *) ((Atom *) argv[0])->id);
+/// `repr(@name)`: returns the Orbit source literal, i.e. `@name`.
+static OObject *AtomToRepr(orbiter::Isolate *isolate, const OObject *self) {
+    const auto s = ORStringFormat(isolate, "@%s", ORSTRING_TO_CSTR(((const Atom *) self)->id));
+    return s ? (OObject *) s.get() : nullptr;
 }
-
-constexpr FunctionDef atom_methods[] = {
-    atom_repr,
-    atom_str,
-
-    FUNCTIONDEF_SENTINEL
-};
 
 const OPropertyEntry atom_props[] = {
     OPROPERTY_ENTRY("name", 0, PropertyFlag::IS_CONSTANT|PropertyFlag::IS_PUBLIC),
@@ -126,10 +87,12 @@ bool orbiter::datatype::AtomTypeSetup(TypeInfo *self) {
     self->aux.data = gat;
     self->aux.dtor = AtomGATDtor;
 
-    if (!TIPropertyAdd(self, atom_props))
-        return false;
+    auto &ops = ((TypeInfoOps *) self)->ops;
 
-    return TIPropertyAdd(self, atom_methods, PropertyFlag::IS_PUBLIC);
+    ops.to_string = AtomToString;
+    ops.to_repr = AtomToRepr;
+
+    return TIPropertyAdd(self, atom_props);
 }
 
 HAtom orbiter::datatype::AtomNew(Isolate *isolate, const char *string, const MSize length) {
@@ -190,6 +153,6 @@ HAtom orbiter::datatype::AtomNew(Isolate *isolate, ORString *id) {
 }
 
 HOType orbiter::datatype::AtomTypeInit(Isolate *isolate) {
-    auto atom = MakeType(isolate, "Atom", InstanceType::ATOM, 0, 3, 1);
+    auto atom = MakeType(isolate, "Atom", InstanceType::ATOM, 0, 1, 1);
     return atom;
 }
