@@ -78,35 +78,6 @@ Because atoms are interned, the comparison is a fast pointer equality check.
     return HOObject((OObject *) BOOL_TO_OBOOL(self->kind == (Atom *) argv[1]));
 }
 
-RUNTIME_METHOD(error_message, message,
-               R"DOC(
-@brief Return a formatted string combining the error kind and reason.
-
-The returned string has the form `"<kind>: <reason>"` — the atom name followed
-by a colon, a space, and the human-readable reason message.
-
-@return A String of the form `"<kind>: <reason>"`.
-
-@see str, kind, reason
-
-@example
-    let e = Error.create(@IOError, "file not found")
-    e.message()   // "IOError: file not found"
-)DOC", 1, nullptr, false, false) {
-    PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::ATOM));
-    PCHECK_CHECK(params);
-
-    const auto *self = (Error *) argv[0];
-
-    auto s = ORStringFormat(O_GET_ISOLATE(_func), "%s: %s",
-                            ORSTRING_TO_CSTR(self->kind->id),
-                            ORSTRING_TO_CSTR(self->reason));
-    if (!s)
-        return {};
-
-    return HOObject(std::move(s));
-}
-
 RUNTIME_METHOD(error_with_details, with_details,
                R"DOC(
 @brief Return a copy of the error with the details field replaced by `details`.
@@ -144,7 +115,6 @@ new object; only the `details` field is swapped.
 constexpr FunctionDef error_methods[] = {
     error_create,
     error_is,
-    error_message,
     error_with_details,
 
     FUNCTIONDEF_SENTINEL
@@ -159,12 +129,31 @@ const OPropertyEntry error_props[] = {
 };
 
 // *********************************************************************************************************************
+// TYPE OPS — CONVERSION
+// *********************************************************************************************************************
+
+/// `str(err)` / `repr(err)`: produces `"<kind>: <reason>"` — the atom's name
+/// followed by a colon, a space and the human-readable reason.
+static OObject *ErrorToString(orbiter::Isolate *isolate, const OObject *self) {
+    const auto *err = (const Error *) self;
+
+    const auto s = ORStringFormat(isolate, "%s: %s",
+                                  ORSTRING_TO_CSTR(err->kind->id),
+                                  ORSTRING_TO_CSTR(err->reason));
+    return s ? (OObject *) s.get() : nullptr;
+}
+
+// *********************************************************************************************************************
 // PUBLIC API
 // *********************************************************************************************************************
 
 bool orbiter::datatype::ErrorTypeSetup(TypeInfo *self) {
     // Error stores kind, reason, and details directly in GC-managed slots.
     // The GC automatically traces slot-held references, so no destructor or custom trace callback is needed.
+    auto &ops = ((TypeInfoOps *) self)->ops;
+
+    ops.to_string = ErrorToString;
+
     if (!TIPropertyAdd(self, error_props))
         return false;
 
@@ -205,7 +194,7 @@ HError orbiter::datatype::ErrorNew(Isolate *isolate, const char *kind, OObject *
 }
 
 HOType orbiter::datatype::ErrorTypeInit(Isolate *isolate) {
-    auto error = MakeType(isolate, "Error", InstanceType::ERROR, 0, 7, 3);
+    auto error = MakeType(isolate, "Error", InstanceType::ERROR, 0, 6, 3);
     return error;
 }
 
