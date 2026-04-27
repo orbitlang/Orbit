@@ -66,6 +66,16 @@ namespace orbiter::datatype {
     bool ListExtend(List *list, OObject *other);
 
     /**
+     * @brief Extend a list by appending multiple objects from another array.
+     *
+     * @param list Pointer to the List object to extend.
+     * @param other Array of objects to append to the list.
+     * @param count Number of objects in the 'other' array to append.
+     * @return True on success. If the operation fails, false will be returned, and the list state remains unchanged.
+     */
+    bool ListExtend(List *list, OObject **other, MSize count);
+
+    /**
     * @brief Insert element into the list.
     *
     * @param list List object.

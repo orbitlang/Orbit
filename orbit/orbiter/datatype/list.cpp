@@ -645,6 +645,20 @@ bool orbiter::datatype::ListExtend(List *list, OObject *other) {
     assert(false);
 }
 
+bool orbiter::datatype::ListExtend(List *list, OObject **other, const MSize count) {
+    std::unique_lock _(list->lock);
+
+    if (!ListCheckSize(list, count))
+        return false;
+
+    for (auto i = 0; i < count; i++)
+        list->objects[list->length + i] = other[i];
+
+    list->length += count;
+
+    return true;
+}
+
 bool orbiter::datatype::ListInsert(List *list, OObject *object, MSSize index) {
     std::unique_lock _(list->lock);
 
