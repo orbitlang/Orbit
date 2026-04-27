@@ -138,6 +138,10 @@ namespace orbiter::datatype {
             GENERATOR_SPAWN,
             NON_SYNCHRONIZABLE,
             METHOD_RECEIVER,
+            TOO_MANY_ARGS,
+            NO_NAMED_ARGS,
+            NO_KWARGS,
+            INIT_NO_CURRY,
         };
 
         static constexpr const char *Details[] = {
@@ -155,7 +159,11 @@ namespace orbiter::datatype {
             "invoking the symbol (indirect calls are not allowed)",
             (const char *) "'spawn' does not support generator functions",
             (const char *) "'%s' object cannot be used as a sync target",
-            (const char *) "method call requires '%s' instance as receiver"
+            (const char *) "method call requires '%s' instance as receiver",
+            (const char *) "'%s' takes %d positional argument(s) but %d were given",
+            (const char *) "'%s' does not accept named arguments",
+            (const char *) "'%s' does not accept keyword arguments",
+            (const char *) "constructor of '%s' cannot be partially applied",
         };
     };
 

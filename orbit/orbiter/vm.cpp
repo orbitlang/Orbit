@@ -271,14 +271,161 @@ bool VMGetIter(const Fiber *fiber, OObject *object, PtrSize *dst) {
     return false;
 }
 
-int CallInit(Fiber *fiber, Function *&func, const unsigned short p_count, const CallMode mode) {
-    auto *regs = &fiber->vm.regs;
-    auto *stack = &fiber->vm.stack;
+// *********************************************************************************************************************
+// VM CALL
+// *********************************************************************************************************************
 
-    if (!O_IS_OBJECT(func) || !O_IS_TYPE(func, InstanceType::FUNCTION)) {
-        if (!O_IS_OBJECT(func)
-            || !O_IS_TYPE(func, InstanceType::TYPE)
-            || ((TypeInfo *) func)->ctor == nullptr) {
+struct CallCtx {
+    Registers *regs;
+    VMStack *stack;
+
+    const FuncShared *fn_shared;
+
+    Dict *nargs;
+    List *rest;
+    Dict *kwargs;
+
+    U16 stack_args;
+
+    bool call_mode_is_kwarg;
+    bool call_mode_is_nargs;
+    bool call_mode_is_rest;
+};
+
+bool CallNormalizeMethodCall(Isolate *isolate, CallCtx &ctx) {
+    if (!ctx.fn_shared->IsMethod()) {
+        ctx.stack_args -= 1;
+        return true;
+    }
+
+    // Check object is instance
+    const auto args = *((OObject **) ((ctx.stack->stack + ctx.regs->SP.reg) - (ctx.stack_args * sizeof(void *))));
+    if (!O_GET_RC(args).IsInstance()) {
+        ErrorSetWithObjType(isolate,
+                            TypeError::Details[TypeError::Reason::ID],
+                            TypeError::Details[TypeError::Reason::METHOD_RECEIVER],
+                            nullptr,
+                            args);
+
+        return false;
+    }
+
+    return true;
+}
+
+bool CallEnsureStack(Isolate *isolate, const CallCtx &ctx) {
+    U32 stack_size_required = 0;
+
+    if (ctx.fn_shared->IsInterpreted())
+        stack_size_required = kStackPrologueOffset
+                              + (ctx.fn_shared->code->stack_size * sizeof(void *))
+                              + (2 * sizeof(void *));
+
+    if (ctx.fn_shared->HasDefaultArgs())
+        stack_size_required += (ctx.fn_shared->defaults->length / 2) * sizeof(void *);
+
+    return ctx.stack->Check(isolate, ctx.regs->SP.reg, stack_size_required);
+}
+
+bool CallExpandDefaultArgs(Fiber *fiber, CallCtx &ctx) {
+    if (!ctx.fn_shared->HasDefaultArgs()) {
+        if (ctx.call_mode_is_nargs) {
+            ErrorSet(fiber->isolate,
+                     TypeError::Details[TypeError::Reason::ID],
+                     nullptr,
+                     TypeError::Details[TypeError::Reason::NO_NAMED_ARGS],
+                     ORSTRING_TO_CSTR(ctx.fn_shared->name));
+
+            return false;
+        }
+
+        return true;
+    }
+
+    const auto defaults = ctx.fn_shared->defaults;
+    for (auto i = 0; i < defaults->length; i += 2) {
+        HOObject out;
+
+        ctx.stack_args += 1;
+
+        if (ctx.call_mode_is_nargs && DictLookup(ctx.nargs, defaults->objects[i], out) == LookupResult::OK) {
+            fiber->vm.Push(out.get());
+
+            continue;
+        }
+
+        if (ctx.call_mode_is_kwarg && DictLookup(ctx.kwargs, defaults->objects[i], out) == LookupResult::OK) {
+            fiber->vm.Push(out.get());
+
+            continue;
+        }
+
+        // Push default
+        fiber->vm.Push(defaults->objects[i + 1]);
+    }
+
+    return true;
+}
+
+bool CallFinalizeKwargs(Fiber *fiber, const CallCtx &ctx) {
+    if (ctx.call_mode_is_kwarg) {
+        if (ENUMBITMASK_ISFALSE(ctx.fn_shared->kind, FunctionKind::KWARGS)) {
+            ErrorSet(fiber->isolate,
+                     TypeError::Details[TypeError::Reason::ID],
+                     nullptr,
+                     TypeError::Details[TypeError::Reason::NO_KWARGS],
+                     ORSTRING_TO_CSTR(ctx.fn_shared->name));
+
+            return false;
+        }
+
+        fiber->vm.Push((OObject *) ctx.kwargs);
+
+        return true;
+    }
+
+    if (ctx.fn_shared->IsKWargs()) {
+        const auto dict = DictNew(fiber->isolate);
+        if (!dict)
+            return false;
+
+        fiber->vm.Push((OObject *) dict.get());
+    }
+
+    return true;
+}
+
+bool CallFinalizeRestArgs(Fiber *fiber, const CallCtx &ctx) {
+    if (ctx.call_mode_is_rest) {
+        fiber->vm.Push((OObject *) ctx.rest);
+
+        return true;
+    }
+
+    if (ctx.fn_shared->IsVariadic()) {
+        const auto list = ListNew(fiber->isolate, 0);
+        if (!list)
+            return false;
+
+        fiber->vm.Push((OObject *) list.get());
+    }
+
+    return true;
+}
+
+int CallInit(Fiber *fiber, Function *&func, const unsigned short p_count, const CallMode mode) {
+    if (!O_IS_OBJECT(func)) {
+        ErrorSetWithObjType(fiber->isolate,
+                            TypeError::Details[TypeError::Reason::ID],
+                            TypeError::Details[TypeError::Reason::NON_CALLABLE],
+                            nullptr,
+                            (OObject *) func);
+
+        return (int) CallResult::ERROR;
+    }
+
+    if (!O_IS_TYPE(func, InstanceType::FUNCTION)) {
+        if (!O_IS_TYPE(func, InstanceType::TYPE) || ((TypeInfo *) func)->ctor == nullptr) {
             ErrorSetWithObjType(fiber->isolate,
                                 TypeError::Details[TypeError::Reason::ID],
                                 TypeError::Details[TypeError::Reason::NON_CALLABLE],
@@ -291,182 +438,148 @@ int CallInit(Fiber *fiber, Function *&func, const unsigned short p_count, const 
         func = (Function *) ((TypeInfo *) func)->ctor;
     }
 
-    const auto *fn_shared = func->shared;
+    CallCtx ctx{
+        .regs = &fiber->vm.regs,
+        .stack = &fiber->vm.stack,
+        .fn_shared = func->shared,
+        .nargs = (Dict *) fiber->vm.regs.r10.reg,
+        .rest = (List *) fiber->vm.regs.r11.reg,
+        .kwargs = (Dict *) fiber->vm.regs.r12.reg,
+        .stack_args = p_count,
+        .call_mode_is_kwarg = ENUMBITMASK_ISTRUE(mode, CallMode::KW_ARG),
+        .call_mode_is_nargs = ENUMBITMASK_ISTRUE(mode, CallMode::NARGS),
+        .call_mode_is_rest = ENUMBITMASK_ISTRUE(mode, CallMode::REST_ARG)
+    };
 
-    auto *nargs = (Dict *) regs->r10.reg;
-    auto *rest = (List *) regs->r11.reg;
-    auto *kwargs = (Dict *) regs->r12.reg;
+    if (ENUMBITMASK_ISTRUE(mode, CallMode::METHOD) && !CallNormalizeMethodCall(fiber->isolate, ctx))
+        return (int) CallResult::ERROR;
 
-    const auto arity = fn_shared->arity;
+    if (!CallEnsureStack(fiber->isolate, ctx)) {
+        ErrorSet(fiber->isolate,
+                 MemoryError::Details[MemoryError::Reason::ID],
+                 nullptr,
+                 MemoryError::Details[MemoryError::Reason::STACK]);
 
-    auto total_args = p_count;
-
-    const bool call_mode_is_kwarg = ENUMBITMASK_ISTRUE(mode, CallMode::KW_ARG);
-    const bool call_mode_is_nargs = ENUMBITMASK_ISTRUE(mode, CallMode::NARGS);
-    bool call_mode_is_rest = ENUMBITMASK_ISTRUE(mode, CallMode::REST_ARG);
-
-    // *****************************************************************************************************************
-    // * Check method information
-    // *****************************************************************************************************************
-
-    if (ENUMBITMASK_ISTRUE(mode, CallMode::METHOD)) {
-        if (func->shared->IsMethod()) {
-            // Check object is instance
-            const auto args = *((OObject **) ((fiber->vm.stack.stack + fiber->vm.regs.SP.reg)
-                                              - (total_args * sizeof(void *))));
-            if (!O_GET_RC(args).IsInstance()) {
-                ErrorSetWithObjType(fiber->isolate,
-                                    TypeError::Details[TypeError::Reason::ID],
-                                    TypeError::Details[TypeError::Reason::METHOD_RECEIVER],
-                                    nullptr,
-                                    args);
-
-                return (int) CallResult::ERROR;
-            }
-        } else
-            total_args -= 1;
+        return (int) CallResult::ERROR;
     }
 
-    // *****************************************************************************************************************
-    // * Check stack size
-    // *****************************************************************************************************************
+    bool rest_edited = false;
 
+    auto total_args = ctx.stack_args;
     if (func->currying != nullptr)
         total_args += func->currying->length;
 
-    U32 stack_size_required = 0;
+    if (total_args < ctx.fn_shared->arity) {
+        const auto args_diff = ctx.fn_shared->arity - total_args;
 
-    if (func->shared->IsInterpreted())
-        stack_size_required = kStackPrologueOffset
-                              + (func->shared->code->stack_size * sizeof(void *))
-                              + (2 * sizeof(void *));
-
-    if (func->shared->HasDefaultArgs())
-        stack_size_required += (fn_shared->defaults->length / 2) * sizeof(void *);
-
-    if (!stack->Check(fiber->isolate, regs->SP.reg, stack_size_required)) {
-        // TODO: out of memory
-    }
-
-    // *****************************************************************************************************************
-    // * Check for partial application
-    // *****************************************************************************************************************
-
-    if (total_args < arity) {
-        const auto args_diff = arity - total_args;
-
-        if (!call_mode_is_rest || rest->length < args_diff) {
+        if (!ctx.call_mode_is_rest || ctx.rest->length < args_diff) {
             if (func->shared->IsInit()) {
-                assert(false); // FIXME
+                ErrorSet(fiber->isolate,
+                         TypeError::Details[TypeError::Reason::ID],
+                         nullptr,
+                         TypeError::Details[TypeError::Reason::INIT_NO_CURRY],
+                         ctx.fn_shared->owner_type->name);
+
+                return (int) CallResult::ERROR;
             }
 
-            const auto args = (OObject **) ((fiber->vm.stack.stack + fiber->vm.regs.SP.reg)
-                                            - (total_args * sizeof(void *)));
+            const auto args = (OObject **) ((ctx.stack->stack + ctx.regs->SP.reg) - (ctx.stack_args * sizeof(void *)));
 
-            regs->RR.reg = (PtrSize) FunctionNew(func, args, total_args).get();
+            ctx.regs->RR.reg = (PtrSize) FunctionNew(func, args, ctx.stack_args).get();
 
             return (int) CallResult::DONE;
         }
 
-        if (!func->shared->IsVariadic() && rest->length > args_diff) {
-            // FIXME: GO TO ERROR! TOO many args
+        if (!func->shared->IsVariadic() && ctx.rest->length > args_diff) {
+            ErrorSet(fiber->isolate,
+                     TypeError::Details[TypeError::Reason::ID],
+                     nullptr,
+                     TypeError::Details[TypeError::Reason::TOO_MANY_ARGS],
+                     ORSTRING_TO_CSTR(ctx.fn_shared->name),
+                     (int) ctx.fn_shared->arity,
+                     (int) (ctx.stack_args + ctx.rest->length));
+
+            return (int) CallResult::ERROR;
         }
 
-        // FIXME: Expand
         for (auto i = 0; i < args_diff; i++) {
-            *((OObject **) (fiber->vm.stack.stack + fiber->vm.regs.SP.reg)) = rest->objects[i];
-            fiber->vm.regs.SP.reg += sizeof(void *);
+            fiber->vm.Push(ctx.rest->objects[i]);
+            ctx.stack_args += 1;
         }
-        // FIXME: EOL
 
         if (func->shared->IsVariadic()) {
-            // TODO: Create a new array containing all the elements from the original one, excluding those already pushed onto the stack!
+            const auto tmp = ListNew(fiber->isolate, ctx.rest->length - args_diff);
+            if (!tmp)
+                return (int) CallResult::ERROR;
+
+            ListExtend(tmp.get(), ctx.rest->objects + args_diff, ctx.rest->length - args_diff);
+
+            ctx.rest = tmp.get();
+
+            rest_edited = true;
         }
     }
 
-    auto total_args_with_rest = total_args;
-    if (call_mode_is_rest)
-        total_args_with_rest += rest->length;
+    if (ctx.call_mode_is_rest)
+        total_args += ctx.rest->length;
 
-    if (total_args_with_rest > arity) {
+    if (total_args > ctx.fn_shared->arity) {
         if (!func->shared->IsVariadic()) {
-            // TODO: Too much args
-            assert(false);
+            ErrorSet(fiber->isolate,
+                     TypeError::Details[TypeError::Reason::ID],
+                     nullptr,
+                     TypeError::Details[TypeError::Reason::TOO_MANY_ARGS],
+                     ORSTRING_TO_CSTR(ctx.fn_shared->name),
+                     (int) ctx.fn_shared->arity,
+                     (int) total_args);
+
+            return (int) CallResult::ERROR;
         }
 
-        // TODO: Construct the array and load it into R11. If the call is variadic, merge the new array with the original one and replace it.
-        call_mode_is_rest = true;
-    }
+        if (!rest_edited) {
+            const auto excess_on_stack = ctx.stack_args > ctx.fn_shared->arity
+                                         ? ctx.stack_args - ctx.fn_shared->arity
+                                         : 0;
 
-    // *****************************************************************************************************************
-    // * EXPAND NAMED/DEFAULT ARGUMENTS
-    // *****************************************************************************************************************
+            const auto rest_len = ctx.call_mode_is_rest ? ctx.rest->length : 0;
 
-    if (func->shared->HasDefaultArgs()) {
-        const auto defaults = func->shared->defaults;
+            const auto tmp = ListNew(fiber->isolate, excess_on_stack + rest_len);
+            if (!tmp)
+                return (int) CallResult::ERROR;
 
-        for (auto i = 0; i < defaults->length; i += 2) {
-            HOObject out;
+            if (excess_on_stack > 0) {
+                const auto args = (OObject **) ((ctx.stack->stack + ctx.regs->SP.reg)
+                                                - (excess_on_stack * sizeof(void *)));
+                ListExtend(tmp.get(), args, excess_on_stack);
 
-            total_args += 1;
-
-            if (call_mode_is_nargs && DictLookup(nargs, defaults->objects[i], out) == LookupResult::OK) {
-                fiber->vm.Push(out.get());
-
-                continue;
+                ctx.regs->SP.reg -= excess_on_stack * sizeof(void *);
+                ctx.stack_args   -= excess_on_stack;
             }
 
-            if (call_mode_is_kwarg && DictLookup(kwargs, defaults->objects[i], out) == LookupResult::OK) {
-                fiber->vm.Push(out.get());
+            if (ctx.call_mode_is_rest)
+                ListExtend(tmp.get(), (OObject *) ctx.rest);
 
-                continue;
-            }
-
-            fiber->vm.Push(defaults->objects[i + 1]);
+            ctx.rest = tmp.get();
         }
-    } else if (call_mode_is_nargs) {
-        // TODO: This function doesn't accept named args
-        assert(false);
+
+        ctx.call_mode_is_rest = true;
     }
 
-    // *****************************************************************************************************************
-    // * Check Rest args
-    // *****************************************************************************************************************
+    if (!CallExpandDefaultArgs(fiber, ctx))
+        return (int) CallResult::ERROR;
 
-    if (call_mode_is_rest)
-        fiber->vm.Push((OObject *) rest);
-    else if (func->shared->IsVariadic()) {
-        auto list = ListNew(fiber->isolate, 0);
-        if (!list) {
-            // TODO: error
-            assert(false);
-        }
+    if (!CallFinalizeRestArgs(fiber, ctx))
+        return (int) CallResult::ERROR;
 
-        fiber->vm.Push((OObject *) list.get());
-    }
+    if (!CallFinalizeKwargs(fiber, ctx))
+        return (int) CallResult::ERROR;
 
-    // *****************************************************************************************************************
-    // * Check KWArgs
-    // *****************************************************************************************************************
-
-    if (call_mode_is_kwarg) {
-        if (!ENUMBITMASK_ISTRUE(func->shared->kind, FunctionKind::KWARGS)) {
-            // TODO: error!
-        }
-
-        fiber->vm.Push((OObject *) kwargs);
-    } else if (func->shared->IsKWargs()) {
-        const auto dict = DictNew(fiber->isolate);
-        if (!dict) {
-            // TODO: error
-            assert(false);
-        }
-
-        fiber->vm.Push((OObject *) dict.get());
-    }
-
-    return total_args;
+    return ctx.stack_args;
 }
+
+// *********************************************************************************************************************
+// EOF
+// *********************************************************************************************************************
 
 int CallGenerator(Fiber *fiber, Generator *gen, const U16 total_args, const CallMode mode, const bool exhausted_error) {
     auto *regs = &fiber->vm.regs;
