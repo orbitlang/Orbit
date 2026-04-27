@@ -220,12 +220,19 @@ HFunction orbiter::datatype::FunctionNew(Code *code, Closure *closure, Tuple *de
 HFunction orbiter::datatype::FunctionNew(const Function *func, OObject **args, const U16 argc) {
     auto *isolate = O_GET_ISOLATE(func);
 
-    const auto currying = TupleNew(isolate, argc);
-
+    const auto prev_len = func->currying != nullptr ? func->currying->length : 0;
+    const auto currying = TupleNew(isolate, prev_len + argc);
     if (!currying)
         return {};
 
     const auto r_curring = currying.get();
+
+    if (func->currying != nullptr) {
+        // To make the linter happy :)
+        for (auto i = 0; i < prev_len; i++)
+            TupleAppend(r_curring, func->currying->objects[i]);
+    }
+
     for (auto i = 0; i < argc; i++)
         TupleAppend(r_curring, args[i]);
 
