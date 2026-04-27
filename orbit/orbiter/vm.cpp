@@ -1420,11 +1420,23 @@ CATCH_FINALLY:
                 DISPATCH;
             }
             TARGET_OP(LDGBL) {
-                const auto key = (ORString *) code->unknown_symbols->objects[FETCH_IMM(instr)];
-
                 HOObject out;
 
-                if (!ContextLookup(fiber->context.context, key, out, nullptr))
+                // Before checking the context, VM attempts to load data from the module itself (if it exists)
+                if (fiber->context.module != nullptr) {
+                    result = LoadFromObjectProp(fiber, nullptr, (OObject *) fiber->context.module, {},
+                                                FETCH_IMM(instr));
+                    if (result != nullptr) {
+                        ACCESS_REG_DST(instr) = (PtrSize) result;
+                
+                        DISPATCH;
+                    }
+                }
+
+                if (!ContextLookup(fiber->context.context,
+                                   (ORString *) code->unknown_symbols->objects[FETCH_IMM(instr)],
+                                   out,
+                                   nullptr))
                     goto ERROR;
 
                 ACCESS_REG_DST(instr) = (PtrSize) out.get();
