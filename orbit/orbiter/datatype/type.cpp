@@ -171,6 +171,10 @@ constexpr FunctionDef type_methods[] = {
     FUNCTIONDEF_SENTINEL
 };
 
+// *********************************************************************************************************************
+// PUBLIC API
+// *********************************************************************************************************************
+
 HOType orbiter::datatype::TypeInit(Isolate *isolate) {
     auto type = MakeType(isolate, nullptr, "Type", InstanceType::TYPE, 0, 6, 0);
     return type;

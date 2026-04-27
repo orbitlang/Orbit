@@ -7,6 +7,7 @@
 
 #include <orbit/orbiter/datatype/function.h>
 #include <orbit/orbiter/datatype/orstring.h>
+#include <orbit/orbiter/datatype/pcheck.h>
 
 #include <orbit/orbiter/datatype/future.h>
 
@@ -84,6 +85,9 @@ a future cannot transition back to PENDING.
     f.is_done()         // false
     f.is_done()         // true
 )DOC", 1, nullptr, false, false) {
+    PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::FUTURE));
+    PCHECK_CHECK(params);
+
     const auto *self = (const Future *) argv[0];
 
     return HOObject((OObject *) BOOL_TO_OBOOL(self->state != FutureState::PENDING));

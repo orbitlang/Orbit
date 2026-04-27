@@ -6,6 +6,7 @@
 #include <orbit/orbiter/datatype/errors.h>
 #include <orbit/orbiter/datatype/function.h>
 #include <orbit/orbiter/datatype/orstring.h>
+#include <orbit/orbiter/datatype/pcheck.h>
 
 #include <orbit/orbiter/datatype/result.h>
 
@@ -114,6 +115,9 @@ error result raises a TypeError.
     Result.ok(42).unwrap()      // 42
     Result.error(42).unwrap()   // panic!
 )DOC", 1, nullptr, false, false) {
+    PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::RESULT));
+    PCHECK_CHECK(params);
+
     const auto *self = (const Result *) argv[0];
     auto *isolate = O_GET_ISOLATE(self);
 
@@ -146,6 +150,9 @@ an ok result raises a TypeError.
     Result.error(42).unwrap_err()   // 42
     Result.ok(42).unwrap_err()      // panic!
 )DOC", 1, nullptr, false, false) {
+    PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::RESULT));
+    PCHECK_CHECK(params);
+
     const auto *self = (const Result *) argv[0];
     auto *isolate = O_GET_ISOLATE(self);
 
@@ -178,6 +185,11 @@ provided `default` is returned instead.
     Result.ok(42).unwrap_or(0)      // 42
     Result.error(42).unwrap_or(0)   // 0
 )DOC", 2, nullptr, false, false) {
+    PCHECK_ENTRIES(params,
+                   PCHECK_DEF("self", false, InstanceType::RESULT),
+                   PCHECK_DEF("default", false));
+    PCHECK_CHECK(params);
+
     const auto *self = (const Result *) argv[0];
 
     return HOObject(self->ok ? self->value : argv[1]);
@@ -204,7 +216,6 @@ bool orbiter::datatype::ResultTypeSetup(TypeInfo *self) {
     ops.equal = ResultEqual;
     ops.to_bool = ResultToBool;
     ops.to_string = ResultToString;
-    ops.to_repr = ResultToString;
 
     return TIPropertyAdd(self, result_methods, PropertyFlag::IS_PUBLIC);
 }

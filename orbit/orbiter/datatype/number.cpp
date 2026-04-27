@@ -404,6 +404,9 @@ RUNTIME_METHOD(number_abs, abs,
     (-7).abs()    // 7
     (3).abs()     // 3
 )DOC", 1, nullptr, false, false) {
+    PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::NUMBER));
+    PCHECK_CHECK(params);
+
     const auto v = NumberVal(argv[0]);
 
     auto n = IntNew(O_GET_ISOLATE(_func), v < 0 ? -v : v);
@@ -427,6 +430,9 @@ Zero requires 0 bits.
     (255).bit_length()   // 8
     (-128).bit_length()  // 7
 )DOC", 1, nullptr, false, false) {
+    PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::NUMBER));
+    PCHECK_CHECK(params);
+
     auto v = NumberVal(argv[0]);
 
     if (v < 0) v = -v;
@@ -464,6 +470,7 @@ RUNTIME_METHOD(number_clamp, clamp,
     (12).clamp(0, 10)   // 10
 )DOC", 3, nullptr, false, false) {
     PCHECK_ENTRIES(params,
+                   PCHECK_DEF("self", false, InstanceType::NUMBER),
                    PCHECK_DEF("lo", false, InstanceType::NUMBER),
                    PCHECK_DEF("hi", false, InstanceType::NUMBER));
     PCHECK_CHECK(params);
@@ -500,6 +507,7 @@ non-negative; negative inputs are treated as their absolute values.
     (-6).gcd(9)     // 3
 )DOC", 2, nullptr, false, false) {
     PCHECK_ENTRIES(params,
+                   PCHECK_DEF("self", false, InstanceType::NUMBER),
                    PCHECK_DEF("other", false, InstanceType::NUMBER));
     PCHECK_CHECK(params);
 
@@ -525,6 +533,9 @@ RUNTIME_METHOD(number_is_even, is_even,
     (4).is_even()    // true
     (7).is_even()    // false
 )DOC", 1, nullptr, false, false) {
+    PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::NUMBER));
+    PCHECK_CHECK(params);
+
     return HOObject((OObject *) BOOL_TO_OBOOL((NumberVal(argv[0]) & 1) == 0));
 }
 
@@ -540,6 +551,9 @@ RUNTIME_METHOD(number_is_odd, is_odd,
     (3).is_odd()    // true
     (8).is_odd()    // false
 )DOC", 1, nullptr, false, false) {
+    PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::NUMBER));
+    PCHECK_CHECK(params);
+
     return HOObject((OObject *) BOOL_TO_OBOOL((NumberVal(argv[0]) & 1) != 0));
 }
 
@@ -560,6 +574,7 @@ RUNTIME_METHOD(number_max, max,
     (5).max(2)    // 5
 )DOC", 2, nullptr, false, false) {
     PCHECK_ENTRIES(params,
+                   PCHECK_DEF("self", false, InstanceType::NUMBER),
                    PCHECK_DEF("other", false, InstanceType::NUMBER));
     PCHECK_CHECK(params);
 
@@ -590,6 +605,7 @@ RUNTIME_METHOD(number_min, min,
     (5).min(2)    // 2
 )DOC", 2, nullptr, false, false) {
     PCHECK_ENTRIES(params,
+                   PCHECK_DEF("self", false, InstanceType::NUMBER),
                    PCHECK_DEF("other", false, InstanceType::NUMBER));
     PCHECK_CHECK(params);
 
@@ -624,6 +640,7 @@ Uses fast binary exponentiation.  Negative exponents return 0
     (5).pow(-1)    // 0
 )DOC", 2, nullptr, false, false) {
     PCHECK_ENTRIES(params,
+                   PCHECK_DEF("self", false, InstanceType::NUMBER),
                    PCHECK_DEF("exp", false, InstanceType::NUMBER));
     PCHECK_CHECK(params);
 
@@ -671,6 +688,9 @@ Returns NaN when self is negative, following IEEE 754 semantics.
     (2).sqrt()     // 1.4142135623...
     (-1).sqrt()    // nan
 )DOC", 1, nullptr, false, false) {
+    PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::NUMBER));
+    PCHECK_CHECK(params);
+
     const auto v = (DecimalUnderlying) NumberVal(argv[0]);
 
     auto n = DecimalNew(orbiter::Fiber::Current()->isolate, sqrtl(v));
@@ -678,23 +698,6 @@ Returns NaN when self is negative, following IEEE 754 semantics.
         return {};
 
     return HOObject(std::move(n));
-}
-
-RUNTIME_METHOD(number_str, str,
-               R"DOC(
-@brief Return a string representation of self.
-
-Overrides the base Type str() method.
-
-@return A String containing the decimal representation of self.
-
-@see repr
-
-@example
-    (42).str()      // "42"
-    (-7).str()      // "-7"
-)DOC", 1, nullptr, false, false) {
-    return ToString(orbiter::Fiber::Current()->isolate, argv[0]);
 }
 
 constexpr FunctionDef number_methods[] = {
@@ -708,7 +711,6 @@ constexpr FunctionDef number_methods[] = {
     number_min,
     number_pow,
     number_sqrt,
-    number_str,
 
     FUNCTIONDEF_SENTINEL
 };
@@ -749,7 +751,6 @@ bool orbiter::datatype::NumberTypeSetup(TypeInfo *self) {
     ops.bit_not = NumberBitNot;
     ops.to_bool = NumberToBool;
     ops.to_string = NumberToString;
-    ops.to_repr = NumberToString;
     ops.to_native = (ToNativeType) NumberToNative;
     ops.hash = NumberHash;
 
@@ -792,6 +793,6 @@ HNumber orbiter::datatype::UIntNew(Isolate *isolate, const char *string, int bas
 }
 
 HOType orbiter::datatype::NumberTypeInit(Isolate *isolate) {
-    auto number = MakeType(isolate, "Number", InstanceType::NUMBER, sizeof(Number) - sizeof(OObject), 11, 0);
+    auto number = MakeType(isolate, "Number", InstanceType::NUMBER, sizeof(Number) - sizeof(OObject), 10, 0);
     return number;
 }
