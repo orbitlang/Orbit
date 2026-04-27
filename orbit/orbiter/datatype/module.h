@@ -15,6 +15,22 @@ namespace orbiter::datatype {
     using HModule = Handle<Module>;
 
     /**
+     * @brief Set up additional features and properties for the specified type
+     *
+     * This function enriches the previously created type with various functionalities.
+     * It typically performs the following tasks:
+     * - Adds default methods to the type
+     * - Adds required properties to the type
+     *
+     * This function is called immediately after the type's Init function to complete its setup.
+     *
+     * @param self Pointer to TypeInfo created by %type%Init call
+     *
+     * @return true if setup was successful, false otherwise
+     */
+    bool ModuleSetup(TypeInfo *self);
+
+    /**
      * @brief Create a new module instance
      *
      * Constructs a new module object based on the provided type information.
@@ -68,23 +84,7 @@ namespace orbiter::datatype {
      *
      * @return Handle to the newly created module TypeInfo, or an empty handle if creation failed
      */
-    HOType ModuleTypeNew(Code *code, ORString *name);
-
-    /**
-     * @brief Set up additional features and properties for the specified type
-     *
-     * This function enriches the previously created type with various functionalities.
-     * It typically performs the following tasks:
-     * - Adds default methods to the type
-     * - Adds required properties to the type
-     *
-     * This function is called immediately after the type's Init function to complete its setup.
-     *
-     * @param self Pointer to TypeInfo created by %type%Init call
-     *
-     * @return true if setup was successful, false otherwise
-     */
-    bool ModuleSetup(TypeInfo *self);
+    HOType ModuleTypeNew(const Code *code, ORString *name);
 }
 
 #endif // !ORBIT_ORBITER_DATATYPE_MODULE_H_
