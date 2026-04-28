@@ -488,8 +488,30 @@ HOObject orbiter::datatype::ToString(Isolate *isolate, const OObject *object) no
 
     if (O_IS_OBJECT(object)) {
         const auto &ops = O_GET_TYPE_OPS(object);
-        if (ops.to_string != nullptr)
-            return HOObject(ops.to_string(isolate, object));
+        if (ops.to_string != nullptr) {
+            auto result = ops.to_string(isolate, object);
+            if (result == nullptr)
+                return {};
+
+            // Non-null but not a String: the type's to_string broke its contract.
+            if (!O_IS_OBJECT(result) || !O_IS_TYPE(result, InstanceType::STRING)) {
+                char src_name[24];
+                char res_name[24];
+
+                GetTypeName(isolate, object, src_name, sizeof(src_name));
+                GetTypeName(isolate, result, res_name, sizeof(res_name));
+
+                ErrorSet(isolate,
+                         TypeError::Details[TypeError::Reason::ID],
+                         nullptr,
+                         "str() of '%s' returned non-string (type '%s')",
+                         src_name, res_name);
+
+                return {};
+            }
+
+            return HOObject(result);
+        }
     }
 
     // Fallback: <TypeName at 0xADDR>
@@ -503,8 +525,30 @@ HOObject orbiter::datatype::ToString(Isolate *isolate, const OObject *object) no
 HOObject orbiter::datatype::Repr(Isolate *isolate, const OObject *object) noexcept {
     if (O_IS_OBJECT(object)) {
         const auto &ops = O_GET_TYPE_OPS(object);
-        if (ops.to_repr != nullptr)
-            return HOObject(ops.to_repr(isolate, object));
+        if (ops.to_repr != nullptr) {
+            auto result = ops.to_repr(isolate, object);
+            if (result == nullptr)
+                return {};
+
+            // Non-null but not a String: the type's to_repr broke its contract.
+            if (!O_IS_OBJECT(result) || !O_IS_TYPE(result, InstanceType::STRING)) {
+                char src_name[24];
+                char res_name[24];
+
+                GetTypeName(isolate, object, src_name, sizeof(src_name));
+                GetTypeName(isolate, result, res_name, sizeof(res_name));
+
+                ErrorSet(isolate,
+                         TypeError::Details[TypeError::Reason::ID],
+                         nullptr,
+                         "repr() of '%s' returned non-string (type '%s')",
+                         src_name, res_name);
+
+                return {};
+            }
+
+            return HOObject(result);
+        }
     }
 
     return ToString(isolate, object);
