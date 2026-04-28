@@ -1254,7 +1254,7 @@ ASTHandle<ASTNode *> Parser::ParseExpression() {
     return this->ParseExpression(0);
 }
 
-ASTHandle<ASTNode *> Parser::ParseExpression(int precedence) {
+ASTHandle<ASTNode *> Parser::ParseExpression(const int precedence) {
     LedMeth led;
     NudMeth nud;
 
@@ -1264,7 +1264,32 @@ ASTHandle<ASTNode *> Parser::ParseExpression(int precedence) {
     auto left = (this->*nud)();
 
     bool is_safe = false;
-    while (precedence < PeekPrecedence(TKCUR_TYPE)) {
+    while (true) {
+        // Implicit line continuation.
+        // If the newline is followed by a token that has an LED but no NUD,
+        // it's a pure infix operator that can't legally start a statement on
+        // its own (`|>`, `.`, `?.`, `??`, `?:`, comparisons, …). In that case
+        // we swallow the newline and let the loop continue. Otherwise the
+        // newline is a real terminator and we exit.
+        //
+        // Tokens like `+ - * & ( [` have both LED and NUD, so they fall
+        // through to the `break` and keep acting as statement starts —
+        // sidesteps the JavaScript-ASI footgun.
+        if (this->Match(TokenType::END_OF_LINE)) {
+            const Token *peek;
+
+            if (!this->scanner_.PeekToken(&peek))
+                throw ScannerException();
+
+            if (LookupLED(peek->type) == nullptr || LookupNUD(peek->type) != nullptr)
+                break;
+
+            this->EatNL();
+        }
+
+        if (precedence >= PeekPrecedence(TKCUR_TYPE))
+            break;
+
         if ((led = LookupLED(TKCUR_TYPE)) == nullptr)
             break;
 
