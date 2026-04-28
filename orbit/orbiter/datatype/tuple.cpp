@@ -11,6 +11,8 @@
 #include <orbit/orbiter/datatype/pcheck.h>
 #include <orbit/orbiter/datatype/stringbuilder.h>
 
+#include <orbit/orbiter/datatype/support/slice.h>
+
 #include <orbit/orbiter/datatype/tuple.h>
 
 using namespace orbiter::datatype;
@@ -133,6 +135,41 @@ static bool TupleLoadIndex(const OObject *self, const OObject *index, OObject *&
     i = ((i % (IntegerUnderlying) t->length) + (IntegerUnderlying) t->length) % (IntegerUnderlying) t->length;
 
     result = t->objects[i];
+
+    return true;
+}
+
+// *********************************************************************************************************************
+// TYPE OPS — SLICE
+// *********************************************************************************************************************
+
+/// `tuple[start:stop:step]`: returns a new tuple with the selected elements.
+/// Bound validation is delegated to support::ResolveSliceBounds; the
+/// length-dependent normalisation is performed via support::NormalizeSlice.
+static bool TupleLoadSlice(const OObject *self, const OObject *start, const OObject *stop, const OObject *step,
+                           OObject *&result) {
+    auto *isolate = O_GET_ISOLATE(self);
+    const auto *tuple = (const Tuple *) self;
+
+    support::SliceArgs args{};
+    if (!support::ResolveSliceBounds(isolate, start, stop, step, args))
+        return false;
+
+    const auto s = support::NormalizeSlice((MSSize) tuple->length, args);
+
+    const auto out = TupleNew(isolate, s.count);
+    if (!out)
+        return false;
+
+    auto idx = s.start;
+    for (MSize n = 0; n < s.count; n++) {
+        out->objects[n] = tuple->objects[idx];
+        idx += s.step;
+    }
+
+    out->length = s.count;
+
+    result = (OObject *) out.get();
 
     return true;
 }
@@ -374,6 +411,7 @@ bool orbiter::datatype::TupleTypeSetup(TypeInfo *self) {
     ops.equal = TupleEqual;
     ops.add = TupleAdd;
     ops.load_index = TupleLoadIndex;
+    ops.load_slice = TupleLoadSlice;
     ops.to_bool = TupleToBool;
     ops.to_string = (ToStrFn) TupleToString;
     ops.hash = TupleHash;
@@ -390,13 +428,17 @@ HTuple orbiter::datatype::TupleNew(Isolate *isolate, const MSize count) {
     auto *tuple = MakeObject<Tuple>(isolate, InstanceType::TUPLE);
 
     if (tuple != nullptr) {
-        memory::IsolateAllocator allocator(isolate);
+        tuple->objects = nullptr;
 
-        tuple->objects = allocator.alloc<OObject *>(count * sizeof(void *));
-        if (tuple->objects == nullptr) {
-            isolate->gc->RawFree((OObject *) tuple, false);
+        if (count > 0) {
+            memory::IsolateAllocator allocator(isolate);
 
-            return {};
+            tuple->objects = allocator.alloc<OObject *>(count * sizeof(void *));
+            if (tuple->objects == nullptr) {
+                isolate->gc->RawFree((OObject *) tuple, false);
+
+                return {};
+            }
         }
 
         tuple->capacity = count;
