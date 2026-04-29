@@ -430,6 +430,20 @@ bool CallFinalizeRestArgs(Fiber *fiber, const CallCtx &ctx) {
     return true;
 }
 
+void CallLoadCurrying(const Function *func, CallCtx &ctx) {
+    const auto args = (OObject **) ((ctx.stack->stack + ctx.regs->SP.reg) - (ctx.stack_args * sizeof(void *)));
+    const auto offset = func->currying->length;
+
+    for (auto i = 0; i < ctx.stack_args; i++)
+        args[offset + i] = args[i];
+
+    for (auto i = 0; i < func->currying->length; i++)
+        args[i] = func->currying->objects[i];
+
+    ctx.stack_args += func->currying->length;
+    ctx.regs->SP.reg += (offset * sizeof(void *));
+}
+
 int CallInit(Fiber *fiber, Function *&func, const unsigned short p_count, const CallMode mode) {
     if (!O_IS_OBJECT(func)) {
         ErrorSetWithObjType(fiber->isolate,
@@ -481,6 +495,7 @@ int CallInit(Fiber *fiber, Function *&func, const unsigned short p_count, const 
     }
 
     bool rest_edited = false;
+    bool currying_pushed = false;
 
     auto total_args = ctx.stack_args;
     if (func->currying != nullptr)
@@ -520,6 +535,12 @@ int CallInit(Fiber *fiber, Function *&func, const unsigned short p_count, const 
             return (int) CallResult::ERROR;
         }
 
+        if (func->currying != nullptr) {
+            CallLoadCurrying(func, ctx);
+
+            currying_pushed = true;
+        }
+
         for (auto i = 0; i < args_diff; i++) {
             fiber->vm.Push(ctx.rest->objects[i]);
             ctx.stack_args += 1;
@@ -537,6 +558,9 @@ int CallInit(Fiber *fiber, Function *&func, const unsigned short p_count, const 
             rest_edited = true;
         }
     }
+
+    if (!currying_pushed && func->currying != nullptr)
+        CallLoadCurrying(func, ctx);
 
     if (ctx.call_mode_is_rest)
         total_args += ctx.rest->length;
