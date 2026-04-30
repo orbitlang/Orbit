@@ -4,6 +4,7 @@
 
 #include <cassert>
 
+#include <orbit/orbiter/datatype/chan.h>
 #include <orbit/orbiter/datatype/closure.h>
 #include <orbit/orbiter/datatype/ctbuilder.h>
 #include <orbit/orbiter/datatype/dict.h>
@@ -1724,20 +1725,35 @@ CATCH_FINALLY:
                 DISPATCH;
             }
             TARGET_OP(CHRCV) {
-                dst = FETCH_R_DST(instr);
-                src = FETCH_R_SRC(instr);
+                auto status = ChannelRecv((Channel *) REG_N(FETCH_R_SRC(instr)), result);
 
-                // TODO: IMPL CHAN RECV
-                assert(false);
+                if (status == ChannelRecvStatus::BLOCKED) {
+                    fiber->state = FiberState::SUSPENDED;
+
+                    return nullptr;
+                }
+
+                if (status == ChannelRecvStatus::CLOSED)
+                    goto ERROR;
+
+                ACCESS_REG_DST(instr) = (PtrSize) result;
 
                 DISPATCH;
             }
             TARGET_OP(CHSND) {
-                dst = FETCH_R_DST(instr);
-                src = FETCH_R_SRC(instr);
+                ChannelSendStatus status;
 
-                // TODO: IMPL CHAN SEND
-                assert(false);
+                if (!ChannelSend(fiber->isolate,
+                                 (Channel *) REG_N(FETCH_R_DST(instr)),
+                                 (OObject *) REG_N(FETCH_R_SRC(instr)),
+                                 status))
+                    goto ERROR;
+
+                if (status == ChannelSendStatus::BLOCKED) {
+                    fiber->state = FiberState::SUSPENDED;
+
+                    return nullptr;
+                }
 
                 DISPATCH;
             }
