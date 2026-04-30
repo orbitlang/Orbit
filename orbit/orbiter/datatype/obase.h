@@ -117,6 +117,7 @@ namespace orbiter::datatype {
         ATOM,
         BOOLEAN,
         BYTES,
+        CHANNEL,
         CLASS,
         CLOSURE,
         CODE,
@@ -142,7 +143,7 @@ namespace orbiter::datatype {
         TUPLE
     };
 
-    constexpr int kInstanceTypeCount = 26;
+    constexpr int kInstanceTypeCount = 27;
 
     enum class NativeType {
         BOOL,
