@@ -21,6 +21,16 @@ namespace orbiter::datatype {
 
     using HSet = Handle<Set>;
 
+    bool SetDifferenceUpdate(Set *self, Set *other);
+
+    bool SetIntersectionUpdate(Set *self, Set *other);
+
+    bool SetIsDisjoint(Set *a, Set *b);
+
+    bool SetIsSubset(Set *a, Set *b);
+
+    bool SetIsSuperset(Set *a, Set *b);
+
     /**
      * @brief Set up additional features and properties for the specified type
      *
@@ -37,6 +47,10 @@ namespace orbiter::datatype {
      */
     bool SetTypeSetup(TypeInfo *self);
 
+    bool SetSymmetricDifferenceUpdate(Set *self, Set *other);
+
+    bool SetUnionUpdate(Set *self, Set *other);
+
     /**
      * @brief Initialize and create the specified type
      *
@@ -48,6 +62,10 @@ namespace orbiter::datatype {
      * @return Handle to the newly created TypeInfo for the type, or an empty handle if creation failed
      */
     HOType SetTypeInit(Isolate *isolate);
+
+    HSet SetDifference(Set *a, Set *b);
+
+    HSet SetIntersection(Set *a, Set *b);
 
     /**
      * @brief Creates a new Set instance with optional size initialization
@@ -65,6 +83,22 @@ namespace orbiter::datatype {
     inline HSet SetNew(Isolate *isolate) {
         return SetNew(isolate, 0);
     }
+
+    HSet SetNew(OObject *object) noexcept;
+
+    inline HSet SetNew(Set *set) noexcept {
+        return SetNew((OObject *) set);
+    }
+
+    HSet SetSymmetricDifference(Set *a, Set *b);
+
+    HSet SetUnion(Set *a, Set *b);
+
+    LookupResult SetAdd(Set *set, OObject *value);
+
+    LookupResult SetContains(Set *set, OObject *value);
+
+    LookupResult SetRemove(Set *set, OObject *value);
 }
 
 #endif // !ORBIT_ORBITER_DATATYPE_SET_H_
