@@ -137,13 +137,13 @@ namespace orbiter::datatype {
         OBJECT,
         RAWPTR,
         RESULT,
-        // SET,
+        SET,
         STRING,
         TRAIT,
         TUPLE
     };
 
-    constexpr int kInstanceTypeCount = 27;
+    constexpr int kInstanceTypeCount = 28;
 
     enum class NativeType {
         BOOL,
