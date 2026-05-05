@@ -7,6 +7,7 @@
 #include <orbit/orbiter/datatype/error.h>
 #include <orbit/orbiter/datatype/errors.h>
 #include <orbit/orbiter/datatype/function.h>
+#include <orbit/orbiter/datatype/iterator.h>
 #include <orbit/orbiter/datatype/list.h>
 #include <orbit/orbiter/datatype/number.h>
 #include <orbit/orbiter/datatype/orstring.h>
@@ -158,6 +159,73 @@ static bool DictLoadIndex(const OObject *self, const OObject *key, OObject *&res
 /// are propagated as-is with the fiber error already set.
 static bool DictStoreIndex(const OObject *self, const OObject *key, OObject *value) {
     return DictInsert((Dict *) self, (OObject *) key, value);
+}
+
+// *********************************************************************************************************************
+// TYPE OPS — ITERATION
+// *********************************************************************************************************************
+
+/// Walk the dict's iter chain one entry at a time, yielding `(key, value)` tuples.
+///
+/// Lock is acquired in shared mode for the single step and released before
+/// returning, so a parked iter never holds the lock across yields.
+///
+/// Fail-fast: any change in `dict.length` since iteration start raises
+/// ConcurrentModificationError.
+static CallResult DictIterStep(Iterator *self, OObject **out) {
+    auto *dict = (Dict *) self->source;
+    auto *isolate = O_GET_ISOLATE(dict);
+
+    std::shared_lock _(dict->lock);
+
+    if (self->snapshot_length != dict->dict.length) {
+        ErrorSet(isolate,
+                 RuntimeError::Details[RuntimeError::Reason::ID],
+                 nullptr,
+                 RuntimeError::Details[RuntimeError::Reason::CONCURRENT_MODIFICATION],
+                 O_GET_TYPE(dict)->name);
+
+        return CallResult::ERROR;
+    }
+
+    const auto *entry = (const ORHEntry *) self->state.entry;
+    if (entry == nullptr)
+        return CallResult::EXHAUST;
+
+    // Build the (key, value) pair. TupleNew(isolate, 2) reserves exact
+    // capacity, so the two TupleAppend calls cannot fail on capacity.
+    const auto pair = TupleNew(isolate, 2);
+    if (!pair)
+        return CallResult::ERROR;
+
+    if (!TupleAppend(pair.get(), entry->key) || !TupleAppend(pair.get(), entry->value))
+        return CallResult::ERROR;
+
+    self->state.entry = entry->iter_next;
+
+    *out = (OObject *) pair.get();
+
+    return CallResult::DONE;
+}
+
+/// Build a fresh iterator over @p self. Snapshots both the current length
+/// (for fail-fast) and the head of the iter chain under a shared lock so
+/// we observe a consistent starting point.
+static OObject *DictGetIter(OObject *self) {
+    auto *dict = (Dict *) self;
+
+    const auto iter = IteratorNew(O_GET_ISOLATE(self), self, DictIterStep);
+    if (!iter)
+        return nullptr;
+
+    std::shared_lock lock(dict->lock);
+
+    iter->snapshot_length = dict->dict.length;
+    iter->state.entry = dict->dict.iter_begin;
+
+    lock.unlock();
+
+    return (OObject *) iter.get();
 }
 
 // *********************************************************************************************************************
@@ -689,6 +757,7 @@ bool orbiter::datatype::DictTypeSetup(TypeInfo *self) {
     ops.equal = DictEqual;
     ops.load_index = DictLoadIndex;
     ops.store_index = DictStoreIndex;
+    ops.get_iter = DictGetIter;
     ops.to_bool = DictToBool;
     ops.to_string = (ToStrFn) DictToString;
 
