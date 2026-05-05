@@ -11,7 +11,6 @@
 #include <orbit/orbiter/datatype/number.h>
 #include <orbit/orbiter/datatype/orstring.h>
 #include <orbit/orbiter/datatype/pcheck.h>
-#include <orbit/orbiter/datatype/result.h>
 #include <orbit/orbiter/datatype/rguard.h>
 #include <orbit/orbiter/datatype/stringbuilder.h>
 
@@ -32,10 +31,18 @@ bool SetDtor(Set *self) {
     return true;
 }
 
-void SetTrace(const Set *self, const GCTraceCallback callback, const MSize epoch) {
-    // The `value` slot of every entry is unused (always nullptr) — only keys need to be reported to the GC.
-    for (const auto *cursor = self->set.iter_begin; cursor != nullptr; cursor = cursor->iter_next)
-        callback((OObject *) cursor->key, epoch);
+/// Both operands of a binary set op must be Sets — Dispatch may call us
+/// with `left` non-Set when this op was reached as a fallback from the
+/// right operand's TypeOps. Returning false without setting a panic lets
+/// Dispatch synthesise the canonical NotImplementedError(op, lname, rname).
+static bool SetOpRequireBoth(const OObject *left, const OObject *right) {
+    if (!O_IS_OBJECT(left) || !O_IS_TYPE(left, InstanceType::SET))
+        return false;
+
+    if (!O_IS_OBJECT(right) || !O_IS_TYPE(right, InstanceType::SET))
+        return false;
+
+    return true;
 }
 
 /// Insert one element into `dst` without acquiring its lock.
@@ -65,6 +72,14 @@ static LookupResult SetAddLocked(Set *dst, OObject *value) {
     return LookupResult::OK;
 }
 
+bool SetExtendFromArray(Set *dst, OObject *const *src, const MSize count) {
+    for (MSize i = 0; i < count; i++) {
+        if (SetAddLocked(dst, src[i]) == LookupResult::ERROR)
+            return false;
+    }
+    return true;
+}
+
 /// Like SetAddLocked but for a single Lookup-only check (no insertion path).
 /// Returns OK / NOT_FOUND / ERROR.
 static LookupResult SetContainsLocked(const Set *src, OObject *value) {
@@ -82,6 +97,12 @@ static LookupResult SetRemoveLocked(Set *dst, OObject *value) {
         dst->set.FreeHEntry(out);
 
     return status;
+}
+
+void SetTrace(const Set *self, const GCTraceCallback callback, const MSize epoch) {
+    // The `value` slot of every entry is unused (always nullptr) — only keys need to be reported to the GC.
+    for (const auto *cursor = self->set.iter_begin; cursor != nullptr; cursor = cursor->iter_next)
+        callback((OObject *) cursor->key, epoch);
 }
 
 // *********************************************************************************************************************
@@ -118,10 +139,6 @@ static bool SetEqual(const OObject *left, const OObject *right) {
     return true;
 }
 
-// *********************************************************************************************************************
-// TYPE OPS — INDEX / CONTAINS
-// *********************************************************************************************************************
-
 /// Membership test: `x in s`. Mirrors DictOpContains: ERROR (e.g. unhashable
 /// element) is propagated, NOT_FOUND becomes a clean false.
 static bool SetOpContains(const OObject *container, const OObject *value, bool &result) {
@@ -140,11 +157,70 @@ static bool SetOpContains(const OObject *container, const OObject *value, bool &
 }
 
 // *********************************************************************************************************************
+// TYPE OPS — ARITHMETIC
+// *********************************************************************************************************************
+
+/// `a - b` — set difference.
+static bool SetOpSub(const OObject *left, const OObject *right, OObject *&result) {
+    if (!SetOpRequireBoth(left, right))
+        return false;
+
+    const auto out = SetDifference((Set *) left, (Set *) right);
+    if (!out)
+        return false;
+
+    result = (OObject *) out.get();
+    return true;
+}
+
+// *********************************************************************************************************************
+// TYPE OPS — BITWISE
+// *********************************************************************************************************************
+
+/// `a & b` — intersection of two sets.
+static bool SetOpBitAnd(const OObject *left, const OObject *right, OObject *&result) {
+    if (!SetOpRequireBoth(left, right))
+        return false;
+
+    const auto out = SetIntersection((Set *) left, (Set *) right);
+    if (!out)
+        return false;
+
+    result = (OObject *) out.get();
+    return true;
+}
+
+/// `a | b` — union of two sets.
+static bool SetOpBitOr(const OObject *left, const OObject *right, OObject *&result) {
+    if (!SetOpRequireBoth(left, right))
+        return false;
+
+    auto out = SetUnion((Set *) left, (Set *) right);
+    if (!out)
+        return false;
+
+    result = (OObject *) out.get();
+    return true;
+}
+
+/// `a ^ b` — symmetric difference.
+static bool SetOpBitXor(const OObject *left, const OObject *right, OObject *&result) {
+    if (!SetOpRequireBoth(left, right))
+        return false;
+
+    auto out = SetSymmetricDifference((Set *) left, (Set *) right);
+    if (!out)
+        return false;
+
+    result = (OObject *) out.get();
+    return true;
+}
+
+// *********************************************************************************************************************
 // TYPE OPS — CONVERSION
 // *********************************************************************************************************************
 
-/// A non-empty set is truthy. Length is read without the lock — same trade-off
-/// as Dict's to_bool: single word reads are practically safe.
+/// A non-empty set is truthy. Length is read without the lock — same trade-off as Dict's to_bool.
 static bool SetToBool(const OObject *self) {
     return ((const Set *) self)->set.length != 0;
 }
@@ -198,19 +274,37 @@ static OObject *SetToString(orbiter::Isolate *isolate, Set *self) {
 
 RUNTIME_FUNCTION(set_create, create,
                  R"DOC(
-@brief Create a new empty Set.
+@brief Create a new Set.
 
-@return A new empty Set.
+When `base` is provided, the returned set is initialised with the elements
+of `base`, which must be a Dict, List, a Tuple or another Set. Duplicates in the
+source are collapsed to a single occurrence. Without `base`, the returned
+set is empty.
+
+@param base?  Source to initialise from. Must be a Dict, List, Tuple or Set.
+
+@return A new Set.
+
+@panic TypeError  When `base` is not a List, a Tuple or a Set.
 
 @see add, length
 
 @example
-    let s = Set()
-    s.add(1)
-    s.add(2)
-    s.length()    // 2
-)DOC", 0, nullptr, false, false) {
-    auto set = SetNew(O_GET_ISOLATE(_func));
+    Set()                 // Set{}
+    Set([1, 2, 2, 3])     // Set{1, 2, 3}
+    Set((4, 5))           // Set{4, 5}
+    let s = Set([1, 2])
+    Set(s)                // Set{1, 2}  — copy
+)DOC", 0, "base", false, false) {
+    PCHECK_ENTRIES(params,
+                   PCHECK_DEF("base", true,
+                       InstanceType::DICT,
+                       InstanceType::LIST,
+                       InstanceType::TUPLE,
+                       InstanceType::SET));
+    PCHECK_CHECK(params);
+
+    const auto set = O_IS_SENTINEL(argv[0]) ? SetNew(O_GET_ISOLATE(_func)) : SetNew(argv[0]);
     if (!set)
         return {};
 
@@ -773,240 +867,25 @@ constexpr FunctionDef set_methods[] = {
 // PUBLIC API
 // *********************************************************************************************************************
 
-bool orbiter::datatype::SetTypeSetup(TypeInfo *self) {
-    self->dtor = (DtorFn) SetDtor;
-    self->trace = (TraceFn) SetTrace;
+bool orbiter::datatype::SetDifferenceUpdate(Set *self, Set *other) {
+    if (self == other) {
+        // self - self = ∅
+        std::unique_lock _(self->lock);
 
-    auto &ops = ((TypeInfoOps *) self)->ops;
+        self->set.Clear(nullptr);
 
-    ops.contains = SetOpContains;
-    ops.equal = SetEqual;
-    ops.to_bool = SetToBool;
-    ops.to_string = (ToStrFn) SetToString;
-
-    if (!TIPropertyAdd(self, set_methods, PropertyFlag::IS_PUBLIC))
-        return false;
-
-    const auto ctor = FunctionFromDef(self, set_create);
-    if (!ctor)
-        return false;
-
-    self->ctor = (OObject *) ctor.get();
-
-    return true;
-}
-
-HOType orbiter::datatype::SetTypeInit(Isolate *isolate) {
-    return MakeType(isolate, "Set", InstanceType::SET, sizeof(Set) - sizeof(OObject), 20, 0);
-}
-
-HSet orbiter::datatype::SetNew(Isolate *isolate, const U32 size) {
-    auto *set = MakeObject<Set>(isolate, InstanceType::SET);
-    if (set != nullptr) {
-        new(&set->set)ORHMap(isolate);
-
-        const auto ok = size > 0 ? set->set.Initialize(size) : set->set.Initialize();
-        if (!ok) {
-            isolate->gc->RawFree((OObject *) set, false);
-
-            return {};
-        }
-
-        new(&set->lock)sync::AsyncRWLock();
-    }
-
-    O_GC_TRACK_RETURN(isolate, set, true);
-}
-
-LookupResult orbiter::datatype::SetAdd(Set *set, OObject *value) {
-    std::unique_lock _(set->lock);
-
-    return SetAddLocked(set, value);
-}
-
-LookupResult orbiter::datatype::SetContains(Set *set, OObject *value) {
-    std::shared_lock _(set->lock);
-
-    return SetContainsLocked(set, value);
-}
-
-LookupResult orbiter::datatype::SetRemove(Set *set, OObject *value) {
-    std::unique_lock _(set->lock);
-
-    return SetRemoveLocked(set, value);
-}
-
-HSet orbiter::datatype::SetNew(OObject *object) noexcept {
-    auto *isolate = O_GET_ISOLATE(object);
-
-    if (O_IS_TYPE(object, InstanceType::SET)) {
-        auto *self = (Set *) object;
-
-        std::shared_lock _(self->lock);
-
-        auto copy = SetNew(isolate, (U32) self->set.length);
-        if (!copy)
-            return {};
-
-        auto *raw = copy.get();
-        for (const auto *cur = self->set.iter_begin; cur != nullptr; cur = cur->iter_next) {
-            if (SetAddLocked(raw, cur->key) == LookupResult::ERROR)
-                return {};
-        }
-
-        return copy;
-    }
-
-    assert(false);
-}
-
-// *********************************************************************************************************************
-// PUBLIC API — SET ALGEBRA (NEW SET)
-// *********************************************************************************************************************
-
-HSet orbiter::datatype::SetUnion(Set *a, Set *b) {
-    auto *isolate = O_GET_ISOLATE(a);
-
-    if (a == b)
-        return SetNew(a);
-
-    std::shared_lock la(a->lock);
-    std::shared_lock lb(b->lock);
-
-    auto out = SetNew(isolate, (U32) (a->set.length + b->set.length));
-    if (!out)
-        return {};
-
-    auto *raw = out.get();
-
-    for (const auto *cur = a->set.iter_begin; cur != nullptr; cur = cur->iter_next) {
-        if (SetAddLocked(raw, cur->key) == LookupResult::ERROR)
-            return {};
-    }
-
-    for (const auto *cur = b->set.iter_begin; cur != nullptr; cur = cur->iter_next) {
-        if (SetAddLocked(raw, cur->key) == LookupResult::ERROR)
-            return {};
-    }
-
-    return out;
-}
-
-HSet orbiter::datatype::SetIntersection(Set *a, Set *b) {
-    auto *isolate = O_GET_ISOLATE(a);
-
-    if (a == b)
-        return SetNew(a);
-
-    std::shared_lock la(a->lock);
-    std::shared_lock lb(b->lock);
-
-    // Iterate the smaller set and probe the larger one — better cache behaviour when sizes differ.
-    const Set *small = a->set.length <= b->set.length ? a : b;
-    const Set *large = small == a ? b : a;
-
-    auto out = SetNew(isolate, (U32) small->set.length);
-    if (!out)
-        return {};
-
-    auto *raw = out.get();
-    for (const auto *cur = small->set.iter_begin; cur != nullptr; cur = cur->iter_next) {
-        const auto status = SetContainsLocked(large, cur->key);
-        if (status == LookupResult::ERROR)
-            return {};
-
-        if (status == LookupResult::OK) {
-            if (SetAddLocked(raw, cur->key) == LookupResult::ERROR)
-                return {};
-        }
-    }
-
-    return out;
-}
-
-HSet orbiter::datatype::SetDifference(Set *a, Set *b) {
-    auto *isolate = O_GET_ISOLATE(a);
-
-    if (a == b)
-        return SetNew(isolate);
-
-    std::shared_lock la(a->lock);
-    std::shared_lock lb(b->lock);
-
-    auto out = SetNew(isolate, (U32) a->set.length);
-    if (!out)
-        return {};
-
-    auto *raw = out.get();
-    for (const auto *cur = a->set.iter_begin; cur != nullptr; cur = cur->iter_next) {
-        const auto status = SetContainsLocked(b, cur->key);
-        if (status == LookupResult::ERROR)
-            return {};
-
-        if (status == LookupResult::NOT_FOUND) {
-            if (SetAddLocked(raw, cur->key) == LookupResult::ERROR)
-                return {};
-        }
-    }
-
-    return out;
-}
-
-HSet orbiter::datatype::SetSymmetricDifference(Set *a, Set *b) {
-    auto *isolate = O_GET_ISOLATE(a);
-
-    if (a == b)
-        return SetNew(isolate);
-
-    std::shared_lock la(a->lock);
-    std::shared_lock lb(b->lock);
-
-    auto out = SetNew(isolate, (U32) (a->set.length + b->set.length));
-    if (!out)
-        return {};
-
-    auto *raw = out.get();
-
-    // Elements in a but not in b.
-    for (const auto *cur = a->set.iter_begin; cur != nullptr; cur = cur->iter_next) {
-        const auto status = SetContainsLocked(b, cur->key);
-        if (status == LookupResult::ERROR)
-            return {};
-
-        if (status == LookupResult::NOT_FOUND) {
-            if (SetAddLocked(raw, cur->key) == LookupResult::ERROR)
-                return {};
-        }
-    }
-
-    // Elements in b but not in a.
-    for (const auto *cur = b->set.iter_begin; cur != nullptr; cur = cur->iter_next) {
-        const auto status = SetContainsLocked(a, cur->key);
-        if (status == LookupResult::ERROR)
-            return {};
-
-        if (status == LookupResult::NOT_FOUND) {
-            if (SetAddLocked(raw, cur->key) == LookupResult::ERROR)
-                return {};
-        }
-    }
-
-    return out;
-}
-
-// *********************************************************************************************************************
-// PUBLIC API — SET ALGEBRA (IN-PLACE)
-// *********************************************************************************************************************
-
-bool orbiter::datatype::SetUnionUpdate(Set *self, Set *other) {
-    if (self == other)
         return true;
+    }
 
     std::unique_lock self_lock(self->lock);
     std::shared_lock other_lock(other->lock);
 
+    // Iterate `other` and remove from `self`. Removing keys that came from
+    // `other` (not from self's iter list) is safe: it doesn't disturb the
+    // iteration we're walking.
     for (const auto *cur = other->set.iter_begin; cur != nullptr; cur = cur->iter_next) {
-        if (SetAddLocked(self, cur->key) == LookupResult::ERROR)
+        const auto status = SetRemoveLocked(self, cur->key);
+        if (status == LookupResult::ERROR)
             return false;
     }
 
@@ -1057,27 +936,79 @@ bool orbiter::datatype::SetIntersectionUpdate(Set *self, Set *other) {
     return true;
 }
 
-bool orbiter::datatype::SetDifferenceUpdate(Set *self, Set *other) {
-    if (self == other) {
-        // self - self = ∅
-        std::unique_lock _(self->lock);
+bool orbiter::datatype::SetIsDisjoint(Set *a, Set *b) {
+    if (a == b) {
+        // Disjoint with self only when empty.
+        std::shared_lock _(a->lock);
 
-        self->set.Clear(nullptr);
-
-        return true;
+        return a->set.length == 0;
     }
 
-    std::unique_lock self_lock(self->lock);
-    std::shared_lock other_lock(other->lock);
+    std::shared_lock la(a->lock);
+    std::shared_lock lb(b->lock);
 
-    // Iterate `other` and remove from `self`. Removing keys that came from
-    // `other` (not from self's iter list) is safe: it doesn't disturb the
-    // iteration we're walking.
-    for (const auto *cur = other->set.iter_begin; cur != nullptr; cur = cur->iter_next) {
-        const auto status = SetRemoveLocked(self, cur->key);
-        if (status == LookupResult::ERROR)
+    // Probe the smaller side against the larger to minimise work.
+    const Set *small = a->set.length <= b->set.length ? a : b;
+    const Set *large = small == a ? b : a;
+
+    for (const auto *cur = small->set.iter_begin; cur != nullptr; cur = cur->iter_next) {
+        const auto status = SetContainsLocked(large, cur->key);
+        if (status == LookupResult::OK)
             return false;
     }
+
+    return true;
+}
+
+bool orbiter::datatype::SetIsSubset(Set *a, Set *b) {
+    if (a == b)
+        return true;
+
+    std::shared_lock la(a->lock);
+    std::shared_lock lb(b->lock);
+
+    if (a->set.length > b->set.length)
+        return false;
+
+    for (const auto *cur = a->set.iter_begin; cur != nullptr; cur = cur->iter_next) {
+        const auto status = SetContainsLocked(b, cur->key);
+        if (status == LookupResult::NOT_FOUND)
+            return false;
+    }
+
+    return true;
+}
+
+bool orbiter::datatype::SetIsSuperset(Set *a, Set *b) {
+    // a ⊇ b  ⇔  b ⊆ a — defer to the canonical implementation.
+    return SetIsSubset(b, a);
+}
+
+bool orbiter::datatype::SetTypeSetup(TypeInfo *self) {
+    self->dtor = (DtorFn) SetDtor;
+    self->trace = (TraceFn) SetTrace;
+
+    auto &ops = ((TypeInfoOps *) self)->ops;
+
+    ops.contains = SetOpContains;
+    ops.equal = SetEqual;
+    ops.to_bool = SetToBool;
+    ops.to_string = (ToStrFn) SetToString;
+
+    // Set algebra as binary operators.
+    ops.sub = SetOpSub; // a - b   (difference)
+    ops.bit_and = SetOpBitAnd; // a & b   (intersection)
+    ops.bit_or = SetOpBitOr; // a | b   (union)
+    ops.bit_xor = SetOpBitXor; // a ^ b   (symmetric difference)
+
+    if (!TIPropertyAdd(self, set_methods, PropertyFlag::IS_PUBLIC))
+        return false;
+
+    const auto ctor = FunctionFromDef(self, set_create);
+    if (!ctor)
+        return false;
+
+    self->ctor = (OObject *) ctor.get();
 
     return true;
 }
@@ -1119,54 +1050,257 @@ bool orbiter::datatype::SetSymmetricDifferenceUpdate(Set *self, Set *other) {
     return true;
 }
 
-// *********************************************************************************************************************
-// PUBLIC API — PREDICATES
-// *********************************************************************************************************************
-
-bool orbiter::datatype::SetIsSubset(Set *a, Set *b) {
-    if (a == b)
+bool orbiter::datatype::SetUnionUpdate(Set *self, Set *other) {
+    if (self == other)
         return true;
 
-    std::shared_lock la(a->lock);
-    std::shared_lock lb(b->lock);
+    std::unique_lock self_lock(self->lock);
+    std::shared_lock other_lock(other->lock);
 
-    if (a->set.length > b->set.length)
-        return false;
-
-    for (const auto *cur = a->set.iter_begin; cur != nullptr; cur = cur->iter_next) {
-        const auto status = SetContainsLocked(b, cur->key);
-        if (status == LookupResult::NOT_FOUND)
+    for (const auto *cur = other->set.iter_begin; cur != nullptr; cur = cur->iter_next) {
+        if (SetAddLocked(self, cur->key) == LookupResult::ERROR)
             return false;
     }
 
     return true;
 }
 
-bool orbiter::datatype::SetIsSuperset(Set *a, Set *b) {
-    // a ⊇ b  ⇔  b ⊆ a — defer to the canonical implementation.
-    return SetIsSubset(b, a);
+HOType orbiter::datatype::SetTypeInit(Isolate *isolate) {
+    return MakeType(isolate, "Set", InstanceType::SET, sizeof(Set) - sizeof(OObject), 20, 0);
 }
 
-bool orbiter::datatype::SetIsDisjoint(Set *a, Set *b) {
-    if (a == b) {
-        // Disjoint with self only when empty.
-        std::shared_lock _(a->lock);
+HSet orbiter::datatype::SetNew(Isolate *isolate, const U32 size) {
+    auto *set = MakeObject<Set>(isolate, InstanceType::SET);
+    if (set != nullptr) {
+        new(&set->set)ORHMap(isolate);
 
-        return a->set.length == 0;
+        const auto ok = size > 0 ? set->set.Initialize(size) : set->set.Initialize();
+        if (!ok) {
+            isolate->gc->RawFree((OObject *) set, false);
+
+            return {};
+        }
+
+        new(&set->lock)sync::AsyncRWLock();
     }
+
+    O_GC_TRACK_RETURN(isolate, set, true);
+}
+
+LookupResult orbiter::datatype::SetAdd(Set *set, OObject *value) {
+    std::unique_lock _(set->lock);
+
+    return SetAddLocked(set, value);
+}
+
+LookupResult orbiter::datatype::SetContains(Set *set, OObject *value) {
+    std::shared_lock _(set->lock);
+
+    return SetContainsLocked(set, value);
+}
+
+LookupResult orbiter::datatype::SetRemove(Set *set, OObject *value) {
+    std::unique_lock _(set->lock);
+
+    return SetRemoveLocked(set, value);
+}
+
+HSet orbiter::datatype::SetNew(OObject *object) noexcept {
+    auto *isolate = O_GET_ISOLATE(object);
+
+    if (O_IS_TYPE(object, InstanceType::DICT)) {
+        auto *dict = (Dict *) object;
+
+        std::shared_lock _(dict->lock);
+
+        auto out = SetNew(isolate, (U32) dict->dict.length);
+        if (!out)
+            return {};
+
+        auto *raw = out.get();
+        for (const auto *cur = dict->dict.iter_begin; cur != nullptr; cur = cur->iter_next) {
+            if (SetAddLocked(raw, cur->key) == LookupResult::ERROR)
+                return {};
+        }
+
+        return out;
+    }
+
+    if (O_IS_TYPE(object, InstanceType::LIST)) {
+        auto *list = (List *) object;
+
+        std::shared_lock _(list->lock);
+
+        auto out = SetNew(isolate, (U32) list->length);
+        if (!out || !SetExtendFromArray(out.get(), list->objects, list->length))
+            return {};
+
+        return out;
+    }
+
+    if (O_IS_TYPE(object, InstanceType::SET)) {
+        auto *self = (Set *) object;
+
+        std::shared_lock _(self->lock);
+
+        auto copy = SetNew(isolate, (U32) self->set.length);
+        if (!copy)
+            return {};
+
+        auto *raw = copy.get();
+        for (const auto *cur = self->set.iter_begin; cur != nullptr; cur = cur->iter_next) {
+            if (SetAddLocked(raw, cur->key) == LookupResult::ERROR)
+                return {};
+        }
+
+        return copy;
+    }
+
+    if (O_IS_TYPE(object, InstanceType::TUPLE)) {
+        const auto *tuple = (Tuple *) object;
+
+        auto out = SetNew(isolate, (U32) tuple->length);
+        if (!out || !SetExtendFromArray(out.get(), tuple->objects, tuple->length))
+            return {};
+
+        return out;
+    }
+
+    ErrorSetWithObjType(isolate,
+                        TypeError::Details[TypeError::Reason::ID],
+                        TypeError::Details[TypeError::Reason::MISMATCH],
+                        "Dict, List, Tuple, or Set",
+                        object);
+
+    return {};
+}
+
+HSet orbiter::datatype::SetDifference(Set *a, Set *b) {
+    auto *isolate = O_GET_ISOLATE(a);
+
+    if (a == b)
+        return SetNew(isolate);
 
     std::shared_lock la(a->lock);
     std::shared_lock lb(b->lock);
 
-    // Probe the smaller side against the larger to minimise work.
+    auto out = SetNew(isolate, (U32) a->set.length);
+    if (!out)
+        return {};
+
+    auto *raw = out.get();
+    for (const auto *cur = a->set.iter_begin; cur != nullptr; cur = cur->iter_next) {
+        const auto status = SetContainsLocked(b, cur->key);
+        if (status == LookupResult::ERROR)
+            return {};
+
+        if (status == LookupResult::NOT_FOUND) {
+            if (SetAddLocked(raw, cur->key) == LookupResult::ERROR)
+                return {};
+        }
+    }
+
+    return out;
+}
+
+HSet orbiter::datatype::SetIntersection(Set *a, Set *b) {
+    auto *isolate = O_GET_ISOLATE(a);
+
+    if (a == b)
+        return SetNew(a);
+
+    std::shared_lock la(a->lock);
+    std::shared_lock lb(b->lock);
+
+    // Iterate the smaller set and probe the larger one — better cache behaviour when sizes differ.
     const Set *small = a->set.length <= b->set.length ? a : b;
     const Set *large = small == a ? b : a;
 
+    auto out = SetNew(isolate, (U32) small->set.length);
+    if (!out)
+        return {};
+
+    auto *raw = out.get();
     for (const auto *cur = small->set.iter_begin; cur != nullptr; cur = cur->iter_next) {
         const auto status = SetContainsLocked(large, cur->key);
-        if (status == LookupResult::OK)
-            return false;
+        if (status == LookupResult::ERROR)
+            return {};
+
+        if (status == LookupResult::OK) {
+            if (SetAddLocked(raw, cur->key) == LookupResult::ERROR)
+                return {};
+        }
     }
 
-    return true;
+    return out;
+}
+
+HSet orbiter::datatype::SetSymmetricDifference(Set *a, Set *b) {
+    auto *isolate = O_GET_ISOLATE(a);
+
+    if (a == b)
+        return SetNew(isolate);
+
+    std::shared_lock la(a->lock);
+    std::shared_lock lb(b->lock);
+
+    auto out = SetNew(isolate, (U32) (a->set.length + b->set.length));
+    if (!out)
+        return {};
+
+    auto *raw = out.get();
+
+    // Elements in a but not in b.
+    for (const auto *cur = a->set.iter_begin; cur != nullptr; cur = cur->iter_next) {
+        const auto status = SetContainsLocked(b, cur->key);
+        if (status == LookupResult::ERROR)
+            return {};
+
+        if (status == LookupResult::NOT_FOUND) {
+            if (SetAddLocked(raw, cur->key) == LookupResult::ERROR)
+                return {};
+        }
+    }
+
+    // Elements in b but not in a.
+    for (const auto *cur = b->set.iter_begin; cur != nullptr; cur = cur->iter_next) {
+        const auto status = SetContainsLocked(a, cur->key);
+        if (status == LookupResult::ERROR)
+            return {};
+
+        if (status == LookupResult::NOT_FOUND) {
+            if (SetAddLocked(raw, cur->key) == LookupResult::ERROR)
+                return {};
+        }
+    }
+
+    return out;
+}
+
+HSet orbiter::datatype::SetUnion(Set *a, Set *b) {
+    auto *isolate = O_GET_ISOLATE(a);
+
+    if (a == b)
+        return SetNew(a);
+
+    std::shared_lock la(a->lock);
+    std::shared_lock lb(b->lock);
+
+    auto out = SetNew(isolate, (U32) (a->set.length + b->set.length));
+    if (!out)
+        return {};
+
+    auto *raw = out.get();
+
+    for (const auto *cur = a->set.iter_begin; cur != nullptr; cur = cur->iter_next) {
+        if (SetAddLocked(raw, cur->key) == LookupResult::ERROR)
+            return {};
+    }
+
+    for (const auto *cur = b->set.iter_begin; cur != nullptr; cur = cur->iter_next) {
+        if (SetAddLocked(raw, cur->key) == LookupResult::ERROR)
+            return {};
+    }
+
+    return out;
 }
