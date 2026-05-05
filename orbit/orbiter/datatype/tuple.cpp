@@ -6,6 +6,7 @@
 #include <orbit/orbiter/datatype/error.h>
 #include <orbit/orbiter/datatype/errors.h>
 #include <orbit/orbiter/datatype/function.h>
+#include <orbit/orbiter/datatype/iterator.h>
 #include <orbit/orbiter/datatype/number.h>
 #include <orbit/orbiter/datatype/orstring.h>
 #include <orbit/orbiter/datatype/pcheck.h>
@@ -172,6 +173,36 @@ static bool TupleLoadSlice(const OObject *self, const OObject *start, const OObj
     result = (OObject *) out.get();
 
     return true;
+}
+
+// *********************************************************************************************************************
+// TYPE OPS — ITERATION
+// *********************************************************************************************************************
+
+/// Walk the tuple's buffer one element at a time. Tuple is immutable, so we
+/// don't snapshot length and don't fail-fast — `state.index` is the only
+/// piece of state that needs to be tracked.
+static CallResult TupleIterStep(Iterator *self, OObject **out) {
+    const auto *tuple = (const Tuple *) self->source;
+
+    if (self->state.index >= tuple->length)
+        return CallResult::EXHAUST;
+
+    *out = tuple->objects[self->state.index++];
+
+    return CallResult::DONE;
+}
+
+/// Build a fresh iterator over @p self. Tuple is immutable, so we leave
+/// `snapshot_length` at 0 — the step never checks it.
+static OObject *TupleGetIter(OObject *self) {
+    const auto iter = IteratorNew(O_GET_ISOLATE(self), self, TupleIterStep);
+    if (!iter)
+        return nullptr;
+
+    iter->state.index = 0;
+
+    return (OObject *) iter.get();
 }
 
 // *********************************************************************************************************************
@@ -412,6 +443,7 @@ bool orbiter::datatype::TupleTypeSetup(TypeInfo *self) {
     ops.add = TupleAdd;
     ops.load_index = TupleLoadIndex;
     ops.load_slice = TupleLoadSlice;
+    ops.get_iter = TupleGetIter;
     ops.to_bool = TupleToBool;
     ops.to_string = (ToStrFn) TupleToString;
     ops.hash = TupleHash;

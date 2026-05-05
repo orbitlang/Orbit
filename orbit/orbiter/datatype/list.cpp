@@ -8,6 +8,7 @@
 #include <orbit/orbiter/datatype/error.h>
 #include <orbit/orbiter/datatype/errors.h>
 #include <orbit/orbiter/datatype/function.h>
+#include <orbit/orbiter/datatype/iterator.h>
 #include <orbit/orbiter/datatype/number.h>
 #include <orbit/orbiter/datatype/orstring.h>
 #include <orbit/orbiter/datatype/pcheck.h>
@@ -254,6 +255,59 @@ static bool ListLoadSlice(const OObject *self, const OObject *start, const OObje
     result = (OObject *) out.get();
 
     return true;
+}
+
+// *********************************************************************************************************************
+// TYPE OPS — ITERATION
+// *********************************************************************************************************************
+
+/// Walk the list one element at a time. The lock is acquired in shared mode
+/// for the single read and released before returning, so a parked iter never
+/// holds the lock across yields.
+///
+/// Fail-fast: any size change since iteration start raises
+/// ConcurrentModificationError.
+static CallResult ListIterStep(Iterator *self, OObject **out) {
+    auto *list = (List *) self->source;
+
+    std::shared_lock _(list->lock);
+
+    if (self->snapshot_length != list->length) {
+        ErrorSet(O_GET_ISOLATE(list),
+                 RuntimeError::Details[RuntimeError::Reason::ID],
+                 nullptr,
+                 RuntimeError::Details[RuntimeError::Reason::CONCURRENT_MODIFICATION],
+                 O_GET_TYPE(list)->name);
+
+        return CallResult::ERROR;
+    }
+
+    if (self->state.index >= list->length)
+        return CallResult::EXHAUST;
+
+    *out = list->objects[self->state.index++];
+
+    return CallResult::DONE;
+}
+
+/// Build a fresh iterator over @p self. Snapshots the current length under
+/// shared lock so the step function can fail-fast on any subsequent resize.
+static OObject *ListGetIter(OObject *self) {
+    auto *list = (List *) self;
+
+    const auto iter = IteratorNew(O_GET_ISOLATE(self), self, ListIterStep);
+    if (!iter)
+        return nullptr;
+
+    std::shared_lock lock(list->lock);
+
+    iter->snapshot_length = list->length;
+
+    lock.unlock();
+
+    iter->state.index = 0;
+
+    return (OObject *) iter.get();
 }
 
 // *********************************************************************************************************************
@@ -746,6 +800,7 @@ bool orbiter::datatype::ListTypeSetup(TypeInfo *self) {
     ops.load_index = ListLoadIndex;
     ops.store_index = ListStoreIndex;
     ops.load_slice = ListLoadSlice;
+    ops.get_iter = ListGetIter;
     ops.to_bool = ListToBool;
     ops.to_string = (ToStrFn) ListToString;
 
