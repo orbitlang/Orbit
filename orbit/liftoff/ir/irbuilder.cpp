@@ -1760,7 +1760,7 @@ void IRBuilder::VisitForInLoop(const parser::Loop *node) {
 
         this->StoreVariable(id->symbol, gen_value, false);
     } else if (node->init->node_type == parser::NodeType::VAR_DECLARATIONS)
-        this->ExpandStoreTuple((parser::ListExpression *) node->init, gen_value, false);
+        this->ExpandStoreTuple((parser::ListExpression *) ((parser::Assignment *) node->init)->name, gen_value, false);
 
     this->visit(node->body);
 
