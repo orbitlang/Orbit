@@ -103,6 +103,22 @@ namespace orbiter::datatype::support {
     bool SharedBufferEnlarge(Isolate *isolate, SharedBuffer *sb, MSize new_capacity);
 
     /**
+     * @brief Increments the reference count of the given SharedBuffer.
+     *
+     * This function acquires ownership of the specified `SharedBuffer` by
+     * incrementing its reference count. If the buffer is not frozen, it
+     * synchronizes with any in-progress `Enlarge` operation by acquiring the
+     * shared side of the lock. For frozen buffers, as they cannot be mutated,
+     * the increment operation suffices without acquiring the lock.
+     *
+     * @param sb A pointer to the `SharedBuffer` instance whose reference count
+     *           is to be incremented. Must not be null.
+     * @return A pointer to the same `SharedBuffer` instance provided in the
+     *         `sb` parameter.
+     */
+    SharedBuffer *SharedBufferAcquire(SharedBuffer *sb) noexcept;
+
+    /**
      * @brief Allocate a fresh SharedBuffer with a private byte array.
      *
      * The new buffer starts with `counter = 1` (the caller is the first
@@ -117,18 +133,6 @@ namespace orbiter::datatype::support {
      * @return Pointer to the new SharedBuffer, or nullptr on allocation failure.
      */
     SharedBuffer *SharedBufferNew(Isolate *isolate, MSize capacity, bool frozen);
-
-    /**
-     * @brief Increment the reference counter.
-     *
-     * Acquires `rwlock` in shared mode briefly to synchronise with any
-     * in-flight `Enlarge`: callers that take a fresh view cannot observe
-     * the buffer mid-`realloc`. Frozen buffers skip the lock since they
-     * cannot be mutated.
-     *
-     * @param sb The shared buffer to acquire. Must be non-null.
-     */
-    void SharedBufferAcquire(SharedBuffer *sb);
 
     /**
      * @brief Mark the buffer as frozen.

@@ -36,6 +36,25 @@ bool support::SharedBufferEnlarge(Isolate *isolate, SharedBuffer *sb, const MSiz
     return true;
 }
 
+support::SharedBuffer *support::SharedBufferAcquire(SharedBuffer *sb) noexcept {
+    if (!sb->IsFrozen()) {
+        // Synchronise with any in-flight Enlarge: that holds the unique
+        // side of the lock while reallocating, so taking the shared side
+        // here forces us to wait until the buffer is in a coherent state
+        // before publishing a new owner.
+        std::shared_lock _(sb->rwlock);
+
+        sb->counter.fetch_add(1, std::memory_order_acq_rel);
+
+        return sb;
+    }
+
+    // Frozen buffers cannot be mutated — the increment is enough.
+    sb->counter.fetch_add(1, std::memory_order_acq_rel);
+
+    return sb;
+}
+
 support::SharedBuffer *support::SharedBufferNew(Isolate *isolate, const MSize capacity, const bool frozen) {
     memory::IsolateAllocator allocator(isolate);
 
@@ -62,23 +81,6 @@ support::SharedBuffer *support::SharedBufferNew(Isolate *isolate, const MSize ca
     new(&sb->rwlock) sync::AsyncRWLock();
 
     return sb;
-}
-
-void support::SharedBufferAcquire(SharedBuffer *sb) {
-    if (!sb->IsFrozen()) {
-        // Synchronise with any in-flight Enlarge: that holds the unique
-        // side of the lock while reallocating, so taking the shared side
-        // here forces us to wait until the buffer is in a coherent state
-        // before publishing a new owner.
-        std::shared_lock _(sb->rwlock);
-
-        sb->counter.fetch_add(1, std::memory_order_acq_rel);
-
-        return;
-    }
-
-    // Frozen buffers cannot be mutated — the increment is enough.
-    sb->counter.fetch_add(1, std::memory_order_acq_rel);
 }
 
 void support::SharedBufferFreeze(SharedBuffer *sb) {
