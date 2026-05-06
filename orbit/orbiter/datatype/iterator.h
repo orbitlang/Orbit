@@ -73,6 +73,11 @@ namespace orbiter::datatype {
         MSize snapshot_length;
 
         CallResult last_result;
+
+        /// True if the iterator walks the source in reverse direction.
+        /// Set by the source's `get_riter`; left false by `IteratorNew` so
+        /// `get_iter` paths inherit the default. Used purely for diagnostics.
+        bool reverse;
     };
 
     using HIterator = Handle<Iterator>;

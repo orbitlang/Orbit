@@ -364,6 +364,68 @@ static OObject *StrGetIter(OObject *self) {
     return (OObject *) iter.get();
 }
 
+/// Walk the string backwards one codepoint at a time. To find the previous
+/// codepoint we rewind byte by byte over UTF-8 continuation bytes
+/// (10xxxxxx), then identify the lead byte and emit the codepoint as a
+/// fresh single-codepoint ORString.
+///
+/// Worst-case rewind cost is 3 bytes (UTF-8 caps at 4 bytes/codepoint).
+static CallResult StrIterStepReverse(Iterator *self, OObject **out) {
+    const auto *src = (const ORString *) self->source;
+    auto *isolate = O_GET_ISOLATE(src);
+
+    if (self->state.str.byte == 0)
+        return CallResult::EXHAUST;
+
+    // Rewind to the previous codepoint's lead byte. Continuation bytes
+    // match the pattern 10xxxxxx → (b & 0xC0) == 0x80.
+    auto offset = self->state.str.byte;
+    do {
+        offset -= 1;
+    } while (offset > 0 && (STR_BUF(src)[offset] & 0xC0) == 0x80);
+
+    const unsigned char *p = STR_BUF(src) + offset;
+    const auto cp_bytes = StrUtf8LeadByteCount(*p);
+
+    if (cp_bytes == 0 || offset + cp_bytes > self->state.str.byte) {
+        // Defensive: a well-formed ORString never reaches this branch.
+        ErrorSet(isolate,
+                 UnicodeError::Details[UnicodeError::Reason::ID],
+                 nullptr,
+                 UnicodeError::Details[UnicodeError::Reason::INVALID_START_BYTE],
+                 (unsigned int) *p);
+
+        return CallResult::ERROR;
+    }
+
+    const HORString cp_str = (cp_bytes == 1) ? ORStringIntern(isolate, p, 1) : ORStringNew(isolate, p, cp_bytes);
+    if (!cp_str)
+        return CallResult::ERROR;
+
+    self->state.str.byte = offset;
+    self->state.str.cp -= 1;
+
+    *out = (OObject *) cp_str.get();
+
+    return CallResult::DONE;
+}
+
+/// Build a fresh reverse iterator over @p self. Cursor starts past-the-end
+/// in both byte and codepoint coordinates; first step rewinds before reading.
+static OObject *StrGetReverseIter(OObject *self) {
+    const auto *src = (const ORString *) self;
+
+    const auto iter = IteratorNew(O_GET_ISOLATE(self), self, StrIterStepReverse);
+    if (!iter)
+        return nullptr;
+
+    iter->state.str.byte = STR_LEN(src);
+    iter->state.str.cp = src->cp_length;
+    iter->reverse = true;
+
+    return (OObject *) iter.get();
+}
+
 // *********************************************************************************************************************
 // TYPE OPS — CONVERSION
 // *********************************************************************************************************************
@@ -1092,6 +1154,7 @@ bool orbiter::datatype::ORStringTypeSetup(TypeInfo *self) {
     ops.mul = StrMul;
     ops.mod = StrMod;
     ops.get_iter = StrGetIter;
+    ops.get_riter = StrGetReverseIter;
     ops.to_bool = StrToBool;
     ops.to_string = StrToString;
     ops.to_repr = (ToStrFn) StrToRepr;

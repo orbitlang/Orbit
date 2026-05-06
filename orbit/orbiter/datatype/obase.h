@@ -324,6 +324,7 @@ namespace orbiter::datatype {
 
         // --- Iteration ---
         GetIterFn get_iter;
+        GetIterFn get_riter;
         IterNextFn iter_next;
 
         // --- Conversion ---

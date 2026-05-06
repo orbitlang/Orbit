@@ -228,6 +228,63 @@ static OObject *DictGetIter(OObject *self) {
     return (OObject *) iter.get();
 }
 
+/// Walk the dict's iter chain backwards via `iter_prev`, yielding
+/// `(key, value)` tuples. Same fail-fast contract as the forward step.
+static CallResult DictIterStepReverse(Iterator *self, OObject **out) {
+    auto *dict = (Dict *) self->source;
+    auto *isolate = O_GET_ISOLATE(dict);
+
+    std::shared_lock _(dict->lock);
+
+    if (self->snapshot_length != dict->dict.length) {
+        ErrorSet(isolate,
+                 RuntimeError::Details[RuntimeError::Reason::ID],
+                 nullptr,
+                 RuntimeError::Details[RuntimeError::Reason::CONCURRENT_MODIFICATION],
+                 O_GET_TYPE(dict)->name);
+
+        return CallResult::ERROR;
+    }
+
+    const auto *entry = (const ORHEntry *) self->state.entry;
+    if (entry == nullptr)
+        return CallResult::EXHAUST;
+
+    const auto pair = TupleNew(isolate, 2);
+    if (!pair)
+        return CallResult::ERROR;
+
+    if (!TupleAppend(pair.get(), entry->key) || !TupleAppend(pair.get(), entry->value))
+        return CallResult::ERROR;
+
+    self->state.entry = entry->iter_prev;
+
+    *out = (OObject *) pair.get();
+
+    return CallResult::DONE;
+}
+
+/// Build a fresh reverse iterator over @p self. Starts from `iter_end` and
+/// walks back via `iter_prev`.
+static OObject *DictGetReverseIter(OObject *self) {
+    auto *dict = (Dict *) self;
+
+    const auto iter = IteratorNew(O_GET_ISOLATE(self), self, DictIterStepReverse);
+    if (!iter)
+        return nullptr;
+
+    std::shared_lock lock(dict->lock);
+
+    iter->snapshot_length = dict->dict.length;
+    iter->state.entry = dict->dict.iter_end;
+
+    lock.unlock();
+
+    iter->reverse = true;
+
+    return (OObject *) iter.get();
+}
+
 // *********************************************************************************************************************
 // TYPE OPS — CONVERSION
 // *********************************************************************************************************************
@@ -758,6 +815,7 @@ bool orbiter::datatype::DictTypeSetup(TypeInfo *self) {
     ops.load_index = DictLoadIndex;
     ops.store_index = DictStoreIndex;
     ops.get_iter = DictGetIter;
+    ops.get_riter = DictGetReverseIter;
     ops.to_bool = DictToBool;
     ops.to_string = (ToStrFn) DictToString;
 

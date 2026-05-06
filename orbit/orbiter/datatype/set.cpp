@@ -273,6 +273,56 @@ static OObject *SetGetIter(OObject *self) {
     return (OObject *) iter.get();
 }
 
+/// Walk the set's iter chain backwards via `iter_prev`. Same fail-fast
+/// contract as the forward step.
+static CallResult SetIterStepReverse(Iterator *self, OObject **out) {
+    auto *set = (Set *) self->source;
+    auto *isolate = O_GET_ISOLATE(set);
+
+    std::shared_lock _(set->lock);
+
+    if (self->snapshot_length != set->set.length) {
+        ErrorSet(isolate,
+                 RuntimeError::Details[RuntimeError::Reason::ID],
+                 nullptr,
+                 RuntimeError::Details[RuntimeError::Reason::CONCURRENT_MODIFICATION],
+                 O_GET_TYPE(set)->name);
+
+        return CallResult::ERROR;
+    }
+
+    const auto *entry = (const ORHEntry *) self->state.entry;
+    if (entry == nullptr)
+        return CallResult::EXHAUST;
+
+    *out = entry->key;
+
+    self->state.entry = entry->iter_prev;
+
+    return CallResult::DONE;
+}
+
+/// Build a fresh reverse iterator over @p self. Starts from `iter_end`
+/// (the tail of the doubly-linked iter list) and walks back via `iter_prev`.
+static OObject *SetGetReverseIter(OObject *self) {
+    auto *set = (Set *) self;
+
+    const auto iter = IteratorNew(O_GET_ISOLATE(self), self, SetIterStepReverse);
+    if (!iter)
+        return nullptr;
+
+    std::shared_lock lock(set->lock);
+
+    iter->snapshot_length = set->set.length;
+    iter->state.entry = set->set.iter_end;
+
+    lock.unlock();
+
+    iter->reverse = true;
+
+    return (OObject *) iter.get();
+}
+
 // *********************************************************************************************************************
 // TYPE OPS — CONVERSION
 // *********************************************************************************************************************
@@ -1050,6 +1100,7 @@ bool orbiter::datatype::SetTypeSetup(TypeInfo *self) {
     ops.contains = SetOpContains;
     ops.equal = SetEqual;
     ops.get_iter = SetGetIter;
+    ops.get_riter = SetGetReverseIter;
     ops.to_bool = SetToBool;
     ops.to_string = (ToStrFn) SetToString;
 

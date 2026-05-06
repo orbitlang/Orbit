@@ -310,6 +310,56 @@ static OObject *ListGetIter(OObject *self) {
     return (OObject *) iter.get();
 }
 
+/// Walk the list backwards. Same fail-fast contract as the forward step:
+/// any resize between get_riter and the call raises CME. `state.index` is
+/// the position of the next element to read; starts at `length`
+/// (past-the-end) and decrements before each read.
+static CallResult ListIterStepReverse(Iterator *self, OObject **out) {
+    auto *list = (List *) self->source;
+
+    std::shared_lock _(list->lock);
+
+    if (self->snapshot_length != list->length) {
+        ErrorSet(O_GET_ISOLATE(list),
+                 RuntimeError::Details[RuntimeError::Reason::ID],
+                 nullptr,
+                 RuntimeError::Details[RuntimeError::Reason::CONCURRENT_MODIFICATION],
+                 O_GET_TYPE(list)->name);
+
+        return CallResult::ERROR;
+    }
+
+    if (self->state.index == 0)
+        return CallResult::EXHAUST;
+
+    self->state.index -= 1;
+
+    *out = list->objects[self->state.index];
+
+    return CallResult::DONE;
+}
+
+/// Build a fresh reverse iterator over @p self. Snapshots length under
+/// shared lock and starts the cursor past-the-end.
+static OObject *ListGetReverseIter(OObject *self) {
+    auto *list = (List *) self;
+
+    const auto iter = IteratorNew(O_GET_ISOLATE(self), self, ListIterStepReverse);
+    if (!iter)
+        return nullptr;
+
+    std::shared_lock lock(list->lock);
+
+    iter->snapshot_length = list->length;
+    iter->state.index = list->length;
+
+    lock.unlock();
+
+    iter->reverse = true;
+
+    return (OObject *) iter.get();
+}
+
 // *********************************************************************************************************************
 // TYPE OPS — CONVERSION
 // *********************************************************************************************************************
@@ -801,6 +851,7 @@ bool orbiter::datatype::ListTypeSetup(TypeInfo *self) {
     ops.store_index = ListStoreIndex;
     ops.load_slice = ListLoadSlice;
     ops.get_iter = ListGetIter;
+    ops.get_riter = ListGetReverseIter;
     ops.to_bool = ListToBool;
     ops.to_string = (ToStrFn) ListToString;
 

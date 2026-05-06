@@ -48,13 +48,16 @@ static bool IteratorToBool(const Iterator *self) {
     return self->last_result == CallResult::CONTINUE;
 }
 
-/// Renders as `iterator <SourceType> at 0xADDR`.
+/// Renders as `iterator <SourceType> at 0xADDR`, prefixed with `reverse `
+/// when the iterator was produced via `get_riter`.
 static OObject *IteratorToString(orbiter::Isolate *isolate, const OObject *self) {
+    const auto *it = (const Iterator *) self;
+
     char src_type[24];
+    GetTypeName(isolate, it->source, src_type, sizeof(src_type));
 
-    GetTypeName(isolate, ((const Iterator *) self)->source, src_type, sizeof(src_type));
-
-    const auto s = ORStringFormat(isolate, "iterator <%s> at %p", src_type, self);
+    const auto s = ORStringFormat(isolate, "%siterator <%s> at %p",
+                                  it->reverse ? "reverse " : "", src_type, self);
 
     return s ? (OObject *) s.get() : nullptr;
 }
@@ -86,6 +89,7 @@ HIterator orbiter::datatype::IteratorNew(Isolate *isolate, OObject *source, cons
         iter->snapshot_length = 0;
         iter->state.index = 0;
         iter->last_result = CallResult::CONTINUE;
+        iter->reverse = false;
     }
 
     O_GC_TRACK_RETURN(isolate, iter, true);

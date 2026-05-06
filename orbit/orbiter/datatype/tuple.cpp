@@ -205,6 +205,37 @@ static OObject *TupleGetIter(OObject *self) {
     return (OObject *) iter.get();
 }
 
+/// Walk the tuple's buffer backwards. `state.index` is the position of the
+/// next element to read on the next step — starts past-the-end and decrements
+/// before each read.
+static CallResult TupleIterStepReverse(Iterator *self, OObject **out) {
+    const auto *tuple = (const Tuple *) self->source;
+
+    if (self->state.index == 0)
+        return CallResult::EXHAUST;
+
+    self->state.index -= 1;
+
+    *out = tuple->objects[self->state.index];
+
+    return CallResult::DONE;
+}
+
+/// Build a fresh reverse iterator over @p self. Starts at `length`
+/// (past-the-end) so the first step decrements to `length - 1`.
+static OObject *TupleGetReverseIter(OObject *self) {
+    const auto *tuple = (const Tuple *) self;
+
+    const auto iter = IteratorNew(O_GET_ISOLATE(self), self, TupleIterStepReverse);
+    if (!iter)
+        return nullptr;
+
+    iter->state.index = tuple->length;
+    iter->reverse = true;
+
+    return (OObject *) iter.get();
+}
+
 // *********************************************************************************************************************
 // TYPE OPS — CONVERSION
 // *********************************************************************************************************************
@@ -444,6 +475,7 @@ bool orbiter::datatype::TupleTypeSetup(TypeInfo *self) {
     ops.load_index = TupleLoadIndex;
     ops.load_slice = TupleLoadSlice;
     ops.get_iter = TupleGetIter;
+    ops.get_riter = TupleGetReverseIter;
     ops.to_bool = TupleToBool;
     ops.to_string = (ToStrFn) TupleToString;
     ops.hash = TupleHash;
