@@ -3,6 +3,7 @@
 // Licensed under the Apache License v2.0
 
 #include <orbit/orbiter/datatype/atom.h>
+#include <orbit/orbiter/datatype/bytes.h>
 #include <orbit/orbiter/datatype/chan.h>
 #include <orbit/orbiter/datatype/closure.h>
 #include <orbit/orbiter/datatype/code.h>
@@ -87,6 +88,7 @@ Isolate *Isolate::New() {
     INIT_TYPE(InstanceType::TYPE, TypeInit);
 
     INIT_TYPE(InstanceType::ATOM, AtomTypeInit);
+    INIT_TYPE(InstanceType::BYTES, BytesTypeInit);
     INIT_TYPE(InstanceType::CHANNEL, ChannelTypeInit);
     INIT_TYPE(InstanceType::CLASS, ClassTypeInit);
     INIT_TYPE(InstanceType::CLOSURE, ClosureTypeInit);
@@ -115,6 +117,7 @@ Isolate *Isolate::New() {
     SETUP_TYPE(InstanceType::TYPE, TypeSetup);
 
     SETUP_TYPE(InstanceType::ATOM, AtomTypeSetup);
+    SETUP_TYPE(InstanceType::BYTES, BytesTypeSetup);
     SETUP_TYPE(InstanceType::CHANNEL, ChannelTypeSetup);
     SETUP_TYPE(InstanceType::CLASS, ClassTypeSetup);
     SETUP_TYPE(InstanceType::CLOSURE, ClosureTypeSetup);
