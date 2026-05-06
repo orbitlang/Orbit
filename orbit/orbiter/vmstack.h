@@ -15,7 +15,7 @@ namespace orbiter {
     constexpr auto kStackGrowthScalingFactor = 100;
 
     struct VMStack {
-        Bytes stack;
+        unsigned char *stack;
 
         MSize capacity;
         MSize limit;

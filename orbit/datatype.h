@@ -8,7 +8,7 @@
 #include <cstdint>
 
 typedef unsigned char Byte;
-typedef unsigned char *Bytes;
+//typedef unsigned char *Bytes;
 
 typedef Byte U8;
 
