@@ -5,6 +5,7 @@
 #include <cctype>
 
 #include <orbit/orbiter/datatype/atom.h>
+#include <orbit/orbiter/datatype/bytes.h>
 #include <orbit/orbiter/datatype/decimal.h>
 #include <orbit/orbiter/datatype/number.h>
 #include <orbit/orbiter/datatype/stringbuilder.h>
@@ -1655,8 +1656,8 @@ ASTHandle<ASTNode *> Parser::ParseLiteral() {
             handle = AtomNew(this->isolate_, (const char *) this->tkcur_.buffer, this->tkcur_.length);
             break;
         case TokenType::BYTE_STRING:
-            // TODO: ByteString
-            assert(false);
+            handle = BytesNew(this->isolate_, this->tkcur_.buffer, this->tkcur_.length, true);
+            break;
         case TokenType::DECIMAL:
             handle = DecimalNew(this->isolate_, (const char *) this->tkcur_.buffer);
             break;
