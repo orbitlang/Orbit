@@ -27,7 +27,24 @@ namespace orbiter::datatype {
 
     using HBytes = Handle<Bytes>;
 
-    bool BytesAppendData(Bytes *bytes, const unsigned char *buffer, MSize length);
+    bool BytesAppend(Bytes *bytes, const Bytes *other) noexcept;
+
+    bool BytesAppendData(Bytes *bytes, const unsigned char *buffer, MSize length)noexcept;
+
+    /**
+     * @brief Substring containment: is @p needle a contiguous subrange of @p haystack?
+     *
+     * An empty needle is contained in every Bytes (returns true).
+     */
+    bool BytesContains(const Bytes *haystack, const Bytes *needle) noexcept;
+
+    /**
+     * @brief Byte-wise equality.
+     *
+     * Returns true if @p left and @p right have the same length and
+     * identical bytes. Identity (same pointer) is fast-pathed.
+     */
+    bool BytesEqual(const Bytes *left, const Bytes *right) noexcept;
 
     /**
      * @brief Set up additional features and properties for the specified type
@@ -43,7 +60,7 @@ namespace orbiter::datatype {
      *
      * @return true if setup was successful, false otherwise
      */
-    bool BytesTypeSetup(TypeInfo *self);
+    bool BytesTypeSetup(TypeInfo *self)noexcept;
 
     /**
      * @brief Allocate a Bytes containing a copy of @p buffer.
@@ -58,7 +75,7 @@ namespace orbiter::datatype {
      *
      * @return Handle to the new Bytes, or empty on allocation failure.
      */
-    HBytes BytesNew(Isolate *isolate, const unsigned char *buffer, MSize length, bool frozen);
+    HBytes BytesNew(Isolate *isolate, const unsigned char *buffer, MSize length, bool frozen)noexcept;
 
     /**
      * @brief Allocate an empty Bytes with at least @p capacity bytes of room.
@@ -74,7 +91,7 @@ namespace orbiter::datatype {
      *
      * @return Handle to the new Bytes, or empty on allocation failure.
      */
-    HBytes BytesNew(Isolate *isolate, MSize capacity, bool frozen);
+    HBytes BytesNew(Isolate *isolate, MSize capacity, bool frozen)noexcept;
 
     /**
      * @brief Allocate a zero-copy slice over an existing Bytes.
@@ -95,7 +112,7 @@ namespace orbiter::datatype {
      * @return Handle to the new Bytes, or empty on allocation failure or
      *         out-of-range bounds.
      */
-    HBytes BytesNew(const Bytes *src, MSize start, MSize length);
+    HBytes BytesNew(const Bytes *src, MSize start, MSize length)noexcept;
 
     /**
      * @brief Initialize and create the specified type
@@ -108,6 +125,27 @@ namespace orbiter::datatype {
      * @return Handle to the newly created TypeInfo for the type, or an empty handle if creation failed
      */
     HOType BytesTypeInit(Isolate *isolate);
+
+    /**
+     * @brief Lexicographic byte-wise comparison.
+     *
+     * Returns a negative number if @p left precedes @p right, zero if
+     * they are equal, a positive number otherwise. Mirrors `memcmp` and
+     * extends it with length tie-breaking when the prefixes match.
+     */
+    int BytesCompare(const Bytes *left, const Bytes *right) noexcept;
+
+    /**
+     * @brief Searches for the first occurrence of a sequence of bytes (needle) in another sequence of bytes (haystack),
+     * starting from the specified position.
+     *
+     * @param haystack The Bytes object that represents the larger sequence to search within.
+     * @param needle The Bytes object that represents the sequence to search for.
+     * @param start The starting position in the haystack from where the search will begin.
+     * @return The zero-based index of the first occurrence of the needle within the haystack, or -1 if not found,
+     *         or if the start position is invalid.
+     */
+    MSSize BytesFind(const Bytes *haystack, const Bytes *needle, MSize start) noexcept;
 }
 
 #endif // !ORBIT_ORBITER_DATATYPE_BYTES_H_
