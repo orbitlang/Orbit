@@ -559,8 +559,18 @@ MSize orbiter::datatype::Hash(const OObject *obj) {
         return O_FROM_SMI(obj);
 
     const auto &ops = O_GET_TYPE_OPS(obj);
-    if (ops.hash != nullptr)
-        return ops.hash(obj);
+    if (ops.hash != nullptr) {
+        const auto hash = ops.hash(obj);
+        if (hash == HASH_ERROR) {
+            ErrorSetWithObjType(O_GET_ISOLATE(obj),
+                    TypeError::Details[TypeError::Reason::ID],
+                    TypeError::Details[TypeError::Reason::UNHASHABLE],
+                    nullptr,
+                    obj);
+        }
+
+        return hash;
+    }
 
     // No custom hash: identity-hash is safe only when equality is also identity.
     // A type that overrides `equal` without providing a compatible `hash` would
