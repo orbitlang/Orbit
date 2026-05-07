@@ -11,15 +11,13 @@
 
 using namespace orbiter::datatype;
 
-bool support::SharedBufferEnlarge(Isolate *isolate, SharedBuffer *sb, const MSize new_capacity) {
+bool Enlarge(orbiter::Isolate *isolate, support::SharedBuffer *sb, const MSize new_capacity) {
     assert(!sb->frozen && "SharedBufferEnlarge cannot grow a frozen buffer; detach first");
 
     if (new_capacity <= sb->capacity)
         return true;
 
-    std::unique_lock _(sb->rwlock);
-
-    memory::IsolateAllocator allocator(isolate);
+    orbiter::memory::IsolateAllocator allocator(isolate);
 
     unsigned char *new_buffer;
     if (sb->buffer == nullptr)
@@ -34,6 +32,27 @@ bool support::SharedBufferEnlarge(Isolate *isolate, SharedBuffer *sb, const MSiz
     sb->capacity = new_capacity;
 
     return true;
+}
+
+bool support::SharedBufferAppend(Isolate *isolate, SharedBuffer *sb, const unsigned char *data, const MSize start,
+                                 const MSize length) {
+    if (sb->frozen || start >= sb->capacity)
+        return false;
+
+    std::unique_lock _(sb->rwlock);
+
+    if (!Enlarge(isolate, sb, start + length))
+        return false;
+
+    memory::MemoryCopy(sb->buffer + start, data, length);
+
+    return true;
+}
+
+bool support::SharedBufferEnlarge(Isolate *isolate, SharedBuffer *sb, const MSize new_capacity) {
+    std::unique_lock _(sb->rwlock);
+
+    return Enlarge(isolate, sb, new_capacity);
 }
 
 support::SharedBuffer *support::SharedBufferAcquire(SharedBuffer *sb) noexcept {

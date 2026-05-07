@@ -21,9 +21,38 @@ bool BytesDtor(const Bytes *self) {
     return true;
 }
 
+bool IsFrozen(const Bytes *bytes) noexcept {
+    if (bytes->shared->IsFrozen()) {
+        ErrorSet(O_GET_ISOLATE(bytes),
+                 ValueError::Details[ValueError::Reason::ID],
+                 nullptr,
+                 "cannot modify frozen Bytes object");
+
+        return false;
+    }
+
+    return true;
+}
+
 // *********************************************************************************************************************
 // PUBLIC API
 // *********************************************************************************************************************
+
+bool orbiter::datatype::BytesAppendData(Bytes *bytes, const unsigned char *buffer, const MSize length) {
+    if (!IsFrozen(bytes))
+        return false;
+
+    if (length == 0)
+        return true;
+
+    if (!support::SharedBufferAppend(O_GET_ISOLATE(bytes), bytes->shared, buffer, bytes->start + length, length))
+        return false;
+
+    bytes->length += length;
+    bytes->hash = 0;
+
+    return true;
+}
 
 bool orbiter::datatype::BytesTypeSetup(TypeInfo *self) {
     assert(self != nullptr);

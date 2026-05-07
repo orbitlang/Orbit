@@ -80,6 +80,29 @@ namespace orbiter::datatype::support {
     };
 
     /**
+     * @brief Appends data to a `SharedBuffer` starting at a specified offset.
+     *
+     * This function appends a sequence of bytes to the buffer represented by
+     * the `SharedBuffer` object. If the buffer is marked as frozen or the
+     * starting offset exceeds the buffer's capacity, the operation fails.
+     * Locking and synchronization are performed to ensure thread safety during
+     * the append operation.
+     *
+     * Preconditions:
+     * - The buffer must not be frozen.
+     * - The starting offset (`start`) must be less than the buffer's capacity.
+     *
+     * @param isolate Pointer to the Isolate context, used for memory operations.
+     * @param sb Pointer to the `SharedBuffer` to be appended to.
+     * @param data Pointer to the input data to append.
+     * @param start The starting offset within the buffer to begin the write.
+     * @param length The number of bytes to append from the input data.
+     * @return `true` if the append operation succeeds, `false` otherwise (e.g.,
+     *         buffer is frozen, or resizing fails).
+     */
+    bool SharedBufferAppend(Isolate *isolate, SharedBuffer *sb, const unsigned char *data, MSize start, MSize length);
+
+    /**
      * @brief Grow the buffer to at least @p new_capacity bytes.
      *
      * Resizes the underlying allocation in place.

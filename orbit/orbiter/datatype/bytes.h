@@ -5,8 +5,6 @@
 #ifndef ORBIT_ORBITER_DATATYPE_BYTES_H_
 #define ORBIT_ORBITER_DATATYPE_BYTES_H_
 
-#include <orbit/orbiter/isolate.h>
-
 #include <orbit/orbiter/datatype/oobject.h>
 
 #include <orbit/orbiter/datatype/support/shared_buffer.h>
@@ -28,6 +26,8 @@ namespace orbiter::datatype {
     };
 
     using HBytes = Handle<Bytes>;
+
+    bool BytesAppendData(Bytes *bytes, const unsigned char *buffer, MSize length);
 
     /**
      * @brief Set up additional features and properties for the specified type
