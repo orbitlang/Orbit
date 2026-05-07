@@ -5,10 +5,15 @@
 #include <cassert>
 #include <shared_mutex>
 
+#include <orbit/util/hash.h>
+
 #include <orbit/orbiter/datatype/support/byteops.h>
 
 #include <orbit/orbiter/datatype/error.h>
 #include <orbit/orbiter/datatype/errors.h>
+#include <orbit/orbiter/datatype/number.h>
+#include <orbit/orbiter/datatype/orstring.h>
+#include <orbit/orbiter/datatype/stringbuilder.h>
 
 #include <orbit/orbiter/datatype/bytes.h>
 
@@ -65,6 +70,264 @@ static void LockTwoShared(support::SharedBuffer *a, support::SharedBuffer *b,
 }
 
 // *********************************************************************************************************************
+// TYPE OPS — COMPARISON
+// *********************************************************************************************************************
+
+/// `==`: byte-wise equality. A non-Bytes operand is never equal.
+static bool BytesOpEqual(const OObject *left, const OObject *right) {
+    if (left == right)
+        return true;
+
+    if (!O_IS_OBJECT(right) || !O_IS_TYPE(right, InstanceType::BYTES))
+        return false;
+
+    return BytesEqual((const Bytes *) left, (const Bytes *) right);
+}
+
+/// `< / <= / > / >=`: lexicographic byte-wise comparison.
+static int BytesOpCompare(const OObject *left, const OObject *right) {
+    if (!O_IS_OBJECT(right) || !O_IS_TYPE(right, InstanceType::BYTES))
+        return 0;
+
+    return BytesCompare((const Bytes *) left, (const Bytes *) right);
+}
+
+/// `b in B`: substring containment. A non-Bytes needle raises TypeError.
+static bool BytesOpContains(const OObject *container, const OObject *value, bool &result) {
+    if (!O_IS_OBJECT(value) || !O_IS_TYPE(value, InstanceType::BYTES)) {
+        ErrorSetWithObjType(O_GET_ISOLATE(container),
+                            TypeError::Details[TypeError::Reason::ID],
+                            TypeError::Details[TypeError::Reason::MISMATCH],
+                            O_GET_TYPE(container)->name,
+                            value);
+
+        return false;
+    }
+
+    result = BytesContains((const Bytes *) container, (const Bytes *) value);
+
+    return true;
+}
+
+// *********************************************************************************************************************
+// TYPE OPS — ARITHMETIC
+// *********************************************************************************************************************
+
+/// `a + b`: concatenation. Allocates a fresh non-frozen Bytes of size
+/// `len(a) + len(b)` and copies both views into it. Both operands must be Bytes.
+static bool BytesOpAdd(const OObject *left, const OObject *right, OObject *&result) {
+    if (!O_IS_OBJECT(left) || !O_IS_TYPE(left, InstanceType::BYTES))
+        return false;
+
+    if (!O_IS_OBJECT(right) || !O_IS_TYPE(right, InstanceType::BYTES))
+        return false;
+
+    auto *l = (const Bytes *) left;
+    auto *r = (const Bytes *) right;
+
+    const auto out = BytesNew(O_GET_ISOLATE(left), l->length + r->length, false);
+    if (!out)
+        return false;
+
+    if (l->length > 0) {
+        std::shared_lock _(l->shared->rwlock);
+
+        if (!BytesAppendData(out.get(), l->shared->buffer + l->start, l->length))
+            return false;
+    }
+
+    if (r->length > 0) {
+        std::shared_lock _(r->shared->rwlock);
+
+        if (!BytesAppendData(out.get(), r->shared->buffer + r->start, r->length))
+            return false;
+    }
+
+    result = (OObject *) out.get();
+
+    return true;
+}
+
+// *********************************************************************************************************************
+// TYPE OPS — INDEX
+// *********************************************************************************************************************
+
+/// `bytes[i]`: returns the byte at position `i` as a tagged SMI in the
+/// range 0..255. Negative indices wrap from the end. Out of range raises IndexError;
+/// non-integer index raises TypeError.
+static bool BytesOpLoadIndex(const Bytes *self, const OObject *index, OObject *&result) {
+    auto *isolate = O_GET_ISOLATE(self);
+
+    IntegerUnderlying i;
+    if (!NumberExtract(index, i)) {
+        ErrorSetWithObjType(isolate,
+                            TypeError::Details[TypeError::Reason::ID],
+                            TypeError::Details[TypeError::Reason::MISMATCH],
+                            isolate->primitive[(int) InstanceType::NUMBER]->name,
+                            index);
+
+        return false;
+    }
+
+    if (i < 0)
+        i += (IntegerUnderlying) self->length;
+
+    if (i < 0 || (MSize) i >= self->length) {
+        ErrorSet(isolate,
+                 IndexError::Details[IndexError::Reason::ID],
+                 nullptr,
+                 IndexError::Details[IndexError::Reason::OUT_OF_RANGE],
+                 O_GET_TYPE(self)->name,
+                 (long long) i,
+                 (long long) self->length);
+
+        return false;
+    }
+
+    std::shared_lock _(self->shared->rwlock);
+
+    const auto byte = self->shared->buffer[self->start + (MSize) i];
+
+    result = (OObject *) O_TO_SMI((MSSize) byte);
+
+    return true;
+}
+
+/// `bytes[i] = v`: writes a byte (Int in range 0..255) at position `i`.
+/// Negative indices wrap from the end. Out-of-range index raises
+/// IndexError; non-integer index/value raises TypeError; out-of-range
+/// value or frozen buffer raises ValueError. Invalidates the cached hash.
+static bool BytesOpStoreIndex(Bytes *self, const OObject *index, const OObject *value) {
+    auto *isolate = O_GET_ISOLATE(self);
+
+    IntegerUnderlying i;
+    if (!NumberExtract(index, i)) {
+        ErrorSetWithObjType(isolate,
+                            TypeError::Details[TypeError::Reason::ID],
+                            TypeError::Details[TypeError::Reason::MISMATCH],
+                            isolate->primitive[(int) InstanceType::NUMBER]->name,
+                            index);
+
+        return false;
+    }
+
+    IntegerUnderlying v;
+    if (!NumberExtract(value, v)) {
+        ErrorSetWithObjType(isolate,
+                            TypeError::Details[TypeError::Reason::ID],
+                            TypeError::Details[TypeError::Reason::MISMATCH],
+                            isolate->primitive[(int) InstanceType::NUMBER]->name,
+                            value);
+
+        return false;
+    }
+
+    if (v < 0 || v > 255) {
+        ErrorSet(isolate,
+                 ValueError::Details[ValueError::Reason::ID],
+                 nullptr,
+                 "byte value must be in [0, 255]");
+
+        return false;
+    }
+
+    if (i < 0)
+        i += (IntegerUnderlying) self->length;
+
+    if (i < 0 || (MSize) i >= self->length) {
+        ErrorSet(isolate,
+                 IndexError::Details[IndexError::Reason::ID],
+                 nullptr,
+                 IndexError::Details[IndexError::Reason::OUT_OF_RANGE],
+                 O_GET_TYPE(self)->name,
+                 (long long) i,
+                 (long long) self->length);
+
+        return false;
+    }
+
+    if (!CheckMutable(self))
+        return false;
+
+    std::unique_lock _(self->shared->rwlock);
+
+    self->shared->buffer[self->start + (MSize) i] = (unsigned char) v;
+
+    return true;
+}
+
+// *********************************************************************************************************************
+// TYPE OPS — CONVERSION
+// *********************************************************************************************************************
+
+/// A non-empty Bytes is truthy.
+static bool BytesOpToBool(const OObject *self) {
+    return ((const Bytes *) self)->length != 0;
+}
+
+/// Render as `b"..."` with non-printable / non-ASCII bytes shown as `\xHH`.
+static OObject *BytesOpToString(orbiter::Isolate *isolate, const Bytes *self) {
+    StringBuilder builder(isolate);
+
+    constexpr unsigned char prefix[] = {'b', '"'};
+    constexpr unsigned char close_quote[] = {'"'};
+
+    // Hint: worst case is 4 bytes per source byte ("\xHH"), plus the
+    // two-byte prefix and one-byte closing quote.
+    if (!builder.Write(prefix, 2, self->length * 4 + 3))
+        return nullptr;
+
+    std::shared_lock _(self->shared->rwlock);
+
+    if (!builder.WriteEscaped(self->shared->buffer + self->start, self->length, 1))
+        return nullptr;
+
+    if (!builder.Write(close_quote, 1, 0))
+        return nullptr;
+
+    return (OObject *) ORStringNew(isolate, builder).get();
+}
+
+// *********************************************************************************************************************
+// TYPE OPS — RUNTIME
+// *********************************************************************************************************************
+
+/// FNV-1 hash over the view's bytes. Only frozen Bytes are hashable —
+/// using a mutable Bytes as a Dict/Set key is forbidden because any
+/// subsequent mutation would silently invalidate its position in the
+/// hashmap.
+///
+/// Returning `HASH_ERROR` for a non-frozen Bytes lets the dispatcher in
+/// `oops.cpp` synthesise the canonical `TypeError("unhashable type:
+/// 'Bytes'")` message — no need to set the panic explicitly here.
+///
+/// On a frozen Bytes the result is cached on `bytes->hash`; computed
+/// hashes that would otherwise equal 0 or HASH_ERROR are coerced to 1
+/// — same convention used by ORString — so 0 unambiguously means
+/// "uncached" and HASH_ERROR is reserved for the unhashable signal.
+/// The cache stays valid for the lifetime of the object: freezing is
+/// monotonic.
+static MSize BytesOpHash(const OObject *self) {
+    auto *bytes = (Bytes *) self;
+
+    if (!bytes->shared->IsFrozen())
+        return HASH_ERROR;
+
+    if (bytes->hash != 0)
+        return bytes->hash;
+
+    std::shared_lock _(bytes->shared->rwlock);
+
+    auto h = fnv1_hash(bytes->shared->buffer + bytes->start, bytes->length);
+    if (h == 0 || h == HASH_ERROR)
+        h = 1;
+
+    bytes->hash = h;
+
+    return h;
+}
+
+// *********************************************************************************************************************
 // PUBLIC API
 // *********************************************************************************************************************
 
@@ -86,7 +349,7 @@ bool orbiter::datatype::BytesAppend(Bytes *bytes, const Bytes *other) noexcept {
         if (!support::SharedBufferAppendLocked(isolate, bytes->shared, nullptr, bytes->start + bytes->length,
                                                other->length))
             return false;
-        
+
         other_buffer = other->shared->buffer;
     }
 
@@ -98,7 +361,6 @@ bool orbiter::datatype::BytesAppend(Bytes *bytes, const Bytes *other) noexcept {
         return false;
 
     bytes->length += other->length;
-    bytes->hash = 0;
 
     return true;
 }
@@ -114,7 +376,6 @@ bool orbiter::datatype::BytesAppendData(Bytes *bytes, const unsigned char *buffe
         return false;
 
     bytes->length += length;
-    bytes->hash = 0;
 
     return true;
 }
@@ -149,6 +410,27 @@ bool orbiter::datatype::BytesTypeSetup(TypeInfo *self) noexcept {
     assert(self != nullptr);
 
     self->dtor = (DtorFn) BytesDtor;
+
+    auto &ops = ((TypeInfoOps *) self)->ops;
+
+    // --- Comparison ---
+    ops.equal = BytesOpEqual;
+    ops.compare = BytesOpCompare;
+    ops.contains = BytesOpContains;
+
+    // --- Arithmetic ---
+    ops.add = BytesOpAdd;
+
+    // --- Index ---
+    ops.load_index = (BinaryFn) BytesOpLoadIndex;
+    ops.store_index = (TernaryFn) BytesOpStoreIndex;
+
+    // --- Conversion ---
+    ops.to_bool = BytesOpToBool;
+    ops.to_string = (ToStrFn) BytesOpToString;
+
+    // --- Runtime ---
+    ops.hash = BytesOpHash;
 
     return true;
 }
@@ -214,7 +496,7 @@ HBytes orbiter::datatype::BytesNew(const Bytes *src, const MSize start, const MS
 }
 
 HOType orbiter::datatype::BytesTypeInit(Isolate *isolate) {
-    return MakeType(isolate, "Bytes", InstanceType::BYTES, 0, 0, 0);
+    return MakeType(isolate, "Bytes", InstanceType::BYTES, sizeof(Bytes) - sizeof(OObject), 0, 0);
 }
 
 int orbiter::datatype::BytesCompare(const Bytes *left, const Bytes *right) noexcept {
