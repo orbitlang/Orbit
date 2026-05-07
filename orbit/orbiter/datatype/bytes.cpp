@@ -25,7 +25,7 @@ bool BytesDtor(const Bytes *self) {
     return true;
 }
 
-bool IsFrozen(const Bytes *bytes) noexcept {
+bool CheckMutable(const Bytes *bytes) noexcept {
     if (bytes->shared->IsFrozen()) {
         ErrorSet(O_GET_ISOLATE(bytes),
                  ValueError::Details[ValueError::Reason::ID],
@@ -72,16 +72,29 @@ bool orbiter::datatype::BytesAppend(Bytes *bytes, const Bytes *other) noexcept {
     std::shared_lock a_lock(bytes->shared->rwlock, std::defer_lock);
     std::shared_lock b_lock(other->shared->rwlock, std::defer_lock);
 
-    if (!IsFrozen(bytes))
+    auto *isolate = O_GET_ISOLATE(bytes);
+
+    if (!CheckMutable(bytes))
         return false;
 
     LockTwoShared(bytes->shared, other->shared, a_lock, b_lock);
 
+    const auto *other_buffer = other->shared->buffer;
+    if (bytes->shared == other->shared) {
+        // If destination and source are the same, make an initial call to reallocate the buffer (if necessary)
+        // and update the buffer pointer to avoid dangling pointer scenarios
+        if (!support::SharedBufferAppendLocked(isolate, bytes->shared, nullptr, bytes->start + bytes->length,
+                                               other->length))
+            return false;
+        
+        other_buffer = other->shared->buffer;
+    }
+
     if (other->length == 0)
         return true;
 
-    if (!support::SharedBufferAppend(O_GET_ISOLATE(bytes), bytes->shared, other->shared->buffer,
-                                     bytes->start + bytes->length, other->length))
+    if (!support::SharedBufferAppendLocked(O_GET_ISOLATE(bytes), bytes->shared, other_buffer + other->start,
+                                           bytes->start + bytes->length, other->length))
         return false;
 
     bytes->length += other->length;
@@ -91,13 +104,13 @@ bool orbiter::datatype::BytesAppend(Bytes *bytes, const Bytes *other) noexcept {
 }
 
 bool orbiter::datatype::BytesAppendData(Bytes *bytes, const unsigned char *buffer, const MSize length) noexcept {
-    if (!IsFrozen(bytes))
+    if (!CheckMutable(bytes))
         return false;
 
     if (length == 0)
         return true;
 
-    if (!support::SharedBufferAppend(O_GET_ISOLATE(bytes), bytes->shared, buffer, bytes->start + length, length))
+    if (!support::SharedBufferAppend(O_GET_ISOLATE(bytes), bytes->shared, buffer, bytes->start + bytes->length, length))
         return false;
 
     bytes->length += length;
@@ -178,7 +191,7 @@ HBytes orbiter::datatype::BytesNew(Isolate *isolate, const MSize capacity, const
 HBytes orbiter::datatype::BytesNew(const Bytes *src, const MSize start, const MSize length) noexcept {
     auto *isolate = O_GET_ISOLATE(src);
 
-    if (start >= src->length || length >= src->length - start) {
+    if (start > src->length || length > src->length - start) {
         ErrorSet(isolate,
                  ValueError::Details[ValueError::Reason::ID],
                  nullptr,
@@ -201,7 +214,7 @@ HBytes orbiter::datatype::BytesNew(const Bytes *src, const MSize start, const MS
 }
 
 HOType orbiter::datatype::BytesTypeInit(Isolate *isolate) {
-    return MakeType(isolate, nullptr, "Bytes", InstanceType::BYTES, 0, 0, 0);
+    return MakeType(isolate, "Bytes", InstanceType::BYTES, 0, 0, 0);
 }
 
 int orbiter::datatype::BytesCompare(const Bytes *left, const Bytes *right) noexcept {
@@ -248,5 +261,5 @@ MSSize orbiter::datatype::BytesFind(const Bytes *haystack, const Bytes *needle, 
     LockTwoShared(haystack->shared, needle->shared, h_lock, n_lock);
 
     return support::Search(haystack->shared->buffer + haystack->start + start, haystack->length - start,
-                           needle->shared->buffer, needle->length);
+                           needle->shared->buffer + needle->start, needle->length);
 }

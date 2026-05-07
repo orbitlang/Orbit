@@ -102,6 +102,8 @@ namespace orbiter::datatype::support {
      */
     bool SharedBufferAppend(Isolate *isolate, SharedBuffer *sb, const unsigned char *data, MSize start, MSize length);
 
+    bool SharedBufferAppendLocked(Isolate *isolate, SharedBuffer *sb, const unsigned char *data, MSize start, MSize length) noexcept;
+
     /**
      * @brief Grow the buffer to at least @p new_capacity bytes.
      *

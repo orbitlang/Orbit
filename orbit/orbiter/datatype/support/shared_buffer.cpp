@@ -41,10 +41,19 @@ bool support::SharedBufferAppend(Isolate *isolate, SharedBuffer *sb, const unsig
 
     std::unique_lock _(sb->rwlock);
 
+    return SharedBufferAppendLocked(isolate, sb, data, start, length);
+}
+
+bool support::SharedBufferAppendLocked(Isolate *isolate, SharedBuffer *sb, const unsigned char *data, const MSize start,
+                                       const MSize length) noexcept {
+    if (sb->frozen || start >= sb->capacity)
+        return false;
+
     if (!Enlarge(isolate, sb, start + length))
         return false;
 
-    memory::MemoryCopy(sb->buffer + start, data, length);
+    if (data != nullptr)
+        memory::MemoryCopy(sb->buffer + start, data, length);
 
     return true;
 }
