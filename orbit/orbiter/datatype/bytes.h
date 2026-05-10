@@ -29,7 +29,7 @@ namespace orbiter::datatype {
 
     bool BytesAppend(Bytes *bytes, const Bytes *other) noexcept;
 
-    bool BytesAppendData(Bytes *bytes, const unsigned char *buffer, MSize length)noexcept;
+    bool BytesAppendData(Bytes *bytes, const unsigned char *buffer, MSize length) noexcept;
 
     /**
      * @brief Substring containment: is @p needle a contiguous subrange of @p haystack?
@@ -60,7 +60,7 @@ namespace orbiter::datatype {
      *
      * @return true if setup was successful, false otherwise
      */
-    bool BytesTypeSetup(TypeInfo *self)noexcept;
+    bool BytesTypeSetup(TypeInfo *self) noexcept;
 
     /**
      * @brief Allocate a Bytes containing a copy of @p buffer.
@@ -75,7 +75,7 @@ namespace orbiter::datatype {
      *
      * @return Handle to the new Bytes, or empty on allocation failure.
      */
-    HBytes BytesNew(Isolate *isolate, const unsigned char *buffer, MSize length, bool frozen)noexcept;
+    HBytes BytesNew(Isolate *isolate, const unsigned char *buffer, MSize length, bool frozen) noexcept;
 
     /**
      * @brief Allocate an empty Bytes with at least @p capacity bytes of room.
@@ -91,7 +91,7 @@ namespace orbiter::datatype {
      *
      * @return Handle to the new Bytes, or empty on allocation failure.
      */
-    HBytes BytesNew(Isolate *isolate, MSize capacity, bool frozen)noexcept;
+    HBytes BytesNew(Isolate *isolate, MSize capacity, bool frozen) noexcept;
 
     /**
      * @brief Allocate a zero-copy slice over an existing Bytes.
@@ -112,7 +112,9 @@ namespace orbiter::datatype {
      * @return Handle to the new Bytes, or empty on allocation failure or
      *         out-of-range bounds.
      */
-    HBytes BytesNew(const Bytes *src, MSize start, MSize length)noexcept;
+    HBytes BytesNew(const Bytes *src, MSize start, MSize length) noexcept;
+
+    HBytes BytesNew(Isolate *isolate,  OObject *object) noexcept;
 
     /**
      * @brief Initialize and create the specified type
