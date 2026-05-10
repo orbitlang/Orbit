@@ -102,7 +102,8 @@ namespace orbiter::datatype::support {
      */
     bool SharedBufferAppend(Isolate *isolate, SharedBuffer *sb, const unsigned char *data, MSize start, MSize length);
 
-    bool SharedBufferAppendLocked(Isolate *isolate, SharedBuffer *sb, const unsigned char *data, MSize start, MSize length) noexcept;
+    bool SharedBufferAppendLocked(Isolate *isolate, SharedBuffer *sb, const unsigned char *data, MSize start,
+                                  MSize length) noexcept;
 
     /**
      * @brief Grow the buffer to at least @p new_capacity bytes.
@@ -174,6 +175,13 @@ namespace orbiter::datatype::support {
      * @param sb The buffer to freeze. Must be non-null.
      */
     void SharedBufferFreeze(SharedBuffer *sb);
+
+    /**
+     * @brief Mark the buffer as frozen.
+     */
+    inline void SharedBufferFreezeLocked(SharedBuffer *sb) noexcept {
+        sb->frozen = true;
+    }
 
     /**
      * @brief Decrement the reference counter; destroy when it reaches zero.
