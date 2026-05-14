@@ -2365,7 +2365,9 @@ Parser::NudMeth Parser::LookupNUD(TokenType token) noexcept {
         case TokenType::IDENTIFIER:
         case TokenType::SELF:
         case TokenType::SUPER:
-        case TokenType::KW_DEFAULT: // In expressions, 'default' can be used as a variable name
+        case TokenType::KW_DEFAULT: // In expressions, 'cleanup'/'default'/'init' can be used as a variable name
+        case TokenType::KW_INIT:
+        case TokenType::KW_CLEANUP:
             return &Parser::ParseIdentifier;
 
         // Grouping and composite types
