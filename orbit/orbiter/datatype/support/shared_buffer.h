@@ -126,7 +126,9 @@ namespace orbiter::datatype::support {
      * @return true on success, false on allocation failure (in which case
      *         the buffer is left untouched).
      */
-    bool SharedBufferEnlarge(Isolate *isolate, SharedBuffer *sb, MSize new_capacity);
+    bool SharedBufferEnlarge(Isolate *isolate, SharedBuffer *sb, MSize new_capacity) noexcept;
+
+    bool SharedBufferEnlargeLocked(Isolate *isolate, SharedBuffer *sb, MSize new_capacity) noexcept;
 
     /**
      * @brief Increments the reference count of the given SharedBuffer.

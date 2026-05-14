@@ -11,29 +11,6 @@
 
 using namespace orbiter::datatype;
 
-bool Enlarge(orbiter::Isolate *isolate, support::SharedBuffer *sb, const MSize new_capacity) {
-    assert(!sb->frozen && "SharedBufferEnlarge cannot grow a frozen buffer; detach first");
-
-    if (new_capacity <= sb->capacity)
-        return true;
-
-    orbiter::memory::IsolateAllocator allocator(isolate);
-
-    unsigned char *new_buffer;
-    if (sb->buffer == nullptr)
-        new_buffer = allocator.alloc<unsigned char>(new_capacity);
-    else
-        new_buffer = allocator.realloc(sb->buffer, new_capacity);
-
-    if (new_buffer == nullptr)
-        return false;
-
-    sb->buffer = new_buffer;
-    sb->capacity = new_capacity;
-
-    return true;
-}
-
 bool support::SharedBufferAppend(Isolate *isolate, SharedBuffer *sb, const unsigned char *data, const MSize start,
                                  const MSize length) {
     if (sb->frozen || start >= sb->capacity)
@@ -49,7 +26,7 @@ bool support::SharedBufferAppendLocked(Isolate *isolate, SharedBuffer *sb, const
     if (sb->frozen || start >= sb->capacity)
         return false;
 
-    if (!Enlarge(isolate, sb, start + length))
+    if (!SharedBufferEnlargeLocked(isolate, sb, start + length))
         return false;
 
     if (data != nullptr)
@@ -58,10 +35,33 @@ bool support::SharedBufferAppendLocked(Isolate *isolate, SharedBuffer *sb, const
     return true;
 }
 
-bool support::SharedBufferEnlarge(Isolate *isolate, SharedBuffer *sb, const MSize new_capacity) {
+bool support::SharedBufferEnlarge(Isolate *isolate, SharedBuffer *sb, const MSize new_capacity) noexcept {
     std::unique_lock _(sb->rwlock);
 
-    return Enlarge(isolate, sb, new_capacity);
+    return SharedBufferEnlargeLocked(isolate, sb, new_capacity);
+}
+
+bool support::SharedBufferEnlargeLocked(Isolate *isolate, SharedBuffer *sb, const MSize new_capacity) noexcept {
+    assert(!sb->frozen && "SharedBufferEnlarge cannot grow a frozen buffer; detach first");
+
+    if (new_capacity <= sb->capacity)
+        return true;
+
+    memory::IsolateAllocator allocator(isolate);
+
+    unsigned char *new_buffer;
+    if (sb->buffer == nullptr)
+        new_buffer = allocator.alloc<unsigned char>(new_capacity);
+    else
+        new_buffer = allocator.realloc(sb->buffer, new_capacity);
+
+    if (new_buffer == nullptr)
+        return false;
+
+    sb->buffer = new_buffer;
+    sb->capacity = new_capacity;
+
+    return true;
 }
 
 support::SharedBuffer *support::SharedBufferAcquire(SharedBuffer *sb) noexcept {
