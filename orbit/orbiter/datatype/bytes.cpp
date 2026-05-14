@@ -93,54 +93,6 @@ bool CheckMutable(const Bytes *bytes) noexcept {
     return true;
 }
 
-/// Internal: take shared locks on both `a->rwlock` and `b->rwlock` in a
-/// deadlock-free order. When the two SharedBuffers are the same, only
-/// one lock is acquired. Returns the two unique_lock-style guards via
-/// the std::shared_lock RAII; the caller binds the result.
-///
-/// (Helper exists because every read-side comparison/search needs the
-/// exact same prelude, and pointer-ordered locking is the standard
-/// idiom to avoid deadlock with another pair locking in reverse order.)
-static void LockTwoShared(support::SharedBuffer *a, support::SharedBuffer *b,
-                          std::shared_lock<orbiter::sync::AsyncRWLock> &out_a,
-                          std::shared_lock<orbiter::sync::AsyncRWLock> &out_b) {
-    if (a == b) {
-        out_a = std::shared_lock(a->rwlock);
-
-        return;
-    }
-
-    if (a < b) {
-        out_a = std::shared_lock(a->rwlock);
-        out_b = std::shared_lock(b->rwlock);
-
-        return;
-    }
-
-    out_b = std::shared_lock(b->rwlock);
-    out_a = std::shared_lock(a->rwlock);
-}
-
-static void LockTwoSelfUnique(support::SharedBuffer *a, support::SharedBuffer *b,
-                              std::unique_lock<orbiter::sync::AsyncRWLock> &out_a,
-                              std::shared_lock<orbiter::sync::AsyncRWLock> &out_b) {
-    if (a == b) {
-        out_a = std::unique_lock(a->rwlock);
-
-        return;
-    }
-
-    if (a < b) {
-        out_a = std::unique_lock(a->rwlock);
-        out_b = std::shared_lock(b->rwlock);
-
-        return;
-    }
-
-    out_b = std::shared_lock(b->rwlock);
-    out_a = std::unique_lock(a->rwlock);
-}
-
 bool BytesReplace(Bytes *self, const Bytes *pattern, const Bytes *sub, const MSSize count) noexcept {
     std::unique_lock self_lock(self->shared->rwlock);
     std::shared_lock sub_lock(sub->shared->rwlock);
@@ -213,6 +165,54 @@ bool BytesReplace(Bytes *self, const Bytes *pattern, const Bytes *sub, const MSS
     }
 
     return true;
+}
+
+/// Internal: take shared locks on both `a->rwlock` and `b->rwlock` in a
+/// deadlock-free order. When the two SharedBuffers are the same, only
+/// one lock is acquired. Returns the two unique_lock-style guards via
+/// the std::shared_lock RAII; the caller binds the result.
+///
+/// (Helper exists because every read-side comparison/search needs the
+/// exact same prelude, and pointer-ordered locking is the standard
+/// idiom to avoid deadlock with another pair locking in reverse order.)
+static void LockTwoShared(support::SharedBuffer *a, support::SharedBuffer *b,
+                          std::shared_lock<orbiter::sync::AsyncRWLock> &out_a,
+                          std::shared_lock<orbiter::sync::AsyncRWLock> &out_b) {
+    if (a == b) {
+        out_a = std::shared_lock(a->rwlock);
+
+        return;
+    }
+
+    if (a < b) {
+        out_a = std::shared_lock(a->rwlock);
+        out_b = std::shared_lock(b->rwlock);
+
+        return;
+    }
+
+    out_b = std::shared_lock(b->rwlock);
+    out_a = std::shared_lock(a->rwlock);
+}
+
+static void LockTwoSelfUnique(support::SharedBuffer *a, support::SharedBuffer *b,
+                              std::unique_lock<orbiter::sync::AsyncRWLock> &out_a,
+                              std::shared_lock<orbiter::sync::AsyncRWLock> &out_b) {
+    if (a == b) {
+        out_a = std::unique_lock(a->rwlock);
+
+        return;
+    }
+
+    if (a < b) {
+        out_a = std::unique_lock(a->rwlock);
+        out_b = std::shared_lock(b->rwlock);
+
+        return;
+    }
+
+    out_b = std::shared_lock(b->rwlock);
+    out_a = std::unique_lock(a->rwlock);
 }
 
 // *********************************************************************************************************************
@@ -542,6 +542,8 @@ RUNTIME_METHOD(bytes_append, append,
 
 @param value  The byte to append. Must be an Int in `[0, 255]`.
 
+@return Self.
+
 @panic TypeError   When `value` is not an Int.
 @panic ValueError  When `value` is out of `[0, 255]` or the Bytes is frozen.
 
@@ -566,7 +568,7 @@ RUNTIME_METHOD(bytes_append, append,
     if (!BytesAppendData(self, &byte, 1))
         return {};
 
-    return HOObject(kOddBallNIL);
+    return HOObject(argv[0]);
 }
 
 RUNTIME_METHOD(bytes_clear, clear,
@@ -576,6 +578,8 @@ RUNTIME_METHOD(bytes_clear, clear,
 The underlying SharedBuffer's capacity is retained for reuse — only the
 view's length is set back to 0. Co-owners of the same SharedBuffer are
 not affected.
+
+@return Self.
 
 @panic ValueError  When the Bytes is frozen.
 
@@ -598,7 +602,7 @@ not affected.
 
     self->length = 0;
 
-    return HOObject(kOddBallNIL);
+    return HOObject(argv[0]);
 }
 
 RUNTIME_METHOD(bytes_compact, compact,
@@ -629,6 +633,8 @@ into available append space at the end.
 Use it when you've narrowed a long-lived buffer with `lstrip` / `strip`
 and want subsequent `append` / `extend` calls to reuse the freed
 prefix space instead of growing the buffer further.
+
+@return Self.
 
 @panic ValueError  When the Bytes is frozen, or when its SharedBuffer
                    has co-owners (slices, split pieces, …).
@@ -664,7 +670,7 @@ prefix space instead of growing the buffer further.
 
     // Already compacted: nothing to do.
     if (self->start == 0)
-        return HOObject(kOddBallNIL);
+        return HOObject(argv[0]);
 
     // memmove handles the overlapping case (start < length) safely.
     if (self->length > 0)
@@ -672,7 +678,7 @@ prefix space instead of growing the buffer further.
 
     self->start = 0;
 
-    return HOObject(kOddBallNIL);
+    return HOObject(argv[0]);
 }
 
 RUNTIME_METHOD(bytes_contains, contains,
@@ -790,6 +796,8 @@ RUNTIME_METHOD(bytes_extend, extend,
                R"DOC(
 @brief Append every byte of `other` to self in place.
 
+@return Self.
+
 @param other  The byte sequence to append.
 
 @panic TypeError   When `other` is not a Bytes.
@@ -810,7 +818,7 @@ RUNTIME_METHOD(bytes_extend, extend,
     if (!BytesAppend((Bytes *) argv[0], (const Bytes *) argv[1]))
         return {};
 
-    return HOObject(kOddBallNIL);
+    return HOObject(argv[0]);
 }
 
 RUNTIME_METHOD(bytes_find, find,
@@ -1021,6 +1029,8 @@ Bytes outside `[0x41, 0x5A]` ('A'..'Z') are left untouched — non-ASCII
 content is preserved bit-for-bit. To obtain a lowercased copy without
 modifying self, call `copy()` first.
 
+@return Self.
+
 @panic ValueError  When the Bytes is frozen.
 
 @see upper, copy
@@ -1049,7 +1059,7 @@ modifying self, call `copy()` first.
             buf[i] = (unsigned char) (b + 0x20);
     }
 
-    return HOObject(kOddBallNIL);
+    return HOObject(argv[0]);
 }
 
 RUNTIME_METHOD(bytes_lstrip, lstrip,
@@ -1064,6 +1074,8 @@ When `chars` is omitted, the default whitespace set is used:
 `{0x20, 0x09, 0x0A, 0x0D, 0x0B, 0x0C}` (space, tab, LF, CR, VT, FF).
 
 @param chars?  Set of bytes to strip. Defaults to ASCII whitespace.
+
+@return Self.
 
 @panic TypeError   When `chars` is not a Bytes.
 @panic ValueError  When the Bytes is frozen.
@@ -1103,7 +1115,7 @@ When `chars` is omitted, the default whitespace set is used:
     self->start += i;
     self->length -= i;
 
-    return HOObject(kOddBallNIL);
+    return HOObject(argv[0]);
 }
 
 RUNTIME_METHOD(bytes_replace, replace,
@@ -1241,6 +1253,8 @@ When `chars` is omitted, the default whitespace set is used (see `lstrip`).
 
 @param chars?  Set of bytes to strip. Defaults to ASCII whitespace.
 
+@return Self.
+
 @panic TypeError   When `chars` is not a Bytes.
 @panic ValueError  When the Bytes is frozen.
 
@@ -1278,7 +1292,7 @@ When `chars` is omitted, the default whitespace set is used (see `lstrip`).
 
     self->length = end;
 
-    return HOObject(kOddBallNIL);
+    return HOObject(argv[0]);
 }
 
 RUNTIME_METHOD(bytes_split, split,
@@ -1400,6 +1414,8 @@ When `chars` is omitted, the default whitespace set is used (see `lstrip`).
 
 @param chars?  Set of bytes to strip. Defaults to ASCII whitespace.
 
+@return Self.
+
 @panic TypeError   When `chars` is not a Bytes.
 @panic ValueError  When the Bytes is frozen.
 
@@ -1442,7 +1458,7 @@ When `chars` is omitted, the default whitespace set is used (see `lstrip`).
     self->start += i;
     self->length = end - i;
 
-    return HOObject(kOddBallNIL);
+    return HOObject(argv[0]);
 }
 
 RUNTIME_METHOD(bytes_upper, upper,
@@ -1452,6 +1468,8 @@ RUNTIME_METHOD(bytes_upper, upper,
 Bytes outside `[0x61, 0x7A]` ('a'..'z') are left untouched — non-ASCII
 content is preserved bit-for-bit. To obtain an uppercased copy without
 modifying self, call `copy()` first.
+
+@return Self.
 
 @panic ValueError  When the Bytes is frozen.
 
@@ -1480,7 +1498,7 @@ modifying self, call `copy()` first.
             buf[i] = (unsigned char) (b - 0x20);
     }
 
-    return HOObject(kOddBallNIL);
+    return HOObject(argv[0]);
 }
 
 constexpr FunctionDef bytes_methods[] = {
