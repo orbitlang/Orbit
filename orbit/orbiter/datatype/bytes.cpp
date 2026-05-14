@@ -141,6 +141,80 @@ static void LockTwoSelfUnique(support::SharedBuffer *a, support::SharedBuffer *b
     out_a = std::unique_lock(a->rwlock);
 }
 
+bool BytesReplace(Bytes *self, const Bytes *pattern, const Bytes *sub, const MSSize count) noexcept {
+    std::unique_lock self_lock(self->shared->rwlock);
+    std::shared_lock sub_lock(sub->shared->rwlock);
+    std::shared_lock p_lock(pattern->shared->rwlock);
+
+    if (!CheckMutable(self))
+        return false;
+
+    auto self_buf = self->shared->buffer + self->start;
+    auto self_end = self_buf + self->length;
+
+    const auto sub_buf = sub->shared->buffer + sub->start;
+    const auto p_buf = pattern->shared->buffer + pattern->start;
+
+    const auto sub_length = sub->length;
+    const auto pattern_length = pattern->length;
+
+    const auto r_count = support::Count(self_buf, self->length, p_buf, pattern_length, count);
+    if (r_count == 0)
+        return true;
+
+    const auto delta = (int) (sub_length * r_count) - (int) (pattern_length * r_count);
+
+    auto found = support::Search(self_buf, self->length, p_buf, pattern_length);
+    if (delta <= 0) {
+        auto last_end = (unsigned char *) nullptr;
+
+        while (found >= 0) {
+            if (last_end != nullptr) {
+                orbiter::memory::MemoryCopy(last_end, self_buf, self_end - self_buf);
+
+                found -= (MSSize) pattern_length - (MSSize) sub_length;
+            }
+
+            orbiter::memory::MemoryCopy(self_buf + found, sub_buf, sub_length);
+
+            last_end = self_buf + found + sub_length;
+
+            self_buf += found + pattern_length;
+
+            found = support::Search(self_buf, self_end - self_buf, p_buf, pattern_length);
+        }
+
+        if (last_end != nullptr)
+            orbiter::memory::MemoryCopy(last_end, self_buf, self_end - self_buf);
+
+        self->length += (MSize) delta;
+
+        return true;
+    }
+
+    // Grow buffer (if necessary)
+    if (!support::SharedBufferEnlargeLocked(O_GET_ISOLATE(self), self->shared, self->start + self->length + delta))
+        return false;
+
+    self->length += (MSize) delta;
+
+    self_buf = self->shared->buffer + self->start;
+    self_end = self_buf + self->length;
+
+    while (found >= 0) {
+        std::memmove(self_buf + found + sub_length, self_buf + found + pattern_length,
+                     self_end - (self_buf + found + pattern_length));
+
+        orbiter::memory::MemoryCopy(self_buf + found, sub_buf, sub_length);
+
+        self_buf += found + sub_length;
+
+        found = support::Search(self_buf, self_end - self_buf, p_buf, pattern_length);
+    }
+
+    return true;
+}
+
 // *********************************************************************************************************************
 // TYPE OPS — COMPARISON
 // *********************************************************************************************************************
@@ -1034,26 +1108,30 @@ When `chars` is omitted, the default whitespace set is used:
 
 RUNTIME_METHOD(bytes_replace, replace,
                R"DOC(
-@brief Return a new Bytes with occurrences of `old` replaced by `new`.
+@brief Replace occurrences of `old` with `new` in place.
 
-Replaces non-overlapping matches scanned left-to-right. When `max` is
-provided, only the first `max` matches are replaced; -1 (or omitted)
-replaces every occurrence.
+Replaces up to `max` non-overlapping matches scanned left-to-right.
+When `max` is omitted (or -1), every occurrence is replaced. The view
+shrinks or grows accordingly: shrink leaves a slack tail at the end of
+the underlying buffer (use `compact` to reclaim it), expand extends
+the view to the right and may overwrite bytes observed by co-owners
+sitting immediately after self — same semantics as `extend`.
 
-@param old   Byte sequence to search for.
+@param old   Byte sequence to search for. Must not be empty.
 @param new   Byte sequence to insert in place of each match.
 @param max?  Maximum number of replacements. Defaults to "all".
 
-@return A fresh non-frozen Bytes with the substitutions applied.
+@return Self.
 
 @panic TypeError   When `old`, `new` or `max` have the wrong type.
 @panic ValueError  When `old` is empty.
 
-@see find, count
+@see find, count, compact
 
 @example
-    b"ababab".replace(b"a", b"X")       // b"XbXbXb"
-    b"ababab".replace(b"a", b"X", 2)    // b"XbXbab"
+    let b = Bytes(b"ababab")
+    b.replace(b"a", b"X")
+    b               // b"XbXbXb"
 )DOC", 3, "max", false, false) {
     PCHECK_ENTRIES(params,
                    PCHECK_DEF("self", false, InstanceType::BYTES),
@@ -1062,10 +1140,19 @@ replaces every occurrence.
                    PCHECK_DEF("max", true, InstanceType::NUMBER));
     PCHECK_CHECK(params);
 
+    MSSize max = -1;
+    if (!O_IS_SENTINEL(argv[3])) {
+        IntegerUnderlying raw;
+        if (!NumberExtract(argv[3], raw))
+            return {};
 
-    assert(false);
+        max = (MSSize) raw;
+    }
 
-    return{};
+    if (!BytesReplace((Bytes *) argv[0], (const Bytes *) argv[1], (const Bytes *) argv[2], max))
+        return {};
+
+    return HOObject(argv[0]);
 }
 
 RUNTIME_METHOD(bytes_rfind, rfind,
