@@ -8,6 +8,7 @@
 #include <orbit/util/hash.h>
 
 #include <orbit/orbiter/datatype/support/byteops.h>
+#include <orbit/orbiter/datatype/support/slice.h>
 
 #include <orbit/orbiter/datatype/error.h>
 #include <orbit/orbiter/datatype/errors.h>
@@ -382,6 +383,76 @@ static bool BytesOpStoreIndex(Bytes *self, const OObject *index, const OObject *
     std::unique_lock _(self->shared->rwlock);
 
     self->shared->buffer[self->start + (MSize) i] = byte;
+
+    return true;
+}
+
+// *********************************************************************************************************************
+// TYPE OPS — SLICE
+// *********************************************************************************************************************
+
+/// `bytes[start:stop:step]`: returns a Bytes covering the selected range.
+///
+/// Two paths:
+///
+///   - **step == 1** (the common case): allocates only a fresh Bytes
+///     header that points back into self's SharedBuffer with adjusted
+///     `(start, length)`. Zero-copy view, contents stay in place, every
+///     mutation on either side is visible to the other. The frozen
+///     flag is inherited because it lives on the SharedBuffer.
+///
+///   - **step != 1** (including negative steps and strides > 1): the
+///     selected bytes are not contiguous in the source, so a view is
+///     impossible. We allocate a private SharedBuffer of exactly the
+///     selected count and copy byte-by-byte. The result is mutable and
+///     independent from 'self'.
+static bool BytesOpLoadSlice(const Bytes *self, const OObject *start, const OObject *stop, const OObject *step,
+                             OObject *&result) {
+    auto *isolate = O_GET_ISOLATE(self);
+    
+    support::SliceArgs args{};
+    if (!support::ResolveSliceBounds(isolate, start, stop, step, args))
+        return false;
+
+    // Although BytesNew doesn't require the lock,
+    // it is necessary in this case to ensure that no concurrent events modify self->length (e.g., replace)
+    std::shared_lock _(self->shared->rwlock);
+    
+    const auto s = support::NormalizeSlice((MSSize) self->length, args);
+
+    // Fast path: contiguous, zero-copy view.
+    if (s.step == 1) {
+        const MSize view_start = s.count == 0 ? 0 : (MSize) s.start;
+
+        const auto out = BytesNew(self, view_start, s.count);
+        if (!out)
+            return false;
+
+        result = (OObject *) out.get();
+
+        return true;
+    }
+
+    // Slow path: stride != 1. Materialise the selected bytes into a new
+    // mutable buffer; the result is decoupled from self.
+    const auto out = BytesNew(isolate, s.count, false);
+    if (!out)
+        return false;
+
+    if (s.count > 0) {
+        const auto *src = self->shared->buffer + self->start;
+        auto *dst = out->shared->buffer;
+
+        auto idx = s.start;
+        for (MSize n = 0; n < s.count; n++) {
+            dst[n] = src[idx];
+            idx += s.step;
+        }
+    }
+
+    out->length = s.count;
+
+    result = (OObject *) out.get();
 
     return true;
 }
@@ -1636,6 +1707,9 @@ bool orbiter::datatype::BytesTypeSetup(TypeInfo *self) noexcept {
     // --- Index ---
     ops.load_index = (BinaryFn) BytesOpLoadIndex;
     ops.store_index = (TernaryFn) BytesOpStoreIndex;
+
+    // --- Slice ---
+    ops.load_slice = (SliceLoadFn)BytesOpLoadSlice;
 
     // --- Conversion ---
     ops.to_bool = BytesOpToBool;
