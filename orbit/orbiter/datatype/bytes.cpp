@@ -409,7 +409,7 @@ static bool BytesOpStoreIndex(Bytes *self, const OObject *index, const OObject *
 static bool BytesOpLoadSlice(const Bytes *self, const OObject *start, const OObject *stop, const OObject *step,
                              OObject *&result) {
     auto *isolate = O_GET_ISOLATE(self);
-    
+
     support::SliceArgs args{};
     if (!support::ResolveSliceBounds(isolate, start, stop, step, args))
         return false;
@@ -417,7 +417,7 @@ static bool BytesOpLoadSlice(const Bytes *self, const OObject *start, const OObj
     // Although BytesNew doesn't require the lock,
     // it is necessary in this case to ensure that no concurrent events modify self->length (e.g., replace)
     std::shared_lock _(self->shared->rwlock);
-    
+
     const auto s = support::NormalizeSlice((MSSize) self->length, args);
 
     // Fast path: contiguous, zero-copy view.
@@ -674,6 +674,43 @@ not affected.
     self->length = 0;
 
     return HOObject(argv[0]);
+}
+
+RUNTIME_METHOD(bytes_clone, clone,
+               R"DOC(
+@brief Return an independent mutable copy of self.
+
+Allocates a fresh, private SharedBuffer of exactly `length` bytes and
+copies self's view into it. The result shares nothing with self:
+mutations on either side are no longer visible to the other, and the
+copy is never frozen — even when self is.
+
+Use it whenever you need to detach from a shared view before mutating
+without disturbing co-owners, or to obtain a writable Bytes from a
+frozen one.
+
+@return A fresh non-frozen Bytes with the same byte sequence as self.
+
+@see freeze, compact
+
+@example
+    let a = Bytes(b"hello").freeze()
+    let b = a.clone()
+    b.upper()           // OK — b is mutable
+    a                   // still b"hello" (frozen)
+)DOC", 1, nullptr, false, false) {
+    PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::BYTES));
+    PCHECK_CHECK(params);
+
+    const auto *self = (const Bytes *) argv[0];
+
+    std::shared_lock _(self->shared->rwlock);
+
+    const auto out = BytesNew(O_GET_ISOLATE(self), self->shared->buffer + self->start, self->length, false);
+    if (!out)
+        return {};
+
+    return HOObject((OObject *) out.get());
 }
 
 RUNTIME_METHOD(bytes_compact, compact,
@@ -1577,6 +1614,7 @@ constexpr FunctionDef bytes_methods[] = {
 
     bytes_append,
     bytes_clear,
+    bytes_clone,
     bytes_compact,
     bytes_contains,
     bytes_count,
@@ -1709,7 +1747,7 @@ bool orbiter::datatype::BytesTypeSetup(TypeInfo *self) noexcept {
     ops.store_index = (TernaryFn) BytesOpStoreIndex;
 
     // --- Slice ---
-    ops.load_slice = (SliceLoadFn)BytesOpLoadSlice;
+    ops.load_slice = (SliceLoadFn) BytesOpLoadSlice;
 
     // --- Conversion ---
     ops.to_bool = BytesOpToBool;
@@ -1858,7 +1896,7 @@ HBytes orbiter::datatype::BytesNew(Isolate *isolate, OObject *object) noexcept {
 }
 
 HOType orbiter::datatype::BytesTypeInit(Isolate *isolate) {
-    return MakeType(isolate, "Bytes", InstanceType::BYTES, sizeof(Bytes) - sizeof(OObject), 24, 0);
+    return MakeType(isolate, "Bytes", InstanceType::BYTES, sizeof(Bytes) - sizeof(OObject), 25, 0);
 }
 
 int orbiter::datatype::BytesCompare(const Bytes *left, const Bytes *right) noexcept {
