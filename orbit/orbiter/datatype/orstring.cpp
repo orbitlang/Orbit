@@ -1508,6 +1508,15 @@ HORString orbiter::datatype::ORStringNew(Isolate *isolate, StringBuilder &builde
     if (buf == nullptr)
         return {};
 
+    if (len == 0) {
+        const auto *gst = (GST *) isolate->primitive[(int) InstanceType::STRING]->aux.data;
+
+        if (gst->empty != nullptr)
+            return HORString(gst->empty);
+
+        return ORStringIntern(isolate, (const unsigned char *) "", 0);
+    }
+
     const auto s = ORStringNew(isolate, buf, len, cp_len, kind);
     if (!s)
         return {};
