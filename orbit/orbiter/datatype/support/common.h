@@ -35,8 +35,7 @@ namespace orbiter::datatype::support {
      * reallocates. When @p maxsplit is negative the split is unbounded; when 0, the whole
      * buffer is returned as a single chunk.
      *
-     * @tparam T  Chunk type; combined with @p chunk_new this determines the element type
-     *            of the returned list.
+     * @tparam ChunkNew  Callable `(Isolate*, const unsigned char*, MSize) -> Handle<T>`.
      *
      * @param isolate    Owning isolate; passed through to @p chunk_new and to ListNew.
      * @param buffer     Source buffer.
@@ -115,7 +114,7 @@ namespace orbiter::datatype::support {
      * The list capacity is sized exactly by a pre-count pass, so the append loop never
      * reallocates.
      *
-     * @tparam T  Chunk type produced by @p chunk_new.
+     * @tparam ChunkNew  Callable `(Isolate*, const unsigned char*, MSize) -> Handle<T>`.
      *
      * @param isolate    Owning isolate; passed through to @p chunk_new and to ListNew.
      * @param buffer     Source buffer.
@@ -126,8 +125,8 @@ namespace orbiter::datatype::support {
      *
      * @return A new HList, empty on allocation/factory failure.
      */
-    template<typename T>
-    HList SplitLines(Isolate *isolate, const unsigned char *buffer, const MSize blen, const ChunkFn<T> chunk_new,
+    template<typename ChunkNew>
+    HList SplitLines(Isolate *isolate, const unsigned char *buffer, const MSize blen, const ChunkNew chunk_new,
                      const bool keepends, const bool universal) {
         const MSize occurrences = CountNewLines(buffer, blen, universal);
 
@@ -194,53 +193,77 @@ namespace orbiter::datatype::support {
      *   - Any run of whitespace (`[ \t\n\v\f\r]`) separates words.
      *   - Empty or all-whitespace input returns an empty list.
      *
-     * @tparam T  Chunk type produced by @p chunk_new.
+     * @p maxsplit caps the number of splits: at most @p maxsplit splits 
+     * are performed, so the list holds at most @p maxsplit + 1 elements. 
+     * Once the budget is spent, the entire remaining slice 
+     * (with its interior and trailing whitespace preserved) 
+     * becomes the final chunk. Negative = unbounded; 0
+     * yields a single chunk that is the whole input with only its
+     * leading whitespace stripped.
+     *
+     * @tparam ChunkNew  Callable `(Isolate*, const unsigned char*, MSize) -> Handle<T>`.
      *
      * @param isolate    Owning isolate; passed through to @p chunk_new and to ListNew.
      * @param buffer     Source buffer.
      * @param blen       Length of @p buffer in bytes.
-     * @param chunk_new  Factory invoked for every word.
+     * @param chunk_new  Factory invoked for every word (and the final remainder).
+     * @param maxsplit   Maximum number of splits. Negative = unbounded.
      *
      * @return A new HList, empty on allocation/factory failure.
      */
-    template<typename T>
-    HList SplitWhitespace(Isolate *isolate, const unsigned char *buffer, const MSize blen, const ChunkFn<T> chunk_new) {
+    template<typename ChunkNew>
+    HList SplitWhitespace(Isolate *isolate, const unsigned char *buffer, const MSize blen, ChunkNew chunk_new,
+                          const MSSize maxsplit = -1) {
         // Pre-count words in a single pass so the list is sized exactly.
         MSize word_count = 0;
-        {
-            bool in_word = false;
 
-            for (MSize i = 0; i < blen; i++) {
-                const auto c = (unsigned char) buffer[i];
+        bool in_word = false;
+        for (MSize i = 0; i < blen; i++) {
+            if (IsAsciiWhitespace(buffer[i]))
+                in_word = false;
+            else if (!in_word) {
+                in_word = true;
 
-                if (IsAsciiWhitespace(c))
-                    in_word = false;
-                else if (!in_word) {
-                    in_word = true;
-
-                    word_count++;
-                }
+                word_count++;
             }
         }
 
-        auto list = ListNew(isolate, word_count);
+        // With a bound, at most maxsplit words are emitted individually plus one remainder chunk → maxsplit + 1;
+        // never more than the actual word count.
+        const MSize capacity = maxsplit < 0
+                                   ? word_count
+                                   : (word_count < (MSize) maxsplit + 1 ? word_count : (MSize) maxsplit + 1);
+
+        auto list = ListNew(isolate, capacity);
         if (!list)
             return {};
 
         MSize pos = 0;
+        MSize splits = 0;
 
         while (pos < blen) {
             // Skip leading whitespace
-            while (pos < blen && IsAsciiWhitespace((unsigned char) buffer[pos]))
+            while (pos < blen && IsAsciiWhitespace(buffer[pos]))
                 pos++;
 
             if (pos >= blen)
                 break;
 
+            if (maxsplit >= 0 && splits >= (MSize) maxsplit) {
+                auto rest = chunk_new(isolate, buffer + pos, blen - pos);
+                if (!rest)
+                    return {};
+
+                if (!ListAppend(list.get(), (OObject *) rest.get()))
+                    return {};
+
+                break;
+            }
+
             const MSize start = pos;
 
             // Scan word
-            while (pos < blen && !IsAsciiWhitespace((unsigned char) buffer[pos]))
+            while (pos < blen && !IsAsciiWhitespace(buffer[pos]))
                 pos++;
 
             auto part = chunk_new(isolate, buffer + start, pos - start);
@@ -249,6 +272,8 @@ namespace orbiter::datatype::support {
 
             if (!ListAppend(list.get(), (OObject *) part.get()))
                 return {};
+
+            splits++;
         }
 
         return list;

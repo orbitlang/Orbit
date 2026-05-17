@@ -311,6 +311,48 @@ static MSize StrUtf8LeadByteCount(const unsigned char c) {
     return 0;
 }
 
+/// Strip-set membership for the codepoint-aware strip / lstrip / rstrip
+/// family. @p cp points at the @p cp_len bytes of a single UTF-8
+/// codepoint of the subject string.
+///
+/// When @p chars is null the default ASCII whitespace set is used —
+/// every whitespace byte is single-byte, so a multi-byte codepoint can
+/// never be whitespace. Otherwise @p chars is treated as a *set of
+/// codepoints*: we walk its codepoints and match @p cp byte-for-byte
+/// (same length + identical bytes). Subject and chars are validated
+/// UTF-8 (StringInitKind), so a malformed lead defensively advances one
+/// byte without matching.
+static bool CodepointInChars(const unsigned char *cp, const MSize cp_len, const ORString *chars) {
+    if (chars == nullptr)
+        return cp_len == 1 && support::IsAsciiWhitespace(cp[0]);
+
+    MSize i = 0;
+    while (i < STR_LEN(chars)) {
+        const auto clen = StrUtf8LeadByteCount(STR_BUF(chars)[i]);
+        if (clen == 0 || i + clen > STR_LEN(chars)) {
+            i += 1; // defensive: malformed, skip a byte
+            continue;
+        }
+
+        if (clen == cp_len && memcmp(STR_BUF(chars) + i, cp, cp_len) == 0)
+            return true;
+
+        i += clen;
+    }
+
+    return false;
+}
+
+/// Byte offset of the start of the last UTF-8 codepoint that ends at
+/// @p end (exclusive). Walks back over continuation bytes (10xxxxxx).
+static MSize StrLastCodepointStart(const ORString *s, const MSize end) {
+    MSize cp_start = end - 1;
+    while (cp_start > 0 && (STR_BUF(s)[cp_start] & 0xC0) == 0x80)
+        cp_start--;
+
+    return cp_start;
+}
+
 /// Walk the string one codepoint at a time, yielding each codepoint as a fresh single-codepoint ORString.
 ///
 /// Allocation policy:
@@ -711,27 +753,45 @@ Non-ASCII bytes are passed through unchanged.
 
 RUNTIME_METHOD(string_lstrip, lstrip,
                R"DOC(
-@brief Return a copy with leading whitespace removed.
+@brief Return a copy with leading characters in `chars` removed.
 
-Whitespace is determined by std::isspace (ASCII only).
+When `chars` is omitted the default ASCII whitespace set is used
+(` `, `\t`, `\n`, `\v`, `\f`, `\r`). When provided, `chars` is treated
+as a set of codepoints: leading codepoints of self that appear in
+`chars` are removed (full Unicode-aware, multi-byte safe).
+
+@param chars?  Set of codepoints to strip. Defaults to ASCII whitespace.
 
 @return A new String, or self if no stripping is needed.
+
+@panic TypeError  When `chars` is not a String.
 
 @see rstrip, strip
 
 @example
-    "  hello  ".lstrip()    // "hello  "
-    "hello".lstrip()        // "hello"
-)DOC", 1, nullptr, false, false) {
-    PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::STRING));
+    "  hello  ".lstrip()       // "hello  "
+    "xxhello".lstrip("x")      // "hello"
+)DOC", 1, "chars", false, false) {
+    PCHECK_ENTRIES(params,
+                   PCHECK_DEF("self", false, InstanceType::STRING),
+                   PCHECK_DEF("chars", true, InstanceType::STRING));
     PCHECK_CHECK(params);
 
     const auto *self = (ORString *) argv[0];
+    const auto *chars = O_IS_SENTINEL(argv[1]) ? nullptr : (const ORString *) argv[1];
     auto *isolate = O_GET_ISOLATE(_func);
 
     MSize start = 0;
-    while (start < STR_LEN(self) && std::isspace(STR_BUF(self)[start]))
-        start++;
+    while (start < STR_LEN(self)) {
+        const auto clen = StrUtf8LeadByteCount(STR_BUF(self)[start]);
+        if (clen == 0 || start + clen > STR_LEN(self))
+            break; // defensive: malformed lead
+
+        if (!CodepointInChars(STR_BUF(self) + start, clen, chars))
+            break;
+
+        start += clen;
+    }
 
     if (start == 0)
         return HOObject(argv[0]);
@@ -752,23 +812,26 @@ RUNTIME_METHOD(string_replace, replace,
 
 Returns self unchanged when old is empty.
 
-@param old  Substring to replace.
-@param new  Replacement string.
+@param old   Substring to replace.
+@param new   Replacement string.
+@param max?  Maximum number of replacements. -1 (or omitted) replaces
+             every non-overlapping occurrence.
 
 @return A new String.
 
-@panic TypeError  When `old` or `new` is not a String.
+@panic TypeError  When `old`, `new` or `max` has the wrong type.
 
 @see find, split
 
 @example
-    "hello".replace("l", "r")       // "herro"
-    "aabbcc".replace("bb", "XX")    // "aaXXcc"
-)DOC", 3, nullptr, false, false) {
+    "hello".replace("l", "r")          // "herro"
+    "ababab".replace("a", "X", 2)      // "XbXbab"
+)DOC", 3, "max", false, false) {
     PCHECK_ENTRIES(params,
                    PCHECK_DEF("self", false, InstanceType::STRING),
                    PCHECK_DEF("old", false, InstanceType::STRING),
-                   PCHECK_DEF("new", false, InstanceType::STRING));
+                   PCHECK_DEF("new", false, InstanceType::STRING),
+                   PCHECK_DEF("max", true, InstanceType::NUMBER));
     PCHECK_CHECK(params);
 
     const auto *self = (ORString *) argv[0];
@@ -779,10 +842,25 @@ Returns self unchanged when old is empty.
     if (STR_LEN(old_str) == 0)
         return HOObject(argv[0]);
 
+    MSSize max = -1;
+    if (!O_IS_SENTINEL(argv[3])) {
+        if (!NumberExtract(argv[3], (IntegerUnderlying &) max))
+            return {};
+    }
+
     StringBuilder builder(isolate);
     MSize pos = 0;
+    MSSize done = 0;
 
     while (pos < STR_LEN(self)) {
+        // Replacement budget exhausted: flush the untouched remainder.
+        if (max >= 0 && done >= max) {
+            if (!builder.Write(STR_BUF(self) + pos, STR_LEN(self) - pos, 0))
+                return {};
+
+            break;
+        }
+
         const auto idx = support::Search(STR_BUF(self) + pos, STR_LEN(self) - pos,
                                          STR_BUF(old_str), STR_LEN(old_str));
         if (idx < 0) {
@@ -799,23 +877,12 @@ Returns self unchanged when old is empty.
             return {};
 
         pos += (MSize) idx + STR_LEN(old_str);
+        done++;
     }
 
-    MSize len;
-    MSize cp_len;
-    StringKind kind;
-    auto *buf = builder.BuildString(nullptr, &len, &cp_len, &kind);
-    if (buf == nullptr)
-        return {};
-
-    if (len == 0)
-        return HOObject(ORStringNew(isolate, "", 0));
-
-    auto s = ORStringNew(isolate, buf, len, cp_len, kind);
+    auto s = ORStringNew(isolate, builder);
     if (!s)
         return {};
-
-    builder.Release();
 
     return HOObject(std::move(s));
 }
@@ -855,38 +922,57 @@ RUNTIME_METHOD(string_rfind, rfind,
 
 RUNTIME_METHOD(string_rstrip, rstrip,
                R"DOC(
-@brief Return a copy with trailing whitespace removed.
+@brief Return a copy with trailing characters in `chars` removed.
 
-Whitespace is determined by std::isspace (ASCII only).
+When `chars` is omitted the default ASCII whitespace set is used
+(` `, `\t`, `\n`, `\v`, `\f`, `\r`). When provided, `chars` is treated
+as a set of codepoints: trailing codepoints of self that appear in
+`chars` are removed (full Unicode-aware, multi-byte safe).
+
+@param chars?  Set of codepoints to strip. Defaults to ASCII whitespace.
 
 @return A new String, or self if no stripping is needed.
+
+@panic TypeError  When `chars` is not a String.
 
 @see lstrip, strip
 
 @example
-    "  hello  ".rstrip()    // "  hello"
-    "hello".rstrip()        // "hello"
-)DOC", 1, nullptr, false, false) {
-    PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::STRING));
+    "  hello  ".rstrip()       // "  hello"
+    "helloxx".rstrip("x")      // "hello"
+)DOC", 1, "chars", false, false) {
+    PCHECK_ENTRIES(params,
+                   PCHECK_DEF("self", false, InstanceType::STRING),
+                   PCHECK_DEF("chars", true, InstanceType::STRING));
     PCHECK_CHECK(params);
 
     const auto *self = (ORString *) argv[0];
+    const auto *chars = O_IS_SENTINEL(argv[1]) ? nullptr : (const ORString *) argv[1];
     auto *isolate = O_GET_ISOLATE(_func);
 
     if (STR_LEN(self) == 0)
         return HOObject(argv[0]);
 
-    auto end = (MSSize) STR_LEN(self) - 1;
-    while (end >= 0 && std::isspace(STR_BUF(self)[(MSize) end]))
-        end--;
+    MSize end = STR_LEN(self);
+    while (end > 0) {
+        const MSize cp_start = StrLastCodepointStart(self, end);
+        const auto clen = StrUtf8LeadByteCount(STR_BUF(self)[cp_start]);
+        if (clen == 0 || cp_start + clen != end)
+            break; // defensive: malformed
 
-    if (end == (MSSize) STR_LEN(self) - 1)
+        if (!CodepointInChars(STR_BUF(self) + cp_start, clen, chars))
+            break;
+
+        end = cp_start;
+    }
+
+    if (end == STR_LEN(self))
         return HOObject(argv[0]);
 
-    if (end < 0)
+    if (end == 0)
         return HOObject(ORStringNew(isolate, "", 0));
 
-    auto s = ORStringNew(isolate, STR_BUF(self), (MSize) end + 1);
+    auto s = ORStringNew(isolate, STR_BUF(self), end);
     if (!s)
         return {};
 
@@ -905,31 +991,43 @@ and preserves empty leading/trailing segments; "aaaa".split("aa") → ["", "", "
 
 @param sep?  The separator string, or nil for whitespace split. Must not be empty
              when provided.
+@param max?  Maximum number of splits. -1 (or omitted) splits at every match.
+             Applies to both the separator and the whitespace form.
 
 @return A new List of Strings.
 
-@panic TypeError   When `sep` is neither a String nor nil.
+@panic TypeError   When `sep` is neither a String nor nil, or `max` is not an Int.
 @panic ValueError  When `sep` is the empty string.
 
 @see splitlines, replace, find
 
 @example
-    "a,b,c".split(sep=",")        // ["a", "b", "c"]
-    "hello".split(sep="l")        // ["he", "", "o"]
-    "  hello   world ".split()   // ["hello", "world"]
-    "a\tb\nc".split()         // ["a", "b", "c"]
-)DOC", 1, "sep", false, false) {
+    "a,b,c".split(sep=",")          // ["a", "b", "c"]
+    "a,b,c,d".split(sep=",", max=2) // ["a", "b", "c,d"]
+    "  a  b  c ".split(max=1)       // ["a", "b  c "]
+)DOC", 1, "sep, max", false, false) {
     PCHECK_ENTRIES(params,
                    PCHECK_DEF("self", false, InstanceType::STRING),
-                   PCHECK_DEF("sep", true, InstanceType::STRING, InstanceType::NIL));
+                   PCHECK_DEF("sep", true, InstanceType::STRING, InstanceType::NIL),
+                   PCHECK_DEF("max", true, InstanceType::NUMBER));
     PCHECK_CHECK(params);
 
     const auto *self = (ORString *) argv[0];
     auto *isolate = O_GET_ISOLATE(_func);
 
-    // Whitespace split when sep is omitted or explicitly nil
+    MSSize max = -1;
+    if (!O_IS_SENTINEL(argv[2])) {
+        if (!NumberExtract(argv[2], (IntegerUnderlying &) max))
+            return {};
+    }
+
+    // Whitespace split when sep is omitted or explicitly nil.
     if (O_IS_SENTINEL(argv[1]) || O_IS_NIL(argv[1])) {
-        auto list = support::SplitWhitespace<ORString>(isolate, STR_BUF(self), STR_LEN(self), ORStringNew);
+        auto list = support::SplitWhitespace(
+            isolate, STR_BUF(self), STR_LEN(self),
+            [](orbiter::Isolate *iso, const unsigned char *buffer, const MSize length) {
+                return ORStringNew(iso, buffer, length);
+            }, max);
         if (!list)
             return {};
 
@@ -948,12 +1046,12 @@ and preserves empty leading/trailing segments; "aaaa".split("aa") → ["", "", "
     }
 
     auto list = support::Split(isolate,
-                                         STR_BUF(self), STR_LEN(self),
-                                         STR_BUF(sep),
-                                         STR_LEN(sep),
-                                         [](orbiter::Isolate *isolate, const unsigned char *buffer, const MSize length) {
-                                             return ORStringNew(isolate, buffer, length);
-                                         });
+                               STR_BUF(self), STR_LEN(self),
+                               STR_BUF(sep),
+                               STR_LEN(sep),
+                               [](orbiter::Isolate *isolate, const unsigned char *buffer, const MSize length) {
+                                   return ORStringNew(isolate, buffer, length);
+                               }, max);
     if (!list)
         return {};
 
@@ -1005,7 +1103,11 @@ returns an empty list.
     const bool keepends = O_IS_SENTINEL(argv[1]) ? false : OBOOL_TO_BOOL(argv[1]);
     const bool universal = O_IS_SENTINEL(argv[2]) ? true : OBOOL_TO_BOOL(argv[2]);
 
-    auto list = support::SplitLines<ORString>(isolate, STR_BUF(self), STR_LEN(self), ORStringNew, keepends, universal);
+    auto list = support::SplitLines(isolate, STR_BUF(self), STR_LEN(self),
+                                    [](orbiter::Isolate *isolate, const unsigned char *buffer,
+                                       const MSize length) {
+                                        return ORStringNew(isolate, buffer, length);
+                                    }, keepends, universal);
     if (!list)
         return {};
 
@@ -1046,34 +1148,63 @@ RUNTIME_METHOD(string_starts_with, starts_with,
 
 RUNTIME_METHOD(string_strip, strip,
                R"DOC(
-@brief Return a copy with leading and trailing whitespace removed.
+@brief Return a copy with leading and trailing characters in `chars` removed.
 
-Whitespace is determined by std::isspace (ASCII only).
+When `chars` is omitted the default ASCII whitespace set is used
+(` `, `\t`, `\n`, `\v`, `\f`, `\r`). When provided, `chars` is treated
+as a set of codepoints (full Unicode-aware, multi-byte safe).
+
+@param chars?  Set of codepoints to strip. Defaults to ASCII whitespace.
 
 @return A new String, or self if no stripping is needed.
+
+@panic TypeError  When `chars` is not a String.
 
 @see lstrip, rstrip
 
 @example
-    "  hello  ".strip()    // "hello"
-    "hello".strip()        // "hello"
-)DOC", 1, nullptr, false, false) {
-    PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::STRING));
+    "  hello  ".strip()        // "hello"
+    "xxhellox".strip("x")      // "hello"
+)DOC", 1, "chars", false, false) {
+    PCHECK_ENTRIES(params,
+                   PCHECK_DEF("self", false, InstanceType::STRING),
+                   PCHECK_DEF("chars", true, InstanceType::STRING));
     PCHECK_CHECK(params);
 
     const auto *self = (ORString *) argv[0];
+    const auto *chars = O_IS_SENTINEL(argv[1]) ? nullptr : (const ORString *) argv[1];
     auto *isolate = O_GET_ISOLATE(_func);
 
     MSize start = 0;
-    while (start < STR_LEN(self) && std::isspace(STR_BUF(self)[start]))
-        start++;
+    while (start < STR_LEN(self)) {
+        const auto clen = StrUtf8LeadByteCount(STR_BUF(self)[start]);
+        if (clen == 0 || start + clen > STR_LEN(self))
+            break;
+
+        if (!CodepointInChars(STR_BUF(self) + start, clen, chars))
+            break;
+
+        start += clen;
+    }
 
     if (start == STR_LEN(self))
         return HOObject(ORStringNew(isolate, "", 0));
 
-    auto end = STR_LEN(self);
-    while (end > start && std::isspace(STR_BUF(self)[end - 1]))
-        end--;
+    MSize end = STR_LEN(self);
+    while (end > start) {
+        const MSize cp_start = StrLastCodepointStart(self, end);
+        if (cp_start < start)
+            break;
+
+        const auto clen = StrUtf8LeadByteCount(STR_BUF(self)[cp_start]);
+        if (clen == 0 || cp_start + clen != end)
+            break;
+
+        if (!CodepointInChars(STR_BUF(self) + cp_start, clen, chars))
+            break;
+
+        end = cp_start;
+    }
 
     if (start == 0 && end == STR_LEN(self))
         return HOObject(argv[0]);

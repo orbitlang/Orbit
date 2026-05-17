@@ -29,17 +29,16 @@ using namespace orbiter::datatype;
 // INTERNAL
 // *********************************************************************************************************************
 
-/// Default whitespace bytes for strip / lstrip / rstrip when no `chars`
-/// is supplied: space, tab, LF, CR, VT, FF — same set as Python's
-/// default.
-constexpr unsigned char kDefaultStripChars[] = {0x20, 0x09, 0x0A, 0x0D, 0x0B, 0x0C};
-constexpr MSize kDefaultStripCharsLen = sizeof(kDefaultStripChars);
+/// Strip-set membership test for the strip / lstrip / rstrip family.
+///
+/// When @p chars is null the default ASCII whitespace set is used via
+/// the shared `support::IsAsciiWhitespace`; otherwise @p b must equal
+/// one of the @p chars_len bytes in @p chars.
+static bool ByteIsStrip(const unsigned char b, const unsigned char *chars, const MSize chars_len) {
+    if (chars == nullptr)
+        return support::IsAsciiWhitespace(b);
 
-/// Linear membership test over a small `chars` set. The expected size
-/// is single-digit (whitespace defaults are 6 bytes), so a tight loop
-/// beats any hashed-set approach.
-static bool ByteInSet(const unsigned char b, const unsigned char *chars, const MSize len) {
-    for (MSize i = 0; i < len; i++) {
+    for (MSize i = 0; i < chars_len; i++) {
         if (chars[i] == b)
             return true;
     }
@@ -1215,11 +1214,11 @@ When `chars` is omitted, the default whitespace set is used:
     if (!CheckMutable(self))
         return {};
 
-    const unsigned char *cset = chars_b != nullptr ? chars_b->shared->buffer + chars_b->start : kDefaultStripChars;
-    const MSize cset_len = chars_b != nullptr ? chars_b->length : kDefaultStripCharsLen;
+    const unsigned char *cset = chars_b != nullptr ? chars_b->shared->buffer + chars_b->start : nullptr;
+    const MSize cset_len = chars_b != nullptr ? chars_b->length : 0;
 
     MSize i = 0;
-    while (i < self->length && ByteInSet(self->shared->buffer[self->start + i], cset, cset_len))
+    while (i < self->length && ByteIsStrip(self->shared->buffer[self->start + i], cset, cset_len))
         i++;
 
     self->start += i;
@@ -1393,11 +1392,11 @@ When `chars` is omitted, the default whitespace set is used (see `lstrip`).
     if (!CheckMutable(self))
         return {};
 
-    const unsigned char *cset = chars_b != nullptr ? chars_b->shared->buffer + chars_b->start : kDefaultStripChars;
-    const MSize cset_len = chars_b != nullptr ? chars_b->length : kDefaultStripCharsLen;
+    const unsigned char *cset = chars_b != nullptr ? chars_b->shared->buffer + chars_b->start : nullptr;
+    const MSize cset_len = chars_b != nullptr ? chars_b->length : 0;
 
     MSize end = self->length;
-    while (end > 0 && ByteInSet(self->shared->buffer[self->start + end - 1], cset, cset_len))
+    while (end > 0 && ByteIsStrip(self->shared->buffer[self->start + end - 1], cset, cset_len))
         end--;
 
     self->length = end;
@@ -1407,37 +1406,68 @@ When `chars` is omitted, the default whitespace set is used (see `lstrip`).
 
 RUNTIME_METHOD(bytes_split, split,
                R"DOC(
-@brief Split self into a List of Bytes around `sep`.
+@brief Split self into a List of Bytes.
 
-Returns the substrings produced by walking self left-to-right and
-splitting at each non-overlapping occurrence of `sep`. The pieces are
-**zero-copy slices** sharing self's SharedBuffer. When `max` is
-provided, at most `max` splits are performed: the remainder of self is
-returned as the final element. -1 (or omitted) splits at every match.
+When called without a separator (or with nil), splits on runs of ASCII
+whitespace (` `, `\t`, `\n`, `\v`, `\f`, `\r`) and drops empty
+leading/trailing/interior segments.
 
-@param sep   Separator byte sequence. Must not be empty.
+When called with an explicit separator, performs exact (non-overlapping)
+matching and preserves empty segments. With `max`, at most `max` splits
+are performed and the remainder is returned as the final element; -1 (or
+omitted) splits at every match. `max` applies to both the
+separator and the whitespace form.
+
+Every piece is a **zero-copy slice** sharing self's SharedBuffer.
+
+@param sep?  Separator byte sequence, or nil for whitespace split. Must
+             not be empty when provided.
 @param max?  Maximum number of splits. Defaults to "all".
 
-@return A new List whose elements are zero-copy Bytes slices.
+@return A new List of zero-copy Bytes slices.
 
-@panic TypeError   When `sep` is not a Bytes or `max` is not an Int.
-@panic ValueError  When `sep` is empty.
+@panic TypeError   When `sep` is not a Bytes/nil or `max` is not an Int.
+@panic ValueError  When `sep` is the empty Bytes.
 
-@see find, count
+@see splitlines, find, count
 
 @example
     b"a,b,c".split(b",")         // [b"a", b"b", b"c"]
     b"a,b,c,d".split(b",", 2)    // [b"a", b"b", b"c,d"]
-)DOC", 2, "max", false, false) {
+    b"  a  b  c ".split(max=1)   // [b"a", b"b  c "]
+)DOC", 1, "sep, max", false, false) {
     PCHECK_ENTRIES(params,
                    PCHECK_DEF("self", false, InstanceType::BYTES),
-                   PCHECK_DEF("sep", false, InstanceType::BYTES),
+                   PCHECK_DEF("sep", true, InstanceType::BYTES),
                    PCHECK_DEF("max", true, InstanceType::NUMBER));
     PCHECK_CHECK(params);
 
     const auto *self = (Bytes *) argv[0];
-    const auto *sep = (Bytes *) argv[1];
     auto *isolate = O_GET_ISOLATE(self);
+
+    IntegerUnderlying max = -1;
+    if (!O_IS_SENTINEL(argv[2])) {
+        if (!NumberExtract(argv[2], max))
+            return {};
+    }
+
+    // Whitespace split when `sep` is omitted or nil.
+    if (O_IS_SENTINEL(argv[1]) || O_IS_NIL(argv[1])) {
+        std::shared_lock _(self->shared->rwlock);
+
+        const auto out = support::SplitWhitespace(
+            isolate, self->shared->buffer + self->start, self->length,
+            [self](orbiter::Isolate *isolate, const unsigned char *buffer, const MSize length) {
+                const auto start = buffer - (self->shared->buffer + self->start);
+                return BytesNew(self, start, length);
+            }, max);
+        if (!out)
+            return {};
+
+        return HOObject((OObject *) out.get());
+    }
+
+    const auto *sep = (Bytes *) argv[1];
 
     if (sep->length == 0) {
         ErrorSet(isolate,
@@ -1446,12 +1476,6 @@ returned as the final element. -1 (or omitted) splits at every match.
                  "split separator cannot be empty");
 
         return {};
-    }
-
-    IntegerUnderlying max = -1;
-    if (!O_IS_SENTINEL(argv[2])) {
-        if (!NumberExtract(argv[2], max))
-            return {};
     }
 
     std::shared_lock<orbiter::sync::AsyncRWLock> s_lock;
@@ -1467,6 +1491,65 @@ returned as the final element. -1 (or omitted) splits at every match.
                                         const auto start = buffer - (self->shared->buffer + self->start);
                                         return BytesNew(self, start, length);
                                     }, max);
+
+    return HOObject((OObject *) out.get());
+}
+
+RUNTIME_METHOD(bytes_splitlines, splitlines,
+               R"DOC(
+@brief Split self on line terminators and return a List of lines.
+
+By default recognizes the three universal line terminators:
+  - `\n`   (LF)
+  - `\r\n` (CRLF)
+  - `\r`   (lone CR)
+
+A trailing single terminator is swallowed, so `b"a\n"` → `[b"a"]`;
+consecutive terminators produce empty lines, so `b"a\n\nb"` →
+`[b"a", b"", b"b"]`. Empty input returns an empty list.
+
+Every piece is a **zero-copy slice** sharing self's SharedBuffer.
+
+@param keepends?   When true, retain the terminator in each returned
+                   line (defaults to false).
+@param universal?  When true, treat `\r\n` and `\r` as terminators in
+                   addition to `\n` (defaults to true). Disable for
+                   strict LF-only splitting.
+
+@return A new List of Bytes.
+
+@panic TypeError  When `keepends` or `universal` is not a Bool.
+
+@see split
+
+@example
+    b"a\nb\nc".splitlines()                    // [b"a", b"b", b"c"]
+    b"a\r\nb\rc".splitlines()                  // [b"a", b"b", b"c"]
+    b"a\nb".splitlines(keepends=true)          // [b"a\n", b"b"]
+)DOC", 1, "keepends, universal", false, false) {
+    PCHECK_ENTRIES(params,
+                   PCHECK_DEF("self", false, InstanceType::BYTES),
+                   PCHECK_DEF("keepends", true, InstanceType::BOOLEAN),
+                   PCHECK_DEF("universal", true, InstanceType::BOOLEAN));
+    PCHECK_CHECK(params);
+
+    const auto *self = (Bytes *) argv[0];
+    auto *isolate = O_GET_ISOLATE(self);
+
+    // Defaults: keepends = false, universal = true.
+    const bool keepends = O_IS_SENTINEL(argv[1]) ? false : OBOOL_TO_BOOL(argv[1]);
+    const bool universal = O_IS_SENTINEL(argv[2]) ? true : OBOOL_TO_BOOL(argv[2]);
+
+    std::shared_lock _(self->shared->rwlock);
+
+    const auto out = support::SplitLines(
+        isolate, self->shared->buffer + self->start, self->length,
+        [self](orbiter::Isolate *isolate, const unsigned char *buffer, const MSize length) {
+            const auto start = buffer - (self->shared->buffer + self->start);
+            return BytesNew(self, start, length);
+        }, keepends, universal);
+    if (!out)
+        return {};
 
     return HOObject((OObject *) out.get());
 }
@@ -1554,15 +1637,15 @@ When `chars` is omitted, the default whitespace set is used (see `lstrip`).
     if (!CheckMutable(self))
         return {};
 
-    const unsigned char *cset = chars_b != nullptr ? chars_b->shared->buffer + chars_b->start : kDefaultStripChars;
-    const MSize cset_len = chars_b != nullptr ? chars_b->length : kDefaultStripCharsLen;
+    const unsigned char *cset = chars_b != nullptr ? chars_b->shared->buffer + chars_b->start : nullptr;
+    const MSize cset_len = chars_b != nullptr ? chars_b->length : 0;
 
     MSize i = 0;
-    while (i < self->length && ByteInSet(self->shared->buffer[self->start + i], cset, cset_len))
+    while (i < self->length && ByteIsStrip(self->shared->buffer[self->start + i], cset, cset_len))
         i++;
 
     MSize end = self->length;
-    while (end > i && ByteInSet(self->shared->buffer[self->start + end - 1], cset, cset_len))
+    while (end > i && ByteIsStrip(self->shared->buffer[self->start + end - 1], cset, cset_len))
         end--;
 
     self->start += i;
@@ -1634,6 +1717,7 @@ constexpr FunctionDef bytes_methods[] = {
     bytes_rfind,
     bytes_rstrip,
     bytes_split,
+    bytes_splitlines,
     bytes_starts_with,
     bytes_strip,
     bytes_upper,
