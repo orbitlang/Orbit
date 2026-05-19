@@ -8,14 +8,26 @@
 #include <orbit/orbiter/datatype/list.h>
 
 namespace orbiter::import {
-    using namespace orbiter::datatype;
+    constexpr const char *kExtension[] = {
+        ".orb",
+
+        // The last extension MUST BE the one that indicates a
+        // dynamic library in the operating system in use.
+#if defined(_ORBIT_PLATFORM_DARWIN)
+        ".dylib"
+#elif defined(_ORBIT_PLATFORM_WINDOWS)
+        ".dll"
+#else
+        ".so"
+#endif
+    };
 
     class Importer {
         Isolate *isolate_;
 
         /// Ordered list of root paths (ORString elements). Append = lowest
         /// precedence. Held as a strong handle for the Importer's lifetime.
-        HList roots_;
+        datatype::HList roots_;
 
     public:
         explicit Importer(Isolate *isolate) : isolate_(isolate) {
@@ -40,9 +52,13 @@ namespace orbiter::import {
         bool AddRoot(const char *path);
 
         /// Append an already-built root string (lowest precedence).
-        bool AddRoot(ORString *path) const;
+        bool AddRoot(datatype::ORString *path) const;
 
-        [[nodiscard]] List *Roots() const {
+        [[nodiscard]] Isolate *GetIsolate() const noexcept {
+            return this->isolate_;
+        }
+
+        [[nodiscard]] datatype::List *Roots() const {
             return this->roots_.get();
         }
     };

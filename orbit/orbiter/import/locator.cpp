@@ -1,0 +1,96 @@
+// This source file is part of the Orbit project.
+//
+// Licensed under the Apache License v2.0
+
+#include <shared_mutex>
+
+#include <sys/stat.h>
+
+#include <orbit/orbiter/datatype/list.h>
+#include <orbit/orbiter/datatype/orstring.h>
+
+#include <orbit/orbiter/import/importer.h>
+#include <orbit/orbiter/import/locator.h>
+
+using namespace orbiter::datatype;
+using namespace orbiter::import;
+
+// *********************************************************************************************************************
+// INTERNAL
+// *********************************************************************************************************************
+
+/// True if @p path names an existing regular file.
+static bool IsRegularFile(const char *path) {
+    struct stat st{};
+
+    return ::stat(path, &st) == 0 && S_ISREG(st.st_mode);
+}
+
+/// Builds an absolute candidate path and, if it is a regular file, fills @p out
+/// as a SOURCE descriptor and returns true.
+static bool TryCandidate(const HORString &path, const bool is_package, Descriptor *out) {
+    if (!IsRegularFile(ORSTRING_TO_CSTR(path.get())))
+        return false;
+
+    out->kind = LoaderKind::SOURCE;
+    out->origin = path.get();
+    out->is_package = is_package;
+    out->module = nullptr;
+    out->source = nullptr;
+    out->locator = nullptr;
+
+    return true;
+}
+
+// *********************************************************************************************************************
+// PUBLIC API
+// *********************************************************************************************************************
+
+LocateResult orbiter::import::FsSourceLocate(const Importer *importer, const ORString *key, Descriptor *out) {
+    const auto *kbuf = ORSTRING_TO_CSTR(key);
+    const auto klen = ORSTRING_LENGTH(key);
+
+    // `::`-prefixed keys are the builtin namespace — not the filesystem's.
+    if (klen >= 2 && kbuf[0] == ':' && kbuf[1] == ':')
+        return LocateResult::NOT_MINE;
+
+    auto *roots = importer->Roots();
+    auto *isolate = importer->GetIsolate();
+
+    std::shared_lock _(roots->lock);
+
+    for (const auto ext: kExtension) {
+        for (MSize i = 0; i < roots->length; i++) {
+            const auto *entry = (ORString *) roots->objects[i];
+            if (!O_IS_OBJECT(entry) || !O_IS_TYPE(entry, InstanceType::STRING))
+                continue;
+
+            // <root>/<key>.ext — a plain file module.
+            // import "a" -> <root>/a.ext
+            // import "a/b/c" -> <root>/a/b/c.ext
+            auto candidate = ORStringFormat(isolate, "%s%s%s", ORSTRING_TO_CSTR(entry), kbuf, ext);
+            if (!candidate)
+                return LocateResult::ERROR;
+
+            if (TryCandidate(candidate, false, out))
+                return LocateResult::FOUND;
+
+            // <root>/<key>/<key>.ext — the directory-as-package form.
+            // import "a" -> <root>/a/a.ext
+            // import "a/b/c" -> <root>/a/b/c/c.ext
+            auto base = kbuf;
+            const auto last_sep = ORStringRFind(key, "/");
+            if (last_sep >= 0)
+                base += last_sep + 1;
+
+            candidate = ORStringFormat(isolate, "%s%s%s%s%s", ORSTRING_TO_CSTR(entry), kbuf, "/", base, ext);
+            if (!candidate)
+                return LocateResult::ERROR;
+
+            if (TryCandidate(candidate, true, out))
+                return LocateResult::FOUND;
+        }
+    }
+
+    return LocateResult::NOT_MINE;
+}
