@@ -165,6 +165,18 @@ namespace orbiter::datatype {
     bool ORStringContains(const ORString *self, const ORString *sub);
 
     /**
+     * @brief Checks if a string ends with the specified suffix
+     *
+     * This function determines whether the given string ends with the provided suffix.
+     *
+     * @param self Pointer to the ORString instance to check
+     * @param suffix Pointer to the ORString instance representing the suffix to match
+     *
+     * @return true if the string ends with the specified suffix, false otherwise
+     */
+    bool ORStringEndsWith(const ORString *self, const ORString *suffix) noexcept;
+
+    /**
      * @brief Formats a string with specified arguments and returns it as an ORString handle
      *
      *
@@ -306,8 +318,6 @@ namespace orbiter::datatype {
      */
     HORString ORStringNewHoldBuffer(Isolate *isolate, unsigned char *buffer, MSize length);
 
-    MSize ORStringHash(ORString *string);
-
     /**
      * @brief Initialize and create the specified type
      *
@@ -319,6 +329,52 @@ namespace orbiter::datatype {
      * @return Handle to the newly created TypeInfo for the type, or an empty handle if creation failed
      */
     HOType ORStringTypeInit(Isolate *isolate);
+
+    /**
+     * @brief Compute the hash value for the given ORString object
+     *
+     * This function calculates the hash value for an ORString object if it has not
+     * been computed already. If the hash value is already cached, it simply returns
+     * the cached value. Otherwise, it computes the hash using the `StrHash` function
+     * and caches the result in the `hash` field of the ORString object.
+     *
+     * @param string Pointer to the ORString object for which the hash is to be computed
+     *
+     * @return The computed or cached hash value as an MSize type
+     */
+    MSize ORStringHash(ORString *string) noexcept;
+
+    /**
+     * @brief Perform a reverse search for a substring within a string
+     *
+     * This function searches for the last occurrence of a given substring
+     * within the specified string. The search is performed in reverse, starting
+     * from the end of the string and moving toward the beginning. If the substring
+     * is found, its starting index is returned; otherwise, a value indicating
+     * failure is returned.
+     *
+     * @param self Pointer to the ORString instance in which to search
+     * @param sub Pointer to the ORString instance representing the substring to find
+     *
+     * @return The index of the last occurrence of the substring within the ORString.
+     *         If the substring is not found, the function returns -1.
+     */
+    MSSize ORStringRFind(const ORString *self, const ORString *sub) noexcept;
+
+    /**
+     * @brief Find the last occurrence of a substring within an ORString
+     *
+     * This function searches for the last occurrence of the specified substring
+     * within the given ORString instance. The search is performed in reverse order,
+     * starting from the end of the string.
+     *
+     * @param self Pointer to the ORString instance in which to search
+     * @param sub Pointer to the null-terminated C-string representing the substring to find
+     *
+     * @return The index of the last occurrence of the substring within the ORString.
+     *         If the substring is not found, the function returns -1.
+     */
+    MSSize ORStringRFind(const ORString *self, const char *sub) noexcept;
 }
 
 #endif // !ORBIT_ORBITER_DATATYPE_OSTRING_H_

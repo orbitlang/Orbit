@@ -626,11 +626,7 @@ RUNTIME_METHOD(string_ends_with, ends_with,
     const auto *self = (ORString *) argv[0];
     const auto *suffix = (ORString *) argv[1];
 
-    if (STR_LEN(suffix) > STR_LEN(self))
-        return HOObject((OObject *) BOOL_TO_OBOOL(false));
-
-    const auto offset = STR_LEN(self) - STR_LEN(suffix);
-    const bool ok = memcmp(STR_BUF(self) + offset, STR_BUF(suffix), STR_LEN(suffix)) == 0;
+    const auto ok = ORStringEndsWith(self, suffix);
 
     return HOObject((OObject *) BOOL_TO_OBOOL(ok));
 }
@@ -1345,6 +1341,14 @@ bool orbiter::datatype::ORStringContains(const ORString *self, const ORString *s
     return support::Search(STR_BUF(self), STR_LEN(self), STR_BUF(sub), STR_LEN(sub)) >= 0;
 }
 
+bool orbiter::datatype::ORStringEndsWith(const ORString *self, const ORString *suffix) noexcept {
+    if (STR_LEN(suffix) > STR_LEN(self))
+        return false;
+
+    const auto offset = STR_LEN(self) - STR_LEN(suffix);
+    return memcmp(STR_BUF(self) + offset, STR_BUF(suffix), STR_LEN(suffix)) == 0;
+}
+
 HORString orbiter::datatype::ORStringFormat(Isolate *isolate, const char *format, ...) {
     va_list args;
 
@@ -1545,15 +1549,6 @@ HORString orbiter::datatype::ORStringNewHoldBuffer(Isolate *isolate, unsigned ch
     O_GC_TRACK_RETURN(isolate, str, false);
 }
 
-MSize orbiter::datatype::ORStringHash(ORString *string) {
-    if (string->hash != 0)
-        return string->hash;
-
-    string->hash = StrHash(STR_BUF(string), STR_LEN(string));
-
-    return string->hash;
-}
-
 HOType orbiter::datatype::ORStringTypeInit(Isolate *isolate) {
     memory::IsolateAllocator allocator(isolate);
 
@@ -1578,4 +1573,21 @@ HOType orbiter::datatype::ORStringTypeInit(Isolate *isolate) {
     string->aux.dtor = (TypeInfoAUXDtor) StrGSTDtor;
 
     return string;
+}
+
+MSize orbiter::datatype::ORStringHash(ORString *string) {
+    if (string->hash != 0)
+        return string->hash;
+
+    string->hash = StrHash(STR_BUF(string), STR_LEN(string));
+
+    return string->hash;
+}
+
+MSSize orbiter::datatype::ORStringRFind(const ORString *self, const ORString *sub) noexcept {
+    return support::RSearch(STR_BUF(self), STR_LEN(self), STR_BUF(sub), STR_LEN(sub));
+}
+
+MSSize orbiter::datatype::ORStringRFind(const ORString *self, const char *sub) noexcept {
+    return support::RSearch(STR_BUF(self), STR_LEN(self), (unsigned char *) sub, strlen(sub));
 }
