@@ -21,6 +21,9 @@ using namespace orbiter::import;
 
 /// True if @p path names an existing regular file.
 static bool IsRegularFile(const char *path) {
+#ifdef _ORBIT_PLATFORM_WINDOWS
+#define S_ISREG(m) (((m) & _S_IFMT) == _S_IFREG)
+#endif
     struct stat st{};
 
     return ::stat(path, &st) == 0 && S_ISREG(st.st_mode);
