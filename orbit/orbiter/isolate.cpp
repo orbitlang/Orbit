@@ -106,7 +106,7 @@ Isolate *Isolate::New() {
     INIT_TYPE(InstanceType::GENERATOR, GeneratorTypeInit);
     INIT_TYPE(InstanceType::ITERATOR, IteratorTypeInit);
     INIT_TYPE(InstanceType::LIST, ListTypeInit);
-    INIT_TYPE(InstanceType::MODULE, ModuleInit);
+    INIT_TYPE(InstanceType::MODULE, ModuleTypeInit);
     INIT_TYPE(InstanceType::NATIVE_FUNC, NativeFuncTypeInit);
     INIT_TYPE(InstanceType::NUMBER, NumberTypeInit);
     INIT_TYPE(InstanceType::RAWPTR, RawPtrTypeInit);
@@ -138,7 +138,7 @@ Isolate *Isolate::New() {
     SETUP_TYPE(InstanceType::GENERATOR, GeneratorTypeSetup);
     SETUP_TYPE(InstanceType::ITERATOR, IteratorTypeSetup);
     SETUP_TYPE(InstanceType::LIST, ListTypeSetup);
-    SETUP_TYPE(InstanceType::MODULE, ModuleSetup);
+    SETUP_TYPE(InstanceType::MODULE, ModuleTypeSetup);
     SETUP_TYPE(InstanceType::NATIVE_FUNC, NativeFuncTypeSetup);
     SETUP_TYPE(InstanceType::NUMBER, NumberTypeSetup);
     SETUP_TYPE(InstanceType::RAWPTR, RawPtrTypeSetup);

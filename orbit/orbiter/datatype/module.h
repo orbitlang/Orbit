@@ -9,9 +9,55 @@
 #include <orbit/orbiter/datatype/code.h>
 
 namespace orbiter::datatype {
+    using ModuleNativeInitFn = const struct ModuleInit *(*)();
+
+    using ModuleInitFn = bool (*)(struct Module *);
+    using ModuleFiniFn = void (*)(Module *);
+
+#define ORBIT_MODULE_INIT(__m_init)                                 \
+    (extern "C" const struct ModuleInit *__orbit_module_init(void)  \
+    { return (&__m_init); })
+
+    constexpr auto kModuleInitFnName = "__orbit_module_init";
+
+    struct ModuleEntry {
+        const char *name;
+
+        union {
+            OObject *object;
+            const FunctionDef *func;
+        } prop;
+
+        bool is_func;
+    };
+
+#define ORBIT_MODULE_EXPORT_FUNCTION(fn_native) \
+{(fn_native).name, {.func=&(fn_native)}, true}
+
+#define ORBIT_MODULE_EXPORT_TYPE(type)          \
+{nullptr, {.object=(OObject *) (type)}, false}
+
+#define ORBIT_MODULE_EXPORT_ALIAS(name, type)   \
+{name, {.obj=(OObject *) (type)}, false}
+
+#define ORBIT_MODULE_SENTINEL {nullptr, nullptr, false}
+
+    struct ModuleInit {
+        const char *name;
+        const char *doc;
+
+        const char *version;
+
+        const ModuleEntry *bulk;
+
+        ModuleInitFn init;
+        ModuleFiniFn fini;
+    };
+
     struct Module {
         OROBJ_HEAD;
     };
+
     using HModule = Handle<Module>;
 
     /**
@@ -28,7 +74,7 @@ namespace orbiter::datatype {
      *
      * @return true if setup was successful, false otherwise
      */
-    bool ModuleSetup(TypeInfo *self);
+    bool ModuleTypeSetup(TypeInfo *self);
 
     /**
      * @brief Create a new module instance
@@ -52,7 +98,7 @@ namespace orbiter::datatype {
      *
      * @return Handle to the newly created TypeInfo for the type, or an empty handle if creation failed
      */
-    HOType ModuleInit(Isolate *isolate);
+    HOType ModuleTypeInit(Isolate *isolate);
 
     /**
      * @brief Create a new module type with specified properties and slots
@@ -70,6 +116,8 @@ namespace orbiter::datatype {
      * @return Handle to the newly created module TypeInfo, or an empty handle if creation failed
      */
     HOType ModuleTypeNew(Isolate *isolate, ORString *name, ORString *doc, U16 exported, U16 slots);
+
+    HOType ModuleTypeNew(Isolate *isolate, const ModuleInit *init);
 
     /**
      * @brief Creates a new module with the given code and name

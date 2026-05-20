@@ -77,6 +77,18 @@ namespace orbiter::import {
     };
 
     /**
+     * @brief The builtin locator body.
+     *
+     * Handles only the `::orbit::*` namespace: `::`-prefixed keys are matched
+     * against a fixed table of builtin modules. On a hit the module's init
+     * function builds the primitive module (pure native construction — no
+     * `.orb` execution, no nested imports) and it is returned in
+     * `Descriptor::module` (kind BUILTIN), handled by the loader exactly like
+     * a ready-made VIRTUAL module. `Descriptor::origin` is the key itself.
+     */
+    LocateResult BuiltinLocate(const Importer *importer, const ORString *key, Descriptor *out);
+
+    /**
      * @brief The fs-source locator body.
      *
      * Probes the isolate's import roots for an on-disk `.orb` module. For each

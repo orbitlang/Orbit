@@ -7,6 +7,7 @@
 #include <sys/stat.h>
 
 #include <orbit/orbiter/datatype/list.h>
+#include <orbit/orbiter/datatype/module.h>
 #include <orbit/orbiter/datatype/orstring.h>
 
 #include <orbit/orbiter/import/importer.h>
@@ -18,6 +19,12 @@ using namespace orbiter::import;
 // *********************************************************************************************************************
 // INTERNAL
 // *********************************************************************************************************************
+
+/// Fixed builtin table, sentinel-terminated. New builtins go above the
+/// sentinel as they are implemented.
+static constexpr ModuleInit *kBuiltins[] = {
+    nullptr
+};
 
 /// True if @p path names an existing regular file.
 static bool IsRegularFile(const char *path) {
@@ -48,6 +55,36 @@ static bool TryCandidate(const HORString &path, const bool is_package, Descripto
 // *********************************************************************************************************************
 // PUBLIC API
 // *********************************************************************************************************************
+
+LocateResult orbiter::import::BuiltinLocate(const Importer *importer, const ORString *key, Descriptor *out) {
+    const auto *kbuf = ORSTRING_TO_CSTR(key);
+    const auto klen = ORSTRING_LENGTH(key);
+
+    // Builtin namespace only: a non-`::` key is never ours.
+    if (klen < 3 || kbuf[0] != ':' || kbuf[1] != ':')
+        return LocateResult::NOT_MINE;
+
+    for (const auto *cursor: kBuiltins) {
+        const auto nlen = strlen(cursor->name);
+        if (klen != nlen || memory::MemoryCompare(kbuf, cursor->name, nlen) != 0)
+            continue;
+
+        const auto module = ModuleTypeNew(importer->GetIsolate(), cursor);
+        if (!module)
+            return LocateResult::ERROR;
+
+        out->kind = LoaderKind::BUILTIN;
+        out->origin = (ORString *) key;
+        out->is_package = false;
+        out->module = (OObject *) module.get();
+        out->source = nullptr;
+        out->locator = nullptr;
+
+        return LocateResult::FOUND;
+    }
+
+    return LocateResult::NOT_MINE;
+}
 
 LocateResult orbiter::import::FsSourceLocate(const Importer *importer, const ORString *key, Descriptor *out) {
     const auto *kbuf = ORSTRING_TO_CSTR(key);
