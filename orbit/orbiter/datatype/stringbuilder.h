@@ -67,6 +67,10 @@ namespace orbiter::datatype {
 
         [[nodiscard]] unsigned char *BuildString(MSize *cap, MSize *len, MSize *cp_len, StringKind *kind);
 
+        [[nodiscard]] unsigned char *BuildString() {
+            return this->BuildString(nullptr, nullptr, nullptr, nullptr);
+        }
+
         void Release() {
             this->buffer_ = nullptr;
         }

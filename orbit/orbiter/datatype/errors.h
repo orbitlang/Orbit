@@ -32,6 +32,20 @@ namespace orbiter::datatype {
         };
     };
 
+    struct ImportError {
+        enum Reason : U8 {
+            ID,
+
+            MODULE_NOT_FOUND,
+        };
+
+        static constexpr const char *Details[] = {
+            (const char *) "ImportError",
+
+            (const char *) "module '%s' not found; tried: %s",
+        };
+    };
+
     struct NotImplementedError {
         enum Reason : U8 {
             ID,

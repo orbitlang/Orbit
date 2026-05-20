@@ -387,9 +387,14 @@ unsigned char *StringBuilder::BuildString(MSize *cap, MSize *len, MSize *cp_len,
     if (this->e_msg_[0] != '\0')
         return nullptr;
 
-    *len = this->len_;
-    *cp_len = this->cp_len_;
-    *kind = this->kind_;
+    if (len != nullptr)
+        *len = this->len_;
+
+    if (cp_len != nullptr)
+        *cp_len = this->cp_len_;
+
+    if (kind != nullptr)
+        *kind = this->kind_;
 
     if (this->buffer_ == nullptr || this->len_ == 0) {
         if (!this->BufferResize(1))

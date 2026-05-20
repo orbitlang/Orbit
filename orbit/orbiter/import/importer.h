@@ -7,6 +7,8 @@
 
 #include <orbit/orbiter/datatype/list.h>
 
+#include <orbit/orbiter/import/locator.h>
+
 namespace orbiter::import {
     constexpr const char *kExtension[] = {
         ".orb",
@@ -27,7 +29,7 @@ namespace orbiter::import {
 
         /// Ordered list of root paths (ORString elements). Append = lowest
         /// precedence. Held as a strong handle for the Importer's lifetime.
-        datatype::HList roots_;
+        HList roots_;
 
     public:
         explicit Importer(Isolate *isolate) : isolate_(isolate) {
@@ -52,7 +54,22 @@ namespace orbiter::import {
         bool AddRoot(const char *path);
 
         /// Append an already-built root string (lowest precedence).
-        bool AddRoot(datatype::ORString *path) const;
+        bool AddRoot(ORString *path) const;
+
+        /**
+         * @brief Walk the locator chain for @p key.
+         *
+         * Hardcoded order, tri-state: builtin → fs-source. Stops at the first
+         * locator that does not return NOT_MINE; if every locator declines,
+         * sets `ImportError` on the isolate panic (with the list of locators
+         * that were tried) and returns NOT_MINE.
+         *
+         * @param key  The canonical, absolute import key.
+         * @param out  Filled only when the result is FOUND.
+         *
+         * @return The tri-state outcome. On ERROR the isolate panic is set.
+         */
+        LocateResult Resolve(const ORString *key, Descriptor *out) const;
 
         [[nodiscard]] Isolate *GetIsolate() const noexcept {
             return this->isolate_;

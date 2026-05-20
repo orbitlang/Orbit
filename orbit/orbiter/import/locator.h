@@ -65,7 +65,7 @@ namespace orbiter::import {
      *
      * @return The tri-state outcome. On ERROR the isolate panic is set.
      */
-    using LocateFn = LocateResult (*)(Isolate *isolate, const ORString *key, Descriptor *out);
+    using LocateFn = LocateResult (*)(const Importer *isolate, const ORString *key, Descriptor *out);
 
     /// @brief One entry in the locator chain.
     struct Locator {
