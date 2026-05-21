@@ -40,6 +40,7 @@ namespace orbiter::datatype {
             INVALID_KEY,
             NO_ORIGIN,
             INVALID_ORIGIN,
+            LOADER_NOT_IMPLEMENTED,
         };
 
         static constexpr const char *Details[] = {
@@ -49,6 +50,7 @@ namespace orbiter::datatype {
             (const char *) "invalid import key '%s': %s",
             (const char *) "relative import '%s' has no origin",
             (const char *) "relative import '%s' is only valid from a source module",
+            (const char *) "%s loader is not yet implemented (key '%s')",
         };
     };
 

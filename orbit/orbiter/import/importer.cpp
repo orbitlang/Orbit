@@ -14,6 +14,8 @@
 #include <orbit/orbiter/import/importer.h>
 #include <orbit/orbiter/import/registry.h>
 
+#include <orbit/orbiter/isolate.h>
+
 using namespace orbiter::datatype;
 using namespace orbiter::import;
 
@@ -282,6 +284,18 @@ void Importer::Prepare(ModuleEntry *entry, OObject *module, ImportSpec *spec) {
     entry->spec = O_FAST_INCREF(spec);
 }
 
+void Importer::PrepareCommit(ModuleEntry *entry, OObject *module, ImportSpec *spec) {
+    assert(entry != nullptr && entry->state == ModuleState::LOADING);
+    assert(entry->module == nullptr && entry->spec == nullptr);
+
+    std::unique_lock guard(this->cache_lock_);
+
+    entry->module = O_FAST_INCREF(module);
+    entry->spec = O_FAST_INCREF(spec);
+
+    entry->state = ModuleState::LOADED;
+}
+
 void Importer::Commit(ModuleEntry *entry) {
     assert(entry != nullptr && entry->state == ModuleState::LOADING);
     // module/spec must have been attached via `Prepare` before the
@@ -312,4 +326,92 @@ void Importer::Fail(ModuleEntry *entry) {
     guard.unlock();
 
     ModuleEntryDel(this->isolate_, entry);
+}
+
+HOObject orbiter::import::Import(Isolate *isolate, ORString *raw, const ImportSpec *origin) {
+    auto *importer = isolate->importer_;
+
+    // 1. Canonicalize: produce the absolute canonical cache key.
+    const auto key = Canonicalize(isolate, raw, origin);
+    if (!key)
+        return {};
+
+    // 2. Fast-path: an existing entry — LOADED or LOADING — short-circuits.
+    //    For LOADING this is the same-fiber cycle case: returning
+    //    `entry->module` exposes the partial module.
+    if (const auto *existing = importer->Lookup(key.get()))
+        return HOObject(existing->module);
+
+    // 3. Miss → Insert. The re-check under unique lock inside Insert closes
+    //    the race where another fiber inserted between our Lookup and the
+    //    Insert.
+    bool inserted = false;
+    auto *entry = importer->Insert(key.get(), &inserted);
+    if (entry == nullptr)
+        return {};
+
+    if (!inserted)
+        return HOObject(entry->module);
+
+    // 4. Resolve through the locator chain.
+    Descriptor desc{};
+    if (importer->Resolve(key.get(), &desc) != LocateResult::FOUND) {
+        // NOT_MINE → ImportError(MODULE_NOT_FOUND) already set by Resolve.
+        // ERROR    → a locator set the panic.
+        importer->Fail(entry);
+
+        return {};
+    }
+
+    // 5. Dispatch on the loader kind. BUILTIN and VIRTUAL share the
+    //    "adopt a ready-made module" path; SOURCE and NATIVE are deliberate
+    //    stubs until the loader subsystem lands.
+    switch (desc.kind) {
+        case LoaderKind::BUILTIN:
+        case LoaderKind::VIRTUAL: {
+            const auto spec = ImportSpecNew(isolate, key.get(), desc.origin, desc.locator,
+                                            desc.kind, desc.is_package);
+            if (!spec) {
+                importer->Fail(entry);
+
+                return {};
+            }
+
+            importer->PrepareCommit(entry, desc.module, spec.get());
+
+            return HOObject(desc.module);
+        }
+
+        case LoaderKind::SOURCE: {
+            ErrorSet(isolate,
+                     ImportError::Details[ImportError::ID],
+                     nullptr,
+                     ImportError::Details[ImportError::LOADER_NOT_IMPLEMENTED],
+                     "source",
+                     ORSTRING_TO_CSTR(key.get()));
+
+            importer->Fail(entry);
+
+            return {};
+        }
+
+        case LoaderKind::NATIVE: {
+            ErrorSet(isolate,
+                     ImportError::Details[ImportError::ID],
+                     nullptr,
+                     ImportError::Details[ImportError::LOADER_NOT_IMPLEMENTED],
+                     "native",
+                     ORSTRING_TO_CSTR(key.get()));
+
+            importer->Fail(entry);
+
+            return {};
+        }
+    }
+
+    // Unreachable — the switch covers every LoaderKind. Defensive cleanup
+    // so a future enum addition doesn't leak a LOADING entry by accident.
+    importer->Fail(entry);
+
+    return {};
 }

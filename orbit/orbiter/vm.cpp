@@ -17,6 +17,8 @@
 #include <orbit/orbiter/datatype/result.h>
 #include <orbit/orbiter/datatype/tuple.h>
 
+#include <orbit/orbiter/import/importer.h>
+
 #include <orbit/orbiter/native/ffi.h>
 #include <orbit/orbiter/native/loader.h>
 
@@ -1805,7 +1807,17 @@ CATCH_FINALLY:
                 DISPATCH;
             }
             TARGET_OP(LDMOD) {
-                assert(false);
+                src = FETCH_R_SRC(instr);
+
+                const auto *prop = TIFindLocalProperty(O_GET_TYPE(fiber->context.module), "__spec__");
+
+                result = import::Import(fiber->isolate,
+                                        (ORString *) code->static_resources->objects[src],
+                                        (import::ImportSpec *) (prop != nullptr ? prop->value : nullptr)).get();
+                if (result == nullptr)
+                    goto ERROR;
+
+                ACCESS_REG_DST(instr) = (PtrSize) result;
 
                 DISPATCH;
             }

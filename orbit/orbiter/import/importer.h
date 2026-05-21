@@ -160,6 +160,8 @@ namespace orbiter::import {
          */
         void Prepare(ModuleEntry *entry, OObject *module, ImportSpec *spec);
 
+        void PrepareCommit(ModuleEntry *entry, OObject *module, ImportSpec *spec);
+
         /**
          * @brief Mark @p entry as LOADED.
          *
@@ -231,6 +233,34 @@ namespace orbiter::import {
      *         set with one of the `ImportError` reasons).
      */
     HORString Canonicalize(Isolate *isolate, ORString *raw, const ImportSpec *origin);
+
+    /**
+     * @brief Top-level import: produce the module for @p raw, loading it if
+     *        necessary.
+     *
+     * The full pipeline (see `import/README.md`):
+     *   1. Canonicalize @p raw against @p origin → key.
+     *   2. Lookup in the registry: LOADED returns the module immediately;
+     *      LOADING returns the partial module (same-fiber cycles).
+     *   3. On miss, Insert a fresh LOADING entry (re-checking under the
+     *      cache unique lock for race safety; another fiber may have
+     *      inserted between our Lookup and the Insert).
+     *   4. Resolve the key via the locator chain → Descriptor.
+     *   5. Dispatch on `Descriptor::kind` to the matching loader: BUILTIN
+     *      and VIRTUAL adopt the ready-made module as-is; SOURCE/NATIVE
+     *      are not yet implemented (will fail with `LOADER_NOT_IMPLEMENTED`).
+     *   6. `Prepare` + `Commit` the entry; on any failure `Fail` it so a
+     *      future import may retry.
+     *
+     * @param isolate  Owning isolate.
+     * @param raw      The raw import string from source.
+     * @param origin   ImportSpec of the importing module, or nullptr for
+     *                 top-level imports.
+     *
+     * @return Handle to the loaded module, or empty on failure (isolate
+     *         panic set with the originating error).
+     */
+    HOObject Import(Isolate *isolate, ORString *raw, const ImportSpec *origin);
 }
 
 #endif // !ORBIT_ORBITER_IMPORT_IMPORTER_H_
