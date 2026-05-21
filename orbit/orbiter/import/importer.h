@@ -24,6 +24,18 @@ namespace orbiter::import {
 #endif
     };
 
+    /// Orbit's logical path separator — used inside canonical import keys.
+    /// Always `/`, regardless of platform.
+    constexpr auto *kPathSep = "/";
+
+    /// Host filesystem path separator — used when building paths that go to
+    /// the OS (stat, open, …). `\` on Windows, `/` everywhere else.
+#if defined(_ORBIT_PLATFORM_WINDOWS)
+    constexpr auto *kHostPathSep = "\\";
+#else
+    constexpr auto *kHostPathSep = "/";
+#endif
+
     class Importer {
         Isolate *isolate_;
 
@@ -79,6 +91,37 @@ namespace orbiter::import {
             return this->roots_.get();
         }
     };
+
+    /**
+     * @brief Canonicalize a raw import string into the registry's cache key.
+     *
+     * The result is **always absolute and OS-independent**, even when the
+     * input was relative — this is what guarantees a module reached by two
+     * different spellings hashes to the same entry.
+     *
+     * Rules (see `import/README.md`):
+     *   - Empty input → `ImportError(INVALID_KEY)`.
+     *   - `::`-prefixed: opaque builtin scheme; only `[A-Za-z0-9_:]` allowed;
+     *     returned verbatim.
+     *   - Otherwise filesystem-style: `\` → `/`, collapse `//`, collapse `.`
+     *     segments, reject any `..` segment with `INVALID_KEY` (imports are
+     *     not disk paths; no upward traversal).
+     *   - A leading `./` is *relative*: resolved against `dirname(origin->name)`,
+     *     then folded into an absolute key. Without an @p origin this yields
+     *     `ImportError(NO_ORIGIN)`; when @p origin is not a SOURCE module
+     *     (e.g. a builtin), `ImportError(INVALID_ORIGIN)` — relative imports
+     *     only have meaning for disk-loaded modules.
+     *
+     * @param isolate  Owning isolate.
+     * @param raw      The raw import string from source.
+     * @param origin   ImportSpec of the importing module, or nullptr for
+     *                 top-level imports (no relative form allowed in that
+     *                 case).
+     *
+     * @return The canonical key, or an empty handle on error (isolate panic
+     *         set with one of the `ImportError` reasons).
+     */
+    HORString Canonicalize(Isolate *isolate, ORString *raw, const ImportSpec *origin);
 }
 
 #endif // !ORBIT_ORBITER_IMPORT_IMPORTER_H_

@@ -37,12 +37,18 @@ namespace orbiter::datatype {
             ID,
 
             MODULE_NOT_FOUND,
+            INVALID_KEY,
+            NO_ORIGIN,
+            INVALID_ORIGIN,
         };
 
         static constexpr const char *Details[] = {
             (const char *) "ImportError",
 
             (const char *) "module '%s' not found; tried: %s",
+            (const char *) "invalid import key '%s': %s",
+            (const char *) "relative import '%s' has no origin",
+            (const char *) "relative import '%s' is only valid from a source module",
         };
     };
 

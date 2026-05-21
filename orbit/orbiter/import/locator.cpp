@@ -119,11 +119,11 @@ LocateResult orbiter::import::FsSourceLocate(const Importer *importer, const ORS
             // import "a" -> <root>/a/a.ext
             // import "a/b/c" -> <root>/a/b/c/c.ext
             auto base = kbuf;
-            const auto last_sep = ORStringRFind(key, "/");
+            const auto last_sep = ORStringRFind(key, kPathSep);
             if (last_sep >= 0)
                 base += last_sep + 1;
 
-            candidate = ORStringFormat(isolate, "%s%s%s%s%s", ORSTRING_TO_CSTR(entry), kbuf, "/", base, ext);
+            candidate = ORStringFormat(isolate, "%s%s%s%s%s", ORSTRING_TO_CSTR(entry), kbuf, kPathSep, base, ext);
             if (!candidate)
                 return LocateResult::ERROR;
 
