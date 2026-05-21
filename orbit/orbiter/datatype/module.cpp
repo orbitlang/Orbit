@@ -50,7 +50,7 @@ HOType orbiter::datatype::ModuleTypeInit(Isolate *isolate) {
 
 HOType orbiter::datatype::ModuleTypeNew(Isolate *isolate, ORString *name, ORString *doc, const U16 exported,
                                         const U16 slots) {
-    const auto total_props = exported + 2; // name + doc + modspec
+    const auto total_props = exported + 3; // name + doc + modspec
 
     auto module = MakeTypeExtended(isolate, ORSTRING_TO_CSTR(name), InstanceType::MODULE, 0, total_props, slots);
     if (module) {
