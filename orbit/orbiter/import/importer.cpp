@@ -5,9 +5,13 @@
 #include <cassert>
 #include <shared_mutex>
 
+#include <orbit/liftoff/compiler.h>
+#include <orbit/liftoff/olevel.h>
+
 #include <orbit/orbiter/datatype/error.h>
 #include <orbit/orbiter/datatype/errors.h>
 #include <orbit/orbiter/datatype/list.h>
+#include <orbit/orbiter/datatype/module.h>
 #include <orbit/orbiter/datatype/orstring.h>
 #include <orbit/orbiter/datatype/stringbuilder.h>
 
@@ -218,7 +222,7 @@ HORString orbiter::import::Canonicalize(Isolate *isolate, ORString *raw, const I
     return ORStringNew(isolate, builder);
 }
 
-ModuleEntry *Importer::Lookup(ORString *key) {
+orbiter::import::ModuleEntry *Importer::Lookup(ORString *key) {
     std::shared_lock guard(this->cache_lock_);
 
     ModuleMap::HEntry *hentry = nullptr;
@@ -228,7 +232,7 @@ ModuleEntry *Importer::Lookup(ORString *key) {
     return hentry->value;
 }
 
-ModuleEntry *Importer::Insert(ORString *key, bool *was_inserted) {
+orbiter::import::ModuleEntry *Importer::Insert(ORString *key, bool *was_inserted) {
     std::unique_lock guard(this->cache_lock_);
 
     ModuleMap::HEntry *hentry = nullptr;
@@ -328,6 +332,79 @@ void Importer::Fail(ModuleEntry *entry) {
     ModuleEntryDel(this->isolate_, entry);
 }
 
+// *********************************************************************************************************************
+// SOURCE LOADER
+// *********************************************************************************************************************
+
+/// Disk-backed `.orb` loader.
+///
+/// Opens the file at `desc.origin`, compiles it through the liftoff
+/// pipeline, builds a fresh `Module` instance + `ImportSpec`, attaches
+/// them to @p entry via `Prepare`, then runs the module's top-level.
+static HOObject LoadSource(orbiter::Isolate *isolate, ORString *key, const Descriptor &desc,
+                           orbiter::import::ModuleEntry *entry) {
+    auto *importer = isolate->importer_;
+
+    const auto last_sep = ORStringRFind(key, kPathSep);
+    const auto *r_name = ORSTRING_TO_CSTR(key) + last_sep + 1;
+
+    const auto name = ORStringIntern(isolate, r_name);
+    if (!name) {
+        importer->Fail(entry);
+
+        return {};
+    }
+
+    auto *source = fopen(ORSTRING_TO_CSTR(desc.origin), "r");
+    if (source == nullptr) {
+        // TODO: set errno panic here
+
+        importer->Fail(entry);
+
+        return {};
+    }
+
+    // TODO: load optimization levels from Orbit configuration
+    liftoff::Compiler compiler(isolate, liftoff::kDefaultOptimization, true);
+
+    const auto code = compiler.Compile(r_name, source);
+    if (!code) {
+        importer->Fail(entry);
+
+        return {};
+    }
+
+    const auto module_type = ModuleTypeNew(code.get(), name.get());
+    if (!module_type) {
+        importer->Fail(entry);
+
+        return {};
+    }
+
+    const auto module = ModuleNew(module_type.get());
+    if (!module) {
+        importer->Fail(entry);
+
+        return {};
+    }
+
+    const auto spec = ImportSpecNew(isolate, key, desc.origin, desc.locator, desc.kind, true);
+    if (!spec) {
+        importer->Fail(entry);
+
+        return {};
+    }
+
+    importer->Prepare(entry, (OObject *) module.get(), spec.get());
+
+    const auto prop = TIFindLocalProperty(module_type.get(), "__spec__");
+    assert(prop != nullptr);
+
+    prop->value = (OObject *) O_INCREF(spec.get());
+
+    return HOObject((OObject *) module.get());
+}
+
 HOObject orbiter::import::Import(Isolate *isolate, ORString *raw, const ImportSpec *origin) {
     auto *importer = isolate->importer_;
 
@@ -382,18 +459,8 @@ HOObject orbiter::import::Import(Isolate *isolate, ORString *raw, const ImportSp
             return HOObject(desc.module);
         }
 
-        case LoaderKind::SOURCE: {
-            ErrorSet(isolate,
-                     ImportError::Details[ImportError::ID],
-                     nullptr,
-                     ImportError::Details[ImportError::LOADER_NOT_IMPLEMENTED],
-                     "source",
-                     ORSTRING_TO_CSTR(key.get()));
-
-            importer->Fail(entry);
-
-            return {};
-        }
+        case LoaderKind::SOURCE:
+            return LoadSource(isolate, key.get(), desc, entry);
 
         case LoaderKind::NATIVE: {
             ErrorSet(isolate,

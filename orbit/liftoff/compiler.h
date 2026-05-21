@@ -6,7 +6,9 @@
 #define ORBIT_LIFTOFF_COMPILER_H_
 
 #include <orbit/liftoff/olevel.h>
+
 #include <orbit/liftoff/ir/ircontext.h>
+#include <orbit/liftoff/scanner/scanner.h>
 
 #include <orbit/orbiter/datatype/code.h>
 
