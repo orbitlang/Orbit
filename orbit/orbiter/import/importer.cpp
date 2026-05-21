@@ -2,6 +2,8 @@
 //
 // Licensed under the Apache License v2.0
 
+#include <shared_mutex>
+
 #include <orbit/orbiter/datatype/error.h>
 #include <orbit/orbiter/datatype/errors.h>
 #include <orbit/orbiter/datatype/list.h>
@@ -9,6 +11,7 @@
 #include <orbit/orbiter/datatype/stringbuilder.h>
 
 #include <orbit/orbiter/import/importer.h>
+#include <orbit/orbiter/import/registry.h>
 
 using namespace orbiter::datatype;
 using namespace orbiter::import;
@@ -17,10 +20,20 @@ using namespace orbiter::import;
 // PUBLIC API
 // *********************************************************************************************************************
 
+Importer::~Importer() {
+    this->modules_.Finalize([this](const ModuleMap::HEntry *e) {
+        O_FAST_DECREF(e->key);
+
+        ModuleEntryDel(this->isolate_, e->value);
+    });
+}
+
 bool Importer::Initialize() {
     this->roots_ = ListNew(this->isolate_);
+    if (!this->roots_)
+        return false;
 
-    return (bool) this->roots_;
+    return this->modules_.Initialize();
 }
 
 bool Importer::AddRoot(const char *path) {
@@ -200,4 +213,60 @@ HORString orbiter::import::Canonicalize(Isolate *isolate, ORString *raw, const I
     }
 
     return ORStringNew(isolate, builder);
+}
+
+ModuleEntry *Importer::Lookup(ORString *key) {
+    std::shared_lock guard(this->cache_lock_);
+
+    ModuleMap::HEntry *hentry = nullptr;
+    if (this->modules_.Lookup(key, &hentry) != LookupResult::OK)
+        return nullptr;
+
+    return hentry->value;
+}
+
+ModuleEntry *Importer::Insert(ORString *key, bool *was_inserted) {
+    std::unique_lock guard(this->cache_lock_);
+
+    ModuleMap::HEntry *hentry = nullptr;
+    if (this->modules_.Lookup(key, &hentry) == LookupResult::OK) {
+        if (was_inserted != nullptr)
+            *was_inserted = false;
+
+        return hentry->value;
+    }
+
+    // Confirmed miss — allocate.
+    auto *entry = ModuleEntryNew(this->isolate_, key);
+    if (entry == nullptr)
+        return nullptr;
+
+    hentry = this->modules_.AllocHEntry();
+    if (hentry == nullptr) {
+        guard.unlock();
+
+        ModuleEntryDel(this->isolate_, entry);
+
+        return nullptr;
+    }
+
+    hentry->key = key;
+    hentry->value = entry;
+
+    if (this->modules_.Insert(hentry) != LookupResult::OK) {
+        this->modules_.FreeHEntry(hentry);
+
+        guard.unlock();
+
+        ModuleEntryDel(this->isolate_, entry);
+
+        return nullptr;
+    }
+
+    O_FAST_INCREF(key);
+
+    if (was_inserted != nullptr)
+        *was_inserted = true;
+
+    return entry;
 }

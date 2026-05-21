@@ -5,9 +5,13 @@
 #ifndef ORBIT_ORBITER_IMPORT_IMPORTER_H_
 #define ORBIT_ORBITER_IMPORT_IMPORTER_H_
 
+#include <orbit/orbiter/datatype/hashmap.h>
 #include <orbit/orbiter/datatype/list.h>
 
+#include <orbit/orbiter/sync/asyncrwlock.h>
+
 #include <orbit/orbiter/import/locator.h>
+#include <orbit/orbiter/import/registry.h>
 
 namespace orbiter::import {
     constexpr const char *kExtension[] = {
@@ -36,6 +40,13 @@ namespace orbiter::import {
     constexpr auto *kHostPathSep = "/";
 #endif
 
+    /// Module registry hashmap: canonical key → ModuleEntry. Plain
+    /// engine-side container (entries are not Orbit objects).
+    using ModuleMap = HashMap<ORString *,
+        ModuleEntry *,
+        ORStringEqual,
+        ORStringHash>;
+
     class Importer {
         Isolate *isolate_;
 
@@ -43,9 +54,21 @@ namespace orbiter::import {
         /// precedence. Held as a strong handle for the Importer's lifetime.
         HList roots_;
 
+        /// Cache of canonical key → ModuleEntry. Stores both loaded and
+        /// in-progress (LOADING) modules. See `import/registry.h`.
+        ModuleMap modules_;
+
+        /// Brief lock around `modules_`. Held only for cache operations —
+        /// **never** during a module's top-level execution. The "no lock
+        /// during load" rule from `import/README.md` is what keeps nested
+        /// imports from deadlocking the registry on themselves.
+        sync::AsyncRWLock cache_lock_;
+
     public:
-        explicit Importer(Isolate *isolate) : isolate_(isolate) {
+        explicit Importer(Isolate *isolate) : isolate_(isolate), modules_(isolate) {
         }
+
+        ~Importer();
 
         /**
          * @brief Allocate the backing structures. Call once before use.
@@ -83,11 +106,46 @@ namespace orbiter::import {
          */
         LocateResult Resolve(const ORString *key, Descriptor *out) const;
 
+        /**
+         * @brief Look up a cache entry by canonical key.
+         *
+         * Acquires the cache shared lock for the duration of the lookup.
+         * Returns the entry verbatim — including LOADING ones — so the
+         * caller can distinguish "miss" (nullptr) from "in progress"
+         * (state == LOADING).
+         *
+         * @param key  Canonical, absolute import key.
+         *
+         * @return The entry, or nullptr on miss (no panic set).
+         */
+        ModuleEntry *Lookup(ORString *key);
+
+        /**
+         * @brief Acquire the cache entry for @p key, creating it if missing.
+         *
+         * Takes the cache unique lock and re-checks under the lock before
+         * allocating: this closes the race where two fibers both miss in a
+         * prior `Lookup` and would otherwise double-insert (the underlying
+         * `HashMap::Insert` doesn't dedup keys, so a duplicate would corrupt
+         * the cache). On a hit under the lock, the existing entry is
+         * returned untouched.
+         *
+         * @param key            Canonical, absolute import key.
+         * @param was_inserted   Optional out: set to true when a fresh
+         *                       LOADING entry was created, false when the
+         *                       returned entry was already in the cache.
+         *                       Pass `nullptr` to ignore.
+         *
+         * @return The entry (fresh or pre-existing), or nullptr on
+         *         allocation failure (isolate panic set).
+         */
+        ModuleEntry *Insert(ORString *key, bool *was_inserted);
+
         [[nodiscard]] Isolate *GetIsolate() const noexcept {
             return this->isolate_;
         }
 
-        [[nodiscard]] datatype::List *Roots() const {
+        [[nodiscard]] List *Roots() const {
             return this->roots_.get();
         }
     };
