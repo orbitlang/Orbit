@@ -1811,10 +1811,18 @@ CATCH_FINALLY:
 
                 const auto *prop = TIFindLocalProperty(O_GET_TYPE(fiber->context.module), "__spec__");
 
-                result = import::Import(fiber->isolate,
-                                        (ORString *) code->static_resources->objects[src],
-                                        (import::ImportSpec *) (prop != nullptr ? prop->value : nullptr)).get();
-                if (result == nullptr)
+                auto status = import::Import(fiber->isolate,
+                                             (ORString *) code->static_resources->objects[src],
+                                             (import::ImportSpec *) (prop != nullptr ? prop->value : nullptr),
+                                             (Module *&) result);
+
+                if (status != import::ImportStatus::BLOCKED) {
+                    fiber->state = FiberState::SUSPENDED;
+
+                    return nullptr;
+                }
+
+                if (status == import::ImportStatus::ERROR)
                     goto ERROR;
 
                 ACCESS_REG_DST(instr) = (PtrSize) result;

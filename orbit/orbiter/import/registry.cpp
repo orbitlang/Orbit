@@ -4,6 +4,8 @@
 
 #include <orbit/orbiter/datatype/orstring.h>
 
+#include <orbit/orbiter/fiber.h>
+
 #include <orbit/orbiter/memory/iallocator.h>
 
 #include <orbit/orbiter/import/registry.h>
@@ -15,15 +17,15 @@ using namespace orbiter::import;
 // PUBLIC API
 // *********************************************************************************************************************
 
-ModuleEntry *orbiter::import::ModuleEntryNew(Isolate *isolate, ORString *name) {
+orbiter::import::ModuleEntry *orbiter::import::ModuleEntryNew(Isolate *isolate, ORString *name) {
     memory::IsolateAllocator allocator(isolate);
 
-    auto *entry = allocator.calloc<ModuleEntry>(sizeof(ModuleEntry));
+    auto *entry = allocator.AllocObject<ModuleEntry>();
     if (entry == nullptr)
         return nullptr;
 
     entry->name = O_FAST_INCREF(name);
-    entry->state = ModuleState::LOADING;
+    entry->owner = Fiber::Current();
 
     return entry;
 }
@@ -33,9 +35,12 @@ void orbiter::import::ModuleEntryDel(Isolate *isolate, ModuleEntry *entry) {
         return;
 
     // O_FAST_DECREF is null-safe, so unset `module`/`spec` cost nothing.
+    // `waiters` must already be drained — the FiberQueue destructor (run
+    // by FreeObject) asserts count_==0. `Commit`/`Fail` are the only paths
+    // that drop entries, and both drain before reaching us.
     O_FAST_DECREF(entry->name);
     O_FAST_DECREF(entry->module);
     O_FAST_DECREF(entry->spec);
 
-    memory::IsolateAllocator(isolate).free(entry);
+    memory::IsolateAllocator(isolate).FreeObject(entry);
 }

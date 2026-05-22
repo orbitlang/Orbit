@@ -13,6 +13,10 @@
 #include <orbit/orbiter/import/locator.h>
 #include <orbit/orbiter/import/registry.h>
 
+namespace orbiter {
+    class Fiber;
+}
+
 namespace orbiter::import {
     constexpr const char *kExtension[] = {
         ".orb",
@@ -32,20 +36,62 @@ namespace orbiter::import {
     /// Always `/`, regardless of platform.
     constexpr auto *kPathSep = "/";
 
-    /// Host filesystem path separator — used when building paths that go to
-    /// the OS (stat, open, …). `\` on Windows, `/` everywhere else.
+    /// Host filesystem path separator.
 #if defined(_ORBIT_PLATFORM_WINDOWS)
     constexpr auto *kHostPathSep = "\\";
 #else
     constexpr auto *kHostPathSep = "/";
 #endif
 
-    /// Module registry hashmap: canonical key → ModuleEntry. Plain
-    /// engine-side container (entries are not Orbit objects).
+    /// Module registry hashmap: canonical key → ModuleEntry.
     using ModuleMap = HashMap<ORString *,
         ModuleEntry *,
         ORStringEqual,
         ORStringHash>;
+
+    /// Pointer equality for `Fiber*` keys in the wait-for graph.
+    inline bool FiberPtrEqual(const Fiber *a, const Fiber *b) noexcept {
+        return a == b;
+    }
+
+    /// Hash for `Fiber*` keys in the wait-for graph.
+    inline size_t FiberPtrHash(const Fiber *f) noexcept {
+        return reinterpret_cast<size_t>(f);
+    }
+
+    /// Wait-for graph: `fiber → entry it is currently blocked on`.
+    /// Used to detect cross-fiber circular imports before enqueueing a new waiter.
+    using WaitForMap = HashMap<
+        Fiber *,
+        ModuleEntry *,
+        FiberPtrEqual,
+        FiberPtrHash
+    >;
+
+    enum class AcquireOutcome : U8 {
+        /// `entry->module` is the final, fully-loaded module — use it.
+        LOADED,
+        /// `entry->module` is the partial module for a same-fiber cycle —
+        /// use it pragmatically.
+        PARTIAL,
+        /// Fresh entry just inserted; the calling fiber owns the load and
+        /// must run the loader, then `Commit`/`Fail`.
+        FRESH,
+        /// Cross-fiber LOADING: the calling fiber has been enqueued on the
+        /// peer's waiters and must SUSPEND until woken. `entry` is null;
+        /// the caller re-runs `Import` on wake.
+        BLOCKED,
+        /// Cross-fiber circular import detected; isolate panic set.
+        CYCLE,
+        /// Allocation failure; isolate panic set.
+        ERROR,
+    };
+
+    enum class ImportStatus : U8 {
+        OK,
+        BLOCKED,
+        ERROR
+    };
 
     class Importer {
         Isolate *isolate_;
@@ -55,70 +101,47 @@ namespace orbiter::import {
         HList roots_;
 
         /// Cache of canonical key → ModuleEntry. Stores both loaded and
-        /// in-progress (LOADING) modules. See `import/registry.h`.
+        /// in-progress (LOADING) modules.
         ModuleMap modules_;
 
-        /// Brief lock around `modules_`. Held only for cache operations —
-        /// **never** during a module's top-level execution. The "no lock
-        /// during load" rule from `import/README.md` is what keeps nested
-        /// imports from deadlocking the registry on themselves.
+        /// Wait-for graph: `fiber → entry it is blocked on`. Used to spot
+        /// cross-fiber circular imports before enqueueing a new waiter.
+        WaitForMap wait_for_;
+
+        /// Brief lock around `modules_` and `wait_for_`. Held only for
+        /// cache and graph operations — **never** during a module's
+        /// top-level execution.
         sync::AsyncRWLock cache_lock_;
 
-    public:
-        explicit Importer(Isolate *isolate) : isolate_(isolate), modules_(isolate) {
-        }
+        AcquireOutcome Acquire(ORString *key, ModuleEntry * &out) noexcept;
 
-        ~Importer();
+        AcquireOutcome EnqueueAndWait(Fiber *me, ModuleEntry *entry) noexcept;
 
         /**
-         * @brief Allocate the backing structures. Call once before use.
-         *
-         * @return false on allocation failure (isolate panic set).
-         */
-        bool Initialize();
+         * @brief Detect cross-fiber circular imports.
+         * 
+         * Walk the wait-for graph from @p target back through its owner
+         * chain to detect whether enqueueing @p me as a waiter would
+         * close a cycle. The caller must hold the cache unique lock.
+        */
+        [[nodiscard]] bool HasCycle(const Fiber *me, const ModuleEntry *target) const;
 
-        /**
-         * @brief Append a search root from a C string (lowest precedence).
-         *
-         * @param path  A NUL-terminated path. Expected absolute and already
-         *              normalized to unix-style separators — this entry point
-         *              does not canonicalize.
-         *
-         * @return false on allocation failure (isolate panic set).
-         */
-        bool AddRoot(const char *path);
-
-        /// Append an already-built root string (lowest precedence).
-        bool AddRoot(ORString *path) const;
+        HModule LoadScriptSource(ORString *key, const Descriptor &desc, ModuleEntry *entry);
 
         /**
          * @brief Walk the locator chain for @p key.
-         *
+         * 
          * Hardcoded order, tri-state: builtin → fs-source. Stops at the first
          * locator that does not return NOT_MINE; if every locator declines,
          * sets `ImportError` on the isolate panic (with the list of locators
          * that were tried) and returns NOT_MINE.
-         *
+         * 
          * @param key  The canonical, absolute import key.
          * @param out  Filled only when the result is FOUND.
-         *
+         * 
          * @return The tri-state outcome. On ERROR the isolate panic is set.
          */
         LocateResult Resolve(const ORString *key, Descriptor *out) const;
-
-        /**
-         * @brief Look up a cache entry by canonical key.
-         *
-         * Acquires the cache shared lock for the duration of the lookup.
-         * Returns the entry verbatim — including LOADING ones — so the
-         * caller can distinguish "miss" (nullptr) from "in progress"
-         * (state == LOADING).
-         *
-         * @param key  Canonical, absolute import key.
-         *
-         * @return The entry, or nullptr on miss (no panic set).
-         */
-        ModuleEntry *Lookup(ORString *key);
 
         /**
          * @brief Acquire the cache entry for @p key, creating it if missing.
@@ -142,25 +165,18 @@ namespace orbiter::import {
         ModuleEntry *Insert(ORString *key, bool *was_inserted);
 
         /**
-         * @brief Attach @p module and @p spec to a LOADING entry.
+         * @brief Look up a cache entry by canonical key.
          *
-         * Called once by the loader **before** running the module's top-level,
-         * so that re-entrant imports from the same fiber observe the
-         * partial module and `__spec__` is available throughout loading.
-         * The module object itself is populated in place as the top-level runs;
-         * the pointer set here is the same one that `Commit` will eventually mark as LOADED.
+         * Acquires the cache shared lock for the duration of the lookup.
+         * Returns the entry verbatim — including LOADING ones — so the
+         * caller can distinguish "miss" (nullptr) from "in progress"
+         * (state == LOADING).
          *
-         * It is a programming error to call Prepare on an entry that is
-         * not LOADING, or on one that already has `module`/`spec` set —
-         * both caught by assertion.
+         * @param key  Canonical, absolute import key.
          *
-         * @param entry   The LOADING entry obtained from a prior `Insert`.
-         * @param module  The (typically empty) module to attach. INCREF'd.
-         * @param spec    The public `ImportSpec`. INCREF'd.
+         * @return The entry, or nullptr on miss (no panic set).
          */
-        void Prepare(ModuleEntry *entry, OObject *module, ImportSpec *spec);
-
-        void PrepareCommit(ModuleEntry *entry, OObject *module, ImportSpec *spec);
+        ModuleEntry *Lookup(ORString *key);
 
         /**
          * @brief Mark @p entry as LOADED.
@@ -180,19 +196,68 @@ namespace orbiter::import {
 
         /**
          * @brief Drop a failed entry, allowing a future retry.
-         *
+         * 
          * Removes @p entry from the cache under the unique lock and
          * releases it (DECREF of every held Orbit reference, free). Used
          * when a module's top-level raises: per README "FAILED → removal
          * + retry consentito", a poisoned half-initialized entry must
          * never linger.
-         *
-         * The pointer is **consumed**: do not reference it after Fail
-         * returns.
-         *
+         * 
+         * The pointer is **consumed**: do not reference it after Fail returns.
+         * 
          * @param entry  The LOADING entry obtained from a prior `Insert`.
-         */
+       */
         void Fail(ModuleEntry *entry);
+
+        /**
+         * @brief Attach @p module and @p spec to a LOADING entry.
+         *
+         * Called once by the loader **before** running the module's top-level,
+         * so that re-entrant imports from the same fiber observe the
+         * partial module and `__spec__` is available throughout loading.
+         * The module object itself is populated in place as the top-level runs;
+         * the pointer set here is the same one that `Commit` will eventually mark as LOADED.
+         *
+         * It is a programming error to call Prepare on an entry that is
+         * not LOADING, or on one that already has `module`/`spec` set —
+         * both caught by assertion.
+         *
+         * @param entry   The LOADING entry obtained from a prior `Insert`.
+         * @param module  The (typically empty) module to attach. INCREF'd.
+         * @param spec    The public `ImportSpec`. INCREF'd.
+         */
+        void Prepare(ModuleEntry *entry, Module *module, ImportSpec *spec);
+
+        void PrepareCommit(ModuleEntry *entry, Module *module, ImportSpec *spec);
+
+    public:
+        explicit Importer(Isolate *isolate) : isolate_(isolate), modules_(isolate), wait_for_(isolate) {
+        }
+
+        ~Importer();
+
+        /**
+         * @brief Allocate the backing structures. Call once before use.
+         *
+         * @return false on allocation failure (isolate panic set).
+         */
+        bool Initialize();
+
+        /**
+         * @brief Append a search root from a C string (lowest precedence).
+         *
+         * @param path  A NUL-terminated path. Expected absolute and already
+         *              normalized to unix-style separators — this entry point
+         *              does not canonicalize.
+         *
+         * @return false on allocation failure (isolate panic set).
+         */
+        bool AddRoot(const char *path) const;
+
+        /// Append an already-built root string (lowest precedence).
+        bool AddRoot(ORString *path) const;
+
+        [[nodiscard]] ImportStatus Import(ORString *raw, const ImportSpec *origin, Module * &out_module) noexcept;
 
         [[nodiscard]] Isolate *GetIsolate() const noexcept {
             return this->isolate_;
@@ -235,32 +300,31 @@ namespace orbiter::import {
     HORString Canonicalize(Isolate *isolate, ORString *raw, const ImportSpec *origin);
 
     /**
-     * @brief Top-level import: produce the module for @p raw, loading it if
-     *        necessary.
+     * @brief Top-level import: produce the module for @p raw.
      *
-     * The full pipeline (see `import/README.md`):
-     *   1. Canonicalize @p raw against @p origin → key.
-     *   2. Lookup in the registry: LOADED returns the module immediately;
-     *      LOADING returns the partial module (same-fiber cycles).
-     *   3. On miss, Insert a fresh LOADING entry (re-checking under the
-     *      cache unique lock for race safety; another fiber may have
-     *      inserted between our Lookup and the Insert).
-     *   4. Resolve the key via the locator chain → Descriptor.
-     *   5. Dispatch on `Descriptor::kind` to the matching loader: BUILTIN
-     *      and VIRTUAL adopt the ready-made module as-is; SOURCE/NATIVE
-     *      are not yet implemented (will fail with `LOADER_NOT_IMPLEMENTED`).
-     *   6. `Prepare` + `Commit` the entry; on any failure `Fail` it so a
-     *      future import may retry.
+     * Pipeline (see `import/README.md`):
+     *   Canonicalize → `Acquire` → (FRESH ⇒ Resolve + loader + Prepare/Commit)
      *
-     * @param isolate  Owning isolate.
-     * @param raw      The raw import string from source.
-     * @param origin   ImportSpec of the importing module, or nullptr for
-     *                 top-level imports.
+     * Cross-fiber: on contention with another fiber already loading the
+     * same key, `Acquire` enqueues the current fiber on the peer's
+     * waiters and `Import` returns `BLOCKED`. The caller (opcode handler)
+     * must transition the fiber to SUSPENDED and re-run the same `Import`
+     * call when the fiber wakes — the registry guarantees a wake on the
+     * peer's `Commit` / `Fail`.
      *
-     * @return Handle to the loaded module, or empty on failure (isolate
-     *         panic set with the originating error).
+     * @param isolate     Owning isolate.
+     * @param raw         The raw import string from source.
+     * @param origin      ImportSpec of the importing module, or nullptr
+     *                    for top-level imports.
+     * @param out_module  Receives the loaded module on `ImportStatus::OK`;
+     *                    untouched on BLOCKED / ERROR.
+     *
+     * @return Tri-state outcome. ERROR is also returned for the
+     *         cross-fiber CIRCULAR_DEADLOCK case (panic set).
      */
-    HOObject Import(Isolate *isolate, ORString *raw, const ImportSpec *origin);
+    ImportStatus Import(const Isolate *isolate, ORString *raw, const ImportSpec *origin, Module * &out_module);
+
+    ImportStatus Import(const Isolate *isolate, ORString *raw, Module *base, Module * &out_module);
 }
 
 #endif // !ORBIT_ORBITER_IMPORT_IMPORTER_H_

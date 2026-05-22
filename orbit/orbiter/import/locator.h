@@ -40,7 +40,7 @@ namespace orbiter::import {
         ORString *origin;
 
         /// VIRTUAL only: a ready-made module adopted as-is. null otherwise.
-        OObject *module;
+        Module *module;
 
         /// VIRTUAL only: an in-memory source buffer to compile. null otherwise.
         OObject *source;

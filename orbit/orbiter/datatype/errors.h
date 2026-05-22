@@ -41,6 +41,7 @@ namespace orbiter::datatype {
             NO_ORIGIN,
             INVALID_ORIGIN,
             LOADER_NOT_IMPLEMENTED,
+            CIRCULAR_DEADLOCK,
         };
 
         static constexpr const char *Details[] = {
@@ -51,6 +52,7 @@ namespace orbiter::datatype {
             (const char *) "relative import '%s' has no origin",
             (const char *) "relative import '%s' is only valid from a source module",
             (const char *) "%s loader is not yet implemented (key '%s')",
+            (const char *) "circular import deadlock: '%s' is waiting on '%s' whose owner transitively waits back",
         };
     };
 

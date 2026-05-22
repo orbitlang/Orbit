@@ -7,7 +7,13 @@
 
 #include <orbit/orbiter/datatype/orstring.h>
 
+#include <orbit/orbiter/fqueue.h>
+
 #include <orbit/orbiter/import/importspec.h>
+
+namespace orbiter {
+    class Fiber;
+}
 
 namespace orbiter::import {
     using namespace orbiter::datatype;
@@ -55,13 +61,25 @@ namespace orbiter::import {
      *   - `state`   lifecycle marker; transitions LOADING → LOADED/FAILED.
      */
     struct ModuleEntry {
-        ORString *name;
+        ORString *name = nullptr;
 
-        OObject *module;
+        Module *module = nullptr;
 
-        ImportSpec *spec;
+        ImportSpec *spec = nullptr;
 
-        ModuleState state;
+        ModuleState state = ModuleState::LOADING;
+
+        /// Fiber that owns this LOADING entry. Used to tell same-fiber
+        /// cyclic imports (return partial module) apart from cross-fiber
+        /// concurrent loads (enqueue on `waiters` and block). Set at
+        /// `ModuleEntryNew` time; left untouched after that.
+        Fiber *owner = nullptr;
+
+        /// Fibers blocked waiting for this entry to leave LOADING. Drained
+        /// on `Commit`/`Fail`, with each woken fiber re-scheduled via
+        /// `Orbiter::PushFiber`. Must be empty by the time the entry is
+        /// destroyed (the `FiberQueue` destructor asserts).
+        FiberQueue<false> waiters;
     };
 
     /**

@@ -69,14 +69,18 @@ LocateResult orbiter::import::BuiltinLocate(const Importer *importer, const ORSt
         if (klen != nlen || memory::MemoryCompare(kbuf, cursor->name, nlen) != 0)
             continue;
 
-        const auto module = ModuleTypeNew(importer->GetIsolate(), cursor);
+        const auto module_type = ModuleTypeNew(importer->GetIsolate(), cursor);
+        if (!module_type)
+            return LocateResult::ERROR;
+
+        const auto module = ModuleNew(module_type.get());
         if (!module)
             return LocateResult::ERROR;
 
         out->kind = LoaderKind::BUILTIN;
         out->origin = (ORString *) key;
         out->is_package = false;
-        out->module = (OObject *) module.get();
+        out->module = module.get();
         out->source = nullptr;
         out->locator = nullptr;
 
