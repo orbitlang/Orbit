@@ -117,6 +117,9 @@ HOType orbiter::datatype::ModuleTypeNew(const Code *code, ORString *name) {
             if (ENUMBITMASK_ISTRUE(symbol->flags, VariableFlags::CONSTANT))
                 pd = PropertyFlag::IS_CONSTANT;
 
+            if (ENUMBITMASK_ISTRUE(symbol->flags, VariableFlags::PUBLIC))
+                pd = PropertyFlag::IS_PUBLIC;
+
             if (!TIPropertyAddInline(module.get(), (OObject *) symbol->name, symbol->slot, pd))
                 return {};
         }
