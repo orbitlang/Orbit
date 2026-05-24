@@ -467,6 +467,16 @@ static bool BytesOpToBool(const OObject *self) {
     return ((const Bytes *) self)->length != 0;
 }
 
+static bool BytesToNative(const Bytes *self, void *out, const NativeType type) {
+    if (type == NativeType::PTR) {
+        *((PtrSize *) out) = (PtrSize) self->shared->buffer + self->start;
+
+        return true;
+    }
+
+    return false;
+}
+
 /// Render as `b"..."` with non-printable / non-ASCII bytes shown as `\xHH`.
 static OObject *BytesOpToString(orbiter::Isolate *isolate, const Bytes *self) {
     StringBuilder builder(isolate);
@@ -1837,6 +1847,7 @@ bool orbiter::datatype::BytesTypeSetup(TypeInfo *self) noexcept {
 
     // --- Conversion ---
     ops.to_bool = BytesOpToBool;
+    ops.to_native = (ToNativeType) BytesToNative;
     ops.to_string = (ToStrFn) BytesOpToString;
 
     // --- Runtime ---
