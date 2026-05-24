@@ -12,7 +12,7 @@
 #include <orbit/orbiter/datatype/module.h>
 #include <orbit/orbiter/datatype/rguard.h>
 
-#include <orbit/orbiter/import/registry.h>
+#include <orbit/orbiter/import/module_entry.h>
 
 #include <orbit/orbiter/defer.h>
 #include <orbit/orbiter/panic.h>

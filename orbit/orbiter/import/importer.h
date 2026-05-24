@@ -11,7 +11,7 @@
 #include <orbit/orbiter/sync/asyncrwlock.h>
 
 #include <orbit/orbiter/import/locator.h>
-#include <orbit/orbiter/import/registry.h>
+#include <orbit/orbiter/import/module_entry.h>
 
 namespace orbiter {
     class Fiber;

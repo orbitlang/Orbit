@@ -6,7 +6,7 @@
 
 #include <orbit/orbiter/memory/iallocator.h>
 
-#include <orbit/orbiter/import/registry.h>
+#include <orbit/orbiter/import/module_entry.h>
 
 using namespace orbiter::datatype;
 using namespace orbiter::import;

@@ -19,7 +19,6 @@
 #include <orbit/orbiter/datatype/orstring.h>
 #include <orbit/orbiter/datatype/stringbuilder.h>
 
-#include <orbit/orbiter/import/registry.h>
 #include <orbit/orbiter/import/importer.h>
 
 using namespace orbiter::datatype;
