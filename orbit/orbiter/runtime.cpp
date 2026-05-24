@@ -8,6 +8,8 @@
 #include <orbit/orbiter/datatype/errors.h>
 #include <orbit/orbiter/datatype/future.h>
 
+#include <orbit/orbiter/import/importer.h>
+
 #include <orbit/orbiter/fpool.h>
 
 #include <orbit/orbiter/runtime.h>
@@ -395,6 +397,13 @@ void Orbiter::OSTWakeRun() noexcept {
 void Orbiter::PublishResult(const OSThread *ost, OObject *result) noexcept {
     auto *fiber = ost->fiber;
 
+    if (fiber->module_entry != nullptr) {
+        if (*fiber->panic.r_current_ != nullptr)
+            fiber->isolate->importer_->Fail(fiber->module_entry);
+        else
+            fiber->isolate->importer_->Commit(fiber->module_entry);
+    }
+
     if (fiber->future != nullptr) {
         if (*fiber->panic.r_current_ != nullptr)
             FutureReject((Future *) fiber->future, fiber->GetDiscardPanic().get());
@@ -462,8 +471,8 @@ bool Orbiter::Initialize(const void *config) noexcept {
     return false;
 }
 
-HOObject Orbiter::Eval(Context *context, Module *module, Code *code) noexcept {
-    auto *isolate = O_GET_ISOLATE(code);
+Fiber *Orbiter::EvalDetached(Context *context, Module *module, Code *code) noexcept {
+    const auto *isolate = O_GET_ISOLATE(code);
 
     // Sanity check
     assert(O_GET_ISOLATE(context) == isolate);
@@ -472,19 +481,27 @@ HOObject Orbiter::Eval(Context *context, Module *module, Code *code) noexcept {
 
     auto *fiber = isolate->fpool_->NewFiber();
     if (fiber == nullptr)
-        return HOObject(nullptr);
-
-    const auto future = FutureNew(isolate);
-    if (!future) {
-        isolate->fpool_->DeleteFiber(fiber);
-
-        return HOObject(nullptr);
-    }
+        return nullptr;
 
     fiber->SetContext(context, module, code);
-    fiber->future = (OObject *) future.get();
 
     isolate->gc->AddFiber(fiber);
+
+    return fiber;
+}
+
+HOObject Orbiter::Eval(Context *context, Module *module, Code *code) noexcept {
+    auto *isolate = O_GET_ISOLATE(code);
+
+    const auto future = FutureNew(isolate);
+    if (!future)
+        return {};
+
+    auto *fiber = EvalDetached(context, module, code);
+    if (fiber == nullptr)
+        return {};
+
+    fiber->future = (OObject *) future.get();
 
     if (!this->fiber_queue_.Enqueue(fiber)) {
         isolate->gc->RemoveFiber(fiber);
@@ -495,7 +512,7 @@ HOObject Orbiter::Eval(Context *context, Module *module, Code *code) noexcept {
                  nullptr,
                  SchedulerError::Details[SchedulerError::Reason::FIBER_QUEUE_FULL]);
 
-        return HOObject(nullptr);
+        return {};
     }
 
     this->OSTWakeRun();
@@ -575,6 +592,18 @@ HFuture Orbiter::EvalAsync(Function *func, const unsigned char *stack_begin, con
 
 Orbiter *Orbiter::GetInstance() noexcept {
     return orbiter_;
+}
+
+void Orbiter::DiscardDetachedFiber(Fiber *fiber) noexcept {
+    if (fiber == nullptr)
+        return;
+
+    assert(fiber->state == FiberState::RUNNABLE);
+
+    const auto *isolate = fiber->isolate;
+
+    isolate->gc->RemoveFiber(fiber);
+    isolate->fpool_->DeleteFiber(fiber);
 }
 
 void Orbiter::RuntimeDiscardPanic(Isolate *isolate) {

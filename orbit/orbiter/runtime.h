@@ -246,6 +246,9 @@ namespace orbiter {
 
         static bool Initialize(const void *config) noexcept;
 
+        [[nodiscard]] static Fiber *EvalDetached(datatype::Context *context, datatype::Module *module,
+                                                 datatype::Code *code) noexcept;
+
         datatype::HOObject Eval(datatype::Context *context, datatype::Module *module, datatype::Code *code) noexcept;
 
         datatype::HFuture EvalAsync(datatype::Function *func, const unsigned char *stack_begin, U16 size) noexcept;
@@ -273,6 +276,8 @@ namespace orbiter {
                 this->OSTWakeRun();
             }
         }
+
+        static void DiscardDetachedFiber(Fiber *fiber) noexcept;
 
         static void RuntimeDiscardPanic(Isolate *isolate);
 

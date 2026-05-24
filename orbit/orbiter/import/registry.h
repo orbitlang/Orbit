@@ -5,6 +5,7 @@
 #ifndef ORBIT_ORBITER_IMPORT_REGISTRY_H_
 #define ORBIT_ORBITER_IMPORT_REGISTRY_H_
 
+#include <orbit/orbiter/datatype/module.h>
 #include <orbit/orbiter/datatype/orstring.h>
 
 #include <orbit/orbiter/fqueue.h>
@@ -69,10 +70,16 @@ namespace orbiter::import {
 
         ModuleState state = ModuleState::LOADING;
 
-        /// Fiber that owns this LOADING entry. Used to tell same-fiber
-        /// cyclic imports (return partial module) apart from cross-fiber
-        /// concurrent loads (enqueue on `waiters` and block). Set at
-        /// `ModuleEntryNew` time; left untouched after that.
+        /// Fiber that *executes* this LOADING entry's top-level — the one
+        /// that will eventually `Commit`/`Fail` it. NOT the importing fiber:
+        /// for a SOURCE module the importer only compiles, then spawns a
+        /// dedicated executor and blocks. `owner` is therefore set at
+        /// executor-spawn time (`BlockOnExecutor`), not at `ModuleEntryNew`
+        /// — when the entry is created the executor does not exist yet, so
+        /// this stays nullptr until then. Used to tell a same-fiber
+        /// self-import (return partial) and to walk the wait-for graph for
+        /// cross-fiber cycle detection. Stays nullptr for BUILTIN/VIRTUAL
+        /// entries (no top-level, no executor).
         Fiber *owner = nullptr;
 
         /// Fibers blocked waiting for this entry to leave LOADING. Drained

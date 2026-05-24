@@ -12,6 +12,8 @@
 #include <orbit/orbiter/datatype/module.h>
 #include <orbit/orbiter/datatype/rguard.h>
 
+#include <orbit/orbiter/import/registry.h>
+
 #include <orbit/orbiter/defer.h>
 #include <orbit/orbiter/panic.h>
 #include <orbit/orbiter/vm.h>
@@ -53,6 +55,8 @@ namespace orbiter {
         Panic *panic_cache = nullptr;
 
         datatype::OObject *future = nullptr;
+
+        import::ModuleEntry *module_entry = nullptr;
 
         struct {
             Fiber *next;
@@ -114,6 +118,18 @@ namespace orbiter {
          * otherwise an empty handle.
          */
         datatype::HOObject GetDiscardPanic() noexcept;
+
+        /**
+         * @brief Retrieves the current panic error object associated with the fiber, if one exists.
+         *
+         * This method checks if the fiber's internal panic state is set and, if so, retrieves the
+         * associated error object encapsulated in an `HOObject`. If no panic state exists, an
+         * empty `HOObject` is returned.
+         *
+         * @return An `HOObject` instance representing the panic error if present, or an empty
+         *         `HOObject` if no panic state is set.
+         */
+        [[nodiscard]] datatype::HOObject GetPanicError() const noexcept;
 
         /**
          * @brief Deletes the provided Fiber instance, releasing associated resources.
@@ -178,6 +194,9 @@ namespace orbiter {
             this->context.module = nullptr;
             this->context.code = nullptr;
             this->context.func = nullptr;
+
+            this->future = nullptr;
+            this->module_entry = nullptr;
 
             this->vm.preempt_tick = kPreemptTick;
 

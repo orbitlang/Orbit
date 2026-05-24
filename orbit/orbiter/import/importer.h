@@ -71,18 +71,19 @@ namespace orbiter::import {
     enum class AcquireOutcome : U8 {
         /// `entry->module` is the final, fully-loaded module — use it.
         LOADED,
-        /// `entry->module` is the partial module for a same-fiber cycle —
-        /// use it pragmatically.
+        /// `entry->module` is the partial module — use it pragmatically.
+        /// Two cases collapse here: a literal same-fiber
+        /// self-import, and a cross-fiber cycle the calling fiber would
+        /// close (it takes the partial instead of blocking, which is what
+        /// breaks the deadlock).
         PARTIAL,
         /// Fresh entry just inserted; the calling fiber owns the load and
         /// must run the loader, then `Commit`/`Fail`.
         FRESH,
-        /// Cross-fiber LOADING: the calling fiber has been enqueued on the
-        /// peer's waiters and must SUSPEND until woken. `entry` is null;
-        /// the caller re-runs `Import` on wake.
+        /// Cross-fiber LOADING with no cycle: the calling fiber has been
+        /// enqueued on the peer's waiters and must SUSPEND until woken.
+        /// The caller re-runs `Import` on wake.
         BLOCKED,
-        /// Cross-fiber circular import detected; isolate panic set.
-        CYCLE,
         /// Allocation failure; isolate panic set.
         ERROR,
     };
@@ -118,6 +119,24 @@ namespace orbiter::import {
         AcquireOutcome EnqueueAndWait(Fiber *me, ModuleEntry *entry) noexcept;
 
         /**
+         * @brief Hand a freshly-loaded SOURCE entry over to its executor and
+         *        block the importing fiber on it.
+         *
+         * Called by the SOURCE path after the module has been compiled and
+         * `Prepare`'d: @p executor is the fiber that will run the module's
+         * top-level (and is therefore the entry's `owner`, set here — not at
+         * `ModuleEntryNew` time, since the executor does not exist yet then).
+         * The importing fiber (`Fiber::Current()`) is enqueued as a waiter,
+         * so it is woken when @p executor `Commit`/`Fail`s the entry.
+         *
+         * Takes the cache unique lock.
+         *
+         * @return false on allocation failure (wait-for edge could not be
+         *         registered); the caller then `Fail`s the entry.
+         */
+        bool BlockOnExecutor(ModuleEntry *entry, Fiber *executor) noexcept;
+
+        /**
          * @brief Detect cross-fiber circular imports.
          * 
          * Walk the wait-for graph from @p target back through its owner
@@ -126,7 +145,7 @@ namespace orbiter::import {
         */
         [[nodiscard]] bool HasCycle(const Fiber *me, const ModuleEntry *target) const;
 
-        HModule LoadScriptSource(ORString *key, const Descriptor &desc, ModuleEntry *entry);
+        HModule LoadScriptSource(ORString *key, const Descriptor &desc, HCode &code, ModuleEntry *entry);
 
         /**
          * @brief Walk the locator chain for @p key.
@@ -154,15 +173,11 @@ namespace orbiter::import {
          * returned untouched.
          *
          * @param key            Canonical, absolute import key.
-         * @param was_inserted   Optional out: set to true when a fresh
-         *                       LOADING entry was created, false when the
-         *                       returned entry was already in the cache.
-         *                       Pass `nullptr` to ignore.
          *
          * @return The entry (fresh or pre-existing), or nullptr on
          *         allocation failure (isolate panic set).
          */
-        ModuleEntry *Insert(ORString *key, bool *was_inserted);
+        ModuleEntry *Insert(ORString *key);
 
         /**
          * @brief Look up a cache entry by canonical key.
@@ -177,37 +192,6 @@ namespace orbiter::import {
          * @return The entry, or nullptr on miss (no panic set).
          */
         ModuleEntry *Lookup(ORString *key);
-
-        /**
-         * @brief Mark @p entry as LOADED.
-         *
-         * Transitions a LOADING entry to LOADED under the cache unique
-         * lock. `module` and `spec` are *not* attached here — they were
-         * set by `Prepare` before the top-level ran; this call simply
-         * publishes the entry as fully initialized so subsequent `Lookup`s
-         * see LOADED.
-         *
-         * It is a programming error to call Commit on an entry that is not
-         * LOADING — caught by assertion.
-         *
-         * @param entry  The LOADING entry obtained from a prior `Insert`.
-         */
-        void Commit(ModuleEntry *entry);
-
-        /**
-         * @brief Drop a failed entry, allowing a future retry.
-         * 
-         * Removes @p entry from the cache under the unique lock and
-         * releases it (DECREF of every held Orbit reference, free). Used
-         * when a module's top-level raises: per README "FAILED → removal
-         * + retry consentito", a poisoned half-initialized entry must
-         * never linger.
-         * 
-         * The pointer is **consumed**: do not reference it after Fail returns.
-         * 
-         * @param entry  The LOADING entry obtained from a prior `Insert`.
-       */
-        void Fail(ModuleEntry *entry);
 
         /**
          * @brief Attach @p module and @p spec to a LOADING entry.
@@ -266,6 +250,37 @@ namespace orbiter::import {
         [[nodiscard]] List *Roots() const {
             return this->roots_.get();
         }
+
+        /**
+          * @brief Mark @p entry as LOADED.
+          *
+          * Transitions a LOADING entry to LOADED under the cache unique
+          * lock. `module` and `spec` are *not* attached here — they were
+          * set by `Prepare` before the top-level ran; this call simply
+          * publishes the entry as fully initialized so subsequent `Lookup`s
+          * see LOADED.
+          *
+          * It is a programming error to call Commit on an entry that is not
+          * LOADING — caught by assertion.
+          *
+          * @param entry  The LOADING entry obtained from a prior `Insert`.
+          */
+        void Commit(ModuleEntry *entry);
+
+        /**
+         * @brief Drop a failed entry, allowing a future retry.
+         *
+         * Removes @p entry from the cache under the unique lock and
+         * releases it (DECREF of every held Orbit reference, free). Used
+         * when a module's top-level raises: per README "FAILED → removal
+         * + retry consentito", a poisoned half-initialized entry must
+         * never linger.
+         *
+         * The pointer is **consumed**: do not reference it after Fail returns.
+         *
+         * @param entry  The LOADING entry obtained from a prior `Insert`.
+        */
+        void Fail(ModuleEntry *entry);
     };
 
     /**
@@ -319,12 +334,16 @@ namespace orbiter::import {
      * @param out_module  Receives the loaded module on `ImportStatus::OK`;
      *                    untouched on BLOCKED / ERROR.
      *
-     * @return Tri-state outcome. ERROR is also returned for the
-     *         cross-fiber CIRCULAR_DEADLOCK case (panic set).
+     * Import cycles do not error: a fiber that would close a cycle takes
+     * the peer's partial module instead of blocking, which
+     * is what breaks the would-be deadlock.
+     *
+     * @return Tri-state outcome. On ERROR the isolate panic is set
+     *         (module not found, locator error, or allocation failure).
      */
     ImportStatus Import(const Isolate *isolate, ORString *raw, const ImportSpec *origin, Module * &out_module);
 
-    ImportStatus Import(const Isolate *isolate, ORString *raw, Module *base, Module * &out_module);
+    ImportStatus Import(const Isolate *isolate, ORString *raw, const Module *base, Module * &out_module);
 }
 
 #endif // !ORBIT_ORBITER_IMPORT_IMPORTER_H_

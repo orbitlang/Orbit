@@ -8,6 +8,10 @@
 #include <orbit/liftoff/compiler.h>
 #include <orbit/liftoff/olevel.h>
 
+#include <orbit/orbiter/fiber.h>
+#include <orbit/orbiter/isolate.h>
+#include <orbit/orbiter/runtime.h>
+
 #include <orbit/orbiter/datatype/error.h>
 #include <orbit/orbiter/datatype/errors.h>
 #include <orbit/orbiter/datatype/list.h>
@@ -15,12 +19,8 @@
 #include <orbit/orbiter/datatype/orstring.h>
 #include <orbit/orbiter/datatype/stringbuilder.h>
 
-#include <orbit/orbiter/import/importer.h>
 #include <orbit/orbiter/import/registry.h>
-
-#include <orbit/orbiter/fiber.h>
-
-#include <orbit/orbiter/isolate.h>
+#include <orbit/orbiter/import/importer.h>
 
 using namespace orbiter::datatype;
 using namespace orbiter::import;
@@ -44,16 +44,14 @@ AcquireOutcome Importer::Acquire(ORString *key, ModuleEntry * &out) noexcept {
         if (out->owner == me)
             return AcquireOutcome::PARTIAL;
 
-        if (this->HasCycle(me, out)) {
-            ErrorSet(this->isolate_,
-                     ImportError::Details[ImportError::ID],
-                     nullptr,
-                     ImportError::Details[ImportError::CIRCULAR_DEADLOCK],
-                     ORSTRING_TO_CSTR(key),
-                     ORSTRING_TO_CSTR(out->name));
-
-            return AcquireOutcome::CYCLE;
-        }
+        // Cross-fiber LOADING. If blocking here would close a wait-for
+        // cycle, the calling fiber takes the partial module instead of
+        // blocking. `out` already points at the target entry, so
+        // PARTIAL hands back `out->module`, which is non-null: a cycle can
+        // only be detected once the chain's owners exist, i.e. after their
+        // executors were spawned and the modules `Prepare`'d.
+        if (this->HasCycle(me, out))
+            return AcquireOutcome::PARTIAL;
 
         return this->EnqueueAndWait(me, out);
     }
@@ -85,6 +83,19 @@ AcquireOutcome Importer::EnqueueAndWait(Fiber *me, ModuleEntry *entry) noexcept 
     return AcquireOutcome::BLOCKED;
 }
 
+bool Importer::BlockOnExecutor(ModuleEntry *entry, Fiber *executor) noexcept {
+    std::unique_lock guard(this->cache_lock_);
+
+    // The executor is the fiber that will run the top-level and eventually
+    // Commit/Fail this entry — that makes it the entry's `owner` for the
+    // purposes of same-fiber detection and wait-for cycle walking.
+    entry->owner = executor;
+
+    // The importing fiber now waits for the executor: enqueue it on the
+    // entry and register its wait-for edge.
+    return this->EnqueueAndWait(Fiber::Current(), entry) == AcquireOutcome::BLOCKED;
+}
+
 bool Importer::HasCycle(const Fiber *me, const ModuleEntry *target) const {
     // Walk owner → blocked-on → owner ... from `target`'s owner, looking
     // for `me` in the chain. If we find it, blocking `me` on `target`
@@ -104,7 +115,7 @@ bool Importer::HasCycle(const Fiber *me, const ModuleEntry *target) const {
     return false;
 }
 
-HModule Importer::LoadScriptSource(ORString *key, const Descriptor &desc, ModuleEntry *entry) {
+HModule Importer::LoadScriptSource(ORString *key, const Descriptor &desc, HCode &code, ModuleEntry *entry) {
     const auto last_sep = ORStringRFind(key, kPathSep);
     const auto *r_name = ORSTRING_TO_CSTR(key) + last_sep + 1;
 
@@ -127,7 +138,7 @@ HModule Importer::LoadScriptSource(ORString *key, const Descriptor &desc, Module
     // TODO: load optimization levels from Orbit configuration
     liftoff::Compiler compiler(this->isolate_, liftoff::kDefaultOptimization, true);
 
-    const auto code = compiler.Compile(r_name, source);
+    code = compiler.Compile(r_name, source);
     if (!code) {
         this->Fail(entry);
 
@@ -200,7 +211,7 @@ LocateResult Importer::Resolve(const ORString *key, Descriptor *out) const {
     return LocateResult::NOT_MINE;
 }
 
-orbiter::import::ModuleEntry *Importer::Insert(ORString *key, bool *was_inserted) {
+orbiter::import::ModuleEntry *Importer::Insert(ORString *key) {
     ModuleMap::HEntry *hentry = nullptr;
 
     auto *entry = ModuleEntryNew(this->isolate_, key);
@@ -227,52 +238,7 @@ orbiter::import::ModuleEntry *Importer::Insert(ORString *key, bool *was_inserted
 
     O_FAST_INCREF(key);
 
-    if (was_inserted != nullptr)
-        *was_inserted = true;
-
     return entry;
-}
-
-orbiter::import::ModuleEntry *Importer::Lookup(ORString *key) {
-    std::shared_lock guard(this->cache_lock_);
-
-    ModuleMap::HEntry *hentry = nullptr;
-    if (this->modules_.Lookup(key, &hentry) != LookupResult::OK)
-        return nullptr;
-
-    return hentry->value;
-}
-
-void Importer::Commit(ModuleEntry *entry) {
-    assert(entry != nullptr && entry->state == ModuleState::LOADING);
-    // module/spec must have been attached via `Prepare` before the
-    // top-level ran — Commit only publishes the entry as LOADED.
-    assert(entry->module != nullptr && entry->spec != nullptr);
-
-    std::unique_lock guard(this->cache_lock_);
-
-    entry->state = ModuleState::LOADED;
-}
-
-void Importer::Fail(ModuleEntry *entry) {
-    if (entry == nullptr)
-        return;
-
-    std::unique_lock guard(this->cache_lock_);
-
-    assert(entry->state == ModuleState::LOADING);
-
-    ModuleMap::HEntry *hentry = nullptr;
-    if (this->modules_.Remove(entry->name, &hentry) != LookupResult::OK)
-        return;
-
-    O_FAST_DECREF(hentry->key);
-
-    this->modules_.FreeHEntry(hentry);
-
-    guard.unlock();
-
-    ModuleEntryDel(this->isolate_, entry);
 }
 
 void Importer::Prepare(ModuleEntry *entry, Module *module, ImportSpec *spec) {
@@ -329,6 +295,65 @@ bool Importer::AddRoot(ORString *path) const {
     return ListAppend(this->roots_.get(), (OObject *) path);
 }
 
+void Importer::Commit(ModuleEntry *entry) {
+    assert(entry != nullptr && entry->state == ModuleState::LOADING);
+    assert(entry->module != nullptr && entry->spec != nullptr);
+
+    std::unique_lock guard(this->cache_lock_);
+
+    entry->state = ModuleState::LOADED;
+    entry->owner = nullptr;
+
+    auto *cursor = entry->waiters.Dequeue();
+    while (cursor != nullptr) {
+        // The waiter is no longer blocked on us — clear its wait-for edge
+        // so it doesn't sit stale in the graph.
+        WaitForMap::HEntry *we = nullptr;
+        if (this->wait_for_.Remove(cursor, &we) == LookupResult::OK)
+            this->wait_for_.FreeHEntry(we);
+
+        Orbiter::GetInstance()->PushFiber(cursor);
+        cursor = entry->waiters.Dequeue();
+    }
+}
+
+void Importer::Fail(ModuleEntry *entry) {
+    if (entry == nullptr)
+        return;
+
+    std::unique_lock guard(this->cache_lock_);
+
+    assert(entry->state == ModuleState::LOADING);
+
+    entry->state = ModuleState::FAILED;
+
+    const auto *self = Fiber::Current();
+    auto *cursor = entry->waiters.Dequeue();
+    while (cursor != nullptr) {
+        // Same as Commit: clear the waiter's wait-for edge before waking it
+        WaitForMap::HEntry *we = nullptr;
+        if (this->wait_for_.Remove(cursor, &we) == LookupResult::OK)
+            this->wait_for_.FreeHEntry(we);
+
+        cursor->Panic(self->GetPanicError().get());
+
+        Orbiter::GetInstance()->PushFiber(cursor);
+        cursor = entry->waiters.Dequeue();
+    }
+
+    ModuleMap::HEntry *hentry = nullptr;
+    if (this->modules_.Remove(entry->name, &hentry) != LookupResult::OK)
+        return;
+
+    O_FAST_DECREF(hentry->key);
+
+    this->modules_.FreeHEntry(hentry);
+
+    guard.unlock();
+
+    ModuleEntryDel(this->isolate_, entry);
+}
+
 ImportStatus Importer::Import(ORString *raw, const ImportSpec *origin, Module *&out_module) noexcept {
     // 1. Canonicalize: produce the absolute canonical cache key.
     const auto key = Canonicalize(this->isolate_, raw, origin);
@@ -347,7 +372,6 @@ ImportStatus Importer::Import(ORString *raw, const ImportSpec *origin, Module *&
         case AcquireOutcome::BLOCKED:
             return ImportStatus::BLOCKED;
 
-        case AcquireOutcome::CYCLE:
         case AcquireOutcome::ERROR:
             return ImportStatus::ERROR;
 
@@ -385,13 +409,32 @@ ImportStatus Importer::Import(ORString *raw, const ImportSpec *origin, Module *&
         }
 
         case LoaderKind::SOURCE: {
-            const auto mod = this->LoadScriptSource(key.get(), desc, entry);
+            HCode code;
+            const auto mod = this->LoadScriptSource(key.get(), desc, code, entry);
             if (!mod)
+                return ImportStatus::ERROR; // LoadScriptSource already Fail'd
+
+            auto *orbiter = Orbiter::GetInstance();
+            const auto *self = Fiber::Current();
+
+            assert(orbiter != nullptr);
+            assert(self != nullptr);
+
+            auto *executor = Orbiter::EvalDetached(self->context.context, mod.get(), code.get());
+
+            if (!this->BlockOnExecutor(entry, executor)) {
+                Orbiter::DiscardDetachedFiber(executor);
+
+                this->Fail(entry);
+
                 return ImportStatus::ERROR;
+            }
 
-            out_module = mod.get();
+            executor->module_entry = entry;
 
-            return ImportStatus::OK;
+            orbiter->PushFiber(executor);
+
+            return ImportStatus::BLOCKED;
         }
 
         case LoaderKind::NATIVE: {
@@ -552,6 +595,8 @@ ImportStatus orbiter::import::Import(const Isolate *isolate, ORString *raw, cons
     return isolate->importer_->Import(raw, origin, out_module);
 }
 
-ImportStatus orbiter::import::Import(const Isolate *isolate, ORString *raw, Module *base, Module * &out_module) {
-    assert(false);
+ImportStatus orbiter::import::Import(const Isolate *isolate, ORString *raw, const Module *base, Module * &out_module) {
+    const auto *prop = TIFindLocalProperty(O_GET_TYPE(base), "__spec__");
+
+    return isolate->importer_->Import(raw, (ImportSpec *) (prop != nullptr ? prop->value : nullptr), out_module);
 }

@@ -1809,14 +1809,10 @@ CATCH_FINALLY:
             TARGET_OP(LDMOD) {
                 src = FETCH_R_SRC(instr);
 
-                const auto *prop = TIFindLocalProperty(O_GET_TYPE(fiber->context.module), "__spec__");
-
-                auto status = import::Import(fiber->isolate,
-                                             (ORString *) code->static_resources->objects[src],
-                                             (import::ImportSpec *) (prop != nullptr ? prop->value : nullptr),
+                auto status = import::Import(fiber->isolate, (ORString *) REG_N(src), fiber->context.module,
                                              (Module *&) result);
 
-                if (status != import::ImportStatus::BLOCKED) {
+                if (status == import::ImportStatus::BLOCKED) {
                     fiber->state = FiberState::SUSPENDED;
 
                     return nullptr;

@@ -5,6 +5,7 @@
 #ifndef ORBIT_ORBITER_IMPORT_LOCATOR_H_
 #define ORBIT_ORBITER_IMPORT_LOCATOR_H_
 
+#include <orbit/orbiter/datatype/module.h>
 #include <orbit/orbiter/datatype/orstring.h>
 
 #include <orbit/orbiter/import/importspec.h>

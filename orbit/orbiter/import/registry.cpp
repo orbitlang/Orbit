@@ -4,8 +4,6 @@
 
 #include <orbit/orbiter/datatype/orstring.h>
 
-#include <orbit/orbiter/fiber.h>
-
 #include <orbit/orbiter/memory/iallocator.h>
 
 #include <orbit/orbiter/import/registry.h>
@@ -24,8 +22,10 @@ orbiter::import::ModuleEntry *orbiter::import::ModuleEntryNew(Isolate *isolate, 
     if (entry == nullptr)
         return nullptr;
 
+    // `owner` stays nullptr: for a SOURCE module the executor fiber does
+    // not exist yet — it is set later by `Importer::BlockOnExecutor`.
+    // BUILTIN/VIRTUAL entries never get an owner (no top-level).
     entry->name = O_FAST_INCREF(name);
-    entry->owner = Fiber::Current();
 
     return entry;
 }

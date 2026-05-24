@@ -122,6 +122,13 @@ datatype::HOObject Fiber::GetDiscardPanic() noexcept {
     return err;
 }
 
+datatype::HOObject Fiber::GetPanicError() const noexcept {
+    if (*this->panic.r_current_ == nullptr)
+        return {};
+
+    return datatype::HOObject((*this->panic.r_current_)->error);
+}
+
 void Fiber::Delete(Fiber *fiber) noexcept {
     if (fiber == nullptr)
         return;
