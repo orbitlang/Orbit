@@ -2042,3 +2042,37 @@ MSSize orbiter::datatype::BytesFind(const Bytes *haystack, const Bytes *needle, 
     return support::Search(haystack->shared->buffer + haystack->start + start, haystack->length - start,
                            needle->shared->buffer + needle->start, needle->length);
 }
+
+BytesWriteGuard::BytesWriteGuard(Bytes *bytes, const MSize offset, const MSize length) noexcept : data_(nullptr) {
+    assert(bytes != nullptr);
+
+    auto *isolate = O_GET_ISOLATE(bytes);
+
+    // 1. Bounds first. The view's `start` / `length` are per-view metadata,
+    //    not protected by the SharedBuffer lock, so the check is safe to
+    //    do before grabbing it. Written in overflow-free form.
+    if (offset > bytes->length || length > bytes->length - offset) {
+        ErrorSet(isolate,
+                 ValueError::Details[ValueError::Reason::ID],
+                 nullptr,
+                 "Bytes write range out of bounds");
+
+        return;
+    }
+
+    // 2. Take the unique side of the buffer lock.
+    this->lock_ = std::unique_lock(bytes->shared->rwlock);
+
+    if (bytes->shared->IsFrozen()) {
+        ErrorSet(isolate,
+                 ValueError::Details[ValueError::Reason::ID],
+                 nullptr,
+                 "cannot mutate a frozen Bytes");
+
+        this->lock_.unlock();
+
+        return;
+    }
+
+    this->data_ = bytes->shared->buffer + bytes->start + offset;
+}

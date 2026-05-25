@@ -5,6 +5,8 @@
 #ifndef ORBIT_ORBITER_DATATYPE_BYTES_H_
 #define ORBIT_ORBITER_DATATYPE_BYTES_H_
 
+#include <mutex>
+
 #include <orbit/orbiter/datatype/oobject.h>
 
 #include <orbit/orbiter/datatype/support/shared_buffer.h>
@@ -26,6 +28,73 @@ namespace orbiter::datatype {
     };
 
     using HBytes = Handle<Bytes>;
+
+    /**
+     * @brief RAII write-access scope for a Bytes view.
+     *
+     * Centralises the three things every "write into a Bytes" call site
+     * must get right:
+     *   1. validate that the requested range `[offset, offset + length)`
+     *      fits inside the view's current length;
+     *   2. validate that the underlying `SharedBuffer` is not frozen;
+     *   3. hold `SharedBuffer::rwlock` in unique mode for the duration of
+     *      the write, so a concurrent `SharedBufferEnlarge` (which can
+     *      reallocate `buffer`) cannot leave the writer with a dangling
+     *      pointer.
+     *
+     * Construction performs all checks and locks the buffer. On failure
+     * (out-of-bounds, frozen) the isolate panic is set and `ok()` returns
+     * false — do not touch `data()` in that case. Destruction releases
+     * the lock automatically.
+     *
+     * @example
+     *     BytesWriteGuard guard(buf, offset, length);
+     *     if (!guard)
+     *         return {};  // panic already set
+     *
+     *     std::memcpy(guard.data(), src, length);
+     */
+    class BytesWriteGuard {
+        std::unique_lock<sync::AsyncRWLock> lock_;
+
+        unsigned char *data_;
+    public:
+        /**
+         * @brief Acquire write access on `[offset, offset + length)` of @p bytes.
+         *
+         * On success the unique side of `bytes->shared->rwlock` is held and
+         * `data()` points at `bytes->shared->buffer + bytes->start + offset`.
+         * On failure the panic is set, the lock is released, and `data()` returns nullptr.
+         *
+         * @param bytes    Target view. Must be non-null.
+         * @param offset   Start of the writable range, relative to the view.
+         * @param length   Number of writable bytes requested.
+         *
+         * @panic ValueError  When @p bytes is frozen or the requested range
+         *                    exceeds the view's current length.
+         */
+        BytesWriteGuard(Bytes *bytes, MSize offset, MSize length) noexcept;
+
+        BytesWriteGuard(const BytesWriteGuard &) = delete;
+        BytesWriteGuard(BytesWriteGuard &&) = delete;
+
+        BytesWriteGuard &operator=(const BytesWriteGuard &) = delete;
+        BytesWriteGuard &operator=(BytesWriteGuard &&) = delete;
+
+        [[nodiscard]] bool ok() const noexcept {
+            return this->data_ != nullptr;
+        }
+
+        [[nodiscard]] explicit operator bool() const noexcept {
+            return this->ok();
+        }
+
+        /// Pointer to the first byte of the writable range. Valid only
+        /// while the guard is alive AND `ok()` is true.
+        [[nodiscard]] unsigned char *data() const noexcept {
+            return this->data_;
+        }
+    };
 
     bool BytesAppend(Bytes *bytes, const Bytes *other) noexcept;
 
