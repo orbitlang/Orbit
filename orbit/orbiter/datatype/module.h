@@ -38,7 +38,7 @@ namespace orbiter::datatype {
 {nullptr, {.object=(OObject *) (type)}, false}
 
 #define ORBIT_MODULE_EXPORT_ALIAS(name, type)   \
-{name, {.obj=(OObject *) (type)}, false}
+{name, {.object=(OObject *) (type)}, false}
 
 #define ORBIT_MODULE_SENTINEL {nullptr, nullptr, false}
 

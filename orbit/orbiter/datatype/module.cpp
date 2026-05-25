@@ -81,21 +81,24 @@ HOType orbiter::datatype::ModuleTypeNew(Isolate *isolate, const ModuleInit *init
         return {};
 
     int exp_count = 0;
-    for (auto cursor = init->bulk; cursor->name != nullptr; cursor++)
-        exp_count++;
+    if (init->bulk != nullptr) {
+        for (auto cursor = init->bulk; cursor->name != nullptr; cursor++)
+            exp_count++;
+    }
 
     auto module = ModuleTypeNew(isolate, name.get(), doc.get(), exp_count, 0);
     if (!module)
         return {};
 
-    for (auto cursor = init->bulk; cursor->name != nullptr; cursor++) {
-        auto value = HOObject(cursor->prop.object);
+    for (auto cursor = init->bulk; cursor != nullptr && cursor->name != nullptr; cursor++) {
+        HOObject value;
 
         if (cursor->is_func) {
             value = std::move(FunctionNew(isolate, nullptr, cursor->prop.func));
             if (!value)
                 return {};
-        }
+        } else
+            value = std::move(HOObject(cursor->prop.object));
 
         if (!TIPropertyAdd(module.get(), cursor->name, value.get(), 0,
                            PropertyFlag::IS_CONSTANT | PropertyFlag::IS_PUBLIC))
