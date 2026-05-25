@@ -8,6 +8,24 @@
 #include <orbit/datatype.h>
 
 namespace orbiter::datatype {
+    struct AttributeError {
+        enum Reason : U8 {
+            ID,
+
+            NOT_FOUND,
+            PRIVATE_ACCESS,
+            CONSTANT_ASSIGN,
+        };
+
+        static constexpr const char *Details[] = {
+            (const char *) "AttributeError",
+
+            (const char *) "'%s' object has no property '%s'",
+            (const char *) "cannot access private property '%s' of '%s'",
+            (const char *) "cannot assign to constant property '%s'"
+        };
+    };
+
     struct FFIError {
         enum Reason : U8 {
             ID,
@@ -54,6 +72,66 @@ namespace orbiter::datatype {
         };
     };
 
+    struct IndexError {
+        enum Reason : U8 {
+            ID,
+
+            OUT_OF_RANGE,
+        };
+
+        static constexpr const char *Details[] = {
+            (const char *) "IndexError",
+
+            (const char *) "%s index %lld out of range [0, %lld)",
+        };
+    };
+
+    struct KeyError {
+        enum Reason : U8 {
+            ID,
+
+            NOT_FOUND,
+        };
+
+        static constexpr const char *Details[] = {
+            (const char *) "KeyError",
+
+            (const char *) "key not found in %s",
+        };
+    };
+
+    struct MemoryError {
+        enum Reason : U8 {
+            ID,
+
+            ESTACK,
+            HEAP,
+            STACK
+        };
+
+        static constexpr const char *Details[] = {
+            (const char *) "OOMError",
+
+            (const char *) "insufficient memory to create exception handling context",
+            (const char *) "insufficient heap memory to complete allocation",
+            (const char *) "stack overflow - maximum stack size exceeded"
+        };
+    };
+
+    struct NameError {
+        enum Reason : U8 {
+            ID,
+
+            NOT_DEFINED,
+        };
+
+        static constexpr const char *Details[] = {
+            (const char *) "NameError",
+
+            (const char *) "name '%s' is not defined"
+        };
+    };
+
     struct NotImplementedError {
         enum Reason : U8 {
             ID,
@@ -74,21 +152,39 @@ namespace orbiter::datatype {
         };
     };
 
-    struct MemoryError {
+    struct OSError {
         enum Reason : U8 {
             ID,
 
-            ESTACK,
-            HEAP,
-            STACK
+            NOT_FOUND,          // ENOENT              / ERROR_FILE_NOT_FOUND
+            PERMISSION_DENIED,  // EACCES, EPERM       / ERROR_ACCESS_DENIED
+            ALREADY_EXISTS,     // EEXIST              / ERROR_FILE_EXISTS
+            BROKEN_PIPE,        // EPIPE               / ERROR_BROKEN_PIPE
+            INTERRUPTED,        // EINTR
+            BAD_FD,             // EBADF               / ERROR_INVALID_HANDLE
+            WOULD_BLOCK,        // EAGAIN, EWOULDBLOCK / WSAEWOULDBLOCK
+            TIMEOUT,            // ETIMEDOUT           / WSAETIMEDOUT
+            INVALID_ARGUMENT,   // EINVAL              / ERROR_INVALID_PARAMETER
+            NO_MEMORY,          // ENOMEM              / ERROR_NOT_ENOUGH_MEMORY
+
+            // Catch-all for any errno value not mapped above.
+            OTHER,
         };
 
         static constexpr const char *Details[] = {
-            (const char *) "OOMError",
+            (const char *) "OSError",
 
-            (const char *) "insufficient memory to create exception handling context",
-            (const char *) "insufficient heap memory to complete allocation",
-            (const char *) "stack overflow - maximum stack size exceeded"
+            (const char *) "file or directory not found: %s",
+            (const char *) "permission denied: %s",
+            (const char *) "already exists: %s",
+            (const char *) "broken pipe: %s",
+            (const char *) "operation interrupted: %s",
+            (const char *) "bad file descriptor: %s",
+            (const char *) "operation would block: %s",
+            (const char *) "operation timed out: %s",
+            (const char *) "invalid argument: %s",
+            (const char *) "out of memory: %s",
+            (const char *) "OS error %d (%s): %s"
         };
     };
 
@@ -191,38 +287,6 @@ namespace orbiter::datatype {
         };
     };
 
-    struct NameError {
-        enum Reason : U8 {
-            ID,
-
-            NOT_DEFINED,
-        };
-
-        static constexpr const char *Details[] = {
-            (const char *) "NameError",
-
-            (const char *) "name '%s' is not defined"
-        };
-    };
-
-    struct AttributeError {
-        enum Reason : U8 {
-            ID,
-
-            NOT_FOUND,
-            PRIVATE_ACCESS,
-            CONSTANT_ASSIGN,
-        };
-
-        static constexpr const char *Details[] = {
-            (const char *) "AttributeError",
-
-            (const char *) "'%s' object has no property '%s'",
-            (const char *) "cannot access private property '%s' of '%s'",
-            (const char *) "cannot assign to constant property '%s'"
-        };
-    };
-
     struct ValueError {
         enum Reason : U8 {
             ID,
@@ -236,34 +300,6 @@ namespace orbiter::datatype {
 
             (const char *) "unexpected '%s' value for '%s' parameter(%d)",
             (const char *) "missing required parameter '%s' at position %d"
-        };
-    };
-
-    struct IndexError {
-        enum Reason : U8 {
-            ID,
-
-            OUT_OF_RANGE,
-        };
-
-        static constexpr const char *Details[] = {
-            (const char *) "IndexError",
-
-            (const char *) "%s index %lld out of range [0, %lld)",
-        };
-    };
-
-    struct KeyError {
-        enum Reason : U8 {
-            ID,
-
-            NOT_FOUND,
-        };
-
-        static constexpr const char *Details[] = {
-            (const char *) "KeyError",
-
-            (const char *) "key not found in %s",
         };
     };
 

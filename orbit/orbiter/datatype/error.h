@@ -117,6 +117,18 @@ namespace orbiter::datatype {
     void ErrorSet(Isolate *isolate, const char *kind, OObject *details, const char *format, ...);
 
     /**
+     * @brief Sets an error based on the current value of errno
+     *
+     * Maps the system's errno value into an OSError instance with an appropriate reason
+     * and attaches additional details to the error. This function handles common errno
+     * values explicitly and falls back to a generic "OTHER" reason for unknown values.
+     *
+     * @param isolate Pointer to the Isolate instance used to manage the context in which the error is raised
+     * @param message Optional context message to include with the error; defaults to an empty string if nullptr
+     */
+    void ErrorSetFromErrno(Isolate *isolate, const char *message);
+
+    /**
      * @brief Sets an error message with object type information
      *
      * Constructs an error message that incorporates the type information of the specified object.

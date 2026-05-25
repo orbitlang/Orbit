@@ -2,16 +2,18 @@
 //
 // Licensed under the Apache License v2.0
 
+#include <cerrno>
 #include <cstdarg>
 
 #include <orbit/orbiter/fiber.h>
+#include <orbit/orbiter/runtime.h>
 
 #include <orbit/orbiter/datatype/function.h>
 #include <orbit/orbiter/datatype/orstring.h>
 #include <orbit/orbiter/datatype/pcheck.h>
-#include <orbit/orbiter/datatype/error.h>
+#include <orbit/orbiter/datatype/errors.h>
 
-#include <orbit/orbiter/runtime.h>
+#include <orbit/orbiter/datatype/error.h>
 
 using namespace orbiter::datatype;
 
@@ -217,6 +219,117 @@ void orbiter::datatype::ErrorSet(Isolate *isolate, const char *kind, OObject *de
         return;
 
     Orbiter::RuntimePanic(isolate, (OObject *) error.get());
+}
+
+void orbiter::datatype::ErrorSetFromErrno(Isolate *isolate, const char *message) {
+    if (message == nullptr)
+        message = "";
+
+    // The errno value is attached to every raised OSError as its `details`
+    // field (SMI). This lets Orbit-side code dispatch on the raw number
+    // (`e.details == EAGAIN`) regardless of which `OSError::Reason` we
+    // mapped it to — useful both for unknown errnos (Reason == OTHER) and
+    // for the recognised ones when callers want machine-readable detail.
+    const auto err = errno;
+    auto *errno_smi = (OObject *) O_TO_SMI((MSSize) err);
+
+    switch (err) {
+        case ENOENT:
+            ErrorSet(isolate,
+                     OSError::Details[OSError::ID],
+                     errno_smi,
+                     OSError::Details[OSError::NOT_FOUND],
+                     message);
+            break;
+
+        case EACCES:
+        case EPERM:
+            ErrorSet(isolate,
+                     OSError::Details[OSError::ID],
+                     errno_smi,
+                     OSError::Details[OSError::PERMISSION_DENIED],
+                     message);
+            break;
+
+        case EEXIST:
+            ErrorSet(isolate,
+                     OSError::Details[OSError::ID],
+                     errno_smi,
+                     OSError::Details[OSError::ALREADY_EXISTS],
+                     message);
+            break;
+
+        case EPIPE:
+            ErrorSet(isolate,
+                     OSError::Details[OSError::ID],
+                     errno_smi,
+                     OSError::Details[OSError::BROKEN_PIPE],
+                     message);
+            break;
+
+        case EINTR:
+            ErrorSet(isolate,
+                     OSError::Details[OSError::ID],
+                     errno_smi,
+                     OSError::Details[OSError::INTERRUPTED],
+                     message);
+            break;
+
+        case EBADF:
+            ErrorSet(isolate,
+                     OSError::Details[OSError::ID],
+                     errno_smi,
+                     OSError::Details[OSError::BAD_FD],
+                     message);
+            break;
+
+        case EAGAIN:
+#if defined(EWOULDBLOCK) && EWOULDBLOCK != EAGAIN
+        case EWOULDBLOCK:
+#endif
+            ErrorSet(isolate,
+                     OSError::Details[OSError::ID],
+                     errno_smi,
+                     OSError::Details[OSError::WOULD_BLOCK],
+                     message);
+            break;
+
+        case ETIMEDOUT:
+            ErrorSet(isolate,
+                     OSError::Details[OSError::ID],
+                     errno_smi,
+                     OSError::Details[OSError::TIMEOUT],
+                     message);
+            break;
+
+        case EINVAL:
+            ErrorSet(isolate,
+                     OSError::Details[OSError::ID],
+                     errno_smi,
+                     OSError::Details[OSError::INVALID_ARGUMENT],
+                     message);
+            break;
+
+        case ENOMEM:
+            ErrorSet(isolate,
+                     OSError::Details[OSError::ID],
+                     errno_smi,
+                     OSError::Details[OSError::NO_MEMORY],
+                     message);
+            break;
+
+        default:
+            // Format: "OS error <num> (<strerror>): <context>" — three %s
+            // ordered: %d=err, %s=strerror, %s=message.
+            ErrorSet(isolate,
+                     OSError::Details[OSError::ID],
+                     errno_smi,
+                     OSError::Details[OSError::OTHER],
+                     err,
+                     std::strerror(err),
+                     message);
+            break;
+    }
 }
 
 void orbiter::datatype::ErrorSetWithObjType(Isolate *isolate, const char *kind, const char *format, const char *p1,
