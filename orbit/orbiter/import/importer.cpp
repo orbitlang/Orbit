@@ -400,6 +400,12 @@ ImportStatus Importer::Import(ORString *raw, const ImportSpec *origin, Module *&
                 return ImportStatus::ERROR;
             }
 
+            auto *prop = TIFindLocalProperty(O_GET_TYPE(desc.module), "__spec__");
+
+            assert(prop != nullptr);
+
+            prop->value = (OObject *) O_INCREF(spec.get());
+
             this->PrepareCommit(entry, desc.module, spec.get());
 
             out_module = desc.module;
