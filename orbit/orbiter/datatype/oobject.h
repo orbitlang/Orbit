@@ -587,12 +587,16 @@ namespace orbiter::datatype {
     /**
      * @brief Retrieves the TypeInfo of an object
      *
+     * @param isolate Pointer to the Isolate instance
      * @param object Pointer to the OObject from which the TypeInfo is to be retrieved
      *
      * @return Pointer to the TypeInfo of the object. Returns the object's type if it is an instance;
      * casts the object itself to TypeInfo otherwise.
      */
-    inline TypeInfo *GetTypeInfoFromObject(const OObject *object) {
+    inline TypeInfo *GetTypeInfoFromObject(const Isolate *isolate, const OObject *object) {
+        if (O_IS_SMI(object))
+            return isolate->primitive[(int) InstanceType::NUMBER];
+
         if (O_GET_RC(object).IsInstance())
             return O_GET_TYPE(object);
 

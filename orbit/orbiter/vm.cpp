@@ -320,7 +320,7 @@ bool CallNormalizeMethodCall(Isolate *isolate, CallCtx &ctx) {
 
     // Check object is instance
     const auto args = *((OObject **) ((ctx.stack->stack + ctx.regs->SP.reg) - (ctx.stack_args * sizeof(void *))));
-    if (!O_GET_RC(args).IsInstance()) {
+    if (O_IS_OBJECT(args) && !O_GET_RC(args).IsInstance()) {
         ErrorSetWithObjType(isolate,
                             TypeError::Details[TypeError::Reason::ID],
                             TypeError::Details[TypeError::Reason::METHOD_RECEIVER],
@@ -717,7 +717,7 @@ int VMGetIterNext(Fiber *fiber, OObject *object, PtrSize *dst) {
 OObject *LoadFromObjectProp(const Fiber *fiber, const Function *func, OObject *obj, const LoadObjectPropFlags flags,
                             const U16 offset) {
     const auto *code = fiber->context.code;
-    const auto *type = GetTypeInfoFromObject(obj);
+    const auto *type = GetTypeInfoFromObject(fiber->isolate, obj);
 
     const auto *key = (ORString *) code->unknown_symbols->objects[offset];
     const PropertyDescriptor *prop = nullptr;
@@ -877,7 +877,7 @@ void SaveGenerator(Fiber *fiber) {
 void StoreToObjectProp(const Fiber *fiber, const Function *func, OObject *obj, OObject *value,
                        const LoadObjectPropFlags flags, const U16 offset) {
     const auto *code = fiber->context.code;
-    const auto *type = GetTypeInfoFromObject(obj);
+    const auto *type = GetTypeInfoFromObject(fiber->isolate, obj);
 
     const auto *key = (ORString *) code->unknown_symbols->objects[offset];
     const PropertyDescriptor *prop = nullptr;
