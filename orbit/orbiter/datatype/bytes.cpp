@@ -545,57 +545,59 @@ static MSize BytesOpHash(const OObject *self) {
 
 RUNTIME_FUNCTION(bytes_create, create,
                  R"DOC(
-@brief Create a new Bytes.
+@brief Create a new mutable Bytes pre-sized to `len`, with at least `cap` bytes of room.
 
-The optional `init` argument shapes the result:
-  - omitted      → an empty mutable Bytes.
-  - Int N >= 0   → a mutable Bytes of `N` zeroed bytes.
-  - Bytes b      → an independent copy of `b`'s contents (mutable, never
-                   shares the SharedBuffer with `b`).
-  - List/Tuple l → List/Tuple of number between [0, 255].
-  - String s     → a mutable Bytes containing the UTF-8 bytes of `s`.
+The first `len` bytes are zero-initialised; bytes beyond `len` up to
+`cap` are reserved capacity (not visible through the view until the
+buffer grows). When both arguments are omitted the result is an empty
+Bytes with no preallocated room.
 
-@param init?  Optional seed (Int, Bytes, List, Tuple or String).
+To build a Bytes from existing data (another Bytes, a String, a List or
+Tuple of byte values) use `Bytes.from(value)` — `create` is *sizing only*.
+
+@param len?  Initial length in bytes. Defaults to 0.
+@param cap?  Reserved capacity. Must be >= `len`. Defaults to `len`.
 
 @return A new mutable Bytes.
 
-@panic TypeError   When `init` is not an Int, Bytes, List, Tuple String or nil.
-@panic ValueError  When `init` is a negative Int.
+@panic ValueError  When `len` or `cap` is negative, or when `cap < len`.
 
-@see freeze
+@see freeze, from
 
 @example
-    Bytes()                      // mutable, length 0
-    Bytes(init=8)                // mutable, 8 zero bytes
-    Bytes(init=other)            // mutable copy
-    Bytes(init="hello")          // UTF-8 bytes of "hello"
-    Bytes(init=[0x10,0x34,0x11]) // list of bytes
-)DOC", 0, "init", false, false) {
+    Bytes()                  // empty, no preallocation
+    Bytes(len=8)             // 8 zero bytes
+    Bytes(cap=1024)          // empty, 1KiB reserved
+    Bytes(len=8, cap=64)     // 8 zero bytes, 64 reserved
+)DOC", 0, "len, cap", false, false) {
     PCHECK_ENTRIES(params,
-                   PCHECK_DEF("init", true,
-                       InstanceType::NUMBER,
-                       InstanceType::BYTES,
-                       InstanceType::LIST,
-                       InstanceType::STRING,
-                       InstanceType::TUPLE));
+                   PCHECK_DEF("len", true, InstanceType::NUMBER),
+                   PCHECK_DEF("cap", true, InstanceType::NUMBER));
     PCHECK_CHECK(params);
 
     auto *isolate = O_GET_ISOLATE(_func);
 
-    if (O_IS_SENTINEL(argv[0])) {
-        const auto out = BytesNew(isolate, (MSize) 0, false);
-        if (!out)
+    IntegerUnderlying len = 0;
+    if (!O_IS_SENTINEL(argv[0])) {
+        if (!NumberExtract(argv[0], len))
             return {};
 
-        return HOObject((OObject *) out.get());
+        if (len < 0) {
+            ErrorSet(isolate,
+                     ValueError::Details[ValueError::Reason::ID],
+                     nullptr,
+                     "Bytes length cannot be negative");
+
+            return {};
+        }
     }
 
-    if (O_IS_TYPE(argv[0], InstanceType::NUMBER)) {
-        IntegerUnderlying n;
-        if (!NumberExtract(argv[0], n))
+    IntegerUnderlying cap = len;
+    if (!O_IS_SENTINEL(argv[1])) {
+        if (!NumberExtract(argv[1], cap))
             return {};
 
-        if (n < 0) {
+        if (cap < 0) {
             ErrorSet(isolate,
                      ValueError::Details[ValueError::Reason::ID],
                      nullptr,
@@ -604,14 +606,66 @@ The optional `init` argument shapes the result:
             return {};
         }
 
-        const auto out = BytesNew(isolate, (MSize) n, false);
-        if (!out)
-            return {};
+        if (cap < len) {
+            ErrorSet(isolate,
+                     ValueError::Details[ValueError::Reason::ID],
+                     nullptr,
+                     "Bytes capacity cannot be less than length");
 
-        return HOObject((OObject *) out.get());
+            return {};
+        }
     }
 
-    const auto out = BytesNew(isolate, argv[0]);
+    const auto out = BytesNew(isolate, cap, false);
+    if (!out)
+        return {};
+
+    if (len > 0) {
+        orbiter::memory::MemoryZero(out->shared->buffer + out->start, len);
+
+        out->length = (MSize) len;
+    }
+
+    return HOObject((OObject *) out.get());
+}
+
+RUNTIME_FUNCTION(bytes_from, from,
+                 R"DOC(
+@brief Create a new mutable Bytes from existing data.
+
+The shape of the result depends on the source:
+  - Bytes b      → an independent copy of `b`'s contents (never shares
+                   the SharedBuffer with `b`).
+  - String s     → the UTF-8 bytes of `s`.
+  - List/Tuple l → a Bytes whose i-th byte is `l[i]`, which must be an
+                   Int in `[0, 255]`.
+
+For sizing-only construction (no initial data) use `Bytes(len=, cap=)`.
+
+@param value  Source object (Bytes, String, List or Tuple).
+
+@return A new mutable Bytes.
+
+@panic TypeError   When `value` is not one of the accepted types, or when
+                   a List/Tuple element is not an Int.
+@panic ValueError  When a List/Tuple element is out of `[0, 255]`.
+
+@see create
+
+@example
+    Bytes.from(other)              // independent copy
+    Bytes.from("hello")            // UTF-8 bytes of "hello"
+    Bytes.from([0x10, 0x34, 0x11]) // list of byte values
+)DOC", 1, nullptr, false, false) {
+    PCHECK_ENTRIES(params,
+                   PCHECK_DEF("value", false,
+                       InstanceType::BYTES,
+                       InstanceType::LIST,
+                       InstanceType::STRING,
+                       InstanceType::TUPLE));
+    PCHECK_CHECK(params);
+
+    const auto out = BytesNew(O_GET_ISOLATE(_func), argv[0]);
     if (!out)
         return {};
 
@@ -668,7 +722,7 @@ not affected.
 @see length
 
 @example
-    let b = Bytes(b"\x01\x02\x03")
+    let b = Bytes.from(b"\x01\x02\x03")
     b.clear()
     b.length()      // 0
 )DOC", 1, nullptr, false, false) {
@@ -705,7 +759,7 @@ frozen one.
 @see freeze, compact
 
 @example
-    let a = Bytes(b"hello").freeze()
+    let a = Bytes.from(b"hello").freeze()
     let b = a.clone()
     b.upper()           // OK — b is mutable
     a                   // still b"hello" (frozen)
@@ -761,7 +815,7 @@ prefix space instead of growing the buffer further.
 @see lstrip, strip, copy
 
 @example
-    let b = Bytes(b"   hello")
+    let b = Bytes.from(b"   hello")
     b.lstrip()      // start=3, length=5, buffer still 8 bytes long
     b.compact()     // start=0, length=5, prefix reclaimed
 )DOC", 1, nullptr, false, false) {
@@ -925,7 +979,7 @@ RUNTIME_METHOD(bytes_extend, extend,
 @see append
 
 @example
-    let b = Bytes(b"\x01\x02")
+    let b = Bytes.from(b"\x01\x02")
     b.extend(b"\x03\x04")
     b.length()      // 4
 )DOC", 2, nullptr, false, false) {
@@ -1013,7 +1067,7 @@ returned Bytes raises a ValueError. The Bytes also becomes hashable
 @see is_frozen
 
 @example
-    let a = Bytes(b"\x01\x02\x03")
+    let a = Bytes.from(b"\x01\x02\x03")
     let b = a.freeze()
     b.is_frozen()    // true
 )DOC", 1, nullptr, false, false) {
@@ -1155,7 +1209,7 @@ modifying self, call `copy()` first.
 @see upper, copy
 
 @example
-    let b = Bytes(b"Hello")
+    let b = Bytes.from(b"Hello")
     b.lower()
     b               // b"hello"
 )DOC", 1, nullptr, false, false) {
@@ -1202,7 +1256,7 @@ When `chars` is omitted, the default whitespace set is used:
 @see strip, rstrip
 
 @example
-    let b = Bytes(b"   hello")
+    let b = Bytes.from(b"   hello")
     b.lstrip()
     b               // b"hello"
 )DOC", 1, "chars", false, false) {
@@ -1260,7 +1314,7 @@ sitting immediately after self — same semantics as `extend`.
 @see find, count, compact
 
 @example
-    let b = Bytes(b"ababab")
+    let b = Bytes.from(b"ababab")
     b.replace(b"a", b"X")
     b               // b"XbXbXb"
 )DOC", 3, "max", false, false) {
@@ -1380,7 +1434,7 @@ When `chars` is omitted, the default whitespace set is used (see `lstrip`).
 @see strip, lstrip
 
 @example
-    let b = Bytes(b"hello   ")
+    let b = Bytes.from(b"hello   ")
     b.rstrip()
     b               // b"hello"
 )DOC", 1, "chars", false, false) {
@@ -1625,7 +1679,7 @@ When `chars` is omitted, the default whitespace set is used (see `lstrip`).
 @see lstrip, rstrip
 
 @example
-    let b = Bytes(b"  hello  ")
+    let b = Bytes.from(b"  hello  ")
     b.strip()
     b               // b"hello"
 )DOC", 1, "chars", false, false) {
@@ -1679,7 +1733,7 @@ modifying self, call `copy()` first.
 @see lower, copy
 
 @example
-    let b = Bytes(b"Hello")
+    let b = Bytes.from(b"Hello")
     b.upper()
     b               // b"HELLO"
 )DOC", 1, nullptr, false, false) {
@@ -1717,6 +1771,7 @@ constexpr FunctionDef bytes_methods[] = {
     bytes_extend,
     bytes_find,
     bytes_freeze,
+    bytes_from,
     bytes_hex,
     bytes_is_ascii,
     bytes_is_frozen,
@@ -1993,7 +2048,7 @@ HBytes orbiter::datatype::BytesNew(Isolate *isolate, OObject *object) noexcept {
 }
 
 HOType orbiter::datatype::BytesTypeInit(Isolate *isolate) {
-    return MakeType(isolate, "Bytes", InstanceType::BYTES, sizeof(Bytes) - sizeof(OObject), 25, 0);
+    return MakeType(isolate, "Bytes", InstanceType::BYTES, sizeof(Bytes) - sizeof(OObject), 26, 0);
 }
 
 int orbiter::datatype::BytesCompare(const Bytes *left, const Bytes *right) noexcept {
