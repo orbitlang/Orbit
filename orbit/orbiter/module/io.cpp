@@ -499,7 +499,7 @@ const ModuleEntry io_entries[] = {
 };
 
 ModuleInit ModuleIO = {
-    "::orbit:io",
+    "::orbit::io",
     "@brief Basic I/O primitives."
     "\n\n"
     "Provides file-descriptor based I/O operations (open, read, write, close), "
