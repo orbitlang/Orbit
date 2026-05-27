@@ -14,7 +14,10 @@ namespace liftoff::ir {
     class LinearScan {
         struct IntervalEndComparator {
             bool operator()(const LiveInterval *a, const LiveInterval *b) const {
-                return a->end < b->end;
+                if (a->end != b->end)
+                    return a->end < b->end;
+
+                return a < b;
             }
         };
 
