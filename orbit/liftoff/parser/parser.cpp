@@ -407,7 +407,7 @@ ASTHandle<ASTNode *> Parser::ParseImportStatement() {
         if (imp_name->alias == nullptr)
             throw SymbolTableException();
 
-        imp_name->alias->flags |= SymbolFlags::CONST;
+        imp_name->alias->flags |= SymbolFlags::CONST | SymbolFlags::INITIALIZED;
 
         imp->names.emplace_back(std::move(imp_name));
     } while (this->MatchEat(TokenType::COMMA, true));
@@ -2129,6 +2129,15 @@ ASTHandle<Function *> Parser::ParseFunction(const Position &start, const bool mu
 
     sym->access = access;
 
+    if (!func->constant && (this->context_->CheckBack(ContextType::CLASS)
+                            || this->context_->CheckBack(ContextType::TRAIT))) {
+        func->params.emplace_back(std::move(this->PushSelfParam(loc)));
+
+        func->method = true;
+
+        sym->type = SymbolType::METHOD;
+    }
+
     Loc last_param{};
     auto params = this->ParseFuncParams(last_param);
     func->params.insert(func->params.end(),
@@ -2157,23 +2166,13 @@ ASTHandle<Function *> Parser::ParseFunction(const Position &start, const bool mu
             throw ParserException(0);
     }
 
-    if (!func->constant && (this->context_->CheckBack(ContextType::CLASS)
-                            || this->context_->CheckBack(ContextType::TRAIT))) {
-        func->params.insert(func->params.begin(), std::move(this->PushSelfParam(loc)));
-
-        func->method = true;
-
-        sym->type = SymbolType::METHOD;
-    }
-
     this->IgnoreNewLineIF(TokenType::LEFT_BRACES);
 
     if (this->Match(TokenType::LEFT_BRACES)) {
         func->body = this->ParseBlock(false).release();
         func->loc.end = func->body->loc.end;
     } else {
-        if (!this->context_->CheckBack(ContextType::CLASS)
-            && !this->context_->CheckBack(ContextType::TRAIT))
+        if (!this->context_->CheckBack(ContextType::CLASS) && !this->context_->CheckBack(ContextType::TRAIT))
             throw ParserException(68);
 
         func->loc.end = TKCUR_START;
