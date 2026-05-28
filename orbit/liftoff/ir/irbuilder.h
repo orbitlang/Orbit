@@ -107,6 +107,8 @@ namespace liftoff::ir {
 
         Instruction *visitSyncBlock(const parser::Binary *binary);
 
+        Instruction *visitTernary(const parser::Ternary *node);
+
         Instruction *visitTrap(const parser::Unary *node);
 
         Instruction *visitTryBlock(const parser::TryBlock *node);

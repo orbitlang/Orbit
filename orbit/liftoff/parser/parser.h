@@ -100,7 +100,8 @@ namespace liftoff::parser {
         "Invalid import: module name is not a valid identifier. Use 'as' to provide an alias",
         "Invalid native function call arity",
         "Invalid call to a native variable",
-        "Invalid function declaration: anonymous functions are not allowed in this context"
+        "Invalid function declaration: anonymous functions are not allowed in this context",
+        "Invalid ternary operator syntax: expected ':' after true expression"
     };
 
     constexpr auto kInitMethodName = "init";

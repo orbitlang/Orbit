@@ -1409,6 +1409,27 @@ Instruction *IRBuilder::visitSyncBlock(const parser::Binary *binary) {
     return nullptr;
 }
 
+Instruction *IRBuilder::visitTernary(const parser::Ternary *node) {
+    Instruction *left = nullptr;
+    Instruction *right = nullptr;
+
+    auto *end = this->builder_.CreateBasicBlock();
+    auto *orelse = this->builder_.CreateBasicBlock();
+
+    auto *test = this->visit(node->left);
+    this->builder_.CreateBranch(orbiter::OPCode::JF, test, nullptr, orelse);
+
+    left = this->visit(node->middle);
+
+    this->builder_.CreateBranch(orbiter::OPCode::JMP, nullptr, orelse, end);
+
+    right = this->visit(node->right);
+
+    this->builder_.AppendBasicBlock(end);
+
+    return this->builder_.CreatePhi()->AddTarget(left)->AddTarget(right);
+}
+
 Instruction *IRBuilder::visitTrap(const parser::Unary *node) {
     auto *finally_block = this->builder_.CreateBasicBlock();
 

@@ -50,6 +50,13 @@ NODES = {
         },
         "node_type": ["BINARY", "CHAN_SEND", "CMPEQ", "ELVIS", "IN", "NOT_IN", "NULL_COALESCING", "SYNC_BLOCK"]
     },
+    "Ternary": {
+      "fields": {
+          "left": "ASTNode*",
+          "middle": "ASTNode*",
+          "right": "ASTNode*"
+      }
+    },
     "Block": {
         "fields": {
             "statements": "std::vector<ASTHandle<ASTNode*>>",

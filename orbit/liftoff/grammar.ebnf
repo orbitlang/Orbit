@@ -3,7 +3,7 @@
     Licensed under the Apache License v2.0
 
     syntax: ISO-14977 EBNF
-    version: 2.6
+    version: 2.7
 *)
 
 (* Basic elements *)
@@ -66,7 +66,7 @@ dictionary = "{", [key_value_pair, {",", key_value_pair}], "}";
 expression = panic_expr | channel_send_expr | channel_receive_expr | await_expr | assignment_expr | ternary_expr | elvis_expr | new_expr | nil_coalescing | binary_expr | unary_expr | postfix_expr | primary_expr | inline_function | trap_expr | spawn_expr;
 panic_expr = "panic", expression;
 assignment_expr = assignable, assignment_op, expression;
-ternary_expr = expression, "?", [expression, ":"], expression;
+ternary_expr = expression, "?", expression, ":", expression;
 elvis_expr = expression, "?:", expression;
 new_expr = "new", expression;
 nil_coalescing = expression, "??", expression;

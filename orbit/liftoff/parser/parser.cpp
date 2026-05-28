@@ -2008,29 +2008,24 @@ ASTHandle<ASTNode *> Parser::ParseStatement() {
 }
 
 ASTHandle<ASTNode *> Parser::ParseTernary(ASTHandle<ASTNode *> &left) {
-    auto branch = MakeBranch(this->isolate_, TKCUR_LOC);
+    auto ternary = MakeTernary(this->isolate_, TKCUR_LOC);
 
-    branch->test = left.release();
+    ternary->left = left.release();
 
-    branch->loc.start = branch->test->loc.start;
+    ternary->loc.start = ternary->left->loc.start;
 
     this->Eat(true);
 
-    branch->body = this->ParseExpression(TokenType::COMMA).release();
+    ternary->middle = this->ParseExpression(TokenType::COMMA).release();
 
-    branch->loc.end = branch->body->loc.end;
+    if (!this->MatchEat(TokenType::COLON, true))
+        throw ParserException(89);
 
-    this->IgnoreNewLineIF(TokenType::COLON);
+    ternary->right = this->ParseExpression(TokenType::COMMA).release();
 
-    if (this->MatchEat(TokenType::COLON, false)) {
-        this->EatNL();
+    ternary->loc.end = ternary->right->loc.end;
 
-        branch->orelse = this->ParseExpression(TokenType::COMMA).release();
-
-        branch->loc.end = branch->orelse->loc.end;
-    }
-
-    return branch;
+    return ternary;
 }
 
 ASTHandle<ASTNode *> Parser::ParseWalrus(ASTHandle<ASTNode *> &left) {
