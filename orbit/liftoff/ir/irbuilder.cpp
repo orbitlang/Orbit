@@ -972,8 +972,13 @@ Instruction *IRBuilder::visitFunction(const parser::Function *node) {
 
 Instruction *IRBuilder::visitIdentifier(const parser::Identifier *node) {
     const auto *sym = node->symbol;
-
     assert(sym != nullptr);
+
+    // Allows calling 'ClassName'.ConstantProperty in contexts such as default
+    // method parameters, for example, class A defining a method with this signature:
+    // func method_a(default=A.PROP)
+    if (this->ct_active_!=nullptr && this->sym_t_->scope == sym->defining_scope)
+        return this->ct_active_->tp_ptr;
 
     return this->LoadVariable(sym);
 }
