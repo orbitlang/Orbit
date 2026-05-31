@@ -80,11 +80,6 @@ integers, booleans, and nil that are not heap-allocated always return false.
     (1).is(String)          // false
     MySubClass().is(Base)   // true  (subclass satisfies base check)
 )DOC", 2, nullptr, false, false) {
-    PCHECK_ENTRIES(params,
-                   PCHECK_DEF("t", false, InstanceType::TYPE));
-
-    PCHECK_CHECK(params);
-
     // SMIs and oddballs are not heap objects and cannot be class instances.
     if (!O_IS_OBJECT(argv[0]))
         return HOObject((OObject *) kOddBallFALSE);
@@ -137,27 +132,19 @@ registered for the type.
 
 RUNTIME_METHOD(type_type, type,
                R"DOC(
-@brief Return the name of the object's runtime type.
+@brief Return the runtime type object of the receiver.
 
-@return A String containing the type name (e.g. "String", "List", "Number").
+@return The Type object describing the receiver's runtime type.
 
 @see is
 
 @example
-    "hi".type()        // "String"
-    (3.14).type()      // "Decimal"
-    [].type()          // "List"
+    "hi".type()         // String
+    (3.14).type()       // Decimal
+    [].type()           // List
+    "hi".type().str()   // "type String at 0x..."
 )DOC", 1, nullptr, false, false) {
-    auto *isolate = O_GET_ISOLATE(_func);
-
-    char name[64];
-    GetTypeName(isolate, argv[0], name, sizeof(name));
-
-    auto s = ORStringNew(isolate, name);
-    if (!s)
-        return {};
-
-    return HOObject(std::move(s));
+    return HOObject((OObject *) GetTypeInfoFromObject(O_GET_ISOLATE(_func), argv[0]));
 }
 
 constexpr FunctionDef type_methods[] = {
