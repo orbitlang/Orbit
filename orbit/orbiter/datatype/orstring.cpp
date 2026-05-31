@@ -1142,6 +1142,26 @@ RUNTIME_METHOD(string_starts_with, starts_with,
     return HOObject((OObject *) BOOL_TO_OBOOL(ok));
 }
 
+RUNTIME_METHOD(string_str, str,
+               R"DOC(
+@brief Return the string itself.
+
+For String, `str()` is the identity: the receiver is returned unchanged
+(same object, no copy).
+
+@return The receiver.
+
+@see repr
+
+@example
+    "hello".str()    // "hello"
+)DOC", 1, nullptr, false, false) {
+    PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::STRING));
+    PCHECK_CHECK(params);
+
+    return HOObject(argv[0]);
+}
+
 RUNTIME_METHOD(string_strip, strip,
                R"DOC(
 @brief Return a copy with leading and trailing characters in `chars` removed.
@@ -1266,6 +1286,7 @@ constexpr FunctionDef string_methods[] = {
     string_split,
     string_splitlines,
     string_starts_with,
+    string_str,
     string_strip,
     string_upper,
 
@@ -1562,7 +1583,7 @@ HOType orbiter::datatype::ORStringTypeInit(Isolate *isolate) {
         return {};
     }
 
-    auto string = MakeType(isolate, "String", InstanceType::STRING, sizeof(ORString) - sizeof(OObject), 16, 0);
+    auto string = MakeType(isolate, "String", InstanceType::STRING, sizeof(ORString) - sizeof(OObject), 17, 0);
     if (!string) {
         allocator.FreeObject(gst);
 
