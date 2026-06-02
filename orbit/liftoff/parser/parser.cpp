@@ -1064,6 +1064,8 @@ ASTHandle<ASTNode *> Parser::ParseAssignment(ASTHandle<ASTNode *> &left) {
 
     auto assign = MakeAssignment(this->isolate_, TKCUR_LOC, node_type);
 
+    assign->token_type = tk_type;
+
     assign->name = left.release();
     assign->value = expr.release();
 
