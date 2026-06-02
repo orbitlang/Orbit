@@ -321,20 +321,6 @@ namespace liftoff::ir {
          */
         Instruction *GetLastActiveVariableLoad(const Symbol *symbol);
 
-        /**
-         * @brief Searches the instruction list in reverse order to find the first instruction
-         * that matches the specified opcode.
-         *
-         * The method begins from the tail of the instruction list and traverses it
-         * backward, checking if the instruction matches the given opcode. The search
-         * skips virtual instructions and only considers physical instructions.
-         *
-         * @param opcode The opcode of the instruction to search for.
-         * @return A pointer to the first matching instruction found, or nullptr if
-         *         no matching instruction exists.
-         */
-        [[nodiscard]] Instruction *RFindFirstInstruction(orbiter::OPCode opcode) const noexcept;
-
         [[nodiscard]] orbiter::Isolate *GetIsolate() const noexcept {
             return this->isolate_;
         }

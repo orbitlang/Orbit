@@ -38,15 +38,6 @@ Instruction *IRContext::GetLastActiveVariableLoad(const Symbol *symbol) {
     return nullptr;
 }
 
-Instruction *IRContext::RFindFirstInstruction(const orbiter::OPCode opcode) const noexcept {
-    for (auto *cursor = this->current_->instr.tail; cursor != nullptr; cursor = cursor->prev) {
-        if (cursor->type() != ObjectType::VIRT_INSTRUCTION && ((PhysInstruction *) cursor)->opcode == opcode)
-            return cursor;
-    }
-
-    return nullptr;
-}
-
 const JBlock *IRContext::GetActiveContextIf(JBlockType type) const {
     const auto *cursor = this->j_chain;
     while (cursor != nullptr) {

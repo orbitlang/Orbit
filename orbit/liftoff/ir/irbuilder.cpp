@@ -509,12 +509,9 @@ Instruction *IRBuilder::visitAssignment(parser::Assignment *node) {
         const auto *selector = (parser::Selector *) node->name;
         const auto *property = ((parser::Identifier *) selector->right);
 
-        this->visit(node->name);
+        auto *ld = (LSObjectProp *) this->visit((parser::ASTNode *) selector);
 
         value = this->visit(node->value);
-
-        // Replace last LDOBJP with STOBJP
-        auto *ld = (LSObjectProp *) this->builder_.context->RFindFirstInstruction(orbiter::OPCode::LDOBJP);
 
         // Const check
         const auto *sym = this->sym_t_->LookupMember(property->value);
@@ -977,7 +974,7 @@ Instruction *IRBuilder::visitIdentifier(const parser::Identifier *node) {
     // Allows calling 'ClassName'.ConstantProperty in contexts such as default
     // method parameters, for example, class A defining a method with this signature:
     // func method_a(default=A.PROP)
-    if (this->ct_active_!=nullptr && this->sym_t_->scope == sym->defining_scope)
+    if (this->ct_active_ != nullptr && this->sym_t_->scope == sym->defining_scope)
         return this->ct_active_->tp_ptr;
 
     return this->LoadVariable(sym);
@@ -1648,7 +1645,7 @@ Instruction *IRBuilder::visitUpdate(const parser::Unary *node) {
     }
 
     if (node->value->node_type == parser::NodeType::SELECTOR) {
-        const auto *sel_load = (LSObjectProp *) this->builder_.context->RFindFirstInstruction(orbiter::OPCode::LDOBJP);
+        const auto *sel_load = (LSObjectProp *) value;
 
         assert(sel_load != nullptr);
 
@@ -1665,7 +1662,7 @@ Instruction *IRBuilder::visitUpdate(const parser::Unary *node) {
 
     assert(node->value->node_type == parser::NodeType::INDEX);
 
-    const auto *last_load = (SubscrInstruction *) this->builder_.context->RFindFirstInstruction(orbiter::OPCode::LDIDX);
+    const auto *last_load = (SubscrInstruction *) value;
 
     assert(last_load != nullptr);
 
