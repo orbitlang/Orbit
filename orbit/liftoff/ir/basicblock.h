@@ -70,7 +70,10 @@ namespace liftoff::ir {
          */
         void AddInstruction(Instruction *instr) noexcept {
             instr->basic_block = this;
-            this->size += 4;
+            // Virtual instructions (Phi, ...) don't emit bytecode in codegen,
+            // so they must not contribute to the block's byte size.
+            if (instr->type() != ObjectType::VIRT_INSTRUCTION)
+                this->size += 4;
 
 
             if (this->instr.head == nullptr) {
@@ -105,7 +108,8 @@ namespace liftoff::ir {
 
             instr->next = after;
 
-            this->size += 4;
+            if (after->type() != ObjectType::VIRT_INSTRUCTION)
+                this->size += 4;
         }
 
         /**
@@ -129,7 +133,8 @@ namespace liftoff::ir {
             instr->prev->next = before;
             instr->prev = before;
 
-            this->size += 4;
+            if (before->type() != ObjectType::VIRT_INSTRUCTION)
+                this->size += 4;
         }
 
         /**
@@ -145,7 +150,8 @@ namespace liftoff::ir {
 
             this->instr.head = instr;
 
-            this->size += 4;
+            if (instr->type() != ObjectType::VIRT_INSTRUCTION)
+                this->size += 4;
         }
 
         /**
@@ -176,7 +182,8 @@ namespace liftoff::ir {
             if (this->instr.tail == instr)
                 this->instr.tail = prev;
 
-            this->size -= 4;
+            if (instr->type() != ObjectType::VIRT_INSTRUCTION)
+                this->size -= 4;
         }
     };
 }
