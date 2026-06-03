@@ -2511,7 +2511,7 @@ void Parser::Eat(bool ignore_nl) {
         } else if (this->doc_.type == TokenType::COMMENT_DOC
                    && !this->Match(TokenType::DECORATOR, TokenType::KW_CLASS, TokenType::KW_NATIVE,
                                    TokenType::KW_TRAIT, TokenType::KW_FUNC, TokenType::SEMICOLON,
-                                   TokenType::END_OF_LINE))
+                                   TokenType::END_OF_LINE, TokenType::KW_PROT, TokenType::KW_PUB))
             this->doc_.~Token();
     } while (this->TokenInRange(TokenType::COMMENT_BEGIN, TokenType::COMMENT_END));
 }
