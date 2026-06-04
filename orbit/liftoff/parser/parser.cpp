@@ -1729,7 +1729,7 @@ ASTHandle<ASTNode *> Parser::ParseMemberAccess(ASTHandle<ASTNode *> &left) {
 
     this->Eat(true);
 
-    if (!this->Match(TokenType::IDENTIFIER, TokenType::KW_INIT, TokenType::KW_CLEANUP))
+    if (!this->Match(TokenType::IDENTIFIER, TokenType::KW_INIT, TokenType::KW_CLEANUP, TokenType::KW_FROM))
         throw ParserException(0);
 
     auto id_name = ORStringNew(this->isolate_, this->tkcur_.buffer, this->tkcur_.length);
@@ -2362,6 +2362,7 @@ Parser::NudMeth Parser::LookupNUD(TokenType token) noexcept {
         case TokenType::IDENTIFIER:
         case TokenType::SELF:
         case TokenType::SUPER:
+        case TokenType::KW_FROM:
         case TokenType::KW_DEFAULT: // In expressions, 'cleanup'/'default'/'init' can be used as a variable name
         case TokenType::KW_INIT:
         case TokenType::KW_CLEANUP:
