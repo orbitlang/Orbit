@@ -99,26 +99,46 @@ pub let __bstdin__ = bstdin
 
 
 # Shared write loop used by both `print` and `perror`. The currying
-# trick (`out := file.write()`) keeps the method lookup cost outside
+# trick (`out := dest.write()`) keeps the method lookup cost outside
 # the per-arg loop: subsequent `out(...)` calls reuse the bound
-# function instead of redoing LDOBJP / dispatch for every argument.
-# Non-Bytes args are coerced via `Bytes.from(arg.str())` so the
-# common `print(b"count:", n)` mix-and-match call works.
-func print4(file, args, end, sep) {
-    out := file.write()
+# function instead of redoing LDOBJP for every argument.
+#
+# Non-Bytes args are coerced to a String via `arg.str()`. Two paths
+# from there, decided once at entry:
+#   - dest is a File: the String is forwarded to `write` directly.
+#     File's extension of the Writeable trait borrows the String's
+#     underlying UTF-8 buffer with no extra copy — the fast path
+#     for stdout/stderr/io.open.
+#   - dest is any other Writeable (BufferedWriter, future sockets,
+#     etc.): the String is materialized into a Bytes via
+#     `Bytes.from` before forwarding, so the trait's narrower
+#     Bytes-only contract is honoured.
+# `end` and `sep` are pre-normalized once at entry too, since they
+# do not change across the loop.
+func print4(dest, args, end, sep) {
+    out := dest.write()
+    is_file := dest.is(file.File)
+
+    if end && !end.is(Bytes) {
+        end = !is_file ? Bytes.from(end.str()) : end.str()
+    }
+
+    if sep && !sep.is(Bytes) {
+        sep = !is_file ? Bytes.from(sep.str()) : sep.str()
+    }
 
     psep := false
 
     if args {
         for var arg in args {
-            if psep {
+            if psep && sep {
                 out(sep)
             }
 
             psep = true
 
             if !arg.is(Bytes) {
-                arg = Bytes.from(arg.str())
+                arg = !is_file ? Bytes.from(arg.str()) : arg.str()
             }
 
             out(arg)
@@ -238,8 +258,12 @@ pub func open(path, flags=O_READ, mode=0o644) {
  *                    arguments. Has no effect when fewer than two
  *                    arguments are supplied.
  * @param ...args     Values to write. Non-Bytes arguments are
- *                    converted via `arg.str()` followed by
- *                    `Bytes.from`.
+ *                    converted via `arg.str()`. When the active
+ *                    `stderr` is a `File` (the default) the String
+ *                    is forwarded to `write` with no intermediate
+ *                    Bytes allocation; for any other Writeable a
+ *                    `Bytes.from` step is inserted to honour the
+ *                    trait's Bytes-only contract.
  *
  * @panic TypeError   When a non-Bytes argument has no usable `str()`
  *                    method.
@@ -262,7 +286,11 @@ pub func perror(end=b"\n", sep=b" ", ...args) {
  *
  * Arguments are written in order with `sep` inserted between consecutive
  * items and `end` appended after the last. Non-Bytes arguments are coerced
- * via `arg.str()` + `Bytes.from`, so mixing types is allowed.
+ * via `arg.str()`. The result is either forwarded directly (fast path,
+ * when `stdout` is still a `File`) or further wrapped into a Bytes via
+ * `Bytes.from` (when `stdout` has been redirected to a generic Writeable
+ * like a `BufferedWriter`). In both cases the call is portable across
+ * any redirection target.
  *
  * @param end=b"\n"   Trailing terminator written after the last
  *                    argument. Pass `nil` to suppress the trailing
@@ -271,8 +299,10 @@ pub func perror(end=b"\n", sep=b" ", ...args) {
  * @param sep=b" "    Separator inserted between consecutive
  *                    arguments.
  * @param ...args     Values to write. Non-Bytes arguments are
- *                    converted via `arg.str()` followed by
- *                    `Bytes.from`.
+ *                    converted via `arg.str()`. The resulting String
+ *                    is forwarded to the sink directly when possible
+ *                    (File destination) or coerced through
+ *                    `Bytes.from` otherwise.
  *
  * @panic TypeError   When a non-Bytes argument has no usable `str()`
  *                    method.

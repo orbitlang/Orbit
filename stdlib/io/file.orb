@@ -340,12 +340,23 @@ pub class File impl Closable + Readable + Writeable {
      * The native `io.write` layer handles short writes internally and
      * only returns once the kernel has accepted every byte, or panics.
      *
-     * @param buffer    Bytes to write.
+     * EXTENSION OVER THE `Writeable` CONTRACT: while the trait only
+     * requires `Bytes`, this implementation also accepts a `String`
+     * argument. A String is written by handing its underlying UTF-8
+     * buffer to `write(2)` directly — no intermediate Bytes copy.
+     * The extension is Liskov-safe: callers that respect the trait's
+     * narrower contract (always passing Bytes) get the exact behavior
+     * the trait describes. Code that targets `Writeable` generically
+     * should still pass Bytes; the String overload is provided as a
+     * performance shortcut for code that already knows it is talking
+     * to a `File` (or `io.print` / `io.perror`, which leverage it).
+     *
+     * @param buffer    Bytes or String to write.
      *
      * @return The number of bytes written. Equal to `buffer.length()`
      *         in the absence of failure.
      *
-     * @panic TypeError  When `buffer` is not a Bytes.
+     * @panic TypeError  When `buffer` is neither a Bytes nor a String.
      * @panic OSError    When `write(2)` fails, or when the File has
      *                   already been closed.
      *
