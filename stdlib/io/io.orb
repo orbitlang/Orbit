@@ -1,0 +1,292 @@
+# This source file is part of the Orbit project.
+#
+# Licensed under the Apache License v2.0
+
+/**
+ * @brief High-level façade over the native `::orbit::io` APIs.
+ *
+ * Where the native module exposes raw, descriptor-based primitives, this
+ * module provides:
+ *
+ *   - Object wrappers (`File`) around the three standard streams.
+ *   - A pre-allocated `BufferedReader` over stdin for cheap line reads.
+ *   - The `open` convenience constructor.
+ *   - The `input` / `print` / `perror` ergonomic helpers everyone expects
+ *     to find in a high-level IO module.
+ *
+ * Standard streams are exposed as `pub var` so they can be reassigned to
+ * redirect the program's IO globally (useful in tests, sandboxes, log
+ * routers, ...). The originals are preserved in the read-only backups
+ * `__stdin__`, `__stdout__`, `__stderr__`, `__bstdin__`.
+ *
+ * IMPORTANT — DO NOT MIX BUFFERED AND RAW STDIN READS:
+ * `bstdin` may pull more bytes from the kernel than it returns on any
+ * given call (read-ahead is how buffering pays its way). Those extra
+ * bytes live in `bstdin`'s internal buffer and are invisible to
+ * `stdin.read(...)`. Pick one access path — either go through `bstdin`
+ * / `input` consistently, or through `stdin` directly — but never both
+ * in the same program, or you will silently lose input.
+ *
+ * @example
+ *     # High-level "print" with default sep/end.
+ *     io.print(b"hello", b"world")          # "hello world\n"
+ *
+ *     # Reading a line.
+ *     name := io.input(prompt=b"name? ")
+ *
+ *     # Opening a file the OO way.
+ *     f := io.open("/etc/hosts")
+ *     contents := f.read(64 * 1024)
+ *     f.close()
+ *
+ *     # Redirecting all stdout to a log file for the rest of the run.
+ *     io.stdout = io.open("/tmp/run.log", flags=io.O_WRITE | io.O_CREAT)
+ *     io.print(b"redirected!")              # → /tmp/run.log
+ */
+
+import "::orbit::io"
+
+import "io/file"
+
+import BufferedReader from "io/bufio/reader"
+import BufferedWriter from "io/bufio/writer"
+
+
+# Re-exports of the native `open(2)` flag constants. Surfaced here so
+# callers that `import "io"` already have the full open() vocabulary
+# without having to also reach into `::orbit::io` directly.
+pub let O_READ = io.O_READ
+pub let O_WRITE = io.O_WRITE
+pub let O_RW = io.O_RW
+pub let O_CREAT = io.O_CREAT
+pub let O_TRUNC = io.O_TRUNC
+pub let O_APPEND = io.O_APPEND
+pub let O_EXCL = io.O_EXCL
+
+
+# Unbuffered File over the process's standard input descriptor.
+# Reassign to redirect input globally; restore from `__stdin__` if you
+# need the original back. Direct reads here bypass `bstdin`'s buffer —
+# see the module-level warning about mixing the two.
+pub var stdin = new file.File(io.STDIN)
+
+# Unbuffered File over the process's standard output descriptor.
+# Every `write` lowers to one syscall — wrap in a `BufferedWriter` if
+# small writes dominate. Reassign to redirect; restore from `__stdout__`.
+pub var stdout = new file.File(io.STDOUT)
+
+# Unbuffered File over the process's standard error descriptor.
+# Kept unbuffered on purpose so panic / diagnostic output reaches the
+# terminal even when the program crashes mid-flush. Reassign to
+# redirect; restore from `__stderr__`.
+pub var stderr = new file.File(io.STDERR)
+
+# Pre-allocated 1 KiB BufferedReader sitting in front of `stdin`. Used
+# by `input()` and available to user code that wants cheap line-oriented
+# reads without rolling its own buffer. See the module-level warning
+# about mixing this with `stdin.read(...)` directly.
+pub var bstdin = new BufferedReader(stdin, size=1024)
+
+
+# Read-only backups of the standard streams as they were at module
+# load time. Use them to restore the originals after a redirection,
+# or to access the genuine kernel-side handle when user code has
+# reassigned the top-level `stdin` / `stdout` / etc.
+pub let __stdin__ = stdin
+pub let __stdout__ = stdout
+pub let __stderr__ = stderr
+pub let __bstdin__ = bstdin
+
+
+# Shared write loop used by both `print` and `perror`. The currying
+# trick (`out := file.write()`) keeps the method lookup cost outside
+# the per-arg loop: subsequent `out(...)` calls reuse the bound
+# function instead of redoing LDOBJP / dispatch for every argument.
+# Non-Bytes args are coerced via `Bytes.from(arg.str())` so the
+# common `print(b"count:", n)` mix-and-match call works.
+func print4(file, args, end, sep) {
+    out := file.write()
+
+    psep := false
+
+    if args {
+        for var arg in args {
+            if psep {
+                out(sep)
+            }
+
+            psep = true
+
+            if !arg.is(Bytes) {
+                arg = Bytes.from(arg.str())
+            }
+
+            out(arg)
+        }
+    }
+
+    if end {
+        out(end)
+    }
+}
+
+
+/**
+ * @brief Display an optional prompt and return one line read from
+ * stdin.
+ *
+ * Reads through the module-level `bstdin` BufferedReader, so the
+ * call is cheap even when invoked many times in a row — the buffer
+ * is allocated once at module load and reused.
+ *
+ * The returned Bytes contains the line *including* the trailing
+ * newline that terminated it. Strip with `.rstrip()` if you only
+ * want the user's text. At end-of-stream an empty Bytes is returned,
+ * letting callers detect EOF with `if line.length() == 0`.
+ *
+ * Because `bstdin` may read ahead, mixing `input()` with direct
+ * reads from `stdin` will silently lose bytes — see the module-level
+ * warning.
+ *
+ * @param prompt=nil  Optional Bytes printed to `stdout` before
+ *                    reading. When omitted no prompt is shown. The
+ *                    prompt is written without a trailing newline,
+ *                    so the cursor stays on the same line.
+ *
+ * @return A new Bytes containing the line that was read. Empty on
+ *         EOF.
+ *
+ * @panic OSError  When reading from stdin or writing the prompt
+ *                 fails.
+ *
+ * @see print, bstdin
+ *
+ * @example
+ *     name := io.input(prompt=b"name? ")
+ *     io.print(b"hello,", name.rstrip())
+ *
+ *     # EOF-aware loop.
+ *     loop {
+ *         line := io.input()
+ *         if line.length() == 0 { break }       # EOF
+ *         # ... process line ...
+ *     }
+ */
+pub func input(prompt=nil) {
+    if prompt {
+        print(prompt, end=nil)
+    }
+
+    return bstdin.readline(-1)
+}
+
+
+/**
+ * @brief Open a filesystem path and return a `File` wrapping the new
+ * descriptor.
+ *
+ * Convenience constructor: combines the native `io.open` syscall with
+ * a `File` allocation in one call. Most code should use this rather
+ * than calling the native `io.open` directly and wrapping by hand.
+ *
+ * @param path          Path of the file to open.
+ * @param flags=O_READ  Bitmask of `io.O_READ`, `io.O_WRITE`, `io.O_RW`,
+ *                      `io.O_CREAT`, `io.O_TRUNC`, `io.O_APPEND`,
+ *                      `io.O_EXCL`. Defaults to read-only.
+ * @param mode=0o644    Unix permission bits, used only when `O_CREAT`
+ *                      causes the file to be created. Ignored on
+ *                      Windows.
+ *
+ * @return A new `File` that owns the freshly-opened descriptor and
+ *         will close it on `close()` or when garbage-collected.
+ *
+ * @panic OSError  When the underlying `open(2)` fails (file not
+ *                 found, permission denied, ...).
+ *
+ * @example
+ *     # Read an existing file.
+ *     f := io.open("/etc/hosts")
+ *
+ *     # Truncate-or-create a file for writing.
+ *     out := io.open("/tmp/out", flags=io.O_WRITE | io.O_CREAT | io.O_TRUNC)
+ *
+ *     # Append to a log with restrictive permissions.
+ *     log := io.open("/var/log/app", flags=io.O_WRITE | io.O_CREAT | io.O_APPEND, mode=0o600)
+ */
+pub func open(path, flags=O_READ, mode=0o644) {
+    fd := io.open(path, flags=flags, mode=mode)
+
+    return new file.File(fd)
+}
+
+
+/**
+ * @brief Write the given arguments to `stderr`, separated by `sep`
+ * and terminated by `end`.
+ *
+ * Same interface and semantics as `print`, but routed to `stderr`
+ * instead of `stdout`. Intended for diagnostic / error output that
+ * should not be intermixed with normal program output. Because
+ * `stderr` is unbuffered, every call reaches the terminal as soon
+ * as it returns — making `perror` safe to use up to the moment of
+ * a crash.
+ *
+ * @param end=b"\n"   Trailing terminator written after the last
+ *                    argument. Pass `nil` to suppress the trailing
+ *                    sequence entirely.
+ * @param sep=b" "    Separator inserted between consecutive
+ *                    arguments. Has no effect when fewer than two
+ *                    arguments are supplied.
+ * @param ...args     Values to write. Non-Bytes arguments are
+ *                    converted via `arg.str()` followed by
+ *                    `Bytes.from`.
+ *
+ * @panic TypeError   When a non-Bytes argument has no usable `str()`
+ *                    method.
+ * @panic OSError     When the underlying write to stderr fails.
+ *
+ * @see print
+ *
+ * @example
+ *     io.perror(b"error:", b"file not found")    # "error: file not found\n"
+ *     io.perror(b"warning:", count, sep=b" ")    # mix Bytes and Int
+ */
+pub func perror(end=b"\n", sep=b" ", ...args) {
+    return print4(stderr, args, end, sep)
+}
+
+
+/**
+ * @brief Write the given arguments to `stdout`, separated by `sep`
+ * and terminated by `end`.
+ *
+ * Arguments are written in order with `sep` inserted between consecutive
+ * items and `end` appended after the last. Non-Bytes arguments are coerced
+ * via `arg.str()` + `Bytes.from`, so mixing types is allowed.
+ *
+ * @param end=b"\n"   Trailing terminator written after the last
+ *                    argument. Pass `nil` to suppress the trailing
+ *                    sequence entirely — useful for prompts that
+ *                    expect input on the same line.
+ * @param sep=b" "    Separator inserted between consecutive
+ *                    arguments.
+ * @param ...args     Values to write. Non-Bytes arguments are
+ *                    converted via `arg.str()` followed by
+ *                    `Bytes.from`.
+ *
+ * @panic TypeError   When a non-Bytes argument has no usable `str()`
+ *                    method.
+ * @panic OSError     When the underlying write to stdout fails.
+ *
+ * @see perror, input
+ *
+ * @example
+ *     io.print(b"hello")                       # "hello\n"
+ *     io.print(b"hello", b"world")             # "hello world\n"
+ *     io.print(b"count:", 42)                  # "count: 42\n"
+ *     io.print(b"a", b"b", b"c", sep=b"-")     # "a-b-c\n"
+ *     io.print(b"loading", end=b"... ")        # "loading... " (no newline)
+ */
+pub func print(end=b"\n", sep=b" ", ...args) {
+    return print4(stdout, args, end, sep)
+}
