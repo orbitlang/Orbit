@@ -177,10 +177,13 @@ namespace liftoff::scanner {
 
         // -- Assignment operators
         EQUAL,
-        ASSIGN_MUL,
+
+        COMPOUND_ASSIGN_BEGIN,
         ASSIGN_ADD,
         ASSIGN_SUB,
+        ASSIGN_MUL,
         ASSIGN_SLASH,
+        COMPOUND_ASSIGN_END,
 
         // Delimiters
         LEFT_ROUND,

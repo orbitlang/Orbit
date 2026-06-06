@@ -13,6 +13,20 @@
 using namespace liftoff;
 using namespace liftoff::ir;
 
+// Maps a compound-assignment token (`+=`, `-=`, ...) to the corresponding
+// plain binary-operator token (`+`, `-`, ...). The result is then fed into
+// InfixOp2OpCode to obtain the actual VM opcode.
+static scanner::TokenType CompoundAssignToBinaryToken(const scanner::TokenType tt) noexcept {
+    switch (tt) {
+        case scanner::TokenType::ASSIGN_ADD: return scanner::TokenType::PLUS;
+        case scanner::TokenType::ASSIGN_SUB: return scanner::TokenType::MINUS;
+        case scanner::TokenType::ASSIGN_MUL: return scanner::TokenType::ASTERISK;
+        case scanner::TokenType::ASSIGN_SLASH: return scanner::TokenType::SLASH;
+        default:
+            assert(false);
+    }
+}
+
 orbiter::OPCode InfixOp2OpCode(const scanner::TokenType tt, const bool imm, U8 &flags) {
     flags = 0;
 
@@ -182,6 +196,91 @@ Instruction *IRBuilder::BinaryOP(const parser::Binary *binary) {
         return this->builder_.CreateBinaryOpFlags(op_code, op_flags, left, (U16) ((PtrSize) right));
 
     return this->builder_.CreateBinaryOpFlags(op_code, op_flags, left, right);
+}
+
+Instruction *IRBuilder::CompoundAssignment(const parser::Assignment *node) {
+    // Resolve the underlying binary op once. `r_ignore` is always false here:
+    // we never collapse the RHS into an immediate because the LHS load
+    // already occupies the binary op's left slot, and the small-immediate
+    // optimization in BinaryOP is keyed on the RIGHT operand being a literal.
+    U8 op_flags = 0;
+    const auto op_code = InfixOp2OpCode(CompoundAssignToBinaryToken(node->token_type), false, op_flags);
+
+    // --- INDEX:  a[i] += b  -----------------------------------------------
+    if (node->name->node_type == parser::NodeType::INDEX) {
+        auto *ldidx = this->visitSubscript((parser::Subscript *) node->name);
+
+        auto *rhs = this->visit(node->value);
+
+        auto *result = this->builder_.CreateBinaryOpFlags(op_code, op_flags, ldidx, rhs);
+
+        return this->builder_.CreateIndexStore((SubscrInstruction *) ldidx, result);
+    }
+
+    // --- SLICE:  a[i:j] += b  ---------------------------------------------
+    if (node->name->node_type == parser::NodeType::SLICE) {
+        auto *ldslc = this->visitSubscript((parser::Subscript *) node->name);
+
+        auto *rhs = this->visit(node->value);
+
+        auto *result = this->builder_.CreateBinaryOpFlags(op_code, op_flags, ldslc, rhs);
+
+        return this->builder_.CreateSubscrStore((SubscrInstruction *) ldslc, result);
+    }
+
+    // --- SELECTOR:  self.x += b  ------------------------------------------
+    if (node->name->node_type == parser::NodeType::SELECTOR) {
+        const auto *selector = (parser::Selector *) node->name;
+        const auto *property = ((parser::Identifier *) selector->right);
+
+        auto *ld = (LSObjectProp *) this->visit((parser::ASTNode *) selector);
+
+        auto *rhs = this->visit(node->value);
+
+        // Reject assignments to constants / functions / methods — same rule
+        // as plain assignment in visitAssignment.
+        const auto *sym = this->sym_t_->LookupMember(property->value);
+        if (sym != nullptr && (ENUMBITMASK_ISTRUE(sym->flags, SymbolFlags::CONST)
+                               || sym->type == SymbolType::FUNC
+                               || sym->type == SymbolType::METHOD))
+            assert(false); // TODO: Constant error
+
+        assert(ld != nullptr);
+
+        auto *result = this->builder_.CreateBinaryOpFlags(op_code, op_flags, ld, rhs);
+
+        auto *obj = (Instruction *) ld->operands[0].value;
+
+        auto *st = this->builder_.GetStoreObjectProp(obj, result, ld->offset,
+                                                     ld->flags == orbiter::LoadObjectPropFlags::KEY);
+
+        this->builder_.AddInstruction(st);
+
+        return st;
+    }
+
+    // --- TUPLE:  (a, b) += c  ---------------------------------------------
+    // Not meaningful: tuple destructuring with a compound op has no sensible
+    // semantics (would require per-element op + assign across distinct LHS).
+    if (node->name->node_type == parser::NodeType::TUPLE)
+        assert(false); // TODO: compound assignment on tuple LHS not allowed
+
+    // --- IDENTIFIER:  a += b  ---------------------------------------------
+    const auto *sym = ((parser::Identifier *) node->name)->symbol;
+
+    // Compound assignment doesn't apply to class/trait member declarations:
+    // class-level CONST cannot be rebound, and class-level VARIABLE is a
+    // declaration-time construct, not a re-assignment site.
+    if (sym->decl_scope->type == ScopeType::CLASS || sym->decl_scope->type == ScopeType::TRAIT)
+        assert(false); // TODO: compound assignment on class/trait member not supported
+
+    auto *current = this->LoadVariable(sym);
+
+    auto *rhs = this->visit(node->value);
+
+    auto *result = this->builder_.CreateBinaryOpFlags(op_code, op_flags, current, rhs);
+
+    return this->StoreVariable(sym, result, false);
 }
 
 Instruction *IRBuilder::CreateCall(const parser::Call *node, Instruction *f_src) {
@@ -480,6 +579,10 @@ Instruction *IRBuilder::visitASTNode(parser::ASTNode *node) {
 
 Instruction *IRBuilder::visitAssignment(parser::Assignment *node) {
     Instruction *value = nullptr;
+
+    if (node->token_type > scanner::TokenType::COMPOUND_ASSIGN_BEGIN
+        && node->token_type < scanner::TokenType::COMPOUND_ASSIGN_END)
+        return this->CompoundAssignment(node);
 
     if (node->name->node_type == parser::NodeType::INDEX) {
         auto *last_op = this->visitSubscript((parser::Subscript *) node->name);
@@ -1825,6 +1928,7 @@ IRCHandle IRBuilder::Generate(const parser::ASTHandle<parser::Module *> &module)
 
         // Create first context
         this->builder_.IRContextNew(IRContextType::MODULE, this->sym_t_->scope->GetSlotsCount());
+        this->builder_.context->name = orbiter::datatype::HORString(module->filename);
 
         auto *context = this->builder_.context;
 

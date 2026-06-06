@@ -31,6 +31,8 @@ namespace liftoff::ir {
 
         Instruction *BinaryOP(const parser::Binary *binary);
 
+        Instruction *CompoundAssignment(const parser::Assignment *node);
+
         Instruction *CreateCall(const parser::Call *node, Instruction *f_src);
 
         Instruction *CreateJumpForElvisOrNil(const parser::Binary *binary, orbiter::OPCode opcode);
