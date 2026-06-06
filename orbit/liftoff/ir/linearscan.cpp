@@ -285,8 +285,18 @@ void LinearScan::Allocate(std::vector<LiveInterval> &intervals) {
         if (interval.instr->assigned_reg == kDoNotAllocateReg)
             continue;
 
-        this->ExpireOldIntervals(interval.start);
-
+        // Process cross-call spills BEFORE expiring intervals.
+        //
+        // An interval can be live across a call (end > call_pos) yet still
+        // end before the start of the next interval we process here. If we
+        // expire first, such an interval is removed from active_ and the
+        // spill loop below never sees it — so the register clobbered by the
+        // call is never reloaded.
+        //
+        // Spilling first catches every interval that was alive at the call
+        // even if it has already ended by the time we get here; the
+        // subsequent ExpireOldIntervals then cleans up correctly.
+        //
         // For every call site that falls at or before the start of this interval,
         // spill all register-resident values that outlive the call.
         // SpillToStackAndReloadUses emits a SKSTR right after the producing
@@ -303,6 +313,8 @@ void LinearScan::Allocate(std::vector<LiveInterval> &intervals) {
 
             ++call_it;
         }
+
+        this->ExpireOldIntervals(interval.start);
 
         if (interval.instr->assigned_reg > kUninitializedReg) {
             this->AllocateSpecificRegister(interval);
