@@ -8,6 +8,7 @@
 #include <orbit/orbiter/datatype/module.h>
 
 namespace orbiter::module {
+    extern const datatype::ModuleInit *module_builtin_;
     extern const datatype::ModuleInit *module_io_;
 }
 

@@ -24,6 +24,7 @@ using namespace orbiter::import;
 
 /// Fixed builtin table.
 static const ModuleInit *const kBuiltins[] = {
+    orbiter::module::module_builtin_,
     orbiter::module::module_io_
 };
 
@@ -76,6 +77,14 @@ LocateResult orbiter::import::BuiltinLocate(const Importer *importer, const ORSt
 
         const auto module = ModuleNew(module_type.get());
         if (!module)
+            return LocateResult::ERROR;
+
+        // Modules can request a runtime init pass — needed when entries in
+        // the static `bulk` table cannot be filled with constant values at
+        // C++ initialization time (e.g. per-isolate `TypeInfo *`).  The
+        // callback receives the freshly-built module instance and is
+        // expected to patch the placeholder slots with their real values.
+        if (cursor->init != nullptr && !cursor->init(module.get()))
             return LocateResult::ERROR;
 
         out->kind = LoaderKind::BUILTIN;
