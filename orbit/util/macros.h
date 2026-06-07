@@ -28,6 +28,7 @@
 #define _ORBIT_PLATFORM_WINDOWS
 #define _ORBIT_PLATFORM_NAME "windows"
 #define _ORBIT_PLATFORM_PATHSEP "\\"
+#define _ORBIT_PLATFORM_PATHSSEP ";"
 #ifdef _ORBITAPI_LIB
 #define _ORBITAPI __declspec(dllimport)
 #else
@@ -37,16 +38,19 @@
 #define _ORBIT_PLATFORM_DARWIN
 #define _ORBIT_PLATFORM_NAME "darwin"
 #define _ORBIT_PLATFORM_PATHSEP "/"
+#define _ORBIT_PLATFORM_PATHSSEP ":"
 #define _ORBITAPI
 #elif defined(__linux__)
 #define _ORBIT_PLATFORM_LINUX
 #define _ORBIT_PLATFORM_NAME "linux"
 #define _ORBIT_PLATFORM_PATHSEP "/"
+#define _ORBIT_PLATFORM_PATHSSEP ":"
 #define _ORBITAPI
 #elif defined(__unix__)
 #define _ORBIT_PLATFORM_UNIX
 #define _ORBIT_PLATFORM_NAME "unix"
 #define _ORBIT_PLATFORM_PATHSEP "/"
+#define _ORBIT_PLATFORM_PATHSSEP ":"
 #define _ORBITAPI
 #else
 #define _ORBIT_PLATFORM_NAME "unknown"

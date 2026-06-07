@@ -38,11 +38,7 @@ namespace orbiter::import {
 
     /// Host filesystem path separator — used when building paths to hand
     /// to the OS (stat, open, …). `\` on Windows, `/` everywhere else.
-#if defined(_ORBIT_PLATFORM_WINDOWS)
-    constexpr auto *kHostPathSep = "\\";
-#else
-    constexpr auto *kHostPathSep = "/";
-#endif
+    constexpr auto *kHostPathSep = _ORBIT_PLATFORM_PATHSEP;
 
     /// Module registry hashmap: canonical key → ModuleEntry.
     using ModuleMap = HashMap<ORString *,
