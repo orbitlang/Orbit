@@ -28,7 +28,7 @@ void ContextTrace(const Context *self, const GCTraceCallback callback, const MSi
     }
 }
 
-bool orbiter::datatype::ContextDefine(Context *context, ORString *name, OObject *value, PropertyFlag flags) {
+bool orbiter::datatype::ContextDefine(Context *context, ORString *name, OObject *value, const PropertyFlag flags) {
     std::unique_lock _(context->lock);
 
     CtxHEntry *entry;
@@ -59,13 +59,46 @@ bool orbiter::datatype::ContextDefine(Context *context, ORString *name, OObject 
     return true;
 }
 
-bool orbiter::datatype::ContextDefine(Context *context, const char *name, OObject *value, PropertyFlag flags) {
+bool orbiter::datatype::ContextDefine(Context *context, const char *name, OObject *value, const PropertyFlag flags) {
     auto oname = ORStringNew(O_GET_ISOLATE(context), name);
 
     if (oname)
         return ContextDefine(context, oname.get(), value, flags);
 
     return false;
+}
+
+bool orbiter::datatype::ContextImportFromModule(Context *context, const Module *module) {
+    if (!O_IS_TYPE(module, InstanceType::MODULE))
+        return false;
+
+    const auto mod_type = O_GET_TYPE(module);
+
+    for (auto i = 0; i < mod_type->properties.count; i++) {
+        const auto *property = mod_type->properties.p_array + i;
+        bool ok = false;
+
+        const auto *name = ORSTRING_TO_CSTR(property->name);
+        const auto length = ORSTRING_LENGTH(property->name);
+
+        // Simple filter to avoid importing dunder names (e.g., __name__, __doc__, etc.)
+        if (length > 3 && name[0] == '_' && name[1] == '_' && name[length - 1] == '_' && name[length - 2] == '_')
+            continue;
+
+        if (ENUMBITMASK_ISTRUE(property->detail, PropertyFlag::IS_PUBLIC)) {
+            if (ENUMBITMASK_ISTRUE(property->detail, PropertyFlag::IN_OBJECT)) {
+                auto **slot = O_SLOT(module, mod_type);
+
+                ok = ContextDefine(context, property->name, slot[property->slot], PropertyFlag::IS_PUBLIC);
+            } else
+                ok = ContextDefine(context, property->name, property->value, PropertyFlag::IS_PUBLIC);
+        }
+
+        if (!ok)
+            return false;
+    }
+
+    return true;
 }
 
 bool orbiter::datatype::ContextLookup(Context *context, ORString *name, HOObject &out_value,

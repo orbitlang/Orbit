@@ -6,6 +6,7 @@
 #define ORBIT_ORBITER_DATATYPE_CONTEXT_H
 
 #include <orbit/orbiter/datatype/hashmap.h>
+#include <orbit/orbiter/datatype/module.h>
 #include <orbit/orbiter/datatype/orstring.h>
 
 #include <orbit/orbiter/sync/asyncrwlock.h>
@@ -95,6 +96,20 @@ namespace orbiter::datatype {
      * @return true if the property was successfully defined, false otherwise
      */
     bool ContextDefine(Context *context, const char *name, OObject *value, PropertyFlag flags);
+
+    /**
+     * @brief Imports public properties from a module into a context.
+     *
+     * This function iterates through the properties of the given module and imports all public properties
+     * into the specified context. Properties that are marked as internal (e.g., names starting with double underscores)
+     * or do not have the `IS_PUBLIC` flag are ignored.
+     *
+     * @param context Pointer to the context where properties from the module will be imported.
+     * @param module Pointer to the module containing the properties to import.
+     *
+     * @return true if all applicable properties were successfully imported into the context, false otherwise.
+     */
+    bool ContextImportFromModule(Context *context, const Module *module);
 
     /**
      * @brief Look up a property within a context by its name
