@@ -1019,11 +1019,7 @@ and preserves empty leading/trailing segments; "aaaa".split("aa") → ["", "", "
 
     // Whitespace split when sep is omitted or explicitly nil.
     if (O_IS_SENTINEL(argv[1]) || O_IS_NIL(argv[1])) {
-        auto list = support::SplitWhitespace(
-            isolate, STR_BUF(self), STR_LEN(self),
-            [](orbiter::Isolate *iso, const unsigned char *buffer, const MSize length) {
-                return ORStringNew(iso, buffer, length);
-            }, max);
+        auto list = ORStringSplitWhitespace(isolate, self, max);
         if (!list)
             return {};
 
@@ -1041,13 +1037,7 @@ and preserves empty leading/trailing segments; "aaaa".split("aa") → ["", "", "
         return {};
     }
 
-    auto list = support::Split(isolate,
-                               STR_BUF(self), STR_LEN(self),
-                               STR_BUF(sep),
-                               STR_LEN(sep),
-                               [](orbiter::Isolate *isolate, const unsigned char *buffer, const MSize length) {
-                                   return ORStringNew(isolate, buffer, length);
-                               }, max);
+    auto list = ORStringSplit(isolate, self, sep, max);
     if (!list)
         return {};
 
@@ -1596,7 +1586,7 @@ HOType orbiter::datatype::ORStringTypeInit(Isolate *isolate) {
     return string;
 }
 
-MSize orbiter::datatype::ORStringHash(ORString *string) noexcept{
+MSize orbiter::datatype::ORStringHash(ORString *string) noexcept {
     if (string->hash != 0)
         return string->hash;
 
@@ -1611,4 +1601,27 @@ MSSize orbiter::datatype::ORStringRFind(const ORString *self, const ORString *su
 
 MSSize orbiter::datatype::ORStringRFind(const ORString *self, const char *sub) noexcept {
     return support::RSearch(STR_BUF(self), STR_LEN(self), (unsigned char *) sub, strlen(sub));
+}
+
+HList orbiter::datatype::ORStringSplit(Isolate *isolate, const ORString *self, const ORString *sep,
+                                       const MSSize maxsplit) {
+    return support::Split(isolate,
+                          STR_BUF(self),
+                          STR_LEN(self),
+                          STR_BUF(sep),
+                          STR_LEN(sep),
+                          [](Isolate *iso, const unsigned char *buffer, const MSize length) {
+                              return ORStringNew(iso, buffer, length);
+                          },
+                          maxsplit);
+}
+
+HList orbiter::datatype::ORStringSplitWhitespace(Isolate *isolate, const ORString *self, const MSSize maxsplit) {
+    return support::SplitWhitespace(isolate,
+                                    STR_BUF(self),
+                                    STR_LEN(self),
+                                    [](Isolate *iso, const unsigned char *buffer, const MSize length) {
+                                        return ORStringNew(iso, buffer, length);
+                                    },
+                                    maxsplit);
 }

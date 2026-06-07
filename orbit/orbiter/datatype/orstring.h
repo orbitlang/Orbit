@@ -5,10 +5,7 @@
 #ifndef ORBIT_ORBITER_DATATYPE_OSTRING_H_
 #define ORBIT_ORBITER_DATATYPE_OSTRING_H_
 
-#include <cstring>
-
-#include <orbit/orbiter/isolate.h>
-
+#include <orbit/orbiter/datatype/list.h>
 #include <orbit/orbiter/datatype/oobject.h>
 
 #define ORSTRING_TO_CSTR(string)     ((const char *)((string)->buffer))
@@ -375,6 +372,51 @@ namespace orbiter::datatype {
      *         If the substring is not found, the function returns -1.
      */
     MSSize ORStringRFind(const ORString *self, const char *sub) noexcept;
+
+    /**
+     * @brief Split a string on a separator and return a list of substrings.
+     *
+     * Performs exact, non-overlapping byte matching against @p sep. Empty
+     * leading, trailing and interior segments are preserved — splitting
+     * `"aaaa"` by `"aa"` yields three empty strings.
+     *
+     * The caller is responsible for ensuring @p sep is non-empty (the
+     * underlying primitive asserts that condition); on Orbit-method paths
+     * this is enforced by raising a `ValueError` before invoking this
+     * function.
+     *
+     * @param isolate  Owning isolate; used for allocation and refcount tracking
+     *                 of both the returned list and each substring.
+     * @param self     Source string to split.
+     * @param sep      Non-empty separator string.
+     * @param maxsplit Maximum number of splits to perform. The resulting list
+     *                 contains at most @p maxsplit + 1 elements. Negative
+     *                 means unbounded — every separator occurrence is split.
+     *
+     * @return Handle to a new List of ORString instances. Empty handle on
+     *         allocation failure.
+     */
+    HList ORStringSplit(Isolate *isolate, const ORString *self, const ORString *sep, MSSize maxsplit = -1);
+
+    /**
+     * @brief Split a string on runs of ASCII whitespace and return a list of substrings.
+     *
+     * Empty leading, trailing and interior segments are dropped — `"  a  b  "`
+     * yields `["a", "b"]`. ASCII whitespace is space, tab, newline, vertical
+     * tab, form feed and carriage return.
+     *
+     * @param isolate  Owning isolate; used for allocation and refcount tracking
+     *                 of both the returned list and each substring.
+     * @param self     Source string to split.
+     * @param maxsplit Maximum number of splits to perform. After the limit is
+     *                 reached, the remainder of the string (with only its
+     *                 leading whitespace stripped) becomes the final element.
+     *                 Negative means unbounded.
+     *
+     * @return Handle to a new List of ORString instances. Empty handle on
+     *         allocation failure.
+     */
+    HList ORStringSplitWhitespace(Isolate *isolate, const ORString *self, MSSize maxsplit = -1);
 }
 
 #endif // !ORBIT_ORBITER_DATATYPE_OSTRING_H_
