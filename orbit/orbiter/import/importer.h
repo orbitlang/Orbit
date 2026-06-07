@@ -322,15 +322,31 @@ namespace orbiter::import {
         /**
          * @brief Append a search root from a C string (lowest precedence).
          *
-         * @param path  A NUL-terminated path. Expected absolute and already
-         *              normalized to unix-style separators — this entry point
-         *              does not canonicalize.
+         * Empty or null paths are rejected.  The stored root is guaranteed
+         * to end with the host path separator: if @p path already ends with
+         * one (or with `'/'` on Windows, which is also accepted by the OS),
+         * it is stored as-is; otherwise a normalized copy with the
+         * separator appended is stored in its place.  This keeps
+         * `<root> + <relative key>` concatenations always well-formed.
          *
-         * @return false on allocation failure (isolate panic set).
+         * @param path  A NUL-terminated path.  Expected absolute — this
+         *              entry point does not canonicalize `..`, `.` or
+         *              symbolic links.
+         *
+         * @return false on empty input or allocation failure (isolate panic
+         *         set on allocation failure).
          */
         bool AddRoot(const char *path) const;
 
-        /// Append an already-built root string (lowest precedence).
+        /**
+         * @brief Append an already-built root string (lowest precedence).
+         *
+         * Same normalization contract as the C-string overload: empty
+         * strings are rejected and the stored root is guaranteed to end
+         * with the host path separator.  When @p path is already
+         * terminated correctly it is appended verbatim, otherwise a
+         * separator-suffixed copy is built and stored instead.
+         */
         bool AddRoot(ORString *path) const;
 
         /**
@@ -349,6 +365,10 @@ namespace orbiter::import {
         [[nodiscard]] List *Roots() const {
             return this->roots_.get();
         }
+
+        [[nodiscard]] Module *Import(ORString *name, const ImportSpec *origin) noexcept;
+
+        [[nodiscard]] Module *Import(const char *name, const ImportSpec *origin) noexcept;
 
         /**
          * @brief Publish @p entry as LOADED and wake every waiter.
@@ -442,6 +462,43 @@ namespace orbiter::import {
      *         set with one of the `ImportError` reasons).
      */
     HORString Canonicalize(Isolate *isolate, ORString *raw, const ImportSpec *origin);
+
+    /**
+     * @brief Join two filesystem path components with the host separator.
+     *
+     * Inserts (or collapses) the host path separator at the boundary so the
+     * result is always well-formed, regardless of whether @p base ends with
+     * a separator, @p leaf starts with one, or both/neither do.  Specifically:
+     *
+     *   - `("/a/b", "c")`   → `"/a/b/c"`     (separator inserted)
+     *   - `("/a/b/", "c")`  → `"/a/b/c"`     (base already has it)
+     *   - `("/a/b", "/c")`  → `"/a/b/c"`     (leaf already has it)
+     *   - `("/a/b/", "/c")` → `"/a/b/c"`     (duplicate collapsed)
+     *
+     * On Windows both `'/'` and `'\\'` are recognized as separators at the
+     * junction (the OS accepts mixed paths); the inserted separator, when
+     * needed, is always the host one (`'\\'`).
+     *
+     * If one side is empty the other is returned unchanged.  If both are
+     * empty the result is an empty string.  `nullptr` inputs yield an
+     * empty handle without setting a panic — they are programming errors.
+     *
+     * This function does **not** canonicalize: `..`, `.` and embedded
+     * duplicate separators inside either component are preserved.  Use
+     * `Canonicalize` separately if you need them resolved.
+     *
+     * @param isolate  Owning isolate; the result is GC-tracked there.
+     * @param base     Left component (typically a directory).
+     * @param leaf     Right component (typically a relative path).
+     *
+     * @return Handle to the joined path, or an empty handle on allocation
+     *         failure (isolate panic set in that case) or null inputs.
+     */
+    HORString JoinPath(Isolate *isolate, const ORString *base, const ORString *leaf);
+
+    /// Convenience overload that accepts a C-string @p leaf — avoids forcing
+    /// callers to wrap literals like `"packages"` in an `ORString` first.
+    HORString JoinPath(Isolate *isolate, const ORString *base, const char *leaf);
 
     /**
      * @brief Top-level import: produce the module for @p raw.

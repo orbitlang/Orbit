@@ -3,6 +3,7 @@
 // Licensed under the Apache License v2.0
 
 #include <cassert>
+#include <cstring>
 #include <shared_mutex>
 
 #include <orbit/liftoff/compiler.h>
@@ -114,6 +115,14 @@ bool Importer::HasCycle(const Fiber *me, const ModuleEntry *target) const {
     return false;
 }
 
+static bool IsHostPathSep(const char c) noexcept {
+#ifdef _ORBIT_PLATFORM_WINDOWS
+    return c == '/' || c == '\\';
+#else
+    return c == _ORBIT_PLATFORM_PATHSEP[0];
+#endif
+}
+
 HModule Importer::LoadScriptSource(ORString *key, const Descriptor &desc, HCode &code, ModuleEntry *entry) {
     const auto last_sep = ORStringRFind(key, kPathSep);
     const auto *r_name = ORSTRING_TO_CSTR(key) + last_sep + 1;
@@ -173,6 +182,31 @@ HModule Importer::LoadScriptSource(ORString *key, const Descriptor &desc, HCode 
     prop->value = (OObject *) O_INCREF(spec.get());
 
     return module;
+}
+
+static HORString JoinPathRaw(orbiter::Isolate *isolate, const char *base, const MSize base_len, const char *leaf,
+                             const MSize leaf_len) {
+    // Either side empty: trivially the other side.
+    if (base_len == 0)
+        return ORStringNew(isolate, leaf, leaf_len);
+
+    if (leaf_len == 0)
+        return ORStringNew(isolate, base, base_len);
+
+    const bool base_has_sep = IsHostPathSep(base[base_len - 1]);
+    const bool leaf_has_sep = IsHostPathSep(leaf[0]);
+
+    // Collapse: skip the leading separator of `leaf` so the junction
+    // ends up with exactly one separator instead of two.
+    if (base_has_sep && leaf_has_sep)
+        return ORStringFormat(isolate, "%.*s%s", (int) base_len, base, leaf + 1);
+
+    // Exactly one separator at the junction already — straight concat.
+    if (base_has_sep || leaf_has_sep)
+        return ORStringFormat(isolate, "%.*s%s", (int) base_len, base, leaf);
+
+    // Neither side has a separator at the junction — insert the host one.
+    return ORStringFormat(isolate, "%.*s%s%s", (int) base_len, base, kHostPathSep, leaf);
 }
 
 LocateResult Importer::Resolve(const ORString *key, Descriptor *out) const {
@@ -283,6 +317,11 @@ bool Importer::Initialize() {
 }
 
 bool Importer::AddRoot(const char *path) const {
+    // Reject empty input up front so we don't allocate an ORString just to
+    // discard it in the validation below.
+    if (path == nullptr || *path == '\0')
+        return false;
+
     const auto root = ORStringNew(this->isolate_, path);
     if (!root)
         return false;
@@ -291,7 +330,27 @@ bool Importer::AddRoot(const char *path) const {
 }
 
 bool Importer::AddRoot(ORString *path) const {
-    return ListAppend(this->roots_.get(), (OObject *) path);
+    const auto len = ORSTRING_LENGTH(path);
+    if (len == 0)
+        return false;
+
+    const auto *buf = ORSTRING_TO_CSTR(path);
+    const char last = buf[len - 1];
+
+#ifdef _ORBIT_PLATFORM_WINDOWS
+    // Windows accepts both '/' and '\\' interchangeably at the OS level.
+    if (last == '/' || last == '\\')
+        return ListAppend(this->roots_.get(), (OObject *) path);
+#else
+    if (last == _ORBIT_PLATFORM_PATHSEP[0])
+        return ListAppend(this->roots_.get(), (OObject *) path);
+#endif
+
+    const auto normalized = ORStringFormat(this->isolate_, "%s%s", buf, _ORBIT_PLATFORM_PATHSEP);
+    if (!normalized)
+        return false;
+
+    return ListAppend(this->roots_.get(), (OObject *) normalized.get());
 }
 
 void Importer::Commit(ModuleEntry *entry) {
@@ -463,6 +522,25 @@ ImportStatus Importer::Import(ORString *raw, const ImportSpec *origin, Module *&
     return ImportStatus::ERROR;
 }
 
+Module *Importer::Import(ORString *name, const ImportSpec *origin) noexcept {
+    Module *out_module = nullptr;
+
+    const auto status = this->Import(name, origin, out_module);
+
+    if (status == ImportStatus::OK)
+        return out_module;
+
+    return nullptr;
+}
+
+Module *Importer::Import(const char *name, const ImportSpec *origin) noexcept {
+    const auto oname = ORStringNew(this->isolate_, name);
+    if (!oname)
+        return nullptr;
+
+    return this->Import(oname.get(), origin);
+}
+
 HORString orbiter::import::Canonicalize(Isolate *isolate, ORString *raw, const ImportSpec *origin) {
     const auto *rbuf = ORSTRING_TO_CSTR(raw);
     auto rlen = ORSTRING_LENGTH(raw);
@@ -593,6 +671,22 @@ HORString orbiter::import::Canonicalize(Isolate *isolate, ORString *raw, const I
     }
 
     return ORStringNew(isolate, builder);
+}
+
+HORString orbiter::import::JoinPath(Isolate *isolate, const ORString *base, const ORString *leaf) {
+    if (base == nullptr || leaf == nullptr)
+        return {};
+
+    return JoinPathRaw(isolate,ORSTRING_TO_CSTR(base), ORSTRING_LENGTH(base),
+                       ORSTRING_TO_CSTR(leaf), ORSTRING_LENGTH(leaf));
+}
+
+HORString orbiter::import::JoinPath(Isolate *isolate, const ORString *base, const char *leaf) {
+    if (base == nullptr || leaf == nullptr)
+        return {};
+
+    return JoinPathRaw(isolate,ORSTRING_TO_CSTR(base), ORSTRING_LENGTH(base),
+                       leaf, (MSize) strlen(leaf));
 }
 
 ImportStatus orbiter::import::Import(const Isolate *isolate, ORString *raw, const ImportSpec *origin,
