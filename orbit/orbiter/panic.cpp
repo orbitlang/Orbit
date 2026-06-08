@@ -6,10 +6,71 @@
 
 #include <orbit/orbiter/memory/iallocator.h>
 
+#include <orbit/orbiter/datatype/error.h>
+
 #include <orbit/orbiter/isolate.h>
+
 #include <orbit/orbiter/panic.h>
 
 using namespace orbiter;
+
+int orbiter::PanicFormat(const PanicContainer *container, char *out, const size_t out_size) noexcept {
+    if (out == nullptr || out_size == 0)
+        return 0;
+
+    if (container == nullptr || container->current_ == nullptr) {
+        out[0] = '\0';
+
+        return 0;
+    }
+
+    auto remaining = out_size;
+    auto total = 0;
+    auto depth = 0;
+
+    auto *cursor = out;
+
+    // Walk newest → oldest.  The first entry is the panic that is
+    // currently being unwound; subsequent entries are older panics that
+    // were already in flight and got "shadowed" when the newer ones were
+    // raised (typically during cleanup / defer handlers).
+    auto *p = container->current_;
+    while (p != nullptr) {
+        if (depth > 0) {
+            const auto n = std::snprintf(cursor, remaining, "\n  while handling: ");
+            if (n < 0)
+                return total;
+
+            total += n;
+
+            if (n >= remaining)
+                return total;
+
+            cursor += n;
+
+            remaining -= n;
+        }
+
+        const int n = datatype::ErrorFormat((const datatype::Error *) p->error, cursor, remaining);
+        if (n < 0)
+            return total;
+
+        total += n;
+
+        if (n >= remaining)
+            return total;
+
+        cursor += n;
+
+        remaining -=  n;
+
+        p = p->prev;
+
+        depth++;
+    }
+
+    return total;
+}
 
 Panic *PanicContainer::CreatePanic(Isolate *isolate, Panic **panic_cache, datatype::OObject *error) const noexcept {
     Panic *panic = nullptr;

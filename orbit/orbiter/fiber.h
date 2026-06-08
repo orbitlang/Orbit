@@ -80,7 +80,7 @@ namespace orbiter {
          * @return True if the fiber is panicking; false otherwise.
          */
         [[nodiscard]] bool IsPanicking() const noexcept {
-            return *this->panic.r_current_ != nullptr;
+            return this->panic.HasPanic();
         }
 
         /**
