@@ -4,6 +4,7 @@
 
 #include <cctype>
 
+#include <orbit/orbiter/datatype/bytes.h>
 #include <orbit/orbiter/datatype/decimal.h>
 #include <orbit/orbiter/datatype/number.h>
 #include <orbit/orbiter/datatype/stringbuilder.h>
@@ -105,7 +106,67 @@ OObject *StringFormatter::NextArg() {
 }
 
 MSSize StringFormatter::FormatBytes() {
-    return this->FormatString();
+    const OObject *obj = this->NextArg();
+    if (obj == nullptr)
+        return -1;
+
+    // Bytes-mode `%s`: consume the argument as raw bytes instead of routing
+    // it through ToString.  Accept both Bytes (the canonical case) and
+    // String (whose backing buffer is also byte-addressable) so callers
+    // can mix the two without a manual conversion.  Anything else is a
+    // hard TypeError.
+    const unsigned char *buf = nullptr;
+    MSize len = 0;
+
+    if (O_IS_OBJECT(obj)) {
+        if (O_IS_TYPE(obj, InstanceType::BYTES)) {
+            const auto *b = (const Bytes *) obj;
+            buf = b->shared->buffer + b->start;
+            len = b->length;
+        } else if (O_IS_TYPE(obj, InstanceType::STRING)) {
+            buf = ((const ORString *) obj)->buffer;
+            len = ((const ORString *) obj)->length;
+        }
+    }
+
+    if (buf == nullptr) {
+        if (!this->failed_) {
+            ErrorSet(this->isolate_,
+                     TypeError::Details[TypeError::ID],
+                     nullptr,
+                     "%%s in bytes format requires a Bytes or String argument");
+
+            this->failed_ = true;
+        }
+
+        return -1;
+    }
+
+    // Precision caps the number of bytes to emit (raw byte count — unlike
+    // FormatString we don't translate to codepoints, because there is no
+    // codepoint structure in a Bytes value).
+    if (this->fmt_.prec > -1 && len > (MSize) this->fmt_.prec)
+        len = (MSize) this->fmt_.prec;
+
+    // Compute width-driven padding identically to FormatString.
+    MSSize padding = 0;
+    if (this->fmt_.width > 0 && (MSize) this->fmt_.width > len)
+        padding = (MSSize) ((MSize) this->fmt_.width - len);
+
+    // Right-justify: emit left padding before the content.
+    if (padding > 0 && !ENUMBITMASK_ISTRUE(this->fmt_.flags, FormatFlags::LJUST)) {
+        if (this->WriteRepeat(' ', (int) padding) < 0)
+            return -1;
+
+        padding = 0;
+    }
+
+    if (this->Write(buf, len, 0) < 0)
+        return -1;
+
+    // Any remaining `padding` is consumed by the caller as LJUST tail
+    // padding — same protocol FormatString follows.
+    return padding;
 }
 
 MSSize StringFormatter::FormatString() {

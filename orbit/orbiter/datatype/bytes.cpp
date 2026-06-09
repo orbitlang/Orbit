@@ -18,6 +18,7 @@
 #include <orbit/orbiter/datatype/orstring.h>
 #include <orbit/orbiter/datatype/pcheck.h>
 #include <orbit/orbiter/datatype/stringbuilder.h>
+#include <orbit/orbiter/datatype/stringformatter.h>
 
 #include <orbit/orbiter/datatype/bytes.h>
 
@@ -290,6 +291,42 @@ static bool BytesOpAdd(const OObject *left, const OObject *right, OObject *&resu
         if (!BytesAppendData(out.get(), r->shared->buffer + r->start, r->length))
             return false;
     }
+
+    result = (OObject *) out.get();
+
+    return true;
+}
+
+/// printf-style formatting on raw bytes: `b"value=%s" % b"42"` → `b"value=42"`.
+/// Mirrors `StrMod` but constructs the formatter with `string_as_bytes=true`
+/// so `%s` is interpolated by raw byte content rather than via ToString.
+static bool BytesOpMod(const OObject *left, const OObject *right, OObject *&result) {
+    if (!O_IS_OBJECT(left) || !O_IS_TYPE(left, InstanceType::BYTES))
+        return false;
+
+    const auto *self = (const Bytes *) left;
+
+    std::shared_lock _(self->shared->rwlock);
+
+    StringFormatter sf(O_GET_ISOLATE(self),
+                       (const char *) (self->shared->buffer + self->start),
+                       self->length,
+                       (OObject *) right,
+                       true);
+
+    MSize len = 0;
+    MSize cap = 0;
+    const auto *buf = sf.Format(&len, &cap);
+    if (sf.HasError() || buf == nullptr)
+        return false;
+
+    // The formatter owns `buf` and frees it in its destructor.  We copy
+    // into a new Bytes here — a zero-copy hand-off would need a
+    // `BytesNewHoldBuffer` entry point that doesn't currently exist,
+    // and one extra copy on the format path is acceptable.
+    const auto out = BytesNew(O_GET_ISOLATE(self), buf, len, false);
+    if (!out)
+        return false;
 
     result = (OObject *) out.get();
 
@@ -1992,6 +2029,7 @@ bool orbiter::datatype::BytesTypeSetup(TypeInfo *self) noexcept {
 
     // --- Arithmetic ---
     ops.add = BytesOpAdd;
+    ops.mod = BytesOpMod;
 
     // --- Index ---
     ops.load_index = (BinaryFn) BytesOpLoadIndex;
