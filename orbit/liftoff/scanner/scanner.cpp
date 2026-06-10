@@ -801,6 +801,18 @@ bool Scanner::NextToken(Token *out_token) noexcept {
                         return false;
                     }
 
+                    if (this->Peek() == '!') {
+                        this->Next();
+
+                        if (this->TokenizeComment(out_token, false)) {
+                            out_token->type = TokenType::COMMENT_MODULE;
+
+                            return true;
+                        }
+
+                        return false;
+                    }
+
                     return this->TokenizeComment(out_token, false);
                 }
                 RETURN_TK(TokenType::SLASH);

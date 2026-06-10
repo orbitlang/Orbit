@@ -335,7 +335,7 @@ namespace liftoff::parser {
 
         [[nodiscard]] ASTHandle<Parameter *> PushSelfParam(const scanner::Loc &loc) const;
 
-        [[nodiscard]] orbiter::datatype::HORString GetDocString();
+        [[nodiscard]] orbiter::datatype::HORString GetDocString(bool module_doc);
 
         [[nodiscard]] std::vector<ASTHandle<ASTNode *> > ParseFuncParams(scanner::Loc &last_param);
 

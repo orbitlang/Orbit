@@ -133,7 +133,7 @@ ASTHandle<ASTNode *> Parser::ParseClassTrait(const AccessModifier access) {
     const auto tk_s_offset = TKCUR_LOC.start.offset;
     const auto tk_s_line = TKCUR_LOC.start.line;
 
-    ct->doc = this->GetDocString().release();
+    ct->doc = this->GetDocString(false).release();
 
     this->Eat(true);
 
@@ -190,7 +190,7 @@ ASTHandle<ASTNode *> Parser::ParseClassTrait(const AccessModifier access) {
 }
 
 ASTHandle<ASTNode *> Parser::ParseDecorator() {
-    auto doc = this->GetDocString();
+    auto doc = this->GetDocString(false);
 
     auto deco = MakeDecorator(this->isolate_, TKCUR_LOC);
 
@@ -470,7 +470,7 @@ ASTHandle<ASTNode *> Parser::ParseLoopStatement() {
 }
 
 ASTHandle<ASTNode *> Parser::ParseNativeStatement() {
-    auto doc = this->GetDocString();
+    auto doc = this->GetDocString(false);
     auto start = TKCUR_LOC.start;
     bool constant = false;
 
@@ -1130,7 +1130,7 @@ ASTHandle<ASTNode *> Parser::ParseCleanupInit(const Position &start, const Acces
 
     func->name = ORStringNew(this->isolate_, tk_type == TokenType::KW_CLEANUP ? kCleanupMethodName : kInitMethodName).
             release();
-    func->doc = this->GetDocString().release();
+    func->doc = this->GetDocString(false).release();
 
     func->method = true;
 
@@ -2094,7 +2094,7 @@ ASTHandle<Function *> Parser::ParseFunction(const Position &start, const bool mu
 
     func->loc.start = start;
 
-    func->doc = this->GetDocString().release();
+    func->doc = this->GetDocString(false).release();
 
     this->Eat(true);
 
@@ -2233,8 +2233,10 @@ ASTHandle<Parameter *> Parser::PushSelfParam(const Loc &loc) const {
     return param;
 }
 
-HORString Parser::GetDocString() {
-    if (this->doc_.type != TokenType::COMMENT_DOC)
+HORString Parser::GetDocString(const bool module_doc) {
+    const auto doc_type = module_doc ? TokenType::COMMENT_MODULE : TokenType::COMMENT_DOC;
+
+    if (this->doc_.type != doc_type)
         return {};
 
     auto str = ORStringNewHoldBuffer(this->isolate_, this->doc_.buffer, this->doc_.length);
@@ -2504,8 +2506,8 @@ void Parser::Eat(bool ignore_nl) {
             }
         }
 
-        if (this->Match(TokenType::COMMENT_DOC)) {
-            if (this->doc_.type == TokenType::COMMENT_DOC)
+        if (this->Match(TokenType::COMMENT_DOC, TokenType::COMMENT_MODULE)) {
+            if (this->doc_.type == TokenType::COMMENT_DOC || this->doc_.type == TokenType::COMMENT_MODULE)
                 this->doc_.~Token();
 
             this->doc_ = std::move(this->tkcur_);
@@ -2558,6 +2560,7 @@ ASTHandle<Module *> Parser::Parse() noexcept {
 
         // LOAD FIRST COMMENT
         this->Eat(true);
+        r_module->docstring = this->GetDocString(true).release();
 
         loc.start = TKCUR_START;
 

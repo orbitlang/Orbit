@@ -49,6 +49,7 @@ namespace liftoff::scanner {
         COMMENT,
         COMMENT_DOC,
         COMMENT_INLINE,
+        COMMENT_MODULE,
         COMMENT_END,
 
         // Literals
