@@ -196,6 +196,7 @@ HFunction orbiter::datatype::FunctionNew(Code *code, Closure *closure, Tuple *de
     if (f_shared == nullptr)
         return {};
 
+    f_shared->name = O_FAST_INCREF(code->name);
     f_shared->doc = O_FAST_INCREF(code->doc);
     f_shared->code = O_FAST_INCREF(code);
     f_shared->defaults = O_INCREF(defaults);

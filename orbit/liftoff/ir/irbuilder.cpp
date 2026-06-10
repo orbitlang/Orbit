@@ -968,6 +968,9 @@ Instruction *IRBuilder::visitFunction(const parser::Function *node) {
 
     this->builder_.IRContextNew(IRContextType::FUNCTION, params_count);
 
+    this->builder_.context->name = orbiter::datatype::HORString(node->name);
+    this->builder_.context->doc = orbiter::datatype::HORString(node->doc);
+
     // *****************************************************************************************************************
     // ALLOC STACK SPACE
     // *****************************************************************************************************************
