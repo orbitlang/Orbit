@@ -138,7 +138,7 @@ HFuture orbiter::datatype::FutureNew(Isolate *isolate) {
         future->result = nullptr;
     }
 
-    O_GC_TRACK_RETURN(isolate, future, false);
+    O_GC_TRACK_RETURN(isolate, future, true);
 }
 
 HOType orbiter::datatype::FutureTypeInit(Isolate *isolate) {

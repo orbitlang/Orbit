@@ -193,7 +193,7 @@ HError orbiter::datatype::ErrorNew(Isolate *isolate, Atom *kind, ORString *reaso
         error->details = details;
     }
 
-    O_GC_TRACK_RETURN(isolate, error, false);
+    O_GC_TRACK_RETURN(isolate, error, true);
 }
 
 HError orbiter::datatype::ErrorNew(Isolate *isolate, const char *kind, OObject *details, const char *format, ...) {

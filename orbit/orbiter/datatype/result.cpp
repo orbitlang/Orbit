@@ -236,5 +236,5 @@ HResult orbiter::datatype::ResultNew(Isolate *isolate, OObject *object, const bo
         result->ok = ok;
     }
 
-    O_GC_TRACK_RETURN(isolate, result, false);
+    O_GC_TRACK_RETURN(isolate, result, true);
 }

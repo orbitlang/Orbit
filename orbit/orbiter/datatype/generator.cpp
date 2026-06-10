@@ -138,7 +138,7 @@ HGenerator orbiter::datatype::GeneratorNew(const Fiber *fiber, Function *base, c
 
     gen->IP = (PtrSize) base->shared->code->m_code;
 
-    O_GC_TRACK_RETURN(fiber->isolate, gen, false);
+    O_GC_TRACK_RETURN(fiber->isolate, gen, true);
 }
 
 HOType orbiter::datatype::GeneratorTypeInit(Isolate *isolate) {
