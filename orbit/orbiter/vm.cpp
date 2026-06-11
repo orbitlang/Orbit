@@ -180,6 +180,49 @@ bool LoadFromSlice(const Fiber *fiber, OObject *object, const OObject *start, co
     return false;
 }
 
+bool LoadGlobal(const Fiber *fiber, const U16 offset, PtrSize &dst) noexcept {
+    const auto *code = fiber->context.code;
+    const auto *module = fiber->context.module;
+    const auto *module_type = O_GET_TYPE(module);
+
+    auto *key = (ORString *) code->unknown_symbols->objects[offset];
+
+    if (module != nullptr) {
+        const auto *prop = TIFindLocalProperty(module_type, (const char *) key->buffer);
+        if (prop != nullptr) {
+            if (ENUMBITMASK_ISFALSE(prop->detail, PropertyFlag::IS_PUBLIC)
+                && module_type->properties.origin != (PtrSize) code) {
+                ErrorSetWithObjType(fiber->isolate,
+                                    AttributeError::Details[AttributeError::Reason::ID],
+                                    AttributeError::Details[AttributeError::Reason::PRIVATE_ACCESS],
+                                    (const char *) key->buffer,
+                                    (OObject *) module);
+
+                return false;
+            }
+
+            if (ENUMBITMASK_ISTRUE(prop->detail, PropertyFlag::IN_OBJECT)) {
+                const auto *slot = O_SLOT(module, module_type);
+
+                dst = (PtrSize) slot[prop->slot];
+
+                return true;
+            }
+
+            dst = (PtrSize) prop->value;
+
+            return true;
+        }
+    }
+
+    HOObject out;
+    const auto ok = ContextLookup(fiber->context.context, key, out, nullptr);
+
+    dst = (PtrSize) out.get();
+
+    return ok;
+}
+
 bool StoreToIndex(const Fiber *fiber, OObject *object, const OObject *index, OObject *value) {
     if (O_IS_OBJECT(object)) {
         const auto &ops = O_GET_TYPE_OPS(object);
@@ -1609,27 +1652,8 @@ CATCH_FINALLY:
                 DISPATCH;
             }
             TARGET_OP(LDGBL) {
-                HOObject out;
-
-                // Before checking the context, VM attempts to load data from the module itself (if it exists)
-                /* FIXME
-                 *if (fiber->context.module != nullptr) {
-                    result = LoadFromObjectProp(fiber, nullptr, (OObject *) fiber->context.module, {},
-                                                FETCH_IMM(instr));
-                    if (result != nullptr) {
-                        ACCESS_REG_DST(instr) = (PtrSize) result;
-
-                        DISPATCH;
-                    }
-                }*/
-
-                if (!ContextLookup(fiber->context.context,
-                                   (ORString *) code->unknown_symbols->objects[FETCH_IMM(instr)],
-                                   out,
-                                   nullptr))
+                if (!LoadGlobal(fiber, FETCH_IMM(instr), *REGISTER_PTR(regs, FETCH_R_DST(instr))))
                     goto ERROR;
-
-                ACCESS_REG_DST(instr) = (PtrSize) out.get();
 
                 DISPATCH;
             }
