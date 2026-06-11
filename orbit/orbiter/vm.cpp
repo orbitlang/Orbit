@@ -841,7 +841,7 @@ void ExecuteCleanupForPC(const Fiber *fiber) {
         if (ip < (PtrSize) entry->m_start || ip >= (PtrSize) entry->m_end)
             continue;
 
-        auto *value = *((OObject **) (fiber->vm.stack.stack + (
+        const auto *value = *((OObject **) (fiber->vm.stack.stack + (
                                           fiber->vm.regs.BP.reg + (entry->slot * sizeof(void *)))));
 
         switch (entry->type) {
@@ -1312,21 +1312,9 @@ CATCH_FINALLY:
             TARGET_OP(RETSUB) {
                 REG_RR = ACCESS_REG_SRC(instr);
 
-                REG_BP -= sizeof(void *);
-                REG_IP = *ACCESS_STACK_BP(0) + sizeof(MachineWord);
+                fiber->PopState();
 
-                REG_BP -= sizeof(void *);
-                REG_SP = REG_BP;
-
-                REG_BP = *ACCESS_STACK_SP(0);
-
-                REG_SP -= sizeof(void *);
-
-                fiber->context.code = (Code *) *ACCESS_STACK_SP(0);
-
-                code = fiber->context.code;
-
-                continue;
+                goto BEGIN;
             }
             TARGET_OP(YLD) {
                 REG_RR = ACCESS_REG_SRC(instr);
@@ -1513,21 +1501,18 @@ CATCH_FINALLY:
             TARGET_OP(EXECSUB) {
                 const auto sproc = (Code *) ACCESS_REG_SRC(instr);
 
-                if (!stack->Check(fiber->isolate, regs->SP.reg, sproc->stack_size + (3 * sizeof(PtrSize))))
+                if (!stack->Check(fiber->isolate, regs->SP.reg, sproc->stack_size + kStackPrologueOffset))
                     goto ERROR;
 
-                fiber->vm.Push((OObject *) code);
-                fiber->vm.Push(regs->BP.reg);
-                fiber->vm.Push(regs->IP.reg);
+                if (!fiber->PushState())
+                    goto ERROR;
+
+                // Load new context
+                fiber->SetContext(fiber->context.context, fiber->context.module, sproc);
 
                 regs->BP.reg = regs->SP.reg;
 
-                fiber->context.code = sproc;
-                code = sproc;
-
-                regs->IP.reg = (PtrSize) sproc->m_code;
-
-                continue;
+                goto BEGIN;
             }
             TARGET_OP(LDCODE) {
                 const auto imm = FETCH_IMM(instr);
