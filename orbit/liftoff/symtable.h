@@ -171,13 +171,27 @@ namespace liftoff {
     };
 
     struct Symbol {
-        /// @brief Pointer to the actual declaration that resolves a forward reference.
+        /// @brief Within-scope chain of redeclarations.
         ///
-        /// When a symbol is referenced before being declared, an UNKNOWN entry is created in the scope.
-        /// If a declaration with the same name appears later, this pointer links the UNKNOWN entry to
-        /// the resolved symbol. If the existing entry is not UNKNOWN, the declaration is rejected
-        /// as a name collision.
+        /// When a name is referenced before being declared in the *same* scope, an UNKNOWN entry is
+        /// inserted; if a later declaration with the same name appears in that scope, `next` links the
+        /// UNKNOWN to the real declaration.  `Lookup` walks `next` (filtering by `decl_offset`) to pick
+        /// the declaration in effect at a given source position.  The chain is also the unit of
+        /// ownership for `SymbolDel`, which frees the whole list — so `next` MUST stay confined to
+        /// symbols allocated by the table for this scope.
         Symbol *next;
+
+        /// @brief Cross-scope resolution for forward references.
+        ///
+        /// Set during the deferred resolution pass at module exit: an UNKNOWN that did not get
+        /// satisfied within its own scope but matches a top-level declaration in an enclosing scope
+        /// has `alias` set to that declaration.  Consumers (IRBuilder's `LoadVariable` /
+        /// `StoreVariable`) follow `alias` once to reach the real symbol — its `offset`, `location`
+        /// and `decl_scope` are then the source of truth.
+        ///
+        /// `alias` is never followed by `SymbolDel`: the pointed-to symbol is owned by another scope.
+        /// This is the reason `next` and `alias` are kept separate fields instead of merged.
+        Symbol *alias;
 
         Scope *decl_scope;
 
@@ -224,7 +238,7 @@ namespace liftoff {
         [[nodiscard]] Symbol *SymbolNew(orbiter::datatype::ORString *name, SymbolType type, StorageLocation location,
                                         MSize offset) noexcept;
 
-        void ComputeLocalVarOffset(const SubScope *s_scope) const noexcept;
+        void ComputeLocalVarOffset(Scope *scope, const SubScope *s_scope) const noexcept;
 
         void ScopeDel(Scope *target) const noexcept;
 
@@ -351,6 +365,31 @@ namespace liftoff {
          * @return A pointer to the found symbol or nullptr if not found.
          */
         Symbol *Lookup(const char *name, MSize offset) noexcept;
+
+        /**
+         * @brief Look up @p name in scopes strictly enclosing @p start.
+         *
+         * Used by the deferred resolution pass at module exit to bind an
+         * UNKNOWN forward reference to a declaration that lives in a parent
+         * scope.  The walk begins at `start->back` — @p start itself is
+         * never searched.
+         *
+         * Class-member visibility policy is intentionally NOT replayed
+         * here: the parser already enforced it during regular `Lookup`
+         * calls.  Anything that survives as UNKNOWN to this stage is a
+         * genuine cross-scope forward reference, and what matters is just
+         * whether a finished declaration of the same name exists somewhere
+         * above.  The first INITIALIZED symbol encountered along the walk
+         * wins; partially-declared placeholders are skipped.
+         *
+         * @param name   Symbol name to look for.
+         * @param start  Scope whose enclosing chain is searched.  Typically
+         *               the scope of the UNKNOWN being resolved.
+         *
+         * @return Resolved symbol, or `nullptr` if no matching declaration
+         *         exists in any enclosing scope.
+         */
+        static Symbol *LookupInEnclosing(orbiter::datatype::ORString *name, const Scope *start) noexcept;
 
         /**
          * @brief Looks up a symbol with the specified name and offset, inserting it if not found.

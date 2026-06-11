@@ -40,6 +40,7 @@ Symbol *SymbolTable::SymbolNew(ORString *name, const SymbolType type, const Stor
     }
 
     symbol->next = nullptr;
+    symbol->alias = nullptr;
     symbol->decl_scope = this->scope;
     symbol->defining_scope = nullptr;
     symbol->name = O_FAST_INCREF(name);
@@ -73,31 +74,47 @@ Symbol *SymbolTable::SymbolNew(ORString *name, const SymbolType type, const Stor
     return symbol;
 }
 
-void SymbolTable::ComputeLocalVarOffset(const SubScope *s_scope) const noexcept {
+void SymbolTable::ComputeLocalVarOffset(Scope *scope, const SubScope *s_scope) const noexcept {
     const auto *child = s_scope->child;
 
-    const auto stack_count = this->scope->stack_count;
+    const auto stack_count = scope->stack_count;
 
     for (auto cursor = s_scope->symbols.iter_begin; cursor != nullptr; cursor = cursor->iter_next) {
         auto *symbol = cursor->value;
 
+        if (symbol->type == SymbolType::FUNC
+            || symbol->type == SymbolType::METHOD
+            || symbol->type == SymbolType::CLASS
+            || symbol->type == SymbolType::TRAIT)
+            this->ComputeLocalVarOffset(symbol->defining_scope, symbol->defining_scope->active);
+
         if (child != nullptr && symbol->decl_offset > child->offset.start) {
-            this->ComputeLocalVarOffset(child);
+            this->ComputeLocalVarOffset(scope, child);
 
             child = child->next_sibling;
         }
 
         if (symbol->type == SymbolType::PARAMETER) {
-            symbol->offset = this->scope->parameter_count++;
+            symbol->offset = scope->parameter_count++;
 
             continue;
         }
 
-        if (symbol->type == SymbolType::UNKNOWN)
+        if (symbol->type == SymbolType::UNKNOWN) {
+            if (scope->type != ScopeType::MODULE) {
+                auto *tmp = LookupInEnclosing(symbol->name, scope);
+                if (tmp != nullptr) {
+                    symbol->alias = tmp;
+
+                    continue;
+                }
+            }
+
             symbol->location = StorageLocation::GLOBAL;
+        }
 
         if (ENUMBITMASK_ISTRUE(symbol->flags, SymbolFlags::CONST)) {
-            symbol->offset = this->scope->static_count++;
+            symbol->offset = scope->static_count++;
 
             if (symbol->decl_scope->type == ScopeType::CLASS || symbol->decl_scope->type == ScopeType::TRAIT)
                 continue;
@@ -107,31 +124,31 @@ void SymbolTable::ComputeLocalVarOffset(const SubScope *s_scope) const noexcept 
             case StorageLocation::AUTO:
                 break;
             case StorageLocation::CLOSURE:
-                symbol->offset = this->scope->closure_count++;
-                symbol->stack_offset = this->scope->stack_count++;
+                symbol->offset = scope->closure_count++;
+                symbol->stack_offset = scope->stack_count++;
                 break;
             case StorageLocation::GLOBAL:
-                symbol->offset = this->scope->unknown_count++;
+                symbol->offset = scope->unknown_count++;
                 break;
             case StorageLocation::MODULE:
             case StorageLocation::SLOTS:
                 // Module and slots share the same counter since a scope cannot be both a module and a class/trait
-                symbol->offset = this->scope->slot_count++;
+                symbol->offset = scope->slot_count++;
                 break;
             case StorageLocation::STACK:
-                symbol->offset = this->scope->stack_count++;
+                symbol->offset = scope->stack_count++;
                 break;
         }
     }
 
     while (child != nullptr) {
-        this->ComputeLocalVarOffset(child);
+        this->ComputeLocalVarOffset(scope, child);
 
         child = child->next_sibling;
     }
 
-    this->scope->stack_count_max = std::max(this->scope->stack_count, this->scope->stack_count_max);
-    this->scope->stack_count = stack_count;
+    scope->stack_count_max = std::max(scope->stack_count, scope->stack_count_max);
+    scope->stack_count = stack_count;
 }
 
 void SymbolTable::ScopeDel(Scope *target) const noexcept {
@@ -490,6 +507,30 @@ Symbol *SymbolTable::Lookup(const char *name, const MSize offset) noexcept {
     return this->Lookup(o_name.get(), offset);
 }
 
+Symbol *SymbolTable::LookupInEnclosing(ORString *name, const Scope *start) noexcept {
+    for (const auto *cursor = start->back; cursor != nullptr; cursor = cursor->back) {
+        for (const auto *inner_scope = cursor->active; inner_scope != nullptr; inner_scope = inner_scope->parent) {
+            STHEntry *entry;
+            if (inner_scope->symbols.Lookup(name, &entry) != LookupResult::OK)
+                continue;
+
+            auto *sym = entry->value;
+
+            // Follow the within-scope redeclaration chain once: the head
+            // may still be an UNKNOWN placeholder while the actual decl
+            // is parked on `next`.
+            if (sym->next != nullptr)
+                sym = sym->next;
+
+            // Partially-declared placeholders never satisfy a resolution attempt
+            if (ENUMBITMASK_ISTRUE(sym->flags, SymbolFlags::INITIALIZED))
+                return sym;
+        }
+    }
+
+    return nullptr;
+}
+
 Symbol *SymbolTable::LookupInsert(ORString *name, const MSize offset) noexcept {
     auto *sym = this->Lookup(name, offset);
     if (sym != nullptr && sym->type != SymbolType::UNKNOWN) {
@@ -604,10 +645,10 @@ void SymbolTable::LeaveScope(const MSize offset, const MSize line_end) noexcept 
     current->scope.offset.end = offset;
     current->line.end = line_end;
 
-    this->ComputeLocalVarOffset(current->active);
-
     if (this->scope->type != ScopeType::MODULE)
         this->scope = current->back;
+    else
+        this->ComputeLocalVarOffset(current, current->active);
 
     this->status = SymbolTableError::OK;
 }

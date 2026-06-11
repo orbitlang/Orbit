@@ -428,7 +428,10 @@ Instruction *IRBuilder::LoadVariable(const Symbol *symbol) {
     if (ret != nullptr)
         return ret;
 
-    auto offset = (I16) symbol->offset;
+    if (symbol->alias != nullptr)
+        symbol = symbol->alias;
+
+    const auto offset = (I16) symbol->offset;
 
     // *** UNKNOWN ***
     if (symbol->location == StorageLocation::GLOBAL) {
@@ -481,6 +484,9 @@ EXIT:
 }
 
 Instruction *IRBuilder::StoreVariable(const Symbol *symbol, Instruction *value, const bool decl) {
+    if (symbol->alias != nullptr)
+        symbol = symbol->alias;
+
     auto offset = (I16) symbol->offset;
 
     this->builder_.context->InvalidateActiveVar(symbol);
