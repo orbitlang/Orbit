@@ -1938,6 +1938,7 @@ IRCHandle IRBuilder::Generate(const parser::ASTHandle<parser::Module *> &module)
         // Create first context
         this->builder_.IRContextNew(IRContextType::MODULE, this->sym_t_->scope->GetSlotsCount());
         this->builder_.context->name = orbiter::datatype::HORString(module->filename);
+        this->builder_.context->doc = orbiter::datatype::HORString(module->docstring);
 
         auto *context = this->builder_.context;
 

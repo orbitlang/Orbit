@@ -111,7 +111,7 @@ HOType orbiter::datatype::ModuleTypeNew(Isolate *isolate, const ModuleInit *init
 HOType orbiter::datatype::ModuleTypeNew(const Code *code, ORString *name) {
     auto *isolate = O_GET_ISOLATE(code);
 
-    auto module = ModuleTypeNew(isolate, name, nullptr, code->exported.length, code->slots_count);
+    auto module = ModuleTypeNew(isolate, name, code->doc, code->exported.length, code->slots_count);
     if (module) {
         for (auto i = 0; i < code->exported.length; i++) {
             const auto *symbol = code->exported.symbols + i;
