@@ -151,7 +151,10 @@ void Fiber::Panic(datatype::OObject *error) noexcept {
 }
 
 void Fiber::PopState() noexcept {
-    auto *stack = this->vm.stack.stack + this->vm.regs.BP.reg;
+    // BP marks the top of the prologue saved by PushState
+    const auto frame_base = this->vm.regs.BP.reg;
+
+    auto *stack = this->vm.stack.stack + frame_base;
 
     stack -= sizeof(PtrSize);
 
@@ -168,5 +171,5 @@ void Fiber::PopState() noexcept {
 
     memory::MemoryCopy(&this->context, stack, sizeof(FiberContext));
 
-    this->vm.regs.SP.reg -= kStackPrologueOffset;
+    this->vm.regs.SP.reg = frame_base - kStackPrologueOffset;
 }
