@@ -439,24 +439,41 @@ bool orbiter::datatype::CheckUnicodeCharSequence(StringKind *out_kind, MSize *ou
     return true;
 }
 
-int orbiter::datatype::StringIntToUTF8(unsigned int glyph, unsigned char *buf) {
+int orbiter::datatype::StringIntToUTF8(const unsigned int glyph, unsigned char *buf) {
     if (glyph < 0x80) {
         *buf = glyph >> 0u & 0x7Fu;
+        
         return 1;
-    } else if (glyph < 0x0800) {
+    } 
+    
+    if (glyph < 0x0800) {
         *buf++ = glyph >> 6u & 0x1Fu | 0xC0u;
-        *buf = glyph >> 0u & 0xBFu;
+        *buf = 0x80 | (glyph & 0x3F);
+        
         return 2;
-    } else if (glyph < 0x010000) {
+    }
+
+    // This check rejects UTF-16 surrogate pairs (0xD800-0xDFFF), which are invalid Unicode code points.
+    // Surrogate pairs are reserved for UTF-16 encoding and have no meaning in UTF-8 or as standalone
+    // Unicode scalar values. Attempting to encode them would produce ill-formed UTF-8 sequences.
+    // Returning 0 signals an error to the caller, preventing invalid data from being written to the buffer.
+    if (glyph >= 0xD800 && glyph <= 0xDFFF)
+        return 0;
+    
+    if (glyph < 0x010000) {
         *buf++ = glyph >> 12u & 0x0Fu | 0xE0u;
         *buf++ = glyph >> 6u & 0x3Fu | 0x80u;
         *buf = glyph >> 0u & 0x3Fu | 0x80u;
+        
         return 3;
-    } else if (glyph < 0x110000) {
+    } 
+    
+    if (glyph < 0x110000) {
         *buf++ = glyph >> 18u & 0x07u | 0xF0u;
         *buf++ = glyph >> 12u & 0x3Fu | 0x80u;
         *buf++ = glyph >> 6u & 0x3Fu | 0x80u;
         *buf = glyph >> 0u & 0x3Fu | 0x80u;
+        
         return 4;
     }
 
@@ -464,14 +481,16 @@ int orbiter::datatype::StringIntToUTF8(unsigned int glyph, unsigned char *buf) {
 }
 
 int orbiter::datatype::StringUTF8ToInt(const unsigned char *buf) {
-    if (*buf > 0xF0)
+    if (*buf > 0xF4)
         return -1;
 
     if ((*buf & 0xF0) == 0xF0)
-        return (*buf & 0x07) << 21 | (buf[1] & 0x3F) << 12 | (buf[2] & 0x3F) << 6 | buf[3] & 0x3F;
-    else if ((*buf & 0xE0) == 0xE0)
+        return (*buf & 0x07) << 18 | (buf[1] & 0x3F) << 12 | (buf[2] & 0x3F) << 6 | buf[3] & 0x3F;
+    
+    if ((*buf & 0xE0) == 0xE0)
         return (*buf & 0x0F) << 12 | (buf[1] & 0x3F) << 6 | buf[2] & 0x3F;
-    else if ((*buf & 0xC0) == 0xC0)
+    
+    if ((*buf & 0xC0) == 0xC0)
         return (*buf & 0x1F) << 6 | buf[1] & 0x3F;
 
     return *buf;
