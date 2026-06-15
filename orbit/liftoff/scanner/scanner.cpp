@@ -1036,8 +1036,11 @@ int Scanner::Peek(const bool advance) {
             return -1;
         }
 
-        if (err < 0)
-            this->status = ScannerStatus::NOMEM;
+        if (err < 0) {
+            this->status = err == -2 ? ScannerStatus::IO_ERROR : ScannerStatus::NOMEM;
+
+            return -1;
+        }
 
         chr = err;
     } while (chr > 0);
@@ -1081,6 +1084,7 @@ const char *Scanner::GetStatusMessage() const {
         "illegal Unicode character",
         "invalid unsigned qualifier here",
         "null-byte '\\0' is not allowed in source code",
+        "input/output error while reading source",
         "not enough memory",
         "ok"
     };

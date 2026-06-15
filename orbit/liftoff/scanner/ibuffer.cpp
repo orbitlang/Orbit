@@ -141,17 +141,19 @@ int InputBuffer::Peek(const bool advance) {
 int InputBuffer::ReadFile(FILE *fd) {
     assert(this->file_);
 
+    if (this->fd_error_)
+        return -2;
+
     if (this->buffer_ == nullptr) {
         this->buffer_ = this->allocator_.alloc<unsigned char>(this->b_length_);
-
         if (this->buffer_ == nullptr)
-            return false;
+            return -1;
 
         this->b_cur_ = this->b_length_;
 
         this->last_line_ = this->allocator_.alloc<unsigned char>(this->ll_size_);
         if (this->last_line_ == nullptr)
-            return false;
+            return -1;
 
         this->ll_end_ = this->ll_size_;
     }
@@ -161,8 +163,15 @@ int InputBuffer::ReadFile(FILE *fd) {
 
     const auto read = (int) std::fread(this->buffer_, 1, this->b_length_, fd);
 
-    if (ferror(fd) != 0 || read == 0 && feof(fd) != 0)
+    if (read == 0 && feof(fd) != 0)
         return 0;
+
+    if (ferror(fd) != 0) {
+        if (read == 0)
+            return -2;
+
+        this->fd_error_ = true;
+    }
 
     this->b_length_ = read;
     this->b_cur_ = 0;

@@ -28,6 +28,7 @@ namespace liftoff::scanner {
 
         bool file_ = false;
         bool release_ = true;
+        bool fd_error_ = false;
 
     public:
         InputBuffer(orbiter::Isolate *isolate, const unsigned char *buffer, unsigned long length) : allocator_(isolate),
