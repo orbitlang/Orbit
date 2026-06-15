@@ -14,7 +14,7 @@ StoreBuffer::~StoreBuffer() {
     this->allocator_.free(this->buffer_);
 }
 
-bool StoreBuffer::Enlarge(size_t increase) {
+bool StoreBuffer::Enlarge(const size_t increase) {
     if (this->buffer_ == nullptr) {
         this->buffer_ = this->allocator_.alloc<unsigned char>(increase + 1);
         if (this->buffer_ == nullptr)
@@ -24,21 +24,34 @@ bool StoreBuffer::Enlarge(size_t increase) {
         this->end_ = this->buffer_ + increase;
     }
 
-    if ((this->end_ - this->cursor_) < increase) {
-        const auto newsz = ((this->end_ + 1) - this->buffer_) + increase;
-        const auto tmp = this->allocator_.realloc(this->buffer_, newsz);
+    const size_t available = this->end_ - this->cursor_; // cursor_ <= end_ invariant
+
+    if (available < increase) {
+        const size_t used = this->cursor_ - this->buffer_;
+        const size_t capacity = this->end_ - this->buffer_;
+        const size_t needed = used + increase;
+
+        // Grow geometrically so building a token costs amortized O(n) instead of
+        // O(n^2) — Stratum's realloc copies on every grow and its size classes
+        // are 8-byte granular, so a fixed +8 step would copy on each call.
+        // GetBuffer trims the slack back to the exact size on hand-off.
+        size_t newcap = capacity * 2;
+        if (newcap < needed)
+            newcap = needed;
+
+        const auto tmp = this->allocator_.realloc(this->buffer_, newcap + 1);
         if (tmp == nullptr)
             return false;
 
-        this->cursor_ = tmp + (this->cursor_ - this->buffer_);
+        this->cursor_ = tmp + used;
         this->buffer_ = tmp;
-        this->end_ = tmp + (newsz - 1);
+        this->end_ = tmp + newcap;
     }
 
     return true;
 }
 
-bool StoreBuffer::PutChar(unsigned char chr) {
+bool StoreBuffer::PutChar(const unsigned char chr) {
     do {
         if (this->cursor_ < this->end_) {
             *this->cursor_ = chr;
@@ -87,7 +100,13 @@ unsigned int StoreBuffer::GetBuffer(unsigned char **buffer) {
     assert(this->cursor_ < (this->end_ + 1));
 
     *this->cursor_ = '\0';
-    *buffer = this->buffer_;
+
+    // Shrink-to-fit: the buffer becomes the token's permanent storage, so trim
+    // the geometric over-allocation back to the exact content size (+1 NUL). On
+    // realloc-down failure Stratum keeps the original block intact, so fall back
+    // to it.
+    const auto fit = this->allocator_.realloc(this->buffer_, length + 1);
+    *buffer = fit != nullptr ? fit : this->buffer_;
 
     this->buffer_ = nullptr;
     this->cursor_ = nullptr;
