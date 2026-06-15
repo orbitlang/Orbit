@@ -136,11 +136,11 @@ inline unsigned char HexDigitToNumber(int chr) {
     return (isdigit(chr)) ? ((char) chr) - '0' : (unsigned char) (10 + (tolower(chr) - 'a'));
 }
 
-inline bool IsHexDigit(int chr) { return (chr >= '0' && chr <= '9') || (tolower(chr) >= 'a' && tolower(chr) <= 'f'); }
+inline bool IsHexDigit(const int chr) { return (chr >= '0' && chr <= '9') || (tolower(chr) >= 'a' && tolower(chr) <= 'f'); }
 
-inline bool IsOctDigit(int chr) { return chr >= '0' && chr <= '7'; }
+inline bool IsOctDigit(const int chr) { return chr >= '0' && chr <= '7'; }
 
-bool Scanner::ParseEscape(int stop, bool ignore_unicode) {
+bool Scanner::ParseEscape(const int stop, const bool ignore_unicode) {
     int value = this->Next();
     bool ok;
 
@@ -319,7 +319,7 @@ bool Scanner::TokenizeBinary(Token *out_token) {
         value = this->Peek();
     }
 
-    if (isdigit(value)) {
+    if (this->sbuf_.GetLength() == 0 || isdigit(value)) {
         this->status = ScannerStatus::INVALID_BINARY_LITERAL;
         return false;
     }
@@ -460,7 +460,7 @@ bool Scanner::TokenizeHex(Token *out_token) {
         value = this->Peek();
     }
 
-    if (isalpha(value) && (value != 'u' && value != 'U')) {
+    if (this->sbuf_.GetLength() == 0 || (isalpha(value) && value != 'u' && value != 'U')) {
         this->status = ScannerStatus::INVALID_HEX_LITERAL;
         return false;
     }
@@ -533,7 +533,7 @@ bool Scanner::TokenizeOctal(Token *out_token) {
         value = this->Peek();
     }
 
-    if (isdigit(value)) {
+    if (this->sbuf_.GetLength() == 0 || isdigit(value)) {
         this->status = ScannerStatus::INVALID_OCTAL_LITERAL;
         return false;
     }
