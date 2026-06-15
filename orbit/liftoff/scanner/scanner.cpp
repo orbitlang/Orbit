@@ -548,8 +548,8 @@ bool Scanner::TokenizeOctal(Token *out_token) {
 
 bool Scanner::TokenizeString(Token *out_token, const bool check_prefix, const bool byte_string) {
     auto type = TokenType::STRING;
+    auto hashes = 0;
     int value;
-    int hashes = 0;
 
     if (byte_string)
         type = TokenType::BYTE_STRING;
@@ -560,6 +560,7 @@ bool Scanner::TokenizeString(Token *out_token, const bool check_prefix, const bo
 
     if (check_prefix && this->Next() != '"') {
         this->status = ScannerStatus::INVALID_RS_PROLOGUE;
+
         return false;
     }
 
@@ -573,16 +574,19 @@ bool Scanner::TokenizeString(Token *out_token, const bool check_prefix, const bo
                 out_token->type = type;
                 out_token->loc.end = this->loc;
                 out_token->length = this->sbuf_.GetBuffer(&out_token->buffer);
+                
                 return true;
             }
 
             if (!this->sbuf_.PutChar('"')) {
                 this->status = ScannerStatus::NOMEM;
+                
                 return false;
             }
 
             if (!this->sbuf_.PutCharRepeat('#', count)) {
                 this->status = ScannerStatus::NOMEM;
+                
                 return false;
             }
 
@@ -597,10 +601,12 @@ bool Scanner::TokenizeString(Token *out_token, const bool check_prefix, const bo
         // Byte string accept byte in range (0x00 - 0x7F)
         if (byte_string && value > 0x7F) {
             this->status = ScannerStatus::INVALID_BSTR;
+            
             return false;
         }
 
-        if (value == '\\') {
+        // If check_prefix is false, then it's not a raw string, so escape sequences must be processed
+        if (!check_prefix && value == '\\') {
             if (this->Peek() != '\\') {
                 if (!this->ParseEscape('"', byte_string))
                     return false;
@@ -679,6 +685,9 @@ bool Scanner::NextToken(Token *out_token) noexcept {
 
     // Reset error status
     this->status = ScannerStatus::GOOD;
+
+    // Reset store buffer
+    this->sbuf_.Clear();
 
     out_token->isolate = this->isolate_;
 
@@ -892,9 +901,13 @@ bool Scanner::NextToken(Token *out_token) noexcept {
 #undef CHECK_AGAIN
     }
 
+    if (this->status != ScannerStatus::END_OF_FILE)
+        return false;
+
     out_token->loc.start = this->loc;
     out_token->loc.end = this->loc;
     out_token->type = TokenType::END_OF_FILE;
+
     return true;
 }
 
@@ -921,8 +934,15 @@ int Scanner::Peek(bool advance) {
         if ((chr = this->ibuf_.Peek(advance)) > 0)
             break;
 
+        if (chr == 0) {
+            this->status = ScannerStatus::INVALID_NULLBYTE;
+
+            return -1;
+        }
+
         if (this->fd_ == nullptr) {
             this->status = ScannerStatus::END_OF_FILE;
+
             return -1;
         }
 
@@ -933,6 +953,7 @@ int Scanner::Peek(bool advance) {
 
         if (err == 0) {
             this->status = ScannerStatus::END_OF_FILE;
+
             return -1;
         }
 
@@ -949,7 +970,7 @@ int Scanner::Peek(bool advance) {
 }
 
 int Scanner::UnderflowInteractive() {
-    int err = this->promptfn_(this->prompt_, this->fd_, &this->ibuf_);
+    const auto err = this->promptfn_(this->prompt_, this->fd_, &this->ibuf_);
     if (err < 0)
         return err;
 
@@ -979,6 +1000,7 @@ const char *Scanner::GetStatusMessage() const {
         "invalid token",
         "illegal Unicode character",
         "invalid unsigned qualifier here",
+        "null-byte '\\0' is not allowed in source code",
         "not enough memory",
         "ok"
     };

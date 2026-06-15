@@ -37,6 +37,8 @@ namespace liftoff::scanner {
         }
 
         unsigned int GetBuffer(unsigned char **buffer);
+
+        void Clear() noexcept;
     };
 }
 

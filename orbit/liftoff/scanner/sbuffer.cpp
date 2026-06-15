@@ -25,8 +25,8 @@ bool StoreBuffer::Enlarge(size_t increase) {
     }
 
     if ((this->end_ - this->cursor_) < increase) {
-        auto newsz = ((this->end_ + 1) - this->buffer_) + increase;
-        auto tmp = this->allocator_.realloc(this->buffer_, newsz);
+        const auto newsz = ((this->end_ + 1) - this->buffer_) + increase;
+        const auto tmp = this->allocator_.realloc(this->buffer_, newsz);
         if (tmp == nullptr)
             return false;
 
@@ -78,10 +78,11 @@ bool StoreBuffer::PutString(const unsigned char *str, size_t length) {
 unsigned int StoreBuffer::GetBuffer(unsigned char **buffer) {
     if (this->buffer_ == nullptr) {
         *buffer = nullptr;
+
         return 0;
     }
 
-    auto length = (unsigned int) (this->cursor_ - this->buffer_);
+    const auto length = (unsigned int) (this->cursor_ - this->buffer_);
 
     assert(this->cursor_ < (this->end_ + 1));
 
@@ -93,4 +94,8 @@ unsigned int StoreBuffer::GetBuffer(unsigned char **buffer) {
     this->end_ = nullptr;
 
     return length;
+}
+
+void StoreBuffer::Clear() noexcept {
+    this->cursor_ = this->buffer_;
 }

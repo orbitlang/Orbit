@@ -37,6 +37,7 @@ namespace liftoff::scanner {
         INVALID_TK,
         INVALID_UCHR,
         INVALID_U_NUM,
+        INVALID_NULLBYTE,
         NOMEM,
         GOOD
     };

@@ -220,7 +220,7 @@ namespace liftoff::scanner {
         Pos line;
         Pos offset;
 
-        void Advance(bool nl) {
+        void Advance(const bool nl) {
             this->offset++;
             this->column++;
 

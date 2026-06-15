@@ -100,7 +100,7 @@ char *InputBuffer::GetCurrentLine(int *out_len) {
     return line;
 }
 
-int InputBuffer::Peek(bool advance) {
+int InputBuffer::Peek(const bool advance) {
     if (this->b_cur_ < this->b_length_ && this->buffer_ != nullptr) {
         auto chr = this->buffer_[this->b_cur_];
 
@@ -135,7 +135,7 @@ int InputBuffer::Peek(bool advance) {
         return chr;
     }
 
-    return 0;
+    return -1;
 }
 
 int InputBuffer::ReadFile(FILE *fd) {
