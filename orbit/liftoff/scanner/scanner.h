@@ -28,6 +28,7 @@ namespace liftoff::scanner {
         INVALID_HEX_BYTE,
         INVALID_HEX_LITERAL,
         INVALID_LC,
+        INVALID_NUMBER_LITERAL,
         INVALID_OCTAL_LITERAL,
         INVALID_OCT_BYTE,
         INVALID_RSTR,

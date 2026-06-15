@@ -136,7 +136,9 @@ inline unsigned char HexDigitToNumber(int chr) {
     return (isdigit(chr)) ? ((char) chr) - '0' : (unsigned char) (10 + (tolower(chr) - 'a'));
 }
 
-inline bool IsHexDigit(const int chr) { return (chr >= '0' && chr <= '9') || (tolower(chr) >= 'a' && tolower(chr) <= 'f'); }
+inline bool IsHexDigit(const int chr) {
+    return (chr >= '0' && chr <= '9') || (tolower(chr) >= 'a' && tolower(chr) <= 'f');
+}
 
 inline bool IsOctDigit(const int chr) { return chr >= '0' && chr <= '7'; }
 
@@ -147,6 +149,7 @@ bool Scanner::ParseEscape(const int stop, const bool ignore_unicode) {
     if (value == stop) {
         if (!this->sbuf_.PutChar((unsigned char) value)) {
             this->status = ScannerStatus::NOMEM;
+
             return false;
         }
 
@@ -190,12 +193,15 @@ bool Scanner::ParseEscape(const int stop, const bool ignore_unicode) {
                 return this->ParseOctEscape(value);
 
             ok = this->sbuf_.PutChar('\\');
-            if (ok)
-                this->sbuf_.PutChar((unsigned char) value);
+            if (!ok || !this->sbuf_.PutChar((unsigned char) value)) {
+                ok = false;
+                break;
+            }
     }
 
     if (!ok) {
         this->status = ScannerStatus::NOMEM;
+
         return false;
     }
 
@@ -295,15 +301,23 @@ bool Scanner::TokenizeAtom(Token *out_token) {
     while (isalnum(value) || value == '_') {
         if (!this->sbuf_.PutChar((unsigned char) this->Next())) {
             this->status = ScannerStatus::NOMEM;
+
             return false;
         }
 
         value = this->Peek();
     }
 
+    if (this->sbuf_.GetLength() == 0) {
+        this->status = ScannerStatus::INVALID_TK;
+
+        return false;
+    }
+
     out_token->type = TokenType::ATOM;
     out_token->loc.end = this->loc;
     out_token->length = this->sbuf_.GetBuffer(&out_token->buffer);
+
     return true;
 }
 
@@ -409,20 +423,23 @@ bool Scanner::TokenizeComment(Token *out_token, bool inline_comment) {
     return true;
 }
 
-bool Scanner::TokenizeDecimal(Token *out_token, TokenType type, bool begin_zero) {
+bool Scanner::TokenizeDecimal(Token *out_token, TokenType type, const bool begin_zero) {
     if (begin_zero && !this->sbuf_.PutChar('0')) {
         this->status = ScannerStatus::NOMEM;
+
         return false;
     }
 
     if (type == TokenType::DECIMAL && !this->sbuf_.PutChar('.')) {
         this->status = ScannerStatus::NOMEM;
+
         return false;
     }
 
     while (isdigit(this->Peek())) {
         if (!this->sbuf_.PutChar((unsigned char) this->Next())) {
             this->status = ScannerStatus::NOMEM;
+
             return false;
         }
     }
@@ -431,12 +448,14 @@ bool Scanner::TokenizeDecimal(Token *out_token, TokenType type, bool begin_zero)
     if (this->Peek() == '.' && type != TokenType::DECIMAL) {
         if (!this->sbuf_.PutChar((unsigned char) this->Next())) {
             this->status = ScannerStatus::NOMEM;
+
             return false;
         }
 
         while (isdigit(this->Peek())) {
             if (!this->sbuf_.PutChar((unsigned char) this->Next())) {
                 this->status = ScannerStatus::NOMEM;
+
                 return false;
             }
         }
@@ -444,9 +463,16 @@ bool Scanner::TokenizeDecimal(Token *out_token, TokenType type, bool begin_zero)
         type = TokenType::DECIMAL;
     }
 
+    if (isalpha(this->Peek()) && this->Peek() != 'u' && this->Peek() != 'U') {
+        this->status = ScannerStatus::INVALID_NUMBER_LITERAL;
+
+        return false;
+    }
+
     out_token->type = type;
     out_token->loc.end = this->loc;
     out_token->length = this->sbuf_.GetBuffer(&out_token->buffer);
+
     return true;
 }
 
@@ -574,19 +600,19 @@ bool Scanner::TokenizeString(Token *out_token, const bool check_prefix, const bo
                 out_token->type = type;
                 out_token->loc.end = this->loc;
                 out_token->length = this->sbuf_.GetBuffer(&out_token->buffer);
-                
+
                 return true;
             }
 
             if (!this->sbuf_.PutChar('"')) {
                 this->status = ScannerStatus::NOMEM;
-                
+
                 return false;
             }
 
             if (!this->sbuf_.PutCharRepeat('#', count)) {
                 this->status = ScannerStatus::NOMEM;
-                
+
                 return false;
             }
 
@@ -601,7 +627,7 @@ bool Scanner::TokenizeString(Token *out_token, const bool check_prefix, const bo
         // Byte string accept byte in range (0x00 - 0x7F)
         if (byte_string && value > 0x7F) {
             this->status = ScannerStatus::INVALID_BSTR;
-            
+
             return false;
         }
 
@@ -963,7 +989,7 @@ int Scanner::Peek(bool advance) {
         chr = err;
     } while (chr > 0);
 
-    if (advance)
+    if (advance && chr > 0)
         this->loc.Advance(chr == '\n');
 
     return chr;
@@ -991,6 +1017,7 @@ const char *Scanner::GetStatusMessage() const {
         "can't decode byte, hex escape must be: \\xhh",
         "invalid hexadecimal literal",
         "expected new-line after line continuation character",
+        "invalid digit in number",
         "invalid digit in octal literal",
         "octal escape value out of range, must be between \\000 and \\377",
         "unterminated string",
