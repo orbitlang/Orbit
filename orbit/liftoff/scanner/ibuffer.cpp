@@ -19,30 +19,49 @@ InputBuffer::~InputBuffer() {
         this->allocator_.free(this->last_line_);
 }
 
-bool InputBuffer::AppendInput(const unsigned char *buffer, int length) {
+bool InputBuffer::AppendInput(const unsigned char *buffer, const int length) {
     assert(this->release_);
 
-    if (this->buffer_ == nullptr) {
-        this->buffer_ = this->allocator_.alloc<unsigned char>(length);
+    // Reclaim already-consumed input so a long REPL session doesn't grow the
+    // buffer without bound. An interactive underflow only happens once all prior
+    // input is consumed (b_cur_ == b_length_), so the live remainder is normally
+    // empty; the memmove-equivalent below stays correct if that ever changes
+    // (dest < src, forward copy).
+    if (this->b_cur_ > 0) {
+        const size_t live = this->b_length_ - this->b_cur_;
+        if (live > 0)
+            orbiter::memory::MemoryCopy(this->buffer_, this->buffer_ + this->b_cur_, live);
 
+        this->ll_end_ = this->ll_end_ > this->b_cur_ ? this->ll_end_ - this->b_cur_ : 0;
+        this->b_length_ = live;
+        this->b_cur_ = 0;
+    }
+
+    const size_t needed = this->b_length_ + (size_t) length;
+
+    if (this->buffer_ == nullptr) {
+        const size_t cap = this->b_capacity_ > needed ? this->b_capacity_ : needed;
+
+        this->buffer_ = this->allocator_.alloc<unsigned char>(cap);
         if (this->buffer_ == nullptr)
             return false;
 
-        this->b_wr_ = 0;
-        this->b_length_ = length;
-    }
+        this->b_capacity_ = cap;
+    } else if (needed > this->b_capacity_) {
+        auto newcap = this->b_capacity_ * 2;
+        if (newcap < needed)
+            newcap = needed;
 
-    if (this->b_length_ - this->b_wr_ < length) {
-        auto *tmp = this->allocator_.realloc(this->buffer_, this->b_length_ + length);
+        auto *tmp = this->allocator_.realloc(this->buffer_, newcap);
         if (tmp == nullptr)
             return false;
 
         this->buffer_ = tmp;
-        this->b_length_ += length;
+        this->b_capacity_ = newcap;
     }
 
-    orbiter::memory::MemoryCopy(this->buffer_ + this->b_wr_, buffer, length);
-    this->b_wr_ += length;
+    orbiter::memory::MemoryCopy(this->buffer_ + this->b_length_, buffer, length);
+    this->b_length_ += (size_t) length;
 
     return true;
 }
@@ -145,23 +164,24 @@ int InputBuffer::ReadFile(FILE *fd) {
         return -2;
 
     if (this->buffer_ == nullptr) {
-        this->buffer_ = this->allocator_.alloc<unsigned char>(this->b_length_);
+        this->buffer_ = this->allocator_.alloc<unsigned char>(this->b_capacity_);
         if (this->buffer_ == nullptr)
             return -1;
-
-        this->b_cur_ = this->b_length_;
 
         this->last_line_ = this->allocator_.alloc<unsigned char>(this->ll_size_);
         if (this->last_line_ == nullptr)
             return -1;
 
         this->ll_end_ = this->ll_size_;
+        // b_cur_ == b_length_ == 0: no valid data yet, falls through to fread.
     }
 
     if (this->b_length_ - this->b_cur_ != 0)
         return 0;
 
-    const auto read = (int) std::fread(this->buffer_, 1, this->b_length_, fd);
+    // Read into the full capacity; b_capacity_ is constant across reads so a
+    // short read no longer permanently shrinks the buffer.
+    const auto read = (int) std::fread(this->buffer_, 1, this->b_capacity_, fd);
 
     if (read == 0 && feof(fd) != 0)
         return 0;

@@ -18,9 +18,9 @@ namespace liftoff::scanner {
         unsigned char *buffer_ = nullptr;
         unsigned char *last_line_ = nullptr;
 
-        size_t b_wr_ = 0;
-        size_t b_cur_ = 0;
-        size_t b_length_ = 0;
+        size_t b_capacity_ = 0; // allocated size of buffer_ (owned modes)
+        size_t b_cur_ = 0;      // read cursor
+        size_t b_length_ = 0;   // number of valid readable bytes (Peek limit)
 
         size_t ll_size_ = kLastLineSize;
         size_t ll_cur_ = 0;
@@ -33,18 +33,19 @@ namespace liftoff::scanner {
     public:
         InputBuffer(orbiter::Isolate *isolate, const unsigned char *buffer, unsigned long length) : allocator_(isolate),
             buffer_((unsigned char *) buffer),
+            b_capacity_(length),
             b_length_(length),
             release_(false) {
         }
 
         InputBuffer(orbiter::Isolate *isolate, size_t buf_size, size_t last_line) : allocator_(isolate),
-            b_length_(buf_size),
+            b_capacity_(buf_size),
             ll_size_(last_line),
             file_(true) {
         }
 
         explicit InputBuffer(orbiter::Isolate *isolate, size_t buf_size) : allocator_(isolate),
-                                                                           b_length_(buf_size),
+                                                                           b_capacity_(buf_size),
                                                                            file_(true) {
         }
 
