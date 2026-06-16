@@ -183,11 +183,12 @@ bool LoadFromSlice(const Fiber *fiber, OObject *object, const OObject *start, co
 bool LoadGlobal(const Fiber *fiber, const U16 offset, PtrSize &dst) noexcept {
     const auto *code = fiber->context.code;
     const auto *module = fiber->context.module;
-    const auto *module_type = O_GET_TYPE(module);
 
     auto *key = (ORString *) code->unknown_symbols->objects[offset];
 
     if (module != nullptr) {
+        const auto *module_type = O_GET_TYPE(module);
+
         const auto *prop = TIFindLocalProperty(module_type, (const char *) key->buffer);
         if (prop != nullptr) {
             if (ENUMBITMASK_ISFALSE(prop->detail, PropertyFlag::IS_PUBLIC)
