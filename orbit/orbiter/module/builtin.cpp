@@ -2,16 +2,21 @@
 //
 // Licensed under the Apache License v2.0
 
-#include <orbit/orbiter/fiber.h>
+#include <orbit/liftoff/compiler.h>
 
+#include <orbit/orbiter/fiber.h>
+#include <orbit/orbiter/runtime.h>
+
+#include <orbit/orbiter/datatype/byteview.h>
 #include <orbit/orbiter/datatype/function.h>
 #include <orbit/orbiter/datatype/module.h>
+#include <orbit/orbiter/datatype/number.h>
 #include <orbit/orbiter/datatype/oobject.h>
+#include <orbit/orbiter/datatype/pcheck.h>
 
 #include <orbit/orbiter/isolate.h>
 
 #include <orbit/orbiter/module/modules.h>
-
 
 using namespace orbiter::datatype;
 using namespace orbiter::module;
@@ -57,6 +62,111 @@ static bool BuiltinInit(Module *self) {
 // *********************************************************************************************************************
 // PRIMITIVES
 // *********************************************************************************************************************
+
+RUNTIME_FUNCTION(builtin_eval, eval,
+                 R"DOC(
+@brief Compile and asynchronously evaluate Orbit source code at runtime.
+
+Compiles src and schedules it for execution on a new fiber, returning a
+`Future` immediately. The caller is expected to `await` the future to obtain
+the evaluated result and to observe any error raised during evaluation.
+
+When module is false, the code runs in the **global context** — the namespace
+shared by the whole program. Any variable or function it declares is installed
+there and becomes visible to every other point in the code, exactly as if it
+had been written inline.
+
+When module is true, the code runs as a **Module**: its declarations live in
+that module's own top-level scope and are reachable from the outside only as
+`module.<name>` (and only if declared public). A module can still read freely
+from the global context.
+
+Compilation happens synchronously inside this call: a syntax or compile error
+is reported before any future is returned. Evaluation, by contrast, is
+deferred to the scheduler and surfaces through the returned future.
+
+@param name        Name used to identify the unit in diagnostics, and as the
+                   module name when module is true.
+@param src         Source code to compile, as Bytes or String.
+@param optim=0     Optimization level, 0 (off) to 3 (aggressive). Out-of-range
+                   values are clamped. Defaults to 0, since eval'd code is
+                   usually short-lived and compile speed matters more than
+                   peak throughput.
+@param module=true When true, run the code as a Module with its own scope
+                   (declarations reachable as `module.<name>`). When false, run
+                   it in the shared global context, where its declarations
+                   become globally visible.
+
+@return A Future that resolves to the result of evaluating src.
+
+@panic SyntaxError  When cannot be compiled.
+@panic SchedulerError  When the fiber queue is full and evaluation cannot be scheduled.
+@panic OOMError     When memory allocation fails.
+
+@example
+    let f = eval("<repl>", b"1 + 2")
+    await f                              // 3
+
+    # Evaluate as an isolated module.
+    let m = await eval("plugin", src, module=true)
+)DOC", 2, "optim, module", false, false) {
+    PCHECK_ENTRIES(params,
+                   PCHECK_DEF("name", false, InstanceType::STRING),
+                   PCHECK_DEF("src", false, InstanceType::BYTES, InstanceType::STRING),
+                   PCHECK_DEF("optim", true, InstanceType::NUMBER),
+                   PCHECK_DEF("module", true, InstanceType::BOOLEAN));
+    PCHECK_CHECK(params);
+
+    auto *isolate = O_GET_ISOLATE(_func);
+    auto *machine = orbiter::Orbiter::GetInstance();
+    const auto *fiber = orbiter::Fiber::Current();
+
+    assert(fiber != nullptr);
+
+    auto *name = (ORString *) argv[0];
+
+    const ByteView source(isolate, argv[1]);
+    if (!source)
+        return {};
+
+    IntegerUnderlying optim = 0;
+
+    if (!O_IS_SENTINEL(argv[2])) {
+        NumberExtract(argv[2], optim);
+
+        // Clamp into the valid OptimizationLevel range — the value comes straight
+        // from user code and feeds an enum cast.
+        if (optim < (IntegerUnderlying) liftoff::OptimizationLevel::OFF)
+            optim = (IntegerUnderlying) liftoff::OptimizationLevel::OFF;
+        else if (optim > (IntegerUnderlying) liftoff::OptimizationLevel::HARD)
+            optim = (IntegerUnderlying) liftoff::OptimizationLevel::HARD;
+    }
+
+    const auto is_module = O_IS_SENTINEL(argv[3]) ? true : OBOOL_TO_BOOL(argv[3]);
+
+    liftoff::scanner::Scanner scanner(isolate, (const char *) source.Data(), source.Size());
+
+    liftoff::Compiler compiler(isolate, (liftoff::OptimizationLevel) optim, is_module);
+
+    const auto code = compiler.Compile(ORSTRING_TO_CSTR(name), scanner);
+    if (!code)
+        return {};
+
+    HModule module;
+
+    if (is_module) {
+        const auto module_type = ModuleTypeNew(code.get(), name);
+        if (!module_type)
+            return {};
+
+        module = ModuleNew(module_type.get());
+        if (!module)
+            return {};
+    }
+
+    const auto future = machine->EvalAsync(fiber->context.context, module.get(), code.get());
+    return HOObject((OObject *) future.get());
+}
 
 RUNTIME_FUNCTION(builtin_panicking, panicking,
                  R"DOC(
@@ -129,6 +239,7 @@ const ModuleEntry builtin_entries[] = {
     ORBIT_MODULE_EXPORT_ALIAS("Tuple", nullptr),
     ORBIT_MODULE_EXPORT_ALIAS("Type", nullptr),
 
+    ORBIT_MODULE_EXPORT_FUNCTION(builtin_eval),
     ORBIT_MODULE_EXPORT_FUNCTION(builtin_panicking),
 
     ORBIT_MODULE_SENTINEL
