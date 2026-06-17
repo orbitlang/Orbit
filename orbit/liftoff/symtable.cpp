@@ -645,8 +645,13 @@ void SymbolTable::LeaveScope(const MSize offset, const MSize line_end) noexcept 
     current->scope.offset.end = offset;
     current->line.end = line_end;
 
-    if (this->scope->type != ScopeType::MODULE)
+    if (this->scope->type != ScopeType::MODULE) {
+        // If it's a native function, compute the parameter count immediately because it's required right away
+        if (this->scope->type == ScopeType::NATIVE_FUNC)
+            this->ComputeLocalVarOffset(current, current->active);
+
         this->scope = current->back;
+    }
     else
         this->ComputeLocalVarOffset(current, current->active);
 
