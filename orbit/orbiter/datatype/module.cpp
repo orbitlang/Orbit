@@ -39,6 +39,9 @@ HModule orbiter::datatype::ModuleNew(TypeInfo *tp_module) {
     assert(tp_module->i_type == InstanceType::MODULE);
 
     auto *module = MakeObject<Module>(tp_module);
+    if (module != nullptr)
+        memory::MemoryZero(((unsigned char *) module) + tp_module->offset + tp_module->headroom,
+                           tp_module->i_size - (tp_module->offset + tp_module->headroom));
 
     O_GC_TRACK_RETURN(isolate, module, true);
 }
