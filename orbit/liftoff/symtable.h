@@ -117,6 +117,8 @@ namespace liftoff {
 
         SubScope *active = nullptr;
 
+        Symbol *defined_by = nullptr;
+
         unsigned short closure_count = 0;
         unsigned short slot_count = 0;
 
@@ -222,7 +224,8 @@ namespace liftoff {
         MEMORY_ERROR,
         SCOPE_NOT_FOUND,
         SYMBOL_ALREADY_EXISTS,
-        SYMBOL_NOT_FOUND
+        SYMBOL_NOT_FOUND,
+        SYMBOL_KIND_MISMATCH
     };
 
     class SymbolTable {
@@ -283,6 +286,21 @@ namespace liftoff {
          * @return True if the scope was successfully entered, false otherwise.
          */
         bool EnterScope(orbiter::datatype::ORString *name) noexcept;
+
+        /**
+         * @brief Merges symbols from a nested scope into its parent scope, ensuring consistency and resolving symbol aliases.
+         *
+         * This method is primarily responsible for handling symbol declarations and promotion from a nested lexical
+         * scope back to its parent during the closing of a branch construct. It ensures that symbol types match
+         * between the nested scope and parent scope, resolves canonical declarations, and updates symbol metadata
+         * such as visibility and flags.
+         *
+         * @param branch_end The ending offset of the branch being processed.
+         * @param when_offset The offset indicating the location of the encompassing `when` construct.
+         * @return Returns `true` if all symbols are successfully merged; otherwise, returns `false` if there is
+         *         a symbol kind mismatch or other errors occur during declaration resolution.
+         */
+        bool LeaveMergeNestedScope(MSize branch_end, MSize when_offset) noexcept;
 
         /**
          * @brief Get SymbolTable status message.

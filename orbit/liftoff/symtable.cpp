@@ -82,10 +82,15 @@ void SymbolTable::ComputeLocalVarOffset(Scope *scope, const SubScope *s_scope) c
     for (auto cursor = s_scope->symbols.iter_begin; cursor != nullptr; cursor = cursor->iter_next) {
         auto *symbol = cursor->value;
 
-        if (symbol->type == SymbolType::FUNC
-            || symbol->type == SymbolType::METHOD
-            || symbol->type == SymbolType::CLASS
-            || symbol->type == SymbolType::TRAIT)
+        // The `defining_scope` check covers the bodyless canonical that
+        // LeaveMergeNestedScope creates for a published `when` function: it is a
+        // FUNC slot whose body lives on the per-branch declarations, so there is
+        // no scope of its own to lay out.
+        if ((symbol->type == SymbolType::FUNC
+             || symbol->type == SymbolType::METHOD
+             || symbol->type == SymbolType::CLASS
+             || symbol->type == SymbolType::TRAIT)
+            && (symbol->defining_scope != nullptr && symbol->defining_scope->defined_by == symbol))
             this->ComputeLocalVarOffset(symbol->defining_scope, symbol->defining_scope->active);
 
         if (child != nullptr && symbol->decl_offset > child->offset.start) {
@@ -93,6 +98,13 @@ void SymbolTable::ComputeLocalVarOffset(Scope *scope, const SubScope *s_scope) c
 
             child = child->next_sibling;
         }
+
+        // An aliased symbol resolves to the symbol it points at (e.g. the one
+        // canonical declaration shared by the branches of a `provide`), so it
+        // owns no slot of its own. Any body it has was already laid out by the
+        // recursion above; only the slot/offset assignment below is skipped.
+        if (symbol->alias != nullptr)
+            continue;
 
         if (symbol->type == SymbolType::PARAMETER) {
             symbol->offset = scope->parameter_count++;
@@ -194,7 +206,7 @@ void SymbolTable::SymbolDel(Symbol *symbol) const noexcept {
     while (symbol != nullptr) {
         O_FAST_DECREF(symbol->name);
 
-        if (symbol->defining_scope != nullptr)
+        if (symbol->defining_scope != nullptr && symbol == symbol->defining_scope->defined_by)
             this->ScopeDel(symbol->defining_scope);
 
         auto *tmp = symbol->next;
@@ -300,13 +312,73 @@ bool SymbolTable::EnterScope(ORString *name) noexcept {
     return true;
 }
 
+bool SymbolTable::LeaveMergeNestedScope(const MSize branch_end, const MSize when_offset) noexcept {
+    auto *active = this->scope->active;
+    auto *main = active->parent;
+
+    assert(main != nullptr);
+
+    while (main->parent != nullptr)
+        main = main->parent;
+
+    for (const auto *cursor = active->symbols.iter_begin; cursor != nullptr; cursor = cursor->iter_next) {
+        auto *sym = cursor->value;
+
+        if (sym->type == SymbolType::UNKNOWN || sym->alias != nullptr)
+            continue;
+
+        STHEntry *entry;
+        Symbol *canonical = nullptr;
+
+        if (main->symbols.Lookup(sym->name, &entry) == LookupResult::OK) {
+            canonical = entry->value;
+
+            if (canonical->type != SymbolType::UNKNOWN && canonical->type != sym->type) {
+                this->status = SymbolTableError::SYMBOL_KIND_MISMATCH;
+
+                return false;
+            }
+        }
+
+        if (canonical == nullptr) {
+            this->scope->active = main;
+
+            canonical = this->Declare(sym->name, sym->type, sym->location, when_offset);
+
+            this->scope->active = active;
+
+            if (canonical == nullptr)
+                return false;
+
+            canonical->defining_scope = sym->defining_scope;
+        }
+
+        // The canonical is what code outside the construct sees, so it carries
+        // the published visibility and flags (INITIALIZED, CONST, ...).
+        canonical->access = sym->access;
+        canonical->flags = sym->flags;
+
+        // Redirect the branch declaration to the canonical slot. ComputeLocalVarOffset
+        // skips aliased symbols, so the branch markers never claim a slot of
+        // their own; every branch's store and every outside reference resolve to
+        // `canonical`.
+        sym->alias = canonical;
+    }
+
+    active->offset.end = branch_end;
+    this->scope->active = active->parent;
+
+    return true;
+}
+
 const char *SymbolTable::GetStatusMessage() const {
     static const char *messages[] = {
         "no error",
         "memory allocation failed",
         "scope not found",
         "symbol already exists",
-        "symbol not found"
+        "symbol not found",
+        "symbol redeclared with a different kind across branches"
     };
 
     return messages[(int) this->status];
@@ -439,6 +511,7 @@ Symbol *SymbolTable::DeclareSymbolScope(ORString *name, const SymbolType type, c
     }
 
     sym->defining_scope = new_scope;
+    new_scope->defined_by = sym;
 
     this->scope = new_scope;
 
@@ -651,8 +724,7 @@ void SymbolTable::LeaveScope(const MSize offset, const MSize line_end) noexcept 
             this->ComputeLocalVarOffset(current, current->active);
 
         this->scope = current->back;
-    }
-    else
+    } else
         this->ComputeLocalVarOffset(current, current->active);
 
     this->status = SymbolTableError::OK;

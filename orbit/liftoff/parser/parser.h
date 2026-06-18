@@ -101,7 +101,8 @@ namespace liftoff::parser {
         "Invalid native function call arity",
         "Invalid call to a native variable",
         "Invalid function declaration: anonymous functions are not allowed in this context",
-        "Invalid ternary operator syntax: expected ':' after true expression"
+        "Invalid ternary operator syntax: expected ':' after true expression",
+        "Invalid 'when' usage: 'when' blocks can only be used at module level"
     };
 
     constexpr auto kInitMethodName = "init";
@@ -269,6 +270,8 @@ namespace liftoff::parser {
         [[nodiscard]] ASTHandle<ASTNode *> ParseVarDecl(const scanner::Position &start, AccessModifier access,
                                                         bool constant,
                                                         bool weak, bool decl_only);
+
+        [[nodiscard]] ASTHandle<ASTNode *> ParseWhenStatement();
 
         // *************************************************************************************************************
         // EXPRESSIONS

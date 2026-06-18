@@ -132,6 +132,7 @@ namespace liftoff::scanner {
         KW_TRY,
         KW_VAR,
         KW_WEAK,
+        KW_WHEN,
         KEYWORD_END,
 
         // Operators

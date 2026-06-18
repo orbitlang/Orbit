@@ -88,7 +88,8 @@ constexpr KwToken kw2tktype[] = {
     {"true", TokenType::TRUE},
     {"var", TokenType::KW_VAR},
     {"yield", TokenType::KW_YIELD},
-    {"weak", TokenType::KW_WEAK}
+    {"weak", TokenType::KW_WEAK},
+    {"when", TokenType::KW_WHEN}
 };
 
 int DefaultPrompt(const char *prompt, FILE *fd, InputBuffer *ibuf) {

@@ -51,11 +51,11 @@ NODES = {
         "node_type": ["BINARY", "CHAN_SEND", "CMPEQ", "ELVIS", "IN", "NOT_IN", "NULL_COALESCING", "SYNC_BLOCK"]
     },
     "Ternary": {
-      "fields": {
-          "left": "ASTNode*",
-          "middle": "ASTNode*",
-          "right": "ASTNode*"
-      }
+        "fields": {
+            "left": "ASTNode*",
+            "middle": "ASTNode*",
+            "right": "ASTNode*"
+        }
     },
     "Block": {
         "fields": {
@@ -67,7 +67,8 @@ NODES = {
             "test": "ASTNode*",
             "body": "ASTNode*",
             "orelse": "ASTNode*"
-        }
+        },
+        "node_type": ["IF", "WHEN"]
     },
     "Call": {
         "fields": {

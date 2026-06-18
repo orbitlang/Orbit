@@ -312,7 +312,7 @@ ASTHandle<ASTNode *> Parser::ParseForInStatement() {
 }
 
 ASTHandle<ASTNode *> Parser::ParseIfStatement() {
-    auto branch = MakeBranch(this->isolate_, TKCUR_LOC);
+    auto branch = MakeBranch(this->isolate_, TKCUR_LOC, NodeType::IF);
 
     this->Eat(true);
 
@@ -939,6 +939,46 @@ ASTHandle<ASTNode *> Parser::ParseVarDecl(const Position &start, const AccessMod
     return decl;
 }
 
+ASTHandle<ASTNode *> Parser::ParseWhenStatement() {
+    auto branch = MakeBranch(this->isolate_, TKCUR_LOC, NodeType::WHEN);
+    const auto when_start = TKCUR_START;
+
+    this->Eat(true);
+
+    branch->test = this->ParseExpression(TokenType::COMMA).release();
+
+    if (!this->sym_t_->CreateNestedScope(TKCUR_START.offset))
+        throw SymbolTableException();
+
+    branch->body = this->ParseBlock(false).release();
+
+    if (!this->sym_t_->LeaveMergeNestedScope(TKCUR_START.offset, when_start.offset))
+        throw SymbolTableException();
+
+    auto end = branch->body->loc.end;
+
+    if (this->MatchEat(TokenType::KW_ELSE, false)) {
+        if (this->MatchEat(TokenType::KW_WHEN, false)) {
+            branch->orelse = this->ParseWhenStatement().release();
+            end = branch->orelse->loc.end;
+        } else {
+            if (!this->sym_t_->CreateNestedScope(TKCUR_START.offset))
+                throw SymbolTableException();
+
+            branch->orelse = this->ParseBlock(false).release();
+
+            if (!this->sym_t_->LeaveMergeNestedScope(TKCUR_START.offset, when_start.offset))
+                throw SymbolTableException();
+
+            end = branch->orelse->loc.end;
+        }
+    }
+
+    branch->loc.end = end;
+
+    return branch;
+}
+
 // *********************************************************************************************************************
 // EXPRESSIONS
 // *********************************************************************************************************************
@@ -1075,7 +1115,7 @@ ASTHandle<ASTNode *> Parser::ParseAssignment(ASTHandle<ASTNode *> &left) {
     return assign;
 }
 
-ASTHandle<ASTNode *> Parser::ParseBlock(bool nested) {
+ASTHandle<ASTNode *> Parser::ParseBlock(const bool nested) {
     auto block = MakeBlock(this->isolate_, TKCUR_LOC);
 
     if (!this->MatchEat(TokenType::LEFT_BRACES, true))
@@ -1932,6 +1972,7 @@ ASTHandle<ASTNode *> Parser::ParseStatement() {
             case TokenType::KW_YIELD:
                 if (!this->context_->Check(ContextType::FUNC))
                     throw ParserException(31);
+
                 this->sym_t_->scope->flags |= ScopeFlags::GENERATOR;
                 [[fallthrough]];
             case TokenType::KW_RETURN: {
@@ -1959,6 +2000,11 @@ ASTHandle<ASTNode *> Parser::ParseStatement() {
                 return this->ParseTryCatchFinally();
             case TokenType::KW_VAR:
                 return this->ParseVarDecl(start, access, false, weak, false);
+            case TokenType::KW_WHEN:
+                if (!this->context_->Check(ContextType::MODULE))
+                    throw ParserException(90);
+
+                return this->ParseWhenStatement();
             default:
                 stmt = this->ParseExpression();
         }
