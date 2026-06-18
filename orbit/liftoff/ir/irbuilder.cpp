@@ -801,7 +801,12 @@ Instruction *IRBuilder::visitBranch(const parser::Branch *node) {
     if (node->orelse != nullptr) {
         last = (BranchInstruction *) this->builder_.CreateBranch(orbiter::OPCode::JMP, nullptr, orelse, nullptr);
 
+        if (!this->sym_t_->EnterNestedScope(node->orelse->loc.start.offset))
+            throw SymbolTableException();
+
         this->visit(node->orelse);
+
+        this->sym_t_->LeaveNestedScope();
     }
 
     if (last != nullptr) {
