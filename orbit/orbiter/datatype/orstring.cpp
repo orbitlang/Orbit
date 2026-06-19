@@ -343,6 +343,25 @@ static bool CodepointInChars(const unsigned char *cp, const MSize cp_len, const 
     return false;
 }
 
+/// Convert a byte offset within a well-formed UTF-8 string into the index of
+/// the codepoint that begins at @p byte. ASCII strings map 1:1, so the byte
+/// offset is already the codepoint index; otherwise we count every codepoint
+/// lead byte (any byte that is not a 10xxxxxx continuation) in [0, byte).
+///
+/// This is how byte-oriented search primitives (`find` / `rfind`) report
+/// their result in the same codepoint units used by `length` and `substring`.
+static MSize StrByteToCodepoint(const ORString *self, const MSize byte) {
+    if (self->kind == StringKind::ASCII)
+        return byte;
+
+    MSize cp = 0;
+    for (MSize i = 0; i < byte; i++)
+        if ((STR_BUF(self)[i] & 0xC0) != 0x80)
+            cp++;
+
+    return cp;
+}
+
 /// Byte offset of the start of the last UTF-8 codepoint that ends at
 /// @p end (exclusive). Walks back over continuation bytes (10xxxxxx).
 static MSize StrLastCodepointStart(const ORString *s, const MSize end) {
@@ -633,19 +652,24 @@ RUNTIME_METHOD(string_ends_with, ends_with,
 
 RUNTIME_METHOD(string_find, find,
                R"DOC(
-@brief Return the byte offset of the first occurrence of sub, or -1.
+@brief Return the codepoint index of the first occurrence of sub, or -1.
+
+The index is measured in Unicode codepoints — consistent with `length` and
+`substring` — so `s.substring(s.find(x), s.length())` yields the tail of the
+string starting at the first match, for ASCII and multi-byte strings alike.
 
 @param sub  The substring to search for.
 
-@return An Int offset, or -1 if not found.
+@return An Int codepoint index, or -1 if not found.
 
 @panic TypeError  When `sub` is not a String.
 
-@see rfind, contains
+@see rfind, contains, substring
 
 @example
-    "hello".find("ll")    // 2
-    "hello".find("x")     // -1
+    "hello".find("ll")     // 2
+    "héllo".find("llo")    // 2  (codepoints, not bytes)
+    "hello".find("x")      // -1
 )DOC", 2, nullptr, false, false) {
     PCHECK_ENTRIES(params,
                    PCHECK_DEF("self", false, InstanceType::STRING),
@@ -657,7 +681,11 @@ RUNTIME_METHOD(string_find, find,
 
     const auto idx = support::Search(STR_BUF(self), STR_LEN(self), STR_BUF(sub), STR_LEN(sub));
 
-    auto result = IntNew(O_GET_ISOLATE(self), (IntegerUnderlying) idx);
+    const IntegerUnderlying cp_idx = idx < 0
+                                         ? -1
+                                         : (IntegerUnderlying) StrByteToCodepoint(self, (MSize) idx);
+
+    auto result = IntNew(O_GET_ISOLATE(self), cp_idx);
     if (!result)
         return {};
 
@@ -885,19 +913,24 @@ Returns self unchanged when old is empty.
 
 RUNTIME_METHOD(string_rfind, rfind,
                R"DOC(
-@brief Return the byte offset of the last occurrence of sub, or -1.
+@brief Return the codepoint index of the last occurrence of sub, or -1.
+
+The index is measured in Unicode codepoints — consistent with `length` and
+`substring` — so the result composes directly with `substring`, for ASCII and
+multi-byte strings alike.
 
 @param sub  The substring to search for.
 
-@return An Int offset, or -1 if not found.
+@return An Int codepoint index, or -1 if not found.
 
 @panic TypeError  When `sub` is not a String.
 
-@see find
+@see find, substring
 
 @example
-    "hello".rfind("l")    // 3
-    "hello".rfind("x")    // -1
+    "hello".rfind("l")     // 3
+    "héllo".rfind("l")     // 3  (codepoints, not bytes)
+    "hello".rfind("x")     // -1
 )DOC", 2, nullptr, false, false) {
     PCHECK_ENTRIES(params,
                    PCHECK_DEF("self", false, InstanceType::STRING),
@@ -909,7 +942,11 @@ RUNTIME_METHOD(string_rfind, rfind,
 
     const auto idx = support::RSearch(STR_BUF(self), STR_LEN(self), STR_BUF(sub), STR_LEN(sub));
 
-    auto result = IntNew(O_GET_ISOLATE(self), idx);
+    const IntegerUnderlying cp_idx = idx < 0
+                                         ? -1
+                                         : (IntegerUnderlying) StrByteToCodepoint(self, (MSize) idx);
+
+    auto result = IntNew(O_GET_ISOLATE(self), cp_idx);
     if (!result)
         return {};
 
