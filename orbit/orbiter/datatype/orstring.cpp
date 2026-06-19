@@ -1222,6 +1222,96 @@ as a set of codepoints (full Unicode-aware, multi-byte safe).
     return HOObject(std::move(s));
 }
 
+RUNTIME_METHOD(string_substring, substring,
+               R"DOC(
+@brief Return the substring spanning a half-open range of codepoints.
+
+`start` and `end` are measured in Unicode codepoints (not bytes), with
+`end` exclusive: `s.substring(a, b)` returns the codepoints in the range
+`[a, b)`. The result is a fresh String; the receiver is left unchanged.
+
+Because the position is given in codepoints, this is O(1) for ASCII
+strings — where one codepoint is one byte — but O(n) for strings that
+hold multi-byte codepoints, since the byte offsets of `start` and `end`
+must be located by scanning from the front. Use `is_ascii` to tell the
+fast and slow cases apart when it matters.
+
+@param start  Index of the first codepoint to include (0-based).
+@param end    Index one past the last codepoint to include.
+
+@return A new String with the codepoints in [start, end); empty when
+        start == end.
+
+@panic TypeError   When `start` or `end` is not a Number.
+@panic ValueError  When the bounds fall outside 0 <= start <= end <= length().
+
+@see length, is_ascii, split
+
+@example
+    "hello".substring(1, 4)     // "ell"
+    "héllo".substring(0, 2)     // "hé"
+    "hello".substring(2, 2)     // ""
+)DOC", 3, nullptr, false, false) {
+    PCHECK_ENTRIES(params,
+                   PCHECK_DEF("self", false, InstanceType::STRING),
+                   PCHECK_DEF("start", false, InstanceType::NUMBER),
+                   PCHECK_DEF("end", false, InstanceType::NUMBER));
+    PCHECK_CHECK(params);
+
+    const auto *self = (ORString *) argv[0];
+    auto *isolate = O_GET_ISOLATE(_func);
+
+    IntegerUnderlying start;
+    IntegerUnderlying end;
+    if (!NumberExtract(argv[1], start) || !NumberExtract(argv[2], end))
+        return {};
+
+    if (start < 0 || end < start || (MSize) end > self->cp_length) {
+        ErrorSet(isolate,
+                 ValueError::Details[ValueError::Reason::ID],
+                 nullptr,
+                 "substring bounds out of range");
+
+        return {};
+    }
+
+    // Translate codepoint indices into byte offsets. ASCII is a 1:1 mapping,
+    // so we can index the buffer directly; otherwise walk codepoint by
+    // codepoint (the range was validated above, so the scan stays in bounds).
+    MSize start_byte;
+    MSize end_byte;
+
+    if (self->kind == StringKind::ASCII) {
+        start_byte = (MSize) start;
+        end_byte = (MSize) end;
+    } else {
+        MSize byte = 0;
+        MSize cp = 0;
+
+        while (cp < (MSize) start) {
+            byte += StrUtf8LeadByteCount(STR_BUF(self)[byte]);
+
+            cp++;
+        }
+
+        start_byte = byte;
+
+        while (cp < (MSize) end) {
+            byte += StrUtf8LeadByteCount(STR_BUF(self)[byte]);
+
+            cp++;
+        }
+
+        end_byte = byte;
+    }
+
+    auto s = ORStringNew(isolate, STR_BUF(self) + start_byte, end_byte - start_byte);
+    if (!s)
+        return {};
+
+    return HOObject(std::move(s));
+}
+
 RUNTIME_METHOD(string_upper, upper,
                R"DOC(
 @brief Return a copy of the string with ASCII letters converted to uppercase.
@@ -1278,6 +1368,7 @@ constexpr FunctionDef string_methods[] = {
     string_starts_with,
     string_str,
     string_strip,
+    string_substring,
     string_upper,
 
     FUNCTIONDEF_SENTINEL
@@ -1573,7 +1664,7 @@ HOType orbiter::datatype::ORStringTypeInit(Isolate *isolate) {
         return {};
     }
 
-    auto string = MakeType(isolate, "String", InstanceType::STRING, sizeof(ORString) - sizeof(OObject), 17, 0);
+    auto string = MakeType(isolate, "String", InstanceType::STRING, sizeof(ORString) - sizeof(OObject), 18, 0);
     if (!string) {
         allocator.FreeObject(gst);
 
