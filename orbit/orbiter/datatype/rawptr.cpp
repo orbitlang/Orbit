@@ -129,23 +129,32 @@ RUNTIME_METHOD(rawptr_add, add,
                R"DOC(
 @brief Advance this pointer in-place by `bytes`.
 
-Supports negative offsets to move backwards.
+Supports negative offsets to move backwards. When `word` is true the count
+is measured in pointer-size units (each `sizeof(void *)` bytes) instead of
+raw bytes.
 
-@param bytes  Signed byte count to add to the address.
+@param bytes  Signed count to add to the address (bytes, or pointer-size
+              units when `word` is true).
+@param word?  When true, scale `bytes` by the platform pointer size.
+              Defaults to false.
 
 @return nil
 
 @see sub, offset
-)DOC", 2, nullptr, false, false) {
+)DOC", 2, "word", false, false) {
     PCHECK_ENTRIES(params,
                    PCHECK_DEF("self", false, InstanceType::RAWPTR),
-                   PCHECK_DEF("bytes", false, InstanceType::NUMBER));
+                   PCHECK_DEF("bytes", false, InstanceType::NUMBER),
+                   PCHECK_DEF("word", true, InstanceType::BOOLEAN));
     PCHECK_CHECK(params);
 
     auto *self = (RawPtr *) argv[0];
 
     IntegerUnderlying bytes;
     NumberExtract(argv[1], bytes);
+
+    if (!O_IS_SENTINEL(argv[2]) && OBOOL_TO_BOOL(argv[2]))
+        bytes *= (IntegerUnderlying) sizeof(void *);
 
     self->ptr.fetch_add((PtrSize) (MSSize) bytes, std::memory_order_relaxed);
 
@@ -194,19 +203,26 @@ RUNTIME_METHOD(rawptr_offset, offset,
                R"DOC(
 @brief Return a new RawPtr advanced by `bytes` from this pointer.
 
-Supports negative offsets to move backwards.
+Supports negative offsets to move backwards. When `word` is true the count
+is measured in pointer-size units (each `sizeof(void *)` bytes) instead of
+raw bytes — convenient for walking a `T **` such as an `argv`-style array
+without hardcoding the platform word size.
 
-@param bytes  Signed byte count to add to the address.
+@param bytes  Signed count to add to the address (bytes, or pointer-size
+              units when `word` is true).
+@param word?  When true, scale `bytes` by the platform pointer size.
+              Defaults to false.
 
-@return A new RawPtr pointing to `self + bytes`.
+@return A new RawPtr pointing to the advanced address.
 
 @panic TypeError  When `bytes` is not an integer.
 
 @see add, sub, address, read_ptr
-)DOC", 2, nullptr, false, false) {
+)DOC", 2, "word", false, false) {
     PCHECK_ENTRIES(params,
                    PCHECK_DEF("self", false, InstanceType::RAWPTR),
-                   PCHECK_DEF("bytes", false, InstanceType::NUMBER));
+                   PCHECK_DEF("bytes", false, InstanceType::NUMBER),
+                   PCHECK_DEF("word", true, InstanceType::BOOLEAN));
     PCHECK_CHECK(params);
 
     const auto *self = (const RawPtr *) argv[0];
@@ -214,6 +230,9 @@ Supports negative offsets to move backwards.
 
     IntegerUnderlying bytes;
     NumberExtract(argv[1], bytes);
+
+    if (!O_IS_SENTINEL(argv[2]) && OBOOL_TO_BOOL(argv[2]))
+        bytes *= (IntegerUnderlying) sizeof(void *);
 
     const auto addr = self->ptr.load(std::memory_order_relaxed);
     auto p = RawPtrNew(isolate, (void *) (addr + bytes));
@@ -631,23 +650,32 @@ RUNTIME_METHOD(rawptr_sub, sub,
                R"DOC(
 @brief Retreat this pointer in-place by `bytes`.
 
-Supports negative offsets to move forwards.
+Supports negative offsets to move forwards. When `word` is true the count
+is measured in pointer-size units (each `sizeof(void *)` bytes) instead of
+raw bytes.
 
-@param bytes  Signed byte count to subtract from the address.
+@param bytes  Signed count to subtract from the address (bytes, or
+              pointer-size units when `word` is true).
+@param word?  When true, scale `bytes` by the platform pointer size.
+              Defaults to false.
 
 @return nil
 
 @see add, offset
-)DOC", 2, nullptr, false, false) {
+)DOC", 2, "word", false, false) {
     PCHECK_ENTRIES(params,
                    PCHECK_DEF("self", false, InstanceType::RAWPTR),
-                   PCHECK_DEF("bytes", false, InstanceType::NUMBER));
+                   PCHECK_DEF("bytes", false, InstanceType::NUMBER),
+                   PCHECK_DEF("word", true, InstanceType::BOOLEAN));
     PCHECK_CHECK(params);
 
     auto *self = (RawPtr *) argv[0];
 
     IntegerUnderlying bytes;
     NumberExtract(argv[1], bytes);
+
+    if (!O_IS_SENTINEL(argv[2]) && OBOOL_TO_BOOL(argv[2]))
+        bytes *= (IntegerUnderlying) sizeof(void *);
 
     self->ptr.fetch_sub((PtrSize) (MSSize) bytes, std::memory_order_relaxed);
 
