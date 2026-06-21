@@ -1061,8 +1061,11 @@ Instruction *IRBuilder::visitFunction(const parser::Function *node) {
     }
 
     // Load closure from Function object
-    if (ENUMBITMASK_ISTRUE(this->sym_t_->scope->flags, ScopeFlags::CLOSURE))
+    if (ENUMBITMASK_ISTRUE(this->sym_t_->scope->flags, ScopeFlags::CLOSURE)) {
+        f_flags |= orbiter::LoadFuncFlags::CLOSURE;
+
         this->builder_.LoadClosureObject(kBaseStackPointerReg, (I16) local_vars_count);
+    }
 
     const auto cleanup_count = node->params.size();
 

@@ -1819,8 +1819,11 @@ CATCH_FINALLY:
             TARGET_OP(LDFUNC) {
                 const auto flags = (LoadFuncFlags) (instr & 0xFFF);
 
-                auto *closure = *(Closure **) (stack->stack + regs->BP.reg + (code->vars_count * sizeof(void *)));
+                Closure *closure = nullptr;
                 Tuple *defs = nullptr;
+
+                if (ENUMBITMASK_ISTRUE(flags, LoadFuncFlags::CLOSURE))
+                    closure = *(Closure **) (stack->stack + regs->BP.reg + (code->vars_count * sizeof(void *)));
 
                 if (ENUMBITMASK_ISTRUE(flags, LoadFuncFlags::NPARAMS))
                     defs = (Tuple *) REG_N(FETCH_R_RSRC(instr));

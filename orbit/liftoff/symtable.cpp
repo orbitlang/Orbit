@@ -616,6 +616,7 @@ Symbol *SymbolTable::LookupInsert(ORString *name, const MSize offset) noexcept {
             return sym;
 
         sym->location = StorageLocation::CLOSURE;
+        this->scope->flags |= ScopeFlags::CLOSURE;
 
         return sym;
     }

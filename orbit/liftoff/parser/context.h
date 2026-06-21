@@ -27,15 +27,15 @@ namespace liftoff::parser {
     public:
         int anon_count = 0;
 
-        [[nodiscard]] bool Check(ContextType type) const noexcept {
+        [[nodiscard]] bool Check(const ContextType type) const noexcept {
             return this->type_ == type;
         }
 
-        [[nodiscard]] bool CheckBack(ContextType type) const noexcept {
+        [[nodiscard]] bool CheckBack(const ContextType type) const noexcept {
             return this->back_ != nullptr && this->back_->type_ == type;
         }
 
-        [[nodiscard]] bool CheckExt(ContextType type) const noexcept {
+        [[nodiscard]] bool CheckExt(const ContextType type) const noexcept {
             auto cursor = this->back_;
 
             while (cursor != nullptr) {

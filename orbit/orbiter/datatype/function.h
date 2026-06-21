@@ -21,12 +21,13 @@ namespace orbiter::datatype {
         SIMPLE = 0x0,
 
         ASYNC = 0x1,
-        GENERATOR = 1 << 1,
-        INIT = 0x1 << 2,
-        METHOD = 0x1 << 3,
-        NATIVE = 0x1 << 4,
-        KWARGS = 0x1 << 5,
-        REST = 0x1 << 6
+        CLOSURE = 1 << 1,
+        GENERATOR = 1 << 2,
+        INIT = 0x1 << 3,
+        METHOD = 0x1 << 4,
+        NATIVE = 0x1 << 5,
+        KWARGS = 0x1 << 6,
+        REST = 0x1 << 7
     };
 }
 
