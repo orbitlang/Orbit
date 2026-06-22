@@ -53,7 +53,7 @@ RUNTIME_FUNCTION(error_create, create,
     return HOObject(std::move(error));
 }
 
-RUNTIME_METHOD(error_is, is,
+RUNTIME_METHOD(error_is_kind, is_kind,
                R"DOC(
 @brief Return true if the error's kind matches the given atom.
 
@@ -67,8 +67,8 @@ Because atoms are interned, the comparison is a fast pointer equality check.
 
 @example
     let e = Error.create(@IOError, "file not found")
-    e.is(@IOError)   // true
-    e.is(@NIOError)  // false
+    e.is_kind(@IOError)   // true
+    e.is_kind(@NIOError)  // false
 )DOC", 2, nullptr, false, false) {
     PCHECK_ENTRIES(params,
                    PCHECK_DEF("self", false, InstanceType::ERROR),
@@ -116,7 +116,7 @@ new object; only the `details` field is swapped.
 
 constexpr FunctionDef error_methods[] = {
     error_create,
-    error_is,
+    error_is_kind,
     error_with_details,
 
     FUNCTIONDEF_SENTINEL
