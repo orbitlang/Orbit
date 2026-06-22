@@ -81,6 +81,12 @@ that module's own top-level scope and are reachable from the outside only as
 `module.<name>` (and only if declared public). A module can still read freely
 from the global context.
 
+By default that shared namespace is the caller's current context. Pass an
+explicit `context` to redirect evaluation into a namespace you control — for
+instance a `Context(clone=true)` snapshot, to run code against a copy of the
+current scope without mutating it, or a fresh `Context()` for an isolated
+sandbox.
+
 Compilation happens synchronously inside this call: a syntax or compile error
 is reported before any future is returned. Evaluation, by contrast, is
 deferred to the scheduler and surfaces through the returned future.
@@ -88,6 +94,10 @@ deferred to the scheduler and surfaces through the returned future.
 @param name        Name used to identify the unit in diagnostics, and as the
                    module name when module is true.
 @param src         Source code to compile, as Bytes or String.
+@param context?    Namespace to evaluate in. With module false this is where the
+                   code's declarations are installed; with module true it is the
+                   global context the module reads from. Defaults to the caller's
+                   current context.
 @param optim=0     Optimization level, 0 (off) to 3 (aggressive). Out-of-range
                    values are clamped. Defaults to 0, since eval'd code is
                    usually short-lived and compile speed matters more than
@@ -109,10 +119,15 @@ deferred to the scheduler and surfaces through the returned future.
 
     # Evaluate as an isolated module.
     let m = await eval("plugin", src, module=true)
-)DOC", 2, "optim, module", false, false) {
+
+    # Evaluate against a private snapshot of the current scope.
+    let sandbox = Context(clone=true)
+    await eval("sandboxed", src, context=sandbox)
+)DOC", 2, "context, optim, module", false, false) {
     PCHECK_ENTRIES(params,
                    PCHECK_DEF("name", false, InstanceType::STRING),
                    PCHECK_DEF("src", false, InstanceType::BYTES, InstanceType::STRING),
+                   PCHECK_DEF("context", true, InstanceType::CONTEXT),
                    PCHECK_DEF("optim", true, InstanceType::NUMBER),
                    PCHECK_DEF("module", true, InstanceType::BOOLEAN));
     PCHECK_CHECK(params);
@@ -129,10 +144,13 @@ deferred to the scheduler and surfaces through the returned future.
     if (!source)
         return {};
 
-    IntegerUnderlying optim = 0;
+    auto *context = fiber->context.context;
+    if (!O_IS_SENTINEL(argv[2]))
+        context = (Context *) argv[2];
 
-    if (!O_IS_SENTINEL(argv[2])) {
-        NumberExtract(argv[2], optim);
+    IntegerUnderlying optim = 0;
+    if (!O_IS_SENTINEL(argv[3])) {
+        NumberExtract(argv[3], optim);
 
         // Clamp into the valid OptimizationLevel range — the value comes straight
         // from user code and feeds an enum cast.
@@ -142,7 +160,7 @@ deferred to the scheduler and surfaces through the returned future.
             optim = (IntegerUnderlying) liftoff::OptimizationLevel::HARD;
     }
 
-    const auto is_module = O_IS_SENTINEL(argv[3]) ? true : OBOOL_TO_BOOL(argv[3]);
+    const auto is_module = O_IS_SENTINEL(argv[4]) ? true : OBOOL_TO_BOOL(argv[4]);
 
     liftoff::scanner::Scanner scanner(isolate, (const char *) source.Data(), source.Size());
 
@@ -164,7 +182,7 @@ deferred to the scheduler and surfaces through the returned future.
             return {};
     }
 
-    const auto future = machine->EvalAsync(fiber->context.context, module.get(), code.get());
+    const auto future = machine->EvalAsync(context, module.get(), code.get());
     return HOObject((OObject *) future.get());
 }
 
@@ -220,6 +238,7 @@ const ModuleEntry builtin_entries[] = {
     ORBIT_MODULE_EXPORT_ALIAS("Class", nullptr),
     ORBIT_MODULE_EXPORT_ALIAS("Closure", nullptr),
     ORBIT_MODULE_EXPORT_ALIAS("Code", nullptr),
+    ORBIT_MODULE_EXPORT_ALIAS("Context", nullptr),
     ORBIT_MODULE_EXPORT_ALIAS("Decimal", nullptr),
     ORBIT_MODULE_EXPORT_ALIAS("Dict", nullptr),
     ORBIT_MODULE_EXPORT_ALIAS("Error", nullptr),

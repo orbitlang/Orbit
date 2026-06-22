@@ -4,8 +4,12 @@
 
 #include <shared_mutex>
 
+#include <orbit/orbiter/fiber.h>
+
 #include <orbit/orbiter/datatype/error.h>
 #include <orbit/orbiter/datatype/errors.h>
+#include <orbit/orbiter/datatype/function.h>
+#include <orbit/orbiter/datatype/pcheck.h>
 
 #include <orbit/orbiter/datatype/context.h>
 
@@ -26,6 +30,38 @@ void ContextTrace(const Context *self, const GCTraceCallback callback, const MSi
 
         callback(cursor->value.value, epoch);
     }
+}
+
+/// Two contexts are equal when they bind the same set of names to equal values.
+/// Like Dict, only the values are compared (via the generic Equal() dispatch);
+/// the per-binding detail flags (const/public/weak) are not considered.
+static bool ContextEqual(const OObject *left, const OObject *right) {
+    if (left == right)
+        return true;
+
+    if (!O_IS_OBJECT(right) || !O_IS_TYPE(right, InstanceType::CONTEXT))
+        return false;
+
+    auto *a = (Context *) left;
+    auto *b = (Context *) right;
+
+    std::shared_lock la(a->lock);
+    std::shared_lock lb(b->lock);
+
+    if (a->names.length != b->names.length)
+        return false;
+
+    for (const auto *cursor = a->names.iter_begin; cursor != nullptr; cursor = cursor->iter_next) {
+        CtxHEntry *entry;
+
+        if (b->names.Lookup(cursor->key, &entry) != LookupResult::OK)
+            return false;
+
+        if (!Equal(cursor->value.value, entry->value.value))
+            return false;
+    }
+
+    return true;
 }
 
 bool orbiter::datatype::ContextDefine(Context *context, ORString *name, OObject *value, const PropertyFlag flags) {
@@ -172,9 +208,82 @@ bool orbiter::datatype::ContextSet(Context *context, ORString *name, OObject *va
     return true;
 }
 
+// *********************************************************************************************************************
+// RUNTIME METHODS
+// *********************************************************************************************************************
+
+RUNTIME_FUNCTION(context_create, create,
+                 R"DOC(
+@brief Create a new execution context.
+
+By default the context is empty. When `clone` is true, the new context is
+seeded with a snapshot of the calling fiber's current context: every name
+currently in scope is copied over (the values are shared, not deep-copied,
+and each binding keeps its const/public flags).
+
+A Context can be handed to `eval` to run code in a custom namespace.
+
+@param clone?  When true, copy the current context's bindings into the new
+               context. Defaults to false (empty context).
+
+@return A new Context instance.
+
+@see eval
+
+@example
+    let empty = Context()              // empty namespace
+    let snap  = Context(clone=true)    // copy of the current scope
+)DOC", 0, "clone", false, false) {
+    PCHECK_ENTRIES(params, PCHECK_DEF("clone", true, InstanceType::BOOLEAN));
+    PCHECK_CHECK(params);
+
+    auto *isolate = O_GET_ISOLATE(_func);
+
+    const auto context = ContextNew(isolate);
+    if (!context)
+        return {};
+
+    if (!O_IS_SENTINEL(argv[0]) && OBOOL_TO_BOOL(argv[0])) {
+        auto *current = orbiter::Fiber::Current()->context.context;
+        if (current != nullptr) {
+            std::shared_lock _(current->lock);
+
+            for (const auto *cursor = current->names.iter_begin; cursor != nullptr; cursor = cursor->iter_next) {
+                if (!ContextDefine(context.get(), cursor->key, cursor->value.value, cursor->value.detail.flags))
+                    return {};
+            }
+        }
+    }
+
+    return HOObject((OObject *) context.get());
+}
+
+constexpr FunctionDef context_methods[] = {
+    context_create,
+
+    FUNCTIONDEF_SENTINEL
+};
+
+// *********************************************************************************************************************
+// PUBLIC API
+// *********************************************************************************************************************
+
 bool orbiter::datatype::ContextSetup(TypeInfo *self) {
     self->dtor = (DtorFn) ContextDtor;
     self->trace = (TraceFn) ContextTrace;
+
+    auto &ops = ((TypeInfoOps *) self)->ops;
+
+    ops.equal = ContextEqual;
+
+    if (!TIPropertyAdd(self, context_methods, PropertyFlag::IS_PUBLIC))
+        return false;
+
+    const auto ctor = FunctionFromDef(self, context_create);
+    if (!ctor)
+        return false;
+
+    self->ctor = (OObject *) ctor.get();
 
     return true;
 }
@@ -199,6 +308,6 @@ HContext orbiter::datatype::ContextNew(Isolate *isolate) {
 }
 
 HOType orbiter::datatype::ContextInit(Isolate *isolate) {
-    auto context = MakeType(isolate, "Context", InstanceType::CONTEXT, sizeof(Context) - sizeof(OObject), 0, 0);
+    auto context = MakeType(isolate, "Context", InstanceType::CONTEXT, sizeof(Context) - sizeof(OObject), 1, 0);
     return context;
 }
