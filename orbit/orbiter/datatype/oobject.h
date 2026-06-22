@@ -594,6 +594,9 @@ namespace orbiter::datatype {
      * casts the object itself to TypeInfo otherwise.
      */
     inline TypeInfo *GetTypeInfoFromObject(const Isolate *isolate, const OObject *object) {
+        if (O_IS_ODDBALL(object))
+            return isolate->primitive[(int) InstanceType::TYPE];
+
         if (O_IS_SMI(object))
             return isolate->primitive[(int) InstanceType::NUMBER];
 

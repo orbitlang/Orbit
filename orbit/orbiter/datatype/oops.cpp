@@ -556,6 +556,15 @@ HOObject orbiter::datatype::ToString(Isolate *isolate, const OObject *object) no
     if (O_IS_SMI(object))
         return HOObject(ORStringFormat(isolate, "%lld", O_FROM_SMI(object)));
 
+    if (O_IS_FALSE(object))
+        return HOObject(ORStringIntern(isolate, "false"));
+
+    if (O_IS_TRUE(object))
+        return HOObject(ORStringIntern(isolate, "true"));
+
+    if (O_IS_NIL(object))
+        return HOObject(ORStringIntern(isolate, "nil"));
+
     if (O_IS_OBJECT(object)) {
         const auto &ops = O_GET_TYPE_OPS(object);
         if (ops.to_string != nullptr) {
