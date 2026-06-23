@@ -772,13 +772,13 @@ OObject *LoadFromObjectProp(const Fiber *fiber, const Function *func, OObject *o
 
     const auto *type = obj_is_type ? O_GET_TYPE(obj) : GetTypeInfoFromObject(fiber->isolate, obj);
 
+    if (ENUMBITMASK_ISTRUE(flags, LoadObjectPropFlags::SUPER))
+        type = O_GET_TYPE(type);
+
     const TypeInfo *target_type = nullptr;
     auto prop = TIFindProperty(type, &target_type, (const char *) key->buffer);
     if (prop == nullptr && obj_is_type)
         prop = TIFindProperty((TypeInfo *) obj, &target_type, (const char *) key->buffer);
-
-    if (ENUMBITMASK_ISTRUE(flags, LoadObjectPropFlags::SUPER))
-        type = O_GET_TYPE(type);
 
     if (prop == nullptr) {
         char error[24];
