@@ -1,0 +1,108 @@
+# This source file is part of the Orbit project.
+#
+# Licensed under the Apache License v2.0
+
+import "io"
+import "readline"
+
+/*!
+ * @brief Interactive read-eval-print loop (REPL).
+ *
+ * Drives an interactive session: reads a line (with editing and history via
+ * `readline`), evaluates it with `eval` in a persistent `Context`, and prints
+ * the result. Bindings made on one line stay in that context, so they are
+ * visible on the next.
+ *
+ * `default_session` is a ready-to-use singleton — the interpreter's interactive
+ * mode simply runs `repl.default_session.run()`. Construct your own `Repl` for a
+ * custom prompt or a private context.
+ *
+ * @example
+ *     import "repl"
+ *     repl.default_session.run()              # start the default REPL
+ *
+ *     let r = new repl.Repl(ps1="orbit> ")    # custom prompt
+ *     r.run()
+ */
+
+/**
+ * @brief A single interactive session.
+ *
+ * Bundles the prompts, the line reader, and the `Context` that evaluated lines
+ * accumulate their bindings in. Each `Repl` is an independent session with its
+ * own namespace.
+ */
+pub class Repl {
+    var ps1 = ">>> "
+    var ps2 = "... "
+
+    var context
+
+    var rd = new readline.Readline()
+
+    /**
+     * @brief Create a session.
+     *
+     * @param ps1?      Primary prompt. Defaults to ">>> ".
+     * @param ps2?      Continuation prompt (for multi-line input). Defaults to "... ".
+     * @param context?  Context to evaluate in. Defaults to a clone of the current
+     *                  scope, so the session starts with everything currently in
+     *                  scope without ever mutating it.
+     */
+    pub init(ps1=, ps2=, context=) {
+        if context {
+            self.context = context
+        } else {
+            self.context = Context(clone=true)
+        }
+
+        if ps1 {
+            self.ps1 = ps1
+        }
+
+        if ps2 {
+            self.ps2 = ps2
+        }
+    }
+
+    /**
+     * @brief Run the read-eval-print loop until the session ends.
+     *
+     * Repeatedly reads a line, evaluates it in the session's context, and prints
+     * the result — or, on failure, the error (the `eval` is trapped, so a runtime
+     * error reports instead of terminating the loop). Blank lines are skipped;
+     * `exit` ends the session.
+     */
+    pub func run() {
+        loop {
+            data := self.rd.read(prompt=self.ps1)
+            if data.length() == 0 {
+                continue
+            }
+
+            if "exit" in data {
+                break
+            }
+
+            res := trap await eval("<repl>", data, context = self.context, module=false)
+            if res {
+                io.print(res.unwrap())
+            } else {
+                io.perror(res.unwrap_err())
+            }
+        }
+    }
+
+    /**
+     * @brief Return the session's evaluation context.
+     *
+     * @return The Context that evaluated lines accumulate their bindings in;
+     *         can be inspected or handed to another `eval`.
+     */
+    pub func get_context() {
+        return self.context
+    }
+}
+
+# Ready-to-use default session; the interpreter's interactive mode runs this one.
+pub let default_session = new Repl()

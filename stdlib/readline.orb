@@ -1,0 +1,96 @@
+# This source file is part of the Orbit project.
+#
+# Licensed under the Apache License v2.0
+
+import "runtime"
+
+/*!
+ * @brief Line editing and history, backed by the system readline library.
+ *
+ * Thin OO surface over the C readline-compatible API exposed by GNU readline
+ * on most systems and by libedit on macOS / BSD.
+ * The two ship the same compatibility symbols, so only the library *name* differs
+ * per platform — selected once, at module load, by the`when` block below.
+ *
+ * @example
+ *     let rl = new Readline()          # auto-adds each line to history
+ *     loop {
+ *         line := rl.read("> ")
+ *         if line == nil { break }     # EOF (Ctrl-D)
+ *         io.print(line)
+ *     }
+ */
+
+# Platform library selection. Both branches publish the same private native
+# surface; only the matching branch is bound at load time. On macOS/BSD libedit
+# provides the readline-compatible symbols; elsewhere GNU readline does.
+when runtime.os == "darwin" {
+    native func readline(prompt: ptr): ptr from "libedit"
+    native func add_history(line: ptr): unit from "libedit"
+} else {
+    native func readline(prompt: ptr): ptr from "libreadline"
+    native func add_history(line: ptr): unit from "libreadline"
+}
+
+/**
+ * @brief Interactive line reader with history.
+ *
+ * Wraps the native `readline` call: prints a prompt, lets the user edit a line
+ * with the library's key bindings (arrows, history recall, etc.), and returns
+ * the result as a String. History can be populated explicitly with `add`, or
+ * automatically for every non-empty line when `auto_history` is on.
+ */
+pub class Readline {
+    var auto_history
+
+    /**
+     * @brief Create a line reader.
+     *
+     * @param auto_history=true  Append each non-empty line read to the history
+     *                           automatically.
+     */
+    pub init(auto_history=true) {
+        self.auto_history = auto_history
+    }
+
+    /**
+     * @brief Append a line to the history.
+     *
+     * The line becomes recallable with the Up arrow on subsequent `read`
+     * calls. Adding the same line repeatedly creates duplicate entries — that
+     * is the underlying library's behaviour, left unfiltered here.
+     *
+     * @param line  The String to record in the history.
+     */
+    pub func add(line) {
+        add_history(line)
+    }
+
+    /**
+     * @brief Read one edited line from the terminal.
+     *
+     * Displays `prompt`, then blocks until the user submits a line.
+     *
+     * @param prompt=""  Text shown before the cursor.
+     *
+     * @return The line as a String (without the trailing newline), or nil on
+     *         end-of-input (Ctrl-D on an empty line).
+     */
+    pub func read(prompt="") {
+        line_ptr := readline(prompt)
+
+        # NULL return means EOF — surface it as nil so a REPL loop can break.
+        if line_ptr.is_null() {
+            return nil
+        }
+
+        line := line_ptr.read_string()
+        line_ptr.free()
+
+        if self.auto_history && line.length() != 0 {
+            add_history(line)
+        }
+
+        return line
+    }
+}

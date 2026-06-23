@@ -1,0 +1,61 @@
+# This source file is part of the Orbit project.
+#
+# Licensed under the Apache License v2.0
+
+import "::orbit::runtime"
+
+/*!
+ * @brief Runtime environment introspection.
+ *
+ * Orbit-facing surface over the native `::orbit::runtime` module: the host
+ * platform and executable path, the active interpreter configuration, the
+ * program's argument vector, and the engine version — both the whole string
+ * and its parsed `major` / `minor` / `patch` components.
+ *
+ * @example
+ *     import "runtime"
+ *     io.print(runtime.version)            # e.g. "0.1.0-alpha"
+ *     io.print(runtime.version_major)      # "0"
+ *     for arg in runtime.get_argv() { io.print(arg) }
+ */
+
+# Absolute path of the running interpreter executable.
+pub let executable = runtime.executable
+
+# Host platform name, e.g. "darwin", "linux", "windows".
+pub let os = runtime.os
+
+# Program arguments as a List of Strings. The native layer returns a raw
+# `char **`; this walks it once, here at module load, and closes over the
+# resulting List — so calling `get_argv()` is cheap and always yields the same
+# arguments the process was started with.
+pub let get_argv = func () {
+    argv := runtime.get_argv()
+    argc := runtime.get_config()["argc"]
+
+    args := []
+
+    loop i:=0; i < argc; i++ {
+        cursor := argv.offset(i, word=true).read_ptr()
+        args.append(cursor.read_string())
+    }
+
+    return func () {
+        return args
+    }
+}()
+
+# Active interpreter configuration as a Dict (see the native `get_config`).
+pub let get_config = runtime.get_config
+
+# Engine version. `version` is the full string (e.g. "0.1.0-alpha"); `version_ex`
+# and `version_level` carry the extended/release-level forms.
+pub let version = runtime.version
+pub let version_ex = runtime.version_ex
+pub let version_level = runtime.version_level
+
+# Numeric components of `version`, split from the part before the "-" suffix.
+ver_split := version.substring(0, version.rfind("-")).split(sep=".")
+pub let version_major = ver_split[0]
+pub let version_minor = ver_split[1]
+pub let version_patch = ver_split[2]

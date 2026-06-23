@@ -7,6 +7,7 @@
 #include <cstdlib>
 
 #include <orbit/liftoff/compiler.h>
+#include <orbit/orbiter/version.h>
 
 #include <orbit/orbiter/memory/memory.h>
 
@@ -172,7 +173,11 @@ int orbiter::main(const int argc, char **argv) {
         EvalCommand(isolate, context.get(), argv[config.cmd], liftoff::kDefaultOptimization);
 
     if (config.interactive) {
-        // TODO: impl REPL
+        if (!config.quiet)
+            printf("%s\n", OR_VERSION_EX);
+
+        EvalCommand(isolate, context.get(), "import \"repl\"; repl.default_session.run()",
+                    liftoff::kDefaultOptimization);
     }
 
     Orbiter::GetInstance()->Finalize();

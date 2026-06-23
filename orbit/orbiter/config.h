@@ -25,6 +25,7 @@ namespace orbiter {
         I32 fiber_pool;
 
         bool interactive;
+        bool quiet;
     };
 
     extern const Config *kConfigDefault;

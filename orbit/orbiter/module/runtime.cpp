@@ -146,6 +146,7 @@ configuration.
     } while (0)
 
     PUT_BOOL(interactive, conf->interactive);
+    PUT_BOOL(quiet, conf->quiet);
 
     PUT_INT(argc, conf->argc);
     PUT_INT(file, conf->file);

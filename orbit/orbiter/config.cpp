@@ -26,7 +26,8 @@ constexpr Config DefaultConfig = {
     .fiber_ssize = -1,
     .fiber_pool = -1,
 
-    .interactive = true
+    .interactive = true,
+    .quiet = false
 };
 
 const Config *orbiter::kConfigDefault = &DefaultConfig;
@@ -158,7 +159,7 @@ bool orbiter::ConfigInit(Config *config, int argc, char **argv) {
     status.argv = argv + 1;
     status.argc = argc - 1;
 
-    while (ret != -1 && (ret = ReadOp(&status, "c!hv", lopt, sizeof(lopt), '-')) != -1) {
+    while (ret != -1 && (ret = ReadOp(&status, "c!hqv", lopt, sizeof(lopt), '-')) != -1) {
         switch (ret) {
             case 'c':
                 config->cmd = status.argc_cur;
@@ -167,6 +168,9 @@ bool orbiter::ConfigInit(Config *config, int argc, char **argv) {
             case 'h':
                 Help(*argv);
                 exit(EXIT_SUCCESS);
+            case 'q':
+                config->quiet = true;
+                break;
             case 'v':
                 printf("Orbit %d.%d.%d(%s)\n", OR_MAJOR, OR_MINOR, OR_PATCH, OR_RELEASE_LEVEL);
                 exit(EXIT_SUCCESS);
