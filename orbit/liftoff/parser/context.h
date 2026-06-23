@@ -36,7 +36,7 @@ namespace liftoff::parser {
         }
 
         [[nodiscard]] bool CheckExt(const ContextType type) const noexcept {
-            auto cursor = this->back_;
+            auto cursor = this;
 
             while (cursor != nullptr) {
                 if (cursor->type_ == type)
