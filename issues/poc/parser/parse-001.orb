@@ -1,0 +1,8 @@
+# PoC PARSE-001 — `continue` directly inside a loop must be accepted
+# (Context::CheckExt used to skip the current context, rejecting it).
+# EXPECT: ok
+i := 0
+loop i < 3 {
+    i += 1
+    continue
+}

@@ -1,0 +1,3 @@
+# PoC SCAN-001 — string literal starting with '#' must not be mis-lexed
+# EXPECT: ok
+x := "#tag"

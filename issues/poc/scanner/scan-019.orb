@@ -1,0 +1,4 @@
+# PoC SCAN-019 — CRLF line endings must be accepted
+# EXPECT: ok
+x := 1
+y := 2

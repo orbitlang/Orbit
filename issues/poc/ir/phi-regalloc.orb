@@ -1,0 +1,74 @@
+# PoC phi-regalloc — register-allocation / Phi regression (ISSUE-001: Phi
+# targets and register conflicts). A runtime test: it executes a battery of
+# checks and prints "ALL TESTS PASSED" only when every one matches.
+# EXPECT: contains: ALL TESTS PASSED
+
+import "io"
+
+var fails = 0
+
+func check(name, got, expected) {
+    if got == expected {
+        io.print("OK   ", name)
+    } else {
+        fails += 1
+        io.print("FAIL ", name, " got=", got, " expected=", expected)
+    }
+}
+
+/* 1. plain ternary, both paths */
+let t1 = true ? 1 : 2
+let t2 = false ? 1 : 2
+check("ternary then", t1, 1)
+check("ternary else", t2, 2)
+
+/* 2. original repro shape: slice inside a ternary branch (LDIMM 0 of the
+      implicit slice start used to clobber the phi register) */
+func sl(cond, retval, nbytes) {
+    return cond ? retval : retval[:nbytes]
+}
+check("ternary slice then", sl(true, b"abcdef", 3), b"abcdef")
+check("ternary slice else", sl(false, b"abcdef", 3), b"abc")
+
+/* 3. target value still used after the join */
+func after_join(cond) {
+    v := 10 + 1
+    w := cond ? v : 99
+    return v + w
+}
+check("value used after join (then)", after_join(true), 22)
+check("value used after join (else)", after_join(false), 110)
+
+/* 4. and/or as values */
+check("and value", (true && 5), 5)
+check("and short", (false && 5), false)
+check("or value", (false || 7), 7)
+check("or short", (3 || 7), 3)
+
+/* 5. discarded join value (phi without uses) */
+false || 1
+true ? 1 : 2
+check("discarded joins did not corrupt regs", 1 + 1, 2)
+
+/* 6. elvis */
+check("elvis nil", (nil ?: 5), 5)
+check("elvis value", (4 ?: 5), 4)
+
+/* 7. wide immediate (LDIMM accumulation chain through Phi) */
+let big = 0x12345678
+check("wide immediate", big, 305419896)
+
+/* 8. nested ternary */
+func nested(a, b) {
+    return a ? (b ? 1 : 2) : (b ? 3 : 4)
+}
+check("nested tt", nested(true, true), 1)
+check("nested tf", nested(true, false), 2)
+check("nested ft", nested(false, true), 3)
+check("nested ff", nested(false, false), 4)
+
+if fails == 0 {
+    io.print("ALL TESTS PASSED")
+} else {
+    io.print("FAILURES: ", fails)
+}

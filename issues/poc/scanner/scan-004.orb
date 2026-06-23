@@ -1,0 +1,3 @@
+# PoC SCAN-004 — radix prefix with no digits must error (also 0b / 0o)
+# EXPECT: error: invalid hexadecimal literal
+x := 0x

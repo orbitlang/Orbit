@@ -1,0 +1,4 @@
+# PoC SCAN-002 — empty inline comment must not swallow the next line
+# EXPECT: ok
+x := 1 #
+y := 2

@@ -1,0 +1,3 @@
+# PoC SCAN-012 — decimal literal with trailing letters must error
+# EXPECT: error: invalid digit in number
+x := 123abc

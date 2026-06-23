@@ -1,0 +1,4 @@
+/**/
+# PoC SCAN-006 — empty doc comment /**/ must not lex as unterminated
+# EXPECT: ok
+x := 1

@@ -1,0 +1,4 @@
+# PoC SCAN-005 — inline comment at EOF (no trailing newline) must scan
+# EXPECT: ok
+x := 1
+# trailing comment with no newline at EOF

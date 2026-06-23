@@ -1,0 +1,3 @@
+# PoC SCAN-013 — a lone '@' (empty atom) must error
+# EXPECT: error: invalid token
+x := @

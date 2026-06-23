@@ -1,0 +1,3 @@
+# PoC SCAN-011 — backslash then EOF must report unterminated string, no crash
+# EXPECT: error: unterminated string
+x := "y\
