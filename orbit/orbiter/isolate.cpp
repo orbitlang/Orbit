@@ -89,6 +89,8 @@ Isolate *Isolate::New(Config *config) {
 
     isolate->gc = new memory::GC(isolate);
 
+    memory::MemoryZero(isolate->primitive, kInstanceTypeCount * sizeof(void *));
+
     INIT_TYPE(InstanceType::TYPE, TypeInit);
 
     INIT_TYPE(InstanceType::ATOM, AtomTypeInit);
