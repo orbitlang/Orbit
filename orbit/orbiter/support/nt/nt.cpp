@@ -6,8 +6,7 @@
 
 #ifdef _ORBIT_PLATFORM_WINDOWS
 
-#include <lmcons.h>
-#include <windows.h>
+#include <orbit/orbiter/support/nt/windows.h>
 
 #include <orbit/orbiter/support/nt/nt.h>
 

@@ -16,7 +16,11 @@
 
 #elif defined(_ORBIT_PLATFORM_WINDOWS)
 
+#include <orbit/orbiter/support/nt/windows.h>
+
 #include <orbit/orbiter/support/nt/nt.h>
+
+#define PATH_MAX MAX_PATH
 
 #endif
 
