@@ -2102,6 +2102,20 @@ CATCH_FINALLY:
 
                 DISPATCH;
             }
+            TARGET_OP(JEXH) {
+                const auto offset = instr & 0xFFFFF;
+
+                result = (OObject *) REG_N(FETCH_J_SRC(instr));
+
+                if (O_IS_TYPE(result, InstanceType::GENERATOR)
+                    && ((Generator *) result)->state == GeneratorState::EXHAUSTED) {
+                    JMP_TO(offset);
+
+                    continue;
+                }
+
+                DISPATCH;
+            }
             TARGET_OP(JF) {
                 const auto offset = instr & 0xFFFFF;
 

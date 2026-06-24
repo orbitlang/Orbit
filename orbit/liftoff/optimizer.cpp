@@ -28,6 +28,7 @@ bool Optimizer::HasSideEffects(const orbiter::OPCode opcode) {
         case orbiter::OPCode::JF:
         case orbiter::OPCode::JEN:
         case orbiter::OPCode::JERR:
+        case orbiter::OPCode::JEXH:
 
         // Stores
         case orbiter::OPCode::STGBL:

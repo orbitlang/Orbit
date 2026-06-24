@@ -402,6 +402,7 @@ unsigned char *Codegen::EmitOpcodes(const BasicBlock *block, unsigned char *m_co
             }
             case orbiter::OPCode::JEN:
             case orbiter::OPCode::JERR:
+            case orbiter::OPCode::JEXH:
             case orbiter::OPCode::JF:
             case orbiter::OPCode::JT: {
                 const auto *jmp = (const BasicBlock *) (const Instruction *) instr->operands[1].value;

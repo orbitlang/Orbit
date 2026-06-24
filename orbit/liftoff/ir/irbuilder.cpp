@@ -1944,12 +1944,12 @@ void IRBuilder::VisitForInLoop(const parser::Loop *node) {
 
     this->builder_.AppendBasicBlock(jb.begin);
 
-    const auto generator = guard.Load();
-
     if (!this->sym_t_->EnterNestedScope(node->loc.start.offset))
         throw SymbolTableException();
 
-    const auto gen_value = this->builder_.CreateBranch(orbiter::OPCode::ITRNXT, generator, nullptr, jb.end);
+    const auto gen_value = this->builder_.CreateBranch(orbiter::OPCode::ITRNXT, guard.Load(), nullptr, jb.end);
+
+    this->builder_.CreateBranch(orbiter::OPCode::JEXH, guard.Load(), nullptr, jb.end);
 
     if (node->init->node_type == parser::NodeType::IDENTIFIER) {
         const auto id = (parser::Identifier *) node->init;
