@@ -77,16 +77,20 @@ bool SetupImportPath(Isolate *isolate) noexcept {
     if (ev_paths == nullptr)
         return false;
 
-    while (ev_paths != nullptr) {
-        const auto *path = strsep(&ev_paths, _ORBIT_PLATFORM_PATHSSEP);
-        if (*path == '\0')
-            continue;
+#ifdef _ORBIT_PLATFORM_WINDOWS
+#define strtok_r strtok_s
+#endif
 
+    char *saveptr = nullptr;
+    const char *path = strtok_r(ev_paths, _ORBIT_PLATFORM_PATHSSEP, &saveptr);
+    while (path != nullptr) {
         if (!importer->AddRoot(path)) {
             std::free(ev_paths);
 
             return false;
         }
+
+        path = strtok_r(nullptr, _ORBIT_PLATFORM_PATHSSEP, &saveptr);
     }
 
     std::free(ev_paths);

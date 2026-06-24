@@ -3,6 +3,7 @@
 // Licensed under the Apache License v2.0
 
 #include <cassert>
+#include <cctype>
 #include <cstring>
 #include <shared_mutex>
 

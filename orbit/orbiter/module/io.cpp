@@ -5,9 +5,11 @@
 #include <cerrno>
 #include <cstdio>
 
+#include <orbit/util/macros.h>
+
 #ifdef _ORBIT_PLATFORM_WINDOWS
+#include <io.h>
 #include <fcntl.h>
-#include <sys/stat.h>
 #else
 #include <sys/fcntl.h>
 #include <unistd.h>
@@ -402,7 +404,7 @@ return of 0 means EOF.
         return {};
 
 #ifdef _ORBIT_PLATFORM_WINDOWS
-    const auto got = ::_read((int) fd, guard.data(), (unsigned int) length);
+    const auto got = ::_read((int) fd, guard.Data(), (unsigned int) length);
 #else
     const auto got = ::read((int) fd, guard.Data(), length);
 #endif
