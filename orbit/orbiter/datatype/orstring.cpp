@@ -547,6 +547,72 @@ static MSize StrHashOp(const OObject *self) {
 // RUNTIME METHODS
 // *********************************************************************************************************************
 
+RUNTIME_METHOD(string_at, at,
+               R"DOC(
+@brief Return the codepoint at the given index as a String.
+
+A simpler single-codepoint form of `substring`: `s.at(i)` is equivalent to
+`s.substring(i, i + 1)`. The index is measured in Unicode codepoints, so this
+is O(1) for ASCII strings and O(n) for strings that contain multi-byte
+codepoints.
+
+@param index  Codepoint index (0-based).
+
+@return A new String holding the single codepoint at `index`.
+
+@panic TypeError   When `index` is not a Number.
+@panic IndexError  When `index` is outside 0 <= index < length().
+
+@see substring, length
+
+@example
+    "hello".at(1)     // "e"
+    "héllo".at(1)     // "é"
+)DOC", 2, nullptr, false, false) {
+    PCHECK_ENTRIES(params,
+                   PCHECK_DEF("self", false, InstanceType::STRING),
+                   PCHECK_DEF("index", false, InstanceType::NUMBER));
+    PCHECK_CHECK(params);
+
+    const auto *self = (ORString *) argv[0];
+    auto *isolate = O_GET_ISOLATE(_func);
+
+    IntegerUnderlying index;
+    if (!NumberExtract(argv[1], index))
+        return {};
+
+    if (index < 0 || (MSize) index >= self->cp_length) {
+        ErrorSet(isolate,
+                 IndexError::Details[IndexError::Reason::ID],
+                 nullptr,
+                 IndexError::Details[IndexError::Reason::OUT_OF_RANGE],
+                 O_GET_TYPE(self)->name,
+                 index,
+                 self->cp_length);
+
+        return {};
+    }
+
+    // Locate the codepoint's byte offset: ASCII maps 1:1, otherwise walk.
+    auto byte = (MSize) 0;
+    if (self->kind == StringKind::ASCII)
+        byte = (MSize) index;
+    else {
+        for (MSize cp = 0; cp < (MSize) index; cp++)
+            byte += StrUtf8LeadByteCount(STR_BUF(self)[byte]);
+    }
+
+    const unsigned char *p = STR_BUF(self) + byte;
+    const auto cp_bytes = StrUtf8LeadByteCount(*p);
+
+    // Single-byte codepoints are interned (shared); multi-byte are copied.
+    auto s = (cp_bytes == 1) ? ORStringIntern(isolate, p, 1) : ORStringNew(isolate, p, cp_bytes);
+    if (!s)
+        return {};
+
+    return HOObject(std::move(s));
+}
+
 RUNTIME_METHOD(string_contains, contains,
                R"DOC(
 @brief Return true if the string contains the given substring.
@@ -1389,6 +1455,7 @@ Non-ASCII bytes are passed through unchanged.
 }
 
 constexpr FunctionDef string_methods[] = {
+    string_at,
     string_contains,
     string_count,
     string_ends_with,
@@ -1701,7 +1768,7 @@ HOType orbiter::datatype::ORStringTypeInit(Isolate *isolate) {
         return {};
     }
 
-    auto string = MakeType(isolate, "String", InstanceType::STRING, sizeof(ORString) - sizeof(OObject), 18, 0);
+    auto string = MakeType(isolate, "String", InstanceType::STRING, sizeof(ORString) - sizeof(OObject), 19, 0);
     if (!string) {
         allocator.FreeObject(gst);
 
