@@ -409,9 +409,11 @@ bool orbiter::datatype::Equal(const OObject *left, const OObject *right) {
     if (!O_IS_OBJECT(left) && !O_IS_OBJECT(right))
         return false;
 
+    if (left == kOddBallNIL || right == kOddBallNIL)
+        return false;
+
     if (O_IS_OBJECT(left)) {
         const auto &ops = O_GET_TYPE_OPS(left);
-
         if (ops.equal != nullptr)
             return ops.equal(left, right);
     }
