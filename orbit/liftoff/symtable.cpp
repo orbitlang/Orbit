@@ -645,7 +645,14 @@ Symbol *SymbolTable::LookupMember(ORString *name) {
            && (class_scope->type != ScopeType::CLASS && class_scope->type != ScopeType::TRAIT))
         class_scope = class_scope->back;
 
-    assert(class_scope != nullptr);
+    // LookupMember runs for every selector assignment (const-check), not only for
+    // `self.x` inside a class. Outside any class/trait scope there is no member
+    // table to consult, so report "not found" instead of asserting.
+    if (class_scope == nullptr) {
+        this->status = SymbolTableError::SYMBOL_NOT_FOUND;
+
+        return nullptr;
+    }
 
     const auto *inner_scope = class_scope->active;
     while (inner_scope != nullptr) {
