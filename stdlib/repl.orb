@@ -33,12 +33,12 @@ import "readline"
  * own namespace.
  */
 pub class Repl {
-    var ps1 = ">>> "
-    var ps2 = "... "
+    pub var ps1 = ">>> "
+    pub var ps2 = "... "
 
     var context
 
-    var rd = new readline.Readline()
+    var rd = new readline.Readline(auto_history=false)
 
     /**
      * @brief Create a session.
@@ -75,21 +75,90 @@ pub class Repl {
      */
     pub func run() {
         loop {
-            data := self.rd.read(prompt=self.ps1)
-            if data.length() == 0 {
-                continue
-            }
-
-            if "exit" in data {
+            data := self.read_input()
+            if data == ":exit" {
                 break
             }
 
             res := trap await eval("<repl>", data, context = self.context, module=false)
             if res {
-                io.print(res.unwrap())
+                value := res.unwrap()
+                if value != nil {
+                    io.print(value)
+                }
             } else {
                 io.perror(res.unwrap_err())
             }
+        }
+    }
+
+    pub func read_input() {
+        p_open := [0, 0, 0]
+        prompt := self.ps1
+        buffer := ""
+
+        loop {
+            data := self.rd.read(prompt=prompt)
+            if data == nil {
+                return ":exit"
+            }
+
+            if data.length() == 0 {
+                continue
+            }
+
+            loop i := 0; i < data.length(); i++ {
+                sub := data.at(i)
+                switch sub {
+                    case "(":
+                        p_open[0]++
+                    case ")":
+                        p_open[0]--
+                    case "[":
+                        p_open[1]++
+                    case "]":
+                        p_open[1]--
+                    case "{":
+                        p_open[2]++
+                    case "}":
+                        p_open[2]--
+                }
+            }
+
+            # Check for continuation
+            continuation := data.ends_with("\\") || data.ends_with("|>")
+
+            # A negative counter is a closer with no matching opener: the input
+            # can't be completed by typing more, so submit it and let eval report
+            # the syntax error instead of waiting for a bracket that never comes.
+            unbalanced := p_open[0] < 0 || p_open[1] < 0 || p_open[2] < 0
+            pending := p_open[0] > 0 || p_open[1] > 0 || p_open[2] > 0
+
+            if !unbalanced && (continuation || pending) {
+                tabs := "  " * (p_open[0] + p_open[1] + p_open[2])
+
+                prompt = self.ps2 + tabs
+
+                if buffer {
+                    buffer += "%s%s\n" % (tabs, data)
+                } else {
+                    buffer += "%s\n" % data
+                }
+
+                continue
+            }
+
+            if buffer {
+                buffer += data
+
+                self.rd.add(buffer)
+
+                return buffer
+            }
+
+            self.rd.add(data)
+
+            return data
         }
     }
 
