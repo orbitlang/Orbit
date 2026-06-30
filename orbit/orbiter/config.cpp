@@ -125,11 +125,11 @@ static constexpr char usage_env[] =
         "ORBIT_MAXVC     : value that controls the number of OS threads that can execute Orbit code simultaneously.\n"
         "                  The default value of ORBIT_MAXVC is the number of CPUs visible at startup.\n"
         "ORBIT_PATH      : augment the default search path for modules. One or more directories separated by "
-        #ifdef _ORBIT_PLATFORM_WINDOWS
+#ifdef _ORBIT_PLATFORM_WINDOWS
         "';' "
-        #else
+#else
         "':' "
-        #endif
+#endif
         "as the shell's PATH.\n"
         "ORBIT_STARTUP   : specifies the script that must be run before the interactive prompt is shown for "
         "the first time.\n";
@@ -143,13 +143,13 @@ void Help(const char *name) {
 }
 
 void ParseEnvs(Config *config) {
-   // TODO
+    // TODO
 }
 
 bool orbiter::ConfigInit(Config *config, int argc, char **argv) {
     ReadOpLong lopt[] = {
-            {"help",    false, 'h'},
-            {"version", false, 'v'},
+        {"help", false, 'h'},
+        {"version", false, 'v'},
     };
     ReadOpStatus status = {};
 
@@ -159,7 +159,7 @@ bool orbiter::ConfigInit(Config *config, int argc, char **argv) {
     status.argv = argv + 1;
     status.argc = argc - 1;
 
-    while (ret != -1 && (ret = ReadOp(&status, "c!hqv", lopt, sizeof(lopt), '-')) != -1) {
+    while (ret != -1 && (ret = ReadOp(&status, "c!hiqv", lopt, sizeof(lopt), '-')) != -1) {
         switch (ret) {
             case 'c':
                 config->cmd = status.argc_cur;
@@ -168,6 +168,9 @@ bool orbiter::ConfigInit(Config *config, int argc, char **argv) {
             case 'h':
                 Help(*argv);
                 exit(EXIT_SUCCESS);
+            case 'i':
+                interactive = true;
+                break;
             case 'q':
                 config->quiet = true;
                 break;
@@ -198,6 +201,3 @@ bool orbiter::ConfigInit(Config *config, int argc, char **argv) {
 
     return true;
 }
-
-
-
