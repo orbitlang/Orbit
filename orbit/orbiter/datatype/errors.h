@@ -106,7 +106,8 @@ namespace orbiter::datatype {
 
             ESTACK,
             HEAP,
-            STACK
+            STACK,
+            NATIVE_ALLOC
         };
 
         static constexpr const char *Details[] = {
@@ -114,7 +115,8 @@ namespace orbiter::datatype {
 
             (const char *) "insufficient memory to create exception handling context",
             (const char *) "insufficient heap memory to complete allocation",
-            (const char *) "stack overflow - maximum stack size exceeded"
+            (const char *) "stack overflow - maximum stack size exceeded",
+            (const char *) "native memory allocation failed"
         };
     };
 

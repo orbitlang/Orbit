@@ -2,7 +2,6 @@
 //
 // Licensed under the Apache License v2.0
 
-#include <cassert>
 
 #include <orbit/orbiter/datatype/bytes.h>
 #include <orbit/orbiter/datatype/decimal.h>
@@ -104,6 +103,83 @@ static bool RawPtrCheckNonNull(orbiter::Isolate *isolate, const PtrSize addr) {
 // *********************************************************************************************************************
 // RUNTIME METHODS
 // *********************************************************************************************************************
+
+RUNTIME_FUNCTION(rawptr_alloc, alloc,
+                 R"DOC(
+@brief Allocate a heap buffer and return a RawPtr to it.
+
+Allocates `size` bytes on the heap, fills every byte with `fill`, and wraps the
+address in a RawPtr. This is the entry point for handing a writable buffer to a
+native function — e.g. an out-parameter `int *`: allocate a cell, pass the
+RawPtr to the callee, read the value back, then release it.
+
+The buffer is owned by the caller and must be released with `free` when no
+longer needed. For a garbage-collected alternative that never leaks, pass a
+`Bytes` value to the native call instead.
+
+@param size    Number of bytes to allocate. Must be positive.
+@param fill=0  Byte value written to every byte of the buffer (low 8 bits used).
+
+@return A RawPtr to the freshly allocated buffer.
+
+@panic TypeError   When `size` or `fill` is not an Int.
+@panic ValueError  When `size` is not positive.
+@panic OOMError    When the allocation fails.
+
+@see free, write_i32, read_i32, read_ptr
+
+@example
+    # int out; native_fn(&out)
+    let p = RawPtr.alloc(4)
+    native_fn(p)
+    let out = p.read_i32()
+    p.free()
+)DOC", 1, "fill", false, false) {
+    PCHECK_ENTRIES(params,
+                   PCHECK_DEF("size", false, InstanceType::NUMBER),
+                   PCHECK_DEF("fill", true, InstanceType::NUMBER));
+    PCHECK_CHECK(params);
+
+    auto *isolate = O_GET_ISOLATE(_func);
+
+    IntegerUnderlying size;
+    if (!NumberExtract(argv[0], size))
+        return {};
+
+    if (size <= 0) {
+        ErrorSet(isolate,
+                 ValueError::Details[ValueError::Reason::ID],
+                 nullptr,
+                 "alloc size must be positive");
+
+        return {};
+    }
+
+    IntegerUnderlying fill = 0;
+    if (!O_IS_SENTINEL(argv[1]) && !NumberExtract(argv[1], fill))
+        return {};
+
+    auto *buffer = ::malloc(size);
+    if (buffer == nullptr) {
+        ErrorSet(isolate,
+                 MemoryError::Details[MemoryError::Reason::ID],
+                 nullptr,
+                 MemoryError::Details[MemoryError::Reason::NATIVE_ALLOC]);
+
+        return {};
+    }
+
+    ::memset(buffer, (unsigned char) fill, size);
+
+    auto p = RawPtrNew(isolate, buffer);
+    if (!p) {
+        ::free(buffer);
+
+        return {};
+    }
+
+    return HOObject(std::move(p));
+}
 
 RUNTIME_METHOD(rawptr_address, address,
                R"DOC(
@@ -973,6 +1049,7 @@ RUNTIME_METHOD(rawptr_write_u64, write_u64,
 constexpr FunctionDef rawptr_methods[] = {
     rawptr_address,
     rawptr_add,
+    rawptr_alloc,
     rawptr_free,
     rawptr_is_null,
     rawptr_offset,
@@ -1019,7 +1096,7 @@ bool orbiter::datatype::RawPtrTypeSetup(TypeInfo *self) {
 }
 
 HOType orbiter::datatype::RawPtrTypeInit(Isolate *isolate) {
-    auto rawptr = MakeType(isolate, "Rawptr", InstanceType::RAWPTR, sizeof(RawPtr) - sizeof(OObject), 27, 0);
+    auto rawptr = MakeType(isolate, "Rawptr", InstanceType::RAWPTR, sizeof(RawPtr) - sizeof(OObject), 28, 0);
     return rawptr;
 }
 
