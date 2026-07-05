@@ -642,6 +642,80 @@ byte-oriented APIs (FFI, I/O) that need the real buffer size.
     return HOObject(std::move(result));
 }
 
+RUNTIME_METHOD(string_byte_substring, byte_substring,
+               R"DOC(
+@brief Return the substring spanning a half-open range of byte offsets.
+
+The byte-offset counterpart of `substring`: `start` and `end` are positions in
+the underlying UTF-8 buffer, with `end` exclusive. Unlike `substring` this never
+scans the string, so it is O(1) regardless of content — but the offsets must fall
+on codepoint boundaries: a range that would split a multi-byte codepoint is
+rejected rather than producing invalid UTF-8.
+
+@param start  Byte offset of the first byte to include (0-based).
+@param end    Byte offset one past the last byte to include.
+
+@return A new String with the bytes in [start, end); empty when start == end.
+
+@panic TypeError   When `start` or `end` is not a Number.
+@panic ValueError  When the bounds fall outside 0 <= start <= end <= byte_length(),
+                   or either bound splits a multi-byte codepoint.
+
+@see substring, byte_length, find
+
+@example
+    "hello".byte_substring(1, 4)    // "ell"
+    "héllo".byte_substring(0, 3)    // "hé"  (é spans bytes 1..2)
+    "héllo".byte_substring(0, 2)    // ValueError: splits 'é'
+)DOC", 3, nullptr, false, false) {
+    PCHECK_ENTRIES(params,
+                   PCHECK_DEF("self", false, InstanceType::STRING),
+                   PCHECK_DEF("start", false, InstanceType::NUMBER),
+                   PCHECK_DEF("end", false, InstanceType::NUMBER));
+    PCHECK_CHECK(params);
+
+    const auto *self = (ORString *) argv[0];
+    auto *isolate = O_GET_ISOLATE(_func);
+
+    IntegerUnderlying start;
+    IntegerUnderlying end;
+    if (!NumberExtract(argv[1], start) || !NumberExtract(argv[2], end))
+        return {};
+
+    if (start < 0 || end < start || (MSize) end > STR_LEN(self)) {
+        ErrorSet(isolate,
+                 ValueError::Details[ValueError::Reason::ID],
+                 nullptr,
+                 "byte_substring bounds out of range");
+
+        return {};
+    }
+
+    // A bound is valid only on a codepoint boundary: either the end of the
+    // buffer or a non-continuation byte (UTF-8 continuations are 10xxxxxx).
+    // ASCII strings have no continuation bytes, so the check is skipped.
+    if (self->kind != StringKind::ASCII) {
+        const auto splits = [self](const MSize pos) {
+            return pos < STR_LEN(self) && (STR_BUF(self)[pos] & 0xC0) == 0x80;
+        };
+
+        if (splits(start) || splits(end)) {
+            ErrorSet(isolate,
+                     ValueError::Details[ValueError::Reason::ID],
+                     nullptr,
+                     "byte_substring bounds split a multi-byte codepoint");
+
+            return {};
+        }
+    }
+
+    auto s = ORStringNew(isolate, STR_BUF(self) + start, end - start);
+    if (!s)
+        return {};
+
+    return HOObject(std::move(s));
+}
+
 RUNTIME_METHOD(string_contains, contains,
                R"DOC(
 @brief Return true if the string contains the given substring.
@@ -1486,6 +1560,7 @@ Non-ASCII bytes are passed through unchanged.
 constexpr FunctionDef string_methods[] = {
     string_at,
     string_byte_length,
+    string_byte_substring,
     string_contains,
     string_count,
     string_ends_with,
@@ -1798,7 +1873,7 @@ HOType orbiter::datatype::ORStringTypeInit(Isolate *isolate) {
         return {};
     }
 
-    auto string = MakeType(isolate, "String", InstanceType::STRING, sizeof(ORString) - sizeof(OObject), 20, 0);
+    auto string = MakeType(isolate, "String", InstanceType::STRING, sizeof(ORString) - sizeof(OObject), 21, 0);
     if (!string) {
         allocator.FreeObject(gst);
 
