@@ -335,7 +335,7 @@ ASTHandle<ASTNode *> Parser::ParseIfStatement() {
     return branch;
 }
 
-ASTHandle<ASTNode *> Parser::ParseImportStatement() {
+ASTHandle<ASTNode *> Parser::ParseImportStatement(const AccessModifier access) {
     auto imp = MakeImport(this->isolate_, TKCUR_LOC, NodeType::IMPORT);
 
     this->Eat(true);
@@ -372,6 +372,8 @@ ASTHandle<ASTNode *> Parser::ParseImportStatement() {
 
         this->CheckSetImportAlias(alias, imp.get());
 
+        imp->alias->access = access;
+
         return imp;
     }
 
@@ -402,11 +404,11 @@ ASTHandle<ASTNode *> Parser::ParseImportStatement() {
         }
 
         imp_name->alias = this->sym_t_->Declare(!alias ? imp_name->name : alias.get(),
-                                                SymbolType::VARIABLE,
-                                                imp->loc.start.offset);
+                                                SymbolType::VARIABLE, imp->loc.start.offset);
         if (imp_name->alias == nullptr)
             throw SymbolTableException();
 
+        imp_name->alias->access = access;
         imp_name->alias->flags |= SymbolFlags::CONST | SymbolFlags::INITIALIZED;
 
         imp->names.emplace_back(std::move(imp_name));
@@ -1879,7 +1881,7 @@ ASTHandle<ASTNode *> Parser::ParseStatement() {
     ASTHandle<ASTNode *> stmt;
     ASTHandle<ASTNode *> label;
 
-    auto start = TKCUR_START;
+    const auto start = TKCUR_START;
     auto access = AccessModifier::PRIVATE;
     bool weak = false;
 
@@ -1964,7 +1966,7 @@ ASTHandle<ASTNode *> Parser::ParseStatement() {
             case TokenType::KW_IF:
                 return this->ParseIfStatement();
             case TokenType::KW_IMPORT:
-                return this->ParseImportStatement();
+                return this->ParseImportStatement(access);
             case TokenType::KW_LET:
                 return this->ParseVarDecl(start, access, true, false, false);
             case TokenType::KW_LOOP:

@@ -251,7 +251,7 @@ namespace liftoff::parser {
 
         [[nodiscard]] ASTHandle<ASTNode *> ParseIfStatement();
 
-        [[nodiscard]] ASTHandle<ASTNode *> ParseImportStatement();
+        [[nodiscard]] ASTHandle<ASTNode *> ParseImportStatement(AccessModifier access);
 
         [[nodiscard]] ASTHandle<ASTNode *> ParseLoopStatement();
 
@@ -268,8 +268,7 @@ namespace liftoff::parser {
         [[nodiscard]] ASTHandle<ASTNode *> ParseTryCatchFinally();
 
         [[nodiscard]] ASTHandle<ASTNode *> ParseVarDecl(const scanner::Position &start, AccessModifier access,
-                                                        bool constant,
-                                                        bool weak, bool decl_only);
+                                                        bool constant, bool weak, bool decl_only);
 
         [[nodiscard]] ASTHandle<ASTNode *> ParseWhenStatement();
 
