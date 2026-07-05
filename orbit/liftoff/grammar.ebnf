@@ -3,7 +3,7 @@
     Licensed under the Apache License v2.0
 
     syntax: ISO-14977 EBNF
-    version: 3.0
+    version: 3.1
 *)
 
 (* Basic elements *)
@@ -155,7 +155,7 @@ native_declaration = native_function_declaration | native_variable_declaration;
 native_function_declaration = [doc_comment], "native", "func", identifier, "(", [native_parameter_list], ")", ":", native_type, [native_alias], [native_from];
 native_parameter_list = native_parameter, {",", native_parameter};
 native_parameter = identifier, ":", native_type;
-native_alias = "as", string_literal;
+native_alias = "as", identifier;
 native_from = "from", string_literal;
 
 (* Native Variable Declaration *)
