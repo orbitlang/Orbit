@@ -33,11 +33,11 @@ U16 LinearScan::GetFreeStackSlot() {
 }
 
 std::vector<U32> LinearScan::CallPositionPreScan() const {
-    // Pre-scan: collect the instruction offsets of every CALL and EXECSUB in
-    // program order.  CALL/EXECSUB are caller-clobbered in Orbit's VM — the
-    // callee may overwrite every general-purpose register — so any value that
-    // is live across one of these sites must be saved to the stack beforehand
-    // and reloaded at each use that follows the call.
+    // Pre-scan: collect the instruction offsets of every call site in program
+    // order.  CALL/EXECSUB are caller-clobbered in Orbit's VM — the callee may
+    // overwrite every general-purpose register — so any value that is live
+    // across one of these sites must be saved to the stack beforehand and
+    // reloaded at each use that follows the call.
     //
     // We cannot detect calls through the live-interval list alone: a CALL with
     // no users never appears as an interval.  A dedicated IR walk here is the
@@ -50,7 +50,7 @@ std::vector<U32> LinearScan::CallPositionPreScan() const {
 
             const auto op = ((PhysInstruction *) instr)->opcode;
 
-            if (op == orbiter::OPCode::CALL || op == orbiter::OPCode::EXECSUB)
+            if (op == orbiter::OPCode::CALL || op == orbiter::OPCode::NTCALL || op == orbiter::OPCode::EXECSUB)
                 call_positions.push_back(instr->instr_offset);
         }
     }
