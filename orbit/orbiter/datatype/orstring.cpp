@@ -613,6 +613,35 @@ codepoints.
     return HOObject(std::move(s));
 }
 
+RUNTIME_METHOD(string_byte_length, byte_length,
+               R"DOC(
+@brief Return the length of the string in bytes.
+
+Unlike `length`, which counts Unicode codepoints, this returns the size of
+the underlying UTF-8 buffer. The two match for ASCII strings and diverge as
+soon as a multi-byte codepoint appears — useful when handing the string to
+byte-oriented APIs (FFI, I/O) that need the real buffer size.
+
+@return A non-negative Int.
+
+@see length, is_ascii
+
+@example
+    "hello".byte_length()    // 5  (same as length())
+    "héllo".byte_length()    // 6  (é takes 2 bytes; length() is 5)
+)DOC", 1, nullptr, false, false) {
+    PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::STRING));
+    PCHECK_CHECK(params);
+
+    const auto *self = (ORString *) argv[0];
+
+    auto result = IntNew(O_GET_ISOLATE(self), (IntegerUnderlying) STR_LEN(self));
+    if (!result)
+        return {};
+
+    return HOObject(std::move(result));
+}
+
 RUNTIME_METHOD(string_contains, contains,
                R"DOC(
 @brief Return true if the string contains the given substring.
@@ -1456,6 +1485,7 @@ Non-ASCII bytes are passed through unchanged.
 
 constexpr FunctionDef string_methods[] = {
     string_at,
+    string_byte_length,
     string_contains,
     string_count,
     string_ends_with,
@@ -1768,7 +1798,7 @@ HOType orbiter::datatype::ORStringTypeInit(Isolate *isolate) {
         return {};
     }
 
-    auto string = MakeType(isolate, "String", InstanceType::STRING, sizeof(ORString) - sizeof(OObject), 19, 0);
+    auto string = MakeType(isolate, "String", InstanceType::STRING, sizeof(ORString) - sizeof(OObject), 20, 0);
     if (!string) {
         allocator.FreeObject(gst);
 
