@@ -57,8 +57,10 @@ bool orbiter::native::PrepareCall(Isolate *isolate, const NativeFunc *func, Para
                     dst[d_index++].value = (void *) (O_FROM_SMI((PtrSize) args[i]));
                     continue;
                 }
+
+                break;
             case NativeType::F32:
-                if (O_IS_TYPE(args[i], InstanceType::DECIMAL)) {
+                if (args[i] != nullptr && O_IS_TYPE(args[i], InstanceType::DECIMAL)) {
                     if (fp_dst != nullptr && out_fp_length != nullptr) {
                         if (fp_index + 1 >= *out_fp_length)
                             goto FP_ERROR;
@@ -68,11 +70,13 @@ bool orbiter::native::PrepareCall(Isolate *isolate, const NativeFunc *func, Para
                         *((float *) (dst + d_index)->value) = ((float) ((Decimal *) args[i])->value);
                         dst[d_index++].fp_reg = (void *) 1;
                     }
+
                     continue;
                 }
+
                 break;
             case NativeType::F64:
-                if (O_IS_TYPE(args[i], InstanceType::DECIMAL)) {
+                if (args[i] != nullptr && O_IS_TYPE(args[i], InstanceType::DECIMAL)) {
                     if (fp_dst != nullptr && out_fp_length != nullptr) {
                         if (fp_index + 1 >= *out_fp_length)
                             goto FP_ERROR;
@@ -82,8 +86,10 @@ bool orbiter::native::PrepareCall(Isolate *isolate, const NativeFunc *func, Para
                         *((double *) (dst + d_index)->value) = ((Decimal *) args[i])->value;
                         dst[d_index++].fp_reg = (void *) 1;
                     }
+
                     continue;
                 }
+
                 break;
             default:
                 break;
