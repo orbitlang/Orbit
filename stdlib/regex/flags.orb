@@ -1,0 +1,136 @@
+# This source file is part of the Orbit project.
+#
+# Licensed under the Apache License v2.0
+
+/*!
+ * @brief PCRE2 constants: newline/BSR modes, compile options, match options.
+ *
+ * Numeric values mirror the PCRE2 C headers. `NEWLINE_*` and `BSR_*` configure
+ * a `CompileContext`; `COMPILE_*` options are passed to `Pattern` at
+ * construction time; `MATCH_*` options apply to a single `Pattern.match`
+ * attempt. Options of the same family combine with bitwise OR.
+ *
+ * @example
+ *     import "regex/flags"
+ *
+ *     p := new Pattern("\\w+", compile_options=flags.COMPILE_UTF | flags.COMPILE_UCP)
+ */
+
+# ============================================================================
+# PCRE2 CONSTANTS
+# ============================================================================
+
+# === NEWLINE MODES (for set_newline) ===
+# Controls how newline sequences are recognized in patterns and subjects
+
+pub let NEWLINE_CR = 1      # Recognize only CR (carriage return) as a newline
+pub let NEWLINE_LF = 2      # Recognize only LF (linefeed) as a newline (Unix standard)
+pub let NEWLINE_CRLF = 3    # Recognize CR+LF as a newline (Windows standard)
+pub let NEWLINE_ANY = 4     # Recognize any Unicode line ending (includes VT, FF, NEL, LS, PS)
+pub let NEWLINE_ANYCRLF = 5 # Recognize CR, LF, or CRLF as newlines (RECOMMENDED for security)
+pub let NEWLINE_NUL = 6     # Recognize NUL character as a newline
+
+# === BSR MODES (for set_bsr) — Behavior of \R in patterns ===
+# Controls what \R matches
+
+pub let BSR_UNICODE = 1 # \R matches any Unicode line break
+pub let BSR_ANYCRLF = 2 # \R matches only CR, LF, or CRLF
+
+# ============================================================================
+# COMPILE OPTIONS (for pcre2_compile)
+# ============================================================================
+# These flags control pattern compilation behavior and affect matching
+
+# === Pattern Matching Modifiers ===
+
+# Match letters in the pattern case-insensitively (no distinction between A-Z and a-z)
+pub let COMPILE_CASELESS = 0x00000008
+
+# Dot metacharacter (.) matches any character including newlines
+pub let COMPILE_DOTALL = 0x00000020
+
+# Ignore unescaped whitespace and allow comments starting with # in the pattern
+pub let COMPILE_EXTENDED = 0x00000080
+
+ # Extended PCRE2 syntax for more flexible spacing and comments
+pub let COMPILE_EXTENDED_MORE = 0x01000000
+
+# Caret (^) and dollar ($) match at line boundaries, not just string start/end
+pub let COMPILE_MULTILINE = 0x00000400
+
+# Invert the greediness of quantifiers (e.g., * becomes *?, + becomes +?)
+pub let COMPILE_UNGREEDY = 0x00040000
+
+# === Unicode and Character Class ===
+
+pub let COMPILE_UTF = 0x00080000        # Treat pattern and subject as UTF-8 encoded strings
+pub let COMPILE_UCP = 0x00020000        # Use Unicode properties for character classes like \d, \w, \s, \D, \W, \S
+pub let COMPILE_NEVER_UTF = 0x00001000  # Lock out UTF support; pattern cannot enable UTF mode via (*UTF)
+pub let COMPILE_NEVER_UCP = 0x00000800  # Lock out UCP support; cannot be enabled at runtime
+
+# === Capturing and Backreferences ===
+
+# Disable numbered capturing groups; only named groups work
+pub let COMPILE_NO_AUTO_CAPTURE = 0x00002000
+
+# Allow multiple subpatterns to have the same name
+pub let COMPILE_DUPNAMES = 0x00000040
+
+# Allow backreferences to unset capturing groups to match empty string
+pub let COMPILE_MATCH_UNSET_BACKREF = 0x00000200
+
+# === Escape Sequences and Special Sequences ===
+
+pub let COMPILE_ALT_BSUX = 0x00000002           # Process \u and \U escape sequences as Unicode code points
+pub let COMPILE_ALT_VERBNAMES = 0x00400000      # Accept alternative verb syntax (e.g., (*ACCEPT:name) variations)
+pub let COMPILE_NEVER_BACKSLASH_C = 0x00100000  # Disable the \C escape sequence for matching bytes in UTF mode
+
+# === Anchoring and Optimization ===
+
+# Match must occur in or before the first line of the subject
+pub let COMPILE_FIRSTLINE = 0x00000100
+
+# Dollar ($) only matches at the end of the subject, not before final newline
+pub let COMPILE_DOLLAR_ENDONLY = 0x00000010
+
+# Disable optimization that anchors patterns starting with .*
+pub let COMPILE_NO_DOTSTAR_ANCHOR = 0x00008000
+
+# Disable match-time start-position optimization
+pub let COMPILE_NO_START_OPTIMIZE = 0x00010000
+
+# Disable automatic possessification of patterns
+pub let COMPILE_NO_AUTO_POSSESS = 0x00004000
+
+# === Literal Matching and Empty Classes ===
+
+pub let COMPILE_LITERAL = 0x02000000            # Treat the entire pattern as a literal string (no metacharacters)
+pub let COMPILE_ALLOW_EMPTY_CLASS = 0x00000001  # Allow [] (empty character class) to match nothing without error
+
+# === UTF Validation ===
+
+pub let COMPILE_MATCH_INVALID_UTF = 0x04000000  # Allow matching against invalid UTF-8 sequences
+
+# === Circumflex and Offset Limits ===
+
+pub let COMPILE_ALT_CIRCUMFLEX = 0x00200000     # Alternative handling of ^ in multiline mode and after \A
+pub let COMPILE_USE_OFFSET_LIMIT = 0x00800000   # Enable offset limiting feature (pcre2_set_offset_limit)
+
+# === Auto Callout ===
+
+pub let COMPILE_AUTO_CALLOUT = 0x00000004   # Automatically insert callout points between pattern items for debugging
+
+# ============================================================================
+# MATCH OPTIONS (for pcre2_match)
+# ============================================================================
+# These flags control a single match attempt.
+
+pub let MATCH_ANCHORED = 0x80000000          # Match only at the given start offset (no bumpalong)
+pub let MATCH_ENDANCHORED = 0x20000000       # The match must reach the end of the subject
+pub let MATCH_NOTBOL = 0x00000001            # Start offset is not the beginning of a line (^ won't match there)
+pub let MATCH_NOTEOL = 0x00000002            # End of the subject is not the end of a line ($ won't match there)
+pub let MATCH_NOTEMPTY = 0x00000004          # An empty match is never valid, anywhere
+pub let MATCH_NOTEMPTY_ATSTART = 0x00000008  # An empty match at the start offset is not valid (empties later still are)
+pub let MATCH_PARTIAL_SOFT = 0x00000010      # Return a partial match if no complete one is found
+pub let MATCH_PARTIAL_HARD = 0x00000020      # Return a partial match in preference to a complete one
+pub let MATCH_NO_UTF_CHECK = 0x40000000      # Skip the UTF validity check of the subject (unsafe if not valid UTF)

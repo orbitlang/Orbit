@@ -1,0 +1,115 @@
+# This source file is part of the Orbit project.
+#
+# Licensed under the Apache License v2.0
+
+/*!
+ * @brief Regular expressions backed by PCRE2.
+ *
+ * Facade of the regex package: re-exports the public surface of its
+ * submodules so that a single `import "regex"` is enough for common use.
+ *
+ * - `Pattern` — compile an expression.
+ * - `Match` — result of an attempt.
+ * - `CompileContext` / `GLOBAL_COMPILE_CONTEXT` — compilation settings shared
+ *   by every `Pattern`.
+ * - `find` / `findall` / `match` — one-shot helpers that compile and run in a
+ *   single call, for when the pattern is not worth keeping around.
+ *
+ * Compile/match option constants live in `regex/flags`, error kinds in
+ * `regex/error`.
+ *
+ * @example
+ *     import "regex"
+ *
+ *     # one-shot
+ *     m := regex.find("(\\w+)@(\\w+)", "mail: bob@example")
+ *     if m != nil {
+ *         io.print(m.group(1))  # "bob"
+ *     }
+ *
+ *     # compiled once, reused
+ *     p := new regex.Pattern("(\\w+)@(\\w+)", compile_options=regex.flags.COMPILE_UTF)
+ *     for var m in p.findall(subjects) { ... }
+ */
+
+pub import CompileContext, GLOBAL_COMPILE_CONTEXT from "regex/compile"
+pub import "regex/flags"
+pub import Pattern from "regex/pattern"
+pub import Match from "regex/match"
+
+/**
+@brief Compile `pattern` and return the first match in `subject`.
+
+One-shot helper: the pattern is compiled (with default options) and discarded
+after the call. When matching repeatedly, compile a `Pattern` once and reuse
+it instead.
+
+@param pattern  The expression source (String or Bytes).
+@param subject  The String or Bytes to search.
+
+@return A successful `Match`, or nil when the pattern does not match.
+
+@panic TypeError     When `pattern` is neither String nor Bytes.
+@panic PatternError  When PCRE2 rejects the expression.
+@panic PCREError     When PCRE2 reports a matching error.
+
+@see findall, match, Pattern
+
+@example
+    regex.find("[0-9]+", "order 42")   # Match for "42"
+    regex.find("[0-9]+", "no digits")  # nil
+*/
+pub func find(pattern, subject) {
+    return new Pattern(pattern).find(subject)
+}
+
+/**
+@brief Compile `pattern` and return every match in `subject`.
+
+One-shot helper: the pattern is compiled (with default options) and discarded
+after the call. When matching repeatedly, compile a `Pattern` once and reuse
+it instead.
+
+@param pattern  The expression source (String or Bytes).
+@param subject  The String or Bytes to search.
+
+@return A List of `Match` objects (empty when nothing matches).
+
+@panic TypeError     When `pattern` is neither String nor Bytes.
+@panic PatternError  When PCRE2 rejects the expression.
+@panic PCREError     When PCRE2 reports a matching error.
+
+@see find, Pattern
+
+@example
+    regex.findall("[0-9]+", "a1 b22").length()  # 2
+*/
+pub func findall(pattern, subject) {
+    return new Pattern(pattern).findall(subject)
+}
+
+/**
+@brief Compile `pattern` and run a single match attempt against `subject`.
+
+One-shot helper over the lower-level `Pattern.match`: always returns a
+`Match`, even when nothing matches — inspect `matched()` on the result. Use
+`find` when a plain nil-on-failure result is more convenient.
+
+@param pattern  The expression source (String or Bytes).
+@param subject  The String or Bytes to search.
+
+@return A `Match` object wrapping the attempt's result.
+
+@panic TypeError     When `pattern` is neither String nor Bytes.
+@panic PatternError  When PCRE2 rejects the expression.
+@panic PCREError     When PCRE2 reports a matching error.
+
+@see find, findall, Pattern
+
+@example
+    regex.match("[0-9]+", "order 42").matched()  # true
+    regex.match("[0-9]+", "no digits").matched() # false
+*/
+pub func match(pattern, subject) {
+    return new Pattern(pattern).match(subject)
+}

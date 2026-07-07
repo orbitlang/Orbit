@@ -1,0 +1,17 @@
+# This source file is part of the Orbit project.
+#
+# Licensed under the Apache License v2.0
+
+/*!
+ * @brief Error kinds raised by the regex package.
+ *
+ * `PatternError` signals a malformed regular expression rejected at compile
+ * time; `PCREError` signals a failure reported by the PCRE2 library itself
+ * (context configuration, match-time errors, allocation failures).
+ */
+
+# Raised when a regular expression fails to compile.
+pub let PatternError = Error(@PatternError)
+
+# Raised when a PCRE2 native call fails.
+pub let PCREError = Error(@PCREError)

@@ -1,0 +1,315 @@
+# This source file is part of the Orbit project.
+#
+# Licensed under the Apache License v2.0
+
+/*!
+ * @brief Compiled PCRE2 pattern and matching operations.
+ *
+ * `Pattern` compiles a regular expression once (against the shared
+ * `GLOBAL_COMPILE_CONTEXT`) and exposes the matching primitives built on top
+ * of it: `match`/`find` for a single attempt, `findall` for iterating every
+ * match (zero-width matches included), and `split` for cutting a subject at
+ * each match boundary.
+ *
+ * Subjects can be String or Bytes; every offset exchanged with this class is
+ * a **byte** offset. For UTF-8 subjects compile the pattern with
+ * `flags.COMPILE_UTF | flags.COMPILE_UCP`.
+ *
+ * @example
+ *     import Pattern from "regex/pattern"
+ *     import "regex/flags"
+ *
+ *     p := new Pattern("\\w+", compile_options=flags.COMPILE_UTF | flags.COMPILE_UCP)
+ *     for var m in p.findall("café ☕ bar") {
+ *         io.print(m.group(0))
+ *     }
+ */
+
+import "ffi"
+
+import "regex/compile"
+import "regex/error"
+import "regex/match"
+import "regex/flags"
+
+import fmt_typerror from "error"
+
+native from "libpcre2-8" {
+    func pcre2_code_free_8(code: ptr): unit as pcre2_code_free
+    func pcre2_compile_8(pattern: ptr, len: u64, options: u32, errcode: ptr, erroffset: ptr, ctx: ptr): ptr as pcre2_compile
+    func pcre2_match_8(code: ptr, subject: ptr, len: u64, offset: u64, options: u32, md: ptr, ctx: ptr): i32 as pcre2_match
+    func pcre2_match_data_create_from_pattern_8(code: ptr, gctx: ptr): ptr as pcre2_match_data_create_from_pattern
+    func pcre2_match_data_free_8(md: ptr): unit as pcre2_match_data_free
+    func pcre2_pattern_info_8(code: ptr, what: u32, where: ptr): i32 as pcre2_pattern_info
+}
+
+/**
+@brief A compiled regular expression.
+
+Compilation happens once in the constructor; the resulting native code object
+is reused by every match and released by the destructor.
+*/
+pub class Pattern {
+    var code
+    var ctx
+    var capture_count
+
+    /**
+    @brief Compile a regular expression.
+
+    @param pattern            The expression source (String or Bytes).
+    @param compile_options=0  Bitwise OR of `flags.COMPILE_*` options.
+
+    @panic TypeError     When `pattern` is neither String nor Bytes.
+    @panic PatternError  When PCRE2 rejects the expression (the message
+                         carries the PCRE2 error code and byte offset).
+
+    @example
+        p := new Pattern("^item-(\\d+)$")
+        p := new Pattern("\\w+", compile_options=flags.COMPILE_UTF | flags.COMPILE_UCP)
+    */
+    pub init(pattern, compile_options=0) {
+        var length
+
+        if pattern.is(String) {
+            length = pattern.byte_length()
+        } elif pattern.is(Bytes) {
+            length = pattern.length()
+        } else {
+            panic fmt_typerror(pattern, String, Bytes)
+        }
+
+        self.ctx = compile.GLOBAL_COMPILE_CONTEXT
+
+        # Two words: u32 error code in the first, u64 error offset in the
+        # second — the word-sized stride keeps the u64 naturally aligned.
+        err_code := Rawptr.alloc(ffi.SIZEOF_U64 * 2, fill=0)
+        err_offset := err_code.offset(ffi.SIZEOF_U64)
+
+        self.code = pcre2_compile(
+            pattern,
+            length,
+            compile_options,
+            err_code,
+            err_offset,
+            self.ctx.handle)
+
+        # A NULL native pointer still comes back wrapped in a Rawptr, so the
+        # failure check must go through is_null(), not == nil.
+        if self.code.is_null() {
+            panic error.PatternError("compile failed at offset %d: %d" % (err_offset.read_u64(), err_code.read_u32()))
+        }
+
+        err_code.free()
+
+        # Cache capture count for reuse
+        count := Rawptr.alloc(ffi.SIZEOF_U32, fill=0)
+
+        # PCRE2_INFO_CAPTURECOUNT = 4
+        pcre2_pattern_info(self.code, 4, count)
+
+        self.capture_count = count.read_u32()
+
+        count.free()
+    }
+
+    cleanup {
+        if self.code != nil {
+            pcre2_code_free(self.code)
+        }
+    }
+
+    /**
+    @brief Find the first match starting at the given byte offset.
+
+    Unlike the lower-level `match` (which always returns a `Match` object to
+    inspect), `find` returns nil when nothing matches — so the result is
+    directly testable and consistent with `findall` returning an empty List.
+
+    @param subject   The String or Bytes to search.
+    @param offset=0  Byte offset where the search starts.
+
+    @return A successful `Match`, or nil when the pattern does not match.
+
+    @panic PCREError  When PCRE2 reports a matching error.
+
+    @see match, findall
+
+    @example
+        p := new Pattern("[0-9][a-z]")
+        p.find("c1a o2b")  # Match for "1a"
+        p.find("ciao1")    # nil
+    */
+    pub func find(subject, offset=0) {
+        m := self.match(subject, offset=offset)
+
+        return m.matched() ? m : nil
+    }
+
+    /**
+    @brief Return every match of the pattern in the subject.
+
+    Iterates the subject with the standard PCRE2 idiom: after a zero-width
+    match, the next attempt is retried at the same offset with
+    `MATCH_NOTEMPTY_ATSTART | MATCH_ANCHORED`, and on failure the scan
+    advances by one codepoint (one byte for Bytes) — so zero-width patterns
+    terminate and UTF-8 codepoints are never split.
+
+    @param subject         The String or Bytes to search.
+    @param max_matches=-1  Stop after this many matches (-1 means no limit).
+
+    @return A List of `Match` objects (empty when nothing matches).
+
+    @panic PCREError  When PCRE2 reports a matching error.
+
+    @see match, split
+
+    @example
+        new Pattern("\\d+").findall("a1 b22 c").length()  # 2
+        new Pattern("x*").findall("ab").length()          # 3 (zero-width)
+    */
+    pub func findall(subject, max_matches=-1) {
+        matches := []
+        count := 0
+
+        is_string := subject.is(String)
+        length := is_string ? subject.byte_length() : subject.length()
+
+        offset := 0
+        options := 0   # match options for the next attempt
+
+        loop {
+            if max_matches != -1 && count >= max_matches {
+                break
+            }
+
+            m := self.match(subject, offset=offset, options=options)
+            if !m.matched() {
+                # A plain (options == 0) attempt with no match: we're done.
+                # A failed NOTEMPTY_ATSTART|ANCHORED retry: the previous match was
+                # empty and nothing non-empty starts here — step forward one
+                # codepoint (one byte for Bytes) and try again unanchored.
+                if options == 0 {
+                    break
+                }
+
+                offset = is_string ? subject.next_codepoint(offset) : offset + 1
+                options = 0
+
+                continue
+            }
+
+            matches.append(m)
+            count += 1
+
+            s := m.start()
+            e := m.end()
+
+            offset = e
+            options = 0
+
+            # Empty match: on the next attempt forbid another empty match anchored
+            # at this same offset, so we either pick up a non-empty match here or
+            # fall into the advance-one-codepoint branch above (avoids an infinite
+            # loop and avoids splitting a UTF-8 codepoint).
+            if e == s {
+                if offset >= length {
+                    break
+                }
+
+                options = flags.MATCH_NOTEMPTY_ATSTART | flags.MATCH_ANCHORED
+            }
+        }
+
+        return matches
+    }
+
+    /**
+    @brief Run a single match attempt against the subject.
+
+    Always returns a `Match`, even when nothing matches: inspect `matched()`
+    on the result. Only PCRE2 *errors* (bad offset, corrupted pattern, ...)
+    raise a panic.
+
+    @param subject    The String or Bytes to search.
+    @param offset=0   Byte offset where the attempt starts.
+    @param options=0  Bitwise OR of `flags.MATCH_*` options for this attempt.
+
+    @return A `Match` object wrapping the attempt's result.
+
+    @panic PCREError  When PCRE2 reports a matching error.
+
+    @see find, findall
+    */
+    pub func match(subject, offset=0, options=0) {
+        md := pcre2_match_data_create_from_pattern(self.code, nil)
+        if md.is_null() {
+            panic error.PCREError("match_data creation failed: OOM")
+        }
+
+        var length = subject.length()
+        if subject.is(String) {
+            length = subject.byte_length()
+        }
+
+        rc := pcre2_match(
+            self.code,
+            subject,
+            length,
+            offset,
+            options,
+            md,
+            nil)
+
+        if rc < -1 {
+            pcre2_match_data_free(md)
+
+            panic error.PCREError("match error: %d" % rc)
+        }
+
+        return new match.Match(subject, self, md, rc, self.capture_count)
+    }
+
+    /**
+    @brief Split the subject at every match of the pattern.
+
+    The pieces between matches are returned in order; the text of the matches
+    themselves is discarded. The remainder after the last match is always
+    appended, so the result never has fewer than one element.
+
+    @param subject        The String or Bytes to split.
+    @param max_splits=-1  Split at most this many times (-1 means no limit).
+
+    @return A List of String/Bytes pieces (same type as the subject).
+
+    @panic PCREError  When PCRE2 reports a matching error.
+
+    @see findall
+
+    @example
+        new Pattern(",\\s*").split("a, b,c")   # ["a", "b", "c"]
+        new Pattern(",").split("no commas")    # ["no commas"]
+    */
+    pub func split(subject, max_splits=-1) {
+        is_string := subject.is(String)
+        total := is_string ? subject.byte_length() : subject.length()
+
+        splits := []
+        offset := 0
+
+        # findall already handles zero-width matches and codepoint-safe stepping;
+        # split just cuts the subject at each match boundary (byte offsets).
+        for var m in self.findall(subject, max_matches=max_splits) {
+            start := m.start()
+
+            splits.append(is_string ? subject.byte_substring(offset, start) : subject[offset:start])
+
+            offset = m.end()
+        }
+
+        # Remainder after the last match.
+        splits.append(is_string ? subject.byte_substring(offset, total) : subject[offset:])
+
+        return splits
+    }
+}

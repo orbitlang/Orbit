@@ -1,0 +1,185 @@
+# This source file is part of the Orbit project.
+#
+# Licensed under the Apache License v2.0
+
+/*!
+ * @brief Result of a single match attempt.
+ *
+ * A `Match` wraps the native `pcre2_match_data` produced by `Pattern.match`
+ * and exposes the match state, the captured offsets, and the captured
+ * substrings. All offsets are **byte** offsets into the subject (PCRE2 works
+ * on bytes): String subjects are sliced with the byte-oriented API
+ * (`byte_substring`), never with codepoint indices.
+ *
+ * Instances are created by `Pattern`; there is no reason to construct one
+ * directly.
+ *
+ * @example
+ *     import Pattern from "regex/pattern"
+ *
+ *     m := new Pattern("(\\w+)@(\\w+)").match("hi bob@example !")
+ *     m.matched()   # true
+ *     m.group(0)    # "bob@example"
+ *     m.group(1)    # "bob"
+ *     m.start()     # 3
+ */
+
+native from "libpcre2-8" {
+    func pcre2_get_ovector_pointer_8(md: ptr): ptr as pcre2_get_ovector_pointer
+    func pcre2_match_data_free_8(md: ptr): unit as pcre2_match_data_free
+}
+
+# PCRE2_UNSET (~(PCRE2_SIZE)0): the offset stored in the ovector for a capturing
+# group that did not participate in the match. Its start/end slots must be
+# surfaced as "no match" (nil), not fed to a substring as a huge offset.
+let PCRE2_UNSET = -1
+
+/**
+@brief Outcome of a match attempt: state, capture offsets, and substrings.
+
+The wrapped `pcre2_match_data` is released by the destructor; a `Match` also
+keeps its originating `Pattern` alive for as long as it exists.
+*/
+pub class Match {
+    var subject
+    var pattern      # reference back to Pattern for reuse
+    var match_data   # raw pcre2_match_data pointer
+    var match_result # rc from pcre2_match (>= 0 means match)
+    var capture_count
+
+    pub init(subject, pattern, match_data, result, capture_count) {
+        self.subject = subject
+        self.pattern = pattern
+        self.match_data = match_data
+        self.match_result = result
+        self.capture_count = capture_count
+    }
+
+    cleanup {
+        if self.match_data != nil {
+            pcre2_match_data_free(self.match_data)
+        }
+    }
+
+    /**
+    @brief Return the byte offset one past the end of a captured group.
+
+    @param index=0  Capture group number (0 is the whole match).
+
+    @return The end offset (in bytes), or nil when there was no match, the
+            index is out of range, or the group did not participate in the
+            match.
+
+    @see start, group
+    */
+    pub func end(index=0) {
+        if self.match_result < 0 || index < 0 || index > self.capture_count {
+            return nil
+        }
+
+        ovector := pcre2_get_ovector_pointer(self.match_data)
+        end_pos := ovector.offset(index * 2 + 1, word=true).read_u64()
+        if end_pos == PCRE2_UNSET {
+            return nil
+        }
+
+        return end_pos
+    }
+
+    /**
+    @brief Return the substring captured by a group.
+
+    The slice is taken with byte offsets, so multibyte (UTF-8) subjects are
+    handled correctly.
+
+    @param index  Capture group number (0 is the whole match).
+
+    @return The captured substring (String or Bytes, matching the subject
+            type), or nil when there was no match, the index is out of range,
+            or the group did not participate in the match.
+
+    @see groups, start, end
+
+    @example
+        m := new Pattern("(a)(b)?").match("a")
+        m.group(0)  # "a"
+        m.group(1)  # "a"
+        m.group(2)  # nil (group did not participate)
+    */
+    pub func group(index) {
+        if index < 0 || index > self.capture_count {
+            return nil
+        }
+
+        start := self.start(index=index)
+        end := self.end(index=index)
+
+        if start == nil || end == nil {
+            return nil
+        }
+
+        # ovector offsets are byte offsets, so a String must be sliced with the
+        # byte-oriented API (substring indexes by codepoint and would be wrong).
+        if self.subject.is(String) {
+            return self.subject.byte_substring(start, end)
+        }
+
+        return self.subject[start:end]
+    }
+
+    /**
+    @brief Return every participating capture as a List.
+
+    The whole match (group 0) comes first; groups that did not participate in
+    the match are skipped, not returned as nil.
+
+    @return A List with the captured substrings (empty when there was no
+            match).
+
+    @see group
+    */
+    pub func groups() {
+        groups := []
+
+        loop i := 0; i <= self.capture_count; i++ {
+            g := self.group(i)
+            if g != nil {
+                groups.append(g)
+            }
+        }
+
+        return groups
+    }
+
+    /**
+    @brief Return true when the match attempt succeeded.
+    */
+    pub func matched() {
+        return self.match_result >= 0
+    }
+
+    /**
+    @brief Return the byte offset where a captured group starts.
+
+    @param index=0  Capture group number (0 is the whole match).
+
+    @return The start offset (in bytes), or nil when there was no match, the
+            index is out of range, or the group did not participate in the
+            match.
+
+    @see end, group
+    */
+    pub func start(index=0) {
+        if self.match_result < 0 || index < 0 || index > self.capture_count {
+            return nil
+        }
+
+        ovector := pcre2_get_ovector_pointer(self.match_data)
+        start_pos := ovector.offset(index * 2, word=true).read_u64()
+        if start_pos == PCRE2_UNSET {
+            return nil
+        }
+
+        return start_pos
+    }
+}

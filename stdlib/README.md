@@ -37,7 +37,9 @@ Status legend: ✅ available · 🚧 work in progress (usable, with caveats) ·
 | Module | Import | Backing | Notes |
 |---|---|---|---|
 | **io** | `import "io"` | `::orbit::io` builtin + pure Orbit | Standard streams as `File` objects (`stdin`/`stdout`/`stderr`), `print`/`perror`/`input`, `open`, buffered reader/writer, and the core IO traits. The most complete module. |
-| **error** | `import "error"` | pure Orbit | Ready-made error constructors aligned with the kinds the engine raises (`ValueError`, `TypeError`, `OSError`, `IndexError`, `KeyError`, …). Each is a partial application of `Error.create(@Kind)`; call with a reason to build one: `panic ValueError("count must be positive")`. |
+| **error** | `import "error"` | pure Orbit | Ready-made error constructors aligned with the kinds the engine raises (`ValueError`, `TypeError`, `OSError`, `IndexError`, `KeyError`, …). Each is a partial application of `Error.create(@Kind)`; call with a reason to build one: `panic ValueError("count must be positive")`. Also ships helpers that format engine-standard messages, e.g. `fmt_typerror(obj, String, Bytes)` → `expected type 'String/Bytes', got '…'`. |
+| **ffi** | `import "ffi"` | `::orbit::ffi` builtin | Native-interop platform metadata: `SIZEOF_*` for every native type usable in `native` declarations (`SIZEOF_PTR`, `SIZEOF_U64`, …) and the byte order (`ENDIAN`). Use it to compute `Rawptr.alloc` layouts instead of hardcoding sizes. |
+| **regex** | `import "regex"` | native binding (PCRE2) + pure Orbit | Perl-compatible regular expressions over [PCRE2](https://www.pcre.org) (`libpcre2-8` must be installed). `Pattern`, `Match`, `CompileContext` tuning, one-shot helpers. |
 | **runtime** | `import "runtime"` | `::orbit::runtime` builtin | Environment introspection: `os`, `executable`, `get_argv()`, `get_config()`, and the engine `version` (plus parsed `version_major`/`minor`/`patch`). |
 
 ### Work in progress
@@ -45,7 +47,7 @@ Status legend: ✅ available · 🚧 work in progress (usable, with caveats) ·
 | Module | Import | Status | Caveats |
 |---|---|---|---|
 | **readline** | `import "readline"` | 🚧 | Line editing + history via the **system** readline-compatible library (GNU readline, or libedit on macOS/BSD), selected at load time by a `when runtime.os` block. **POSIX/macOS only — no Windows branch.** Depends on the FFI layer (`native func … from "lib…"`), which is itself POSIX-complete / Windows-partial. Surface is intentionally thin: `read(prompt)` + `add(line)` + auto-history; no completion or custom key-binding API, and duplicate history entries are not filtered. |
-| **repl** | `import "repl"` | 🚧 | Interactive read-eval-print loop (`repl.default_session.run()`; the interpreter's interactive mode runs this). Built on `readline` (inherits its platform limits) and on the engine's `eval` + `Context` + `trap`/`await`. Current limitations: **single-line input only** — the `ps2` continuation prompt exists but multi-line entry isn't wired yet; the session ends when a line merely *contains* the substring `"exit"` (naive check); errors are trapped and printed so the loop survives. |
+| **repl** | `import "repl"` | 🚧 | Interactive read-eval-print loop (`repl.default_session.run()`; the interpreter's interactive mode runs this). Built on `readline` (inherits its platform limits) and on the engine's `eval` + `Context` + `trap`/`await`. Multi-line input works: a bracket-balancing scanner (string-aware) switches to the `ps2` continuation prompt until braces/brackets/parens close; `:exit` ends the session; errors are trapped and printed so the loop survives. No signal handling yet (Ctrl+C behavior is whatever the readline library does). |
 
 ### Planned
 
@@ -55,7 +57,7 @@ Orbit way):
 
 | Group | Modules |
 |---|---|
-| Text & data | `regex` (Perl-like regex) · `json` (encode/decode) · `ini` (INI parser) · `base64` (Base16/32/64 encodings) · `enum` (algorithms over enumerables) |
+| Text & data | `json` (encode/decode) · `ini` (INI parser) · `base64` (Base16/32/64 encodings) · `enum` (algorithms over enumerables) |
 | OS & processes | `ospath` (pathname manipulation) · `subprocess` (spawn / manage processes) |
 | Numeric | `random` (pseudo-random numbers) |
 | Concurrency | `syncutil` (synchronization primitives) |
@@ -69,11 +71,11 @@ Orbit way):
 **Flat by default; package only when a module outgrows one file.**
 
 - One top-level entry = one `.orb` file **or** one directory-as-package.
-- A package's entry file has the **same name as its directory** (`io/io.orb`) —
-  `import "io"` resolves to it. The entry file re-exports the package's public
-  surface.
+- A package's entry file has the **same name as its directory** (`io/io.orb`,
+  `regex/regex.orb`) — `import "io"` resolves to it. The entry file re-exports
+  the package's public surface.
 - Submodules are reached by path: `import Readable from "io/traits"`,
-  `import BufferedWriter from "io/bufio/writer"`. They are implementation
+  `import Pattern from "regex/pattern"`. They are implementation
   detail — prefer importing the package entry (`import "io"`) from user code.
 - A module stays *small* by default; split into a package once it grows clear
   internal sub-areas (as `io` did).
@@ -86,7 +88,7 @@ the job.
 | Layer | Where it lives | Use when … |
 |---|---|---|
 | **C++ builtin** (`::orbit::*`) | `orbit/orbiter/…` (engine) | the operation needs deep VM/GC/type machinery (e.g. raw IO syscalls, runtime introspection) |
-| **Native binding** (`native func`) | inside the `.orb` module | the operation maps cleanly to a libc/OS symbol (e.g. `readline`, `add_history`) |
+| **Native binding** (`native func` / `native from "lib" { … }`) | inside the `.orb` module | the operation maps cleanly to a libc/OS symbol (e.g. `readline`, `add_history`); the block form groups declarations sharing the same library |
 | **Pure Orbit** | inside the `.orb` module | composition over the above, or no foreign call at all (e.g. error constructors, iterator helpers) |
 
 ```orbit
@@ -170,7 +172,7 @@ Document every `pub` symbol with the doc-comment format in
   single sentence; `@panic` lists each error kind that can be raised; `@example`
   covers the happy path plus an edge case for non-trivial functions.
 
-The existing modules (`io/io.orb`, `error.orb`, `readline.orb`, …) are the
+The existing modules (`io/io.orb`, `error.orb`, `regex/pattern.orb`, …) are the
 working style reference.
 
 ## Adding a new module — checklist
@@ -194,13 +196,13 @@ working style reference.
 Ordered by enablement (what unblocks what):
 
 ```
-DONE  io / error / runtime          (usable today)
-WIP   readline / repl               (POSIX/macOS; depend on FFI + eval/Context)
+DONE  io / error / runtime / ffi / regex   (usable today)
+WIP   readline / repl                      (POSIX/macOS; depend on FFI + eval/Context)
 ─────────────────────────────────────────────────────────────────
 Pure-Orbit first (need only the language + import pipeline):
       enum · ospath · json · base64 · url
 Native-backed (need FFI / engine support):
-      random · regex · hashlib · subprocess · syncutil
+      random · hashlib · subprocess · syncutil
       compression: zlib · bz2 · lzma · zipfile
       ssl · http
 Tooling:

@@ -1,0 +1,176 @@
+# This source file is part of the Orbit project.
+#
+# Licensed under the Apache License v2.0
+
+/*!
+ * @brief PCRE2 compile context configuration.
+ *
+ * A `CompileContext` wraps a native `pcre2_compile_context` and controls how
+ * patterns are compiled: newline convention, `\R` behavior, extra options,
+ * and safety limits (maximum pattern length, parentheses nesting).
+ *
+ * The module also creates `GLOBAL_COMPILE_CONTEXT`, the shared context every
+ * `Pattern` compiles against. It defaults to `NEWLINE_ANYCRLF` and a 64 KiB
+ * pattern-length limit; tune it at startup (before compiling patterns) or
+ * `clone()` it to derive a customized copy.
+ *
+ * @example
+ *     import GLOBAL_COMPILE_CONTEXT from "regex/compile"
+ *     import "regex/flags"
+ *
+ *     GLOBAL_COMPILE_CONTEXT.set_newline(flags.NEWLINE_LF)
+ */
+
+import "regex/error"
+import "regex/flags"
+
+native from "libpcre2-8" {
+    func pcre2_compile_context_copy_8(ctx: ptr): ptr as pcre2_compile_context_copy
+    func pcre2_compile_context_create_8(gcontext: ptr): ptr as pcre2_compile_context_create
+    func pcre2_compile_context_free_8(ctx: ptr): unit as pcre2_compile_context_free
+    func pcre2_set_bsr_8(ctx: ptr, value: u32): i32 as pcre2_set_bsr
+    func pcre2_set_compile_extra_options_8(ctx: ptr, options: u32): i32 as pcre2_set_compile_extra_options
+    func pcre2_set_max_pattern_length_8(ctx: ptr, len: u64): i32 as pcre2_set_max_pattern_length
+    func pcre2_set_newline_8(ctx: ptr, value: u32): i32 as pcre2_set_newline
+    func pcre2_set_parens_nest_limit_8(ctx: ptr, limit: u32): i32 as pcre2_set_parens_nest_limit
+}
+
+/**
+@brief Owner of a native `pcre2_compile_context`.
+
+The wrapped context is released by the destructor. The raw pointer is exposed
+as `handle` so that `Pattern` can pass it to `pcre2_compile`.
+*/
+pub class CompileContext {
+    pub var handle
+
+    /**
+    @brief Create a compile context.
+
+    Without arguments a fresh native context is created and configured with
+    the module defaults (`NEWLINE_ANYCRLF`, 64 KiB max pattern length). When
+    `handle` is given, ownership of that native context is taken over
+    instead (used by `clone`).
+
+    @param handle=nil  Existing native `pcre2_compile_context` to adopt.
+
+    @panic PCREError  When the native context allocation fails.
+    */
+    pub init(handle=nil) {
+        if handle == nil {
+            self.handle = pcre2_compile_context_create(nil)
+
+            # A NULL native pointer still comes back wrapped in a Rawptr, so
+            # the failure check must go through is_null(), not == nil.
+            if self.handle.is_null() {
+                panic error.PCREError("pcre2_compile_context_create: OOM")
+            }
+
+            self.set_newline(flags.NEWLINE_ANYCRLF)
+            self.set_max_pattern_length(65536)
+
+            return
+        }
+
+        self.handle = handle
+    }
+
+    cleanup {
+        self.release()
+    }
+
+    /**
+    @brief Return an independent copy of this context.
+
+    Useful to derive a customized context without touching
+    `GLOBAL_COMPILE_CONTEXT`.
+
+    @return A new `CompileContext` owning the copied native context.
+
+    @panic PCREError  When the native copy fails.
+    */
+    pub func clone() {
+        copy := pcre2_compile_context_copy(self.handle)
+        if copy.is_null() {
+            panic error.PCREError("pcre2_compile_context_copy: OOM")
+        }
+
+        return new CompileContext(handle=copy)
+    }
+
+    /**
+    @brief Set what `\R` matches in patterns compiled with this context.
+
+    @param mode  One of `flags.BSR_UNICODE` or `flags.BSR_ANYCRLF`.
+
+    @panic PCREError  When PCRE2 rejects the mode.
+    */
+    pub func set_bsr(mode) {
+        pcre2_set_bsr(self.handle, mode) |> self.check("set_bsr")
+    }
+
+    /**
+    @brief Set the PCRE2 extra compile options.
+
+    @param flags  Bitwise OR of `PCRE2_EXTRA_*` values.
+
+    @panic PCREError  When PCRE2 rejects the options.
+    */
+    pub func set_extra_options(flags) {
+        pcre2_set_compile_extra_options(self.handle, flags) |> self.check("set_compile_extra_options")
+    }
+
+    /**
+    @brief Cap the length (in bytes) of patterns compiled with this context.
+
+    A defensive limit against pathological or attacker-supplied patterns.
+
+    @param len  Maximum pattern length in bytes.
+
+    @panic PCREError  When PCRE2 rejects the value.
+    */
+    pub func set_max_pattern_length(len) {
+        pcre2_set_max_pattern_length(self.handle, len) |> self.check("set_max_pattern_length")
+    }
+
+    /**
+    @brief Set the newline convention used by patterns and subjects.
+
+    @param mode  One of the `flags.NEWLINE_*` modes.
+
+    @panic PCREError  When PCRE2 rejects the mode.
+    */
+    pub func set_newline(mode) {
+        pcre2_set_newline(self.handle, mode) |> self.check("set_newline")
+    }
+
+    /**
+    @brief Cap the depth of nested parentheses allowed in a pattern.
+
+    A defensive limit against pathological or attacker-supplied patterns.
+
+    @param limit  Maximum nesting depth.
+
+    @panic PCREError  When PCRE2 rejects the value.
+    */
+    pub func set_parens_nest_limit(limit) {
+        pcre2_set_parens_nest_limit(self.handle, limit) |> self.check("set_parens_nest_limit")
+    }
+
+    prot func check(rc, fn_name) const {
+        if rc != 0 {
+            panic error.PCREError("%s failed: %d" % (fn_name, rc))
+        }
+    }
+
+    prot func release() {
+        if self.handle != nil {
+            pcre2_compile_context_free(self.handle)
+
+            self.handle = nil
+        }
+    }
+}
+
+# Shared compile context used by `Pattern` for every compilation.
+pub let GLOBAL_COMPILE_CONTEXT = new CompileContext()
