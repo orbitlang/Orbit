@@ -22,12 +22,16 @@ are resolved.
 | [sbuffer.md](sbuffer.md) | `orbit/liftoff/scanner/sbuffer` | 0/3 |
 | [utf8-stringbuilder.md](utf8-stringbuilder.md) | `orbit/orbiter/datatype/stringbuilder` (UTF-8 codec) | 1/4 |
 | [parser.md](parser.md) | `orbit/liftoff/parser` (parser.cpp, context.h, ast.h) | 24/25 |
-| [ir.md](ir.md) | `orbit/liftoff/ir` (linearscan, irbuilder, instruction) | 0/1 |
+| [ir.md](ir.md) | `orbit/liftoff/ir` (linearscan, irbuilder, instruction) | 1/2 |
+| [compiler.md](compiler.md) | `orbit/liftoff/compiler.cpp` (compile driver) | 1/1 |
+| [number.md](number.md) | `orbit/orbiter/datatype/number.cpp` (integer literals & representation) | 2/2 |
 
 ## Top priorities (High severity, quick wins)
 
 - ~~**PARSE-001** — `continue` directly inside a loop is rejected (CheckExt skips current context)~~ *(FIXED 2026-06-15)*
 - **PARSE-002** — empty doc comment `/*!*/` segfaults the compiler *(confirmed live)*
+- **IR-002** — `trap new X()` asserts in `AddInstructionBefore` (compile-time crash, 1-line repro)
+- **COMP-001** — any syntax error in file mode asserts in `Compile` instead of reporting (release: UB on empty AST)
 - ~~**SCAN-001** — `"#..."` string literals mis-lexed (hash counting on non-raw strings)~~ *(FIXED 2026-06-13)*
 - ~~**SCAN-002** — empty `#` comment swallows the newline + next line of code~~ *(FIXED 2026-06-13)*
 - ~~**SCAN-003** — octal escapes with zero digits decode wrong (`\100` → 1)~~ *(FIXED 2026-06-13, incl. overflow check)*

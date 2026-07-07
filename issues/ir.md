@@ -1,7 +1,7 @@
 # ir — bug report
 
 **Component:** `orbit/liftoff/ir` (instruction.h, linearscan.cpp, irbuilder.cpp) · **ID prefix:** `IR`
-**PoCs:** [`poc/ir/`](poc/ir/) · **Last reviewed:** 2026-06-15
+**PoCs:** [`poc/ir/`](poc/ir/) · **Last reviewed:** 2026-07-06
 **Status:** OPEN · PARTIAL · FIXED · WONTFIX — see [GUIDE.md](GUIDE.md).
 
 > Imported 2026-06-15 from `orbit/liftoff/ir/KNOWN_ISSUES.md` (ISSUE-001 → IR-001).
@@ -125,3 +125,32 @@ layer fix #2 later as an optimization once move-coalescing exists. *(This is the
 path that was taken.)*
 
 </details>
+
+---
+
+## IR-002 — `trap new X()` asserts in `AddInstructionBefore` (compile-time crash)
+**Severity:** High (any use of `trap` on a `new` expression kills the compiler) · **Status:** OPEN · **Location:** `orbit/liftoff/ir/basicblock.h:131` (`AddInstructionBefore`, `assert(instr->prev != nullptr)`), trap lowering in `irbuilder.cpp`
+
+**Reproducer (minimal, 1 line — crashes at compile time, no execution needed):**
+
+```orb
+trap new A()
+```
+
+Any variant crashes identically: `err := trap new Error(@x, "y")`,
+parenthesized `trap (new ...)`, inside a function body, with any class.
+`trap` on a plain call (`trap f()`) is fine; `new` without `trap` is fine.
+The combination is what breaks: first observed via
+`err := trap new Pattern("(unclosed")` in a regex test.
+
+```
+Assertion failed: (instr->prev != nullptr), function AddInstructionBefore,
+file basicblock.h, line 131.
+```
+
+**Hypothesis:** the trap lowering inserts its guard instruction *before* the
+first instruction of the trapped expression; the `new` lowering starts a
+sequence whose first instruction is at the head of its basic block
+(`prev == nullptr`), a case `AddInstructionBefore` does not handle.
+
+---
