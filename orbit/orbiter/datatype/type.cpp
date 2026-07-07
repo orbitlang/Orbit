@@ -90,6 +90,40 @@ integers, booleans, and nil that are not heap-allocated always return false.
     return HOObject((OObject *) BOOL_TO_OBOOL(self_type == target || IsTypeExtends(self_type, target)));
 }
 
+RUNTIME_METHOD(type_name, tp_name,
+               R"DOC(
+@brief Return the type name as a String.
+
+When the receiver is a type (or class) object, its own name is returned.
+For any other value the name of its runtime type is returned — shorthand
+for `obj.type().tp_name()`.
+
+@return A String with the type name.
+
+@panic OOMError  When memory allocation fails.
+
+@see type, is
+
+@example
+    String.tp_name()        // "String"
+    (42).tp_name()          // "Number"
+    "hi".type().tp_name()   // "String"
+)DOC", 1, nullptr, false, false) {
+    auto *isolate = O_GET_ISOLATE(_func);
+
+    const TypeInfo *type;
+    if (O_IS_OBJECT(argv[0]) && O_IS_TYPE(argv[0], InstanceType::TYPE))
+        type = (const TypeInfo *) argv[0];
+    else
+        type = GetTypeInfoFromObject(isolate, argv[0]);
+
+    auto name = ORStringIntern(isolate, type->name);
+    if (!name)
+        return {};
+
+    return HOObject((OObject *) name.release());
+}
+
 RUNTIME_METHOD(type_repr, repr,
                R"DOC(
 @brief Return a developer-oriented representation of the object.
@@ -151,6 +185,7 @@ constexpr FunctionDef type_methods[] = {
     type_hash,
     type_id,
     type_is,
+    type_name,
     type_repr,
     type_str,
     type_type,
@@ -163,7 +198,7 @@ constexpr FunctionDef type_methods[] = {
 // *********************************************************************************************************************
 
 HOType orbiter::datatype::TypeInit(Isolate *isolate) {
-    auto type = MakeType(isolate, nullptr, "Type", InstanceType::TYPE, 0, 6, 0);
+    auto type = MakeType(isolate, nullptr, "Type", InstanceType::TYPE, 0, 7, 0);
     return type;
 }
 

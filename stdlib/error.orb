@@ -71,3 +71,38 @@ pub let ImportError = Error.create(@ImportError)
 # When raised from the `io` primitives the `details` field can carries the
 # errno value (as an Int), so user code can dispatch on it:
 pub let OSError = Error.create(@OSError)
+
+
+# ── Helpers ─────────────────────────────────────────────────────────────
+
+/**
+@brief Build a TypeError with the engine's standard type-mismatch message.
+
+Formats the same sentence the engine uses for its own type errors
+(`expected type '<T>', got '<actual>'`), so user-raised and engine-raised
+mismatches read identically. Multiple accepted types are joined with `/`.
+
+The error is returned, not raised: `panic` it at the call site.
+
+@param obj       The offending value; its type name appears as "got".
+@param ...types  The accepted type(s), e.g. `String, Bytes`.
+
+@return A new TypeError describing the mismatch.
+
+@example
+    panic fmt_typerror(5, String)         # expected type 'String', got 'Number'
+    panic fmt_typerror(5, String, Bytes)  # expected type 'String/Bytes', got 'Number'
+*/
+pub func fmt_typerror(obj, ...types) {
+    expected := ""
+
+    for var t in types {
+        if expected.length() > 0 {
+            expected += "/"
+        }
+
+        expected += t.tp_name()
+    }
+
+    return TypeError("expected type '%s', got '%s'" % (expected, obj.tp_name()))
+}
