@@ -1,0 +1,66 @@
+# PoC trap-unwind-sp — VM-001: after a trapped panic, UnwindStack rewound SP to
+# the end of the ExceptionContext block ("old system" leftover), below the
+# LinearScan spill slots allocated above it in the prologue. The next PUSH then
+# overwrote a spill slot, so a later SKLDR reloaded the pushed argument instead
+# of the spilled value (e.g. a global NativeFunc): the second call after a
+# caught panic failed with "non-callable" / wrong-object errors.
+# A runtime test: prints "ALL TESTS PASSED" only when every check matches.
+# EXPECT: contains: ALL TESTS PASSED
+
+import "io"
+
+var fails = 0
+
+func check(name, got, expected) {
+    if got == expected {
+        io.print("OK   ", name)
+    } else {
+        fails += 1
+        io.print("FAIL ", name, " got=", got, " expected=", expected)
+    }
+}
+
+func boom() { panic Error(@X, "no") }
+func boom2(a, b) { panic Error(@X, "no") }
+func ok(v) { return v }
+
+/* 1. original repro shape: trapped panic, then two calls through a spilled
+      global (io survives both calls only if its spill slot is intact) */
+e := trap boom()
+check("trap caught", e != nil, true)
+io.print("first")
+io.print("second")
+check("two calls after catch", true, true)
+
+/* 2. pending argument pushes at panic time */
+e2 := trap boom2(1, 2)
+check("trap with args caught", e2 != nil, true)
+io.print("first")
+io.print("second")
+check("two calls after catch (args)", true, true)
+
+/* 3. nested traps: inner catch inside a called frame, outer around it */
+func outer() {
+    inner := trap boom2(3, 4)
+    return inner.unwrap_or(0) == 0
+}
+check("nested trap", (trap outer()).unwrap_or(false), true)
+
+/* 4. trap that does NOT catch (baseline: fall-through path) */
+n := trap ok(5)
+check("no-panic trap", n.unwrap_or(-1), 5)
+
+/* 5. exception-context slot reused across loop iterations */
+count := 0
+loop i := 0; i < 3; i++ {
+    if (trap boom()).unwrap_or(-1) == -1 {
+        count += 1
+    }
+}
+check("trap in loop", count, 3)
+
+if fails == 0 {
+    io.print("ALL TESTS PASSED")
+} else {
+    io.print("FAILURES: ", fails)
+}

@@ -24,6 +24,7 @@ are resolved.
 | [parser.md](parser.md) | `orbit/liftoff/parser` (parser.cpp, context.h, ast.h) | 24/25 |
 | [ir.md](ir.md) | `orbit/liftoff/ir` (linearscan, irbuilder, instruction) | 1/2 |
 | [compiler.md](compiler.md) | `orbit/liftoff/compiler.cpp` (compile driver) | 1/1 |
+| [vm.md](vm.md) | `orbit/orbiter` (interpreter: trap unwind, registers) | 0/1 |
 | [number.md](number.md) | `orbit/orbiter/datatype/number.cpp` (integer literals & representation) | 2/2 |
 
 ## Top priorities (High severity, quick wins)
@@ -32,6 +33,7 @@ are resolved.
 - **PARSE-002** — empty doc comment `/*!*/` segfaults the compiler *(confirmed live)*
 - **IR-002** — `trap new X()` asserts in `AddInstructionBefore` (compile-time crash, 1-line repro)
 - **COMP-001** — any syntax error in file mode asserts in `Compile` instead of reporting (release: UB on empty AST)
+- ~~**VM-001** — spill slots clobbered after a trapped panic (SP rewound to end of exception block)~~ *(FIXED 2026-07-08)*
 - ~~**SCAN-001** — `"#..."` string literals mis-lexed (hash counting on non-raw strings)~~ *(FIXED 2026-06-13)*
 - ~~**SCAN-002** — empty `#` comment swallows the newline + next line of code~~ *(FIXED 2026-06-13)*
 - ~~**SCAN-003** — octal escapes with zero digits decode wrong (`\100` → 1)~~ *(FIXED 2026-06-13, incl. overflow check)*

@@ -284,9 +284,6 @@ bool UnwindStack(Fiber *fiber) {
         if (except != nullptr && except->key == regs->BP.reg) {
             stratum::util::MemoryCopy(&fiber->context.context, context, sizeof(FiberContext));
 
-            // The stack pointer must be adjusted to point to the end of the exception block on the stack.
-            regs->SP.reg = ((unsigned char *) (regs->CP.reg + sizeof(ExceptionContext))) - stack->stack;
-
             if (except->coffset != 0)
                 regs->IP.reg = (PtrSize) fiber->context.code->m_code + except->coffset;
 
