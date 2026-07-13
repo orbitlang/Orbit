@@ -51,7 +51,7 @@ namespace liftoff::ir {
         /**
         * @brief Constructs a new `BasicBlock` object.
         */
-        explicit BasicBlock() noexcept: Object(ObjectType::BASIC_BLOCK) {
+        explicit BasicBlock() noexcept : Object(ObjectType::BASIC_BLOCK) {
         }
 
         /**
@@ -105,6 +105,8 @@ namespace liftoff::ir {
 
             if (instr->next != nullptr)
                 instr->next->prev = after;
+            else
+                this->instr.tail = after;
 
             instr->next = after;
 
@@ -128,9 +130,11 @@ namespace liftoff::ir {
             before->next = instr;
             before->prev = instr->prev;
 
-            assert(instr->prev!=nullptr);
+            if (instr->prev != nullptr)
+                instr->prev->next = before;
+            else
+                this->instr.head = before;
 
-            instr->prev->next = before;
             instr->prev = before;
 
             if (before->type() != ObjectType::VIRT_INSTRUCTION)

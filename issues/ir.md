@@ -129,7 +129,49 @@ path that was taken.)*
 ---
 
 ## IR-002 — `trap new X()` asserts in `AddInstructionBefore` (compile-time crash)
-**Severity:** High (any use of `trap` on a `new` expression kills the compiler) · **Status:** OPEN · **Location:** `orbit/liftoff/ir/basicblock.h:131` (`AddInstructionBefore`, `assert(instr->prev != nullptr)`), trap lowering in `irbuilder.cpp`
+**Severity:** High (silent wrong codegen — panics swallowed) · **Status:** FIXED (2026-07-13) · **Location:** `orbit/liftoff/ir/basicblock.h:126` (`AddInstructionBefore`), `basicblock.h:101` (`AddInstructionAfter`)
+
+**Fix verified (`poc/ir/ir-002-trap-new.orb` — full suite 19/19 green,
+including `phi-regalloc`).** `AddInstructionBefore` now updates the block's
+list head when inserting before the head instruction, and
+`AddInstructionAfter` symmetrically updates the tail:
+
+```cpp
+if (instr->prev != nullptr)
+    instr->prev->next = before;
+else
+    this->instr.head = before;   // instr was the head
+```
+
+Root cause (confirmed with lldb; the original hypothesis was wrong): NOT the
+trap guard insertion. LinearScan spills the `NOBJ` result of `new`, and
+`SpillToStackAndReloadUses` (`linearscan.cpp:256`) inserts the `SKLDR` reload
+before its use `STRES` — the store-result of `trap`, which is the **first
+instruction of the trap's finally block** (`prev == nullptr` → assert).
+
+An intermediate fix that merely dropped the assert (guarding the
+`instr->prev->next` write) traded the crash for a **silent miscompile**,
+verified live: the reload stayed linked in the `prev` chain but was invisible
+to every forward walk from `instr.head` (codegen, LinearScan, `SlotIndexes`),
+while `size += 4` still counted it — so all block offsets from
+`CalculateCodeSize` (`codegen.cpp:483`) drifted +4 past the emitted layout,
+the trap handler offset landed one instruction past `STRES`, and on the panic
+path the panic was swallowed (`trap` yielded a stale non-Result value).
+Updating `instr.head` fixes both modes at once; the PoC covers success-path
+value integrity and panic-path catching under register pressure.
+
+The `AddInstructionAfter` tail update fixes the symmetric latent flaw
+(insert-after-tail left `instr.tail` stale; a later `AddInstruction` append
+would relink through the stale tail and silently drop the inserted
+instruction — reachable in principle via `AllocStackSlots`'
+insert-after-`last_alloca`, `builder.cpp:108`). Never reproduced; fixed
+preventively for the invariant.
+
+Note for PoC writers, found while verifying: a bare property access used as a
+statement (`q.boom`) is a use-less pure producer and gets removed by DCE — it
+never panics at runtime. Use a call (`q.boom()`) to make a panic real.
+
+<details><summary>Original report (2026-07-06, OPEN)</summary>
 
 **Reproducer (minimal, 1 line — crashes at compile time, no execution needed):**
 
@@ -152,5 +194,8 @@ file basicblock.h, line 131.
 first instruction of the trapped expression; the `new` lowering starts a
 sequence whose first instruction is at the head of its basic block
 (`prev == nullptr`), a case `AddInstructionBefore` does not handle.
+*(2026-07-13: hypothesis disproved — right method, wrong caller; see update.)*
+
+</details>
 
 ---
