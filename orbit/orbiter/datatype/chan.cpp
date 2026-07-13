@@ -530,7 +530,7 @@ HChannel orbiter::datatype::ChannelNew(Isolate *isolate, const MSize capacity) {
 }
 
 HOType orbiter::datatype::ChannelTypeInit(Isolate *isolate) {
-    auto chan = MakeType(isolate, "Chan", InstanceType::CHANNEL, 0, 7, 0);
+    auto chan = MakeType(isolate, "Chan", InstanceType::CHANNEL, sizeof(Channel) - sizeof(OObject), 7, 0);
     return chan;
 }
 
