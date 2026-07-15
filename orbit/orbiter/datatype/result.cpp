@@ -18,23 +18,35 @@ using namespace orbiter::datatype;
 
 /// Two results are equal when they carry the same ok/error state and their
 /// contained values are equal.
-static bool ResultEqual(const OObject *left, const OObject *right) {
-    if (left == right)
+static bool ResultEqual(const OObject *left, const OObject *right, bool &out) {
+    if (left == right) {
+        out = true;
+
         return true;
+    }
 
-    if (!O_IS_OBJECT(left) || !O_IS_OBJECT(right))
-        return false;
+    if (!O_IS_OBJECT(left) || !O_IS_OBJECT(right)) {
+        out = false;
 
-    if (!O_IS_TYPE(left, InstanceType::RESULT) || !O_IS_TYPE(right, InstanceType::RESULT))
-        return false;
+        return true;
+    }
+
+    if (!O_IS_TYPE(left, InstanceType::RESULT) || !O_IS_TYPE(right, InstanceType::RESULT)) {
+        out = false;
+
+        return true;
+    }
 
     const auto *l = (const Result *) left;
     const auto *r = (const Result *) right;
 
-    if (l->ok != r->ok)
-        return false;
+    if (l->ok != r->ok) {
+        out = false;
 
-    return Equal(l->value, r->value);
+        return true;
+    }
+
+    return Equal(l->value, r->value, out);
 }
 
 // *********************************************************************************************************************

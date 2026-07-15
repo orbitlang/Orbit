@@ -213,7 +213,7 @@ namespace orbiter::datatype {
     // --- Comparison ---
     using CompareFn = bool (*)(const OObject *, const OObject *, int &);
     using ContainsFn = bool (*)(const OObject *, const OObject *, bool &);
-    using EqualFn = bool (*)(const OObject *, const OObject *);
+    using EqualFn = bool (*)(const OObject *, const OObject *, bool &);
 
     // --- Arithmetic & Bitwise ---
     using BinaryFn = bool(*)(const OObject *, const OObject *, OObject *&result);

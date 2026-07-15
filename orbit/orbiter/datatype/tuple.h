@@ -12,6 +12,8 @@
 #include <orbit/orbiter/datatype/list.h>
 
 namespace orbiter::datatype {
+    constexpr MSSize kTupleContainsError = -2;
+
     struct Tuple {
         OROBJ_HEAD;
 
@@ -133,7 +135,9 @@ namespace orbiter::datatype {
      * @param tuple  The tuple to search.
      * @param value  The value to look for.
      *
-     * @return The index of the first match, or -1 if not found.
+     * @return The index of the first match, -1 if not found, or
+     *         kTupleContainsError if an equality hook panicked (the panic is
+     *         already set; the caller must propagate the failure).
      */
     MSSize TupleContains(const Tuple *tuple, const OObject *value);
 }

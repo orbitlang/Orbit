@@ -13,8 +13,10 @@ using namespace orbiter::datatype;
 // *********************************************************************************************************************
 
 /// Native functions are unique bindings — identity equality only.
-static bool NativeFuncEqual(const OObject *left, const OObject *right) {
-    return left == right;
+static bool NativeFuncEqual(const OObject *left, const OObject *right, bool &out) {
+    out = left == right;
+
+    return true;
 }
 
 // *********************************************************************************************************************

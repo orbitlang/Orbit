@@ -87,6 +87,20 @@ bool StrEqual(const ORString *left, const ORString *right) {
     return ORStringEqual(left, right);
 }
 
+/// ops.equal adapter: string equality cannot fail, but the slot's signature
+/// is fallible (user hooks elsewhere can panic mid equality chains).
+static bool StrOpEqual(const OObject *left, const OObject *right, bool &out) {
+    if (!O_IS_OBJECT(right) || !O_IS_TYPE(right, InstanceType::STRING)) {
+        out = false;
+
+        return true;
+    }
+
+    out = StrEqual((const ORString *) left, (const ORString *) right);
+
+    return true;
+}
+
 bool StrRawEqual(const ORString *left, const unsigned char *right, const MSize length) {
     return ORStringCompare(left, (const char *) right, length) == 0;
 }
@@ -1669,7 +1683,7 @@ bool orbiter::datatype::ORStringTypeSetup(TypeInfo *self) {
 
     ops.compare = StrCompare;
     ops.contains = StrContains;
-    ops.equal = (EqualFn) StrEqual;
+    ops.equal = StrOpEqual;
     ops.add = StrAdd;
     ops.mul = StrMul;
     ops.mod = StrMod;

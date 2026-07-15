@@ -112,12 +112,18 @@ void SetTrace(const Set *self, const GCTraceCallback callback, const MSize epoch
 /// Two sets are equal when they have the same length and every element of
 /// `left` exists in `right`. Uses the generic Equal() dispatch via the
 /// underlying ORHMap, so element types provide their own equality.
-static bool SetEqual(const OObject *left, const OObject *right) {
-    if (left == right)
-        return true;
+static bool SetEqual(const OObject *left, const OObject *right, bool &out) {
+    if (left == right) {
+        out = true;
 
-    if (!O_IS_OBJECT(right) || !O_IS_TYPE(right, InstanceType::SET))
-        return false;
+        return true;
+    }
+
+    if (!O_IS_OBJECT(right) || !O_IS_TYPE(right, InstanceType::SET)) {
+        out = false;
+
+        return true;
+    }
 
     auto *a = (Set *) left;
     auto *b = (Set *) right;
@@ -125,16 +131,28 @@ static bool SetEqual(const OObject *left, const OObject *right) {
     std::shared_lock la(a->lock);
     std::shared_lock lb(b->lock);
 
-    if (a->set.length != b->set.length)
-        return false;
+    if (a->set.length != b->set.length) {
+        out = false;
+
+        return true;
+    }
 
     for (const auto *cur = a->set.iter_begin; cur != nullptr; cur = cur->iter_next) {
         ORHEntry *entry;
 
         // Same length + a ⊆ b ⇒ a == b.
-        if (b->set.Lookup(cur->key, &entry) != LookupResult::OK)
+        const auto status = b->set.Lookup(cur->key, &entry);
+        if (status == LookupResult::ERROR)
             return false;
+
+        if (status == LookupResult::NOT_FOUND) {
+            out = false;
+
+            return true;
+        }
     }
+
+    out = true;
 
     return true;
 }

@@ -21,8 +21,10 @@ void IteratorTrace(const Iterator *self, const GCTraceCallback callback, const M
 // *********************************************************************************************************************
 
 /// Iterators are unique handles to a stateful walk — identity equality only.
-static bool IteratorEqual(const OObject *left, const OObject *right) {
-    return left == right;
+static bool IteratorEqual(const OObject *left, const OObject *right, bool &out) {
+    out = left == right;
+
+    return true;
 }
 
 // *********************************************************************************************************************

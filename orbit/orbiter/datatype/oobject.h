@@ -140,10 +140,11 @@ namespace orbiter::datatype {
      *
      * @param left Pointer to the left operand
      * @param right Pointer to the right operand
+     * @param out Receives the equality result; untouched on failure
      *
-     * @return true if the two objects are considered equal, false otherwise
+     * @return true on success (out is valid), false if a panic has been set
      */
-    bool Equal(const OObject *left, const OObject *right);
+    bool Equal(const OObject *left, const OObject *right, bool &out);
 
     /**
      * @brief Check strict equality between two objects
@@ -154,10 +155,11 @@ namespace orbiter::datatype {
      *
      * @param left Pointer to the left operand
      * @param right Pointer to the right operand
+     * @param out Receives the equality result; untouched on failure
      *
-     * @return true if the two objects are of the same type and are equal, false otherwise
+     * @return true on success (out is valid), false if a panic has been set
      */
-    bool EqualStrict(const OObject *left, const OObject *right);
+    bool EqualStrict(const OObject *left, const OObject *right, bool &out);
 
     /**
      * @brief Evaluate the boolean truth value of an object

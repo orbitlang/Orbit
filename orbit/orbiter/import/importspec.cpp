@@ -46,8 +46,10 @@ const OPropertyEntry importspec_props[] = {
 // *********************************************************************************************************************
 
 /// Each loaded module owns exactly one spec — identity equality only.
-static bool ImportSpecEqual(const OObject *left, const OObject *right) {
-    return left == right;
+static bool ImportSpecEqual(const OObject *left, const OObject *right, bool &out) {
+    out = left == right;
+
+    return true;
 }
 
 // *********************************************************************************************************************

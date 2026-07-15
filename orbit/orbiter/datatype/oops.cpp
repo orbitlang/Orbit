@@ -402,43 +402,62 @@ int orbiter::datatype::Compare(const OObject *left, const OObject *right, const 
     return (eq ? delta >= 0 : delta > 0) ? 1 : 0;
 }
 
-bool orbiter::datatype::Equal(const OObject *left, const OObject *right) {
-    if (left == right)
+bool orbiter::datatype::Equal(const OObject *left, const OObject *right, bool &out) {
+    if (left == right) {
+        out = true;
+
         return true;
+    }
 
-    if (!O_IS_OBJECT(left) && !O_IS_OBJECT(right))
-        return false;
+    if (!O_IS_OBJECT(left) && !O_IS_OBJECT(right)) {
+        out = false;
 
-    if (left == kOddBallNIL || right == kOddBallNIL)
-        return false;
+        return true;
+    }
+
+    if (left == kOddBallNIL || right == kOddBallNIL) {
+        out = false;
+
+        return true;
+    }
 
     if (O_IS_OBJECT(left)) {
         const auto &ops = O_GET_TYPE_OPS(left);
         if (ops.equal != nullptr)
-            return ops.equal(left, right);
+            return ops.equal(left, right, out);
     }
 
     if (O_IS_OBJECT(right)) {
         const auto &ops = O_GET_TYPE_OPS(right);
         if (ops.equal != nullptr)
-            return ops.equal(right, left);
+            return ops.equal(right, left, out);
     }
 
-    return false;
+    out = false;
+
+    return true;
 }
 
-bool orbiter::datatype::EqualStrict(const OObject *left, const OObject *right) {
-    if (left == right)
+bool orbiter::datatype::EqualStrict(const OObject *left, const OObject *right, bool &out) {
+    if (left == right) {
+        out = true;
+
         return true;
-
-    if (O_IS_OBJECT(left)) {
-        if (O_IS_OBJECT(right))
-            return (O_GET_TYPE(left) == O_GET_TYPE(right)) && Equal(left, right);
-
-        return false;
     }
 
-    return false;
+    if (O_IS_OBJECT(left) && O_IS_OBJECT(right)) {
+        if (O_GET_TYPE(left) != O_GET_TYPE(right)) {
+            out = false;
+
+            return true;
+        }
+
+        return Equal(left, right, out);
+    }
+
+    out = false;
+
+    return true;
 }
 
 bool orbiter::datatype::IsTrue(const OObject *object) {

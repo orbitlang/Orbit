@@ -153,8 +153,10 @@ void ChannelTrace(const Channel *self, const GCTraceCallback callback, const MSi
 // *********************************************************************************************************************
 
 /// Channels are unique handles to a synchronisation primitive — identity equality only.
-static bool ChannelEqual(const OObject *left, const OObject *right) {
-    return left == right;
+static bool ChannelEqual(const OObject *left, const OObject *right, bool &out) {
+    out = left == right;
+
+    return true;
 }
 
 /// Truthy while open, falsy once closed. The buffer length is intentionally

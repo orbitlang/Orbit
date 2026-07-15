@@ -44,26 +44,43 @@ void TupleTrace(const Tuple *self, const GCTraceCallback callback, const MSize e
 // *********************************************************************************************************************
 
 /// Structural equality: same length and element-wise Equal.
-static bool TupleEqual(const OObject *left, const OObject *right) {
-    if (left == right)
+static bool TupleEqual(const OObject *left, const OObject *right, bool &out) {
+    if (left == right) {
+        out = true;
+
         return true;
+    }
 
-    if (!O_IS_OBJECT(left) || !O_IS_OBJECT(right))
-        return false;
+    if (!O_IS_OBJECT(left) || !O_IS_OBJECT(right)) {
+        out = false;
 
-    if (!O_IS_TYPE(left, InstanceType::TUPLE) || !O_IS_TYPE(right, InstanceType::TUPLE))
-        return false;
+        return true;
+    }
+
+    if (!O_IS_TYPE(left, InstanceType::TUPLE) || !O_IS_TYPE(right, InstanceType::TUPLE)) {
+        out = false;
+
+        return true;
+    }
 
     const auto *l = (const Tuple *) left;
     const auto *r = (const Tuple *) right;
 
-    if (l->length != r->length)
-        return false;
+    if (l->length != r->length) {
+        out = false;
+
+        return true;
+    }
 
     for (MSize i = 0; i < l->length; i++) {
-        if (!Equal(l->objects[i], r->objects[i]))
+        if (!Equal(l->objects[i], r->objects[i], out))
             return false;
+
+        if (!out)
+            return true;
     }
+
+    out = true;
 
     return true;
 }
@@ -329,7 +346,11 @@ Uses structural equality (==) for comparison.
     );
     PCHECK_CHECK(params);
 
-    return HOObject((OObject *) BOOL_TO_OBOOL(TupleContains((const Tuple *) argv[0], argv[1]) >= 0));
+    const auto i = TupleContains((const Tuple *) argv[0], argv[1]);
+    if (i == kTupleContainsError)
+        return {};
+
+    return HOObject((OObject *) BOOL_TO_OBOOL(i >= 0));
 }
 
 RUNTIME_METHOD(tuple_count, count,
@@ -360,7 +381,12 @@ Uses structural equality (==) for comparison.
     IntegerUnderlying n = 0;
 
     for (MSize i = 0; i < self->length; i++) {
-        if (Equal(self->objects[i], argv[1]))
+        bool eq;
+
+        if (!Equal(self->objects[i], argv[1], eq))
+            return {};
+
+        if (eq)
             n++;
     }
 
@@ -399,6 +425,8 @@ Uses structural equality (==) for comparison.
     auto *isolate = O_GET_ISOLATE(self);
 
     const auto i = TupleContains(self, argv[1]);
+    if (i == kTupleContainsError)
+        return {};
 
     if (i < 0) {
         ErrorSet(isolate,
@@ -566,7 +594,12 @@ HTuple orbiter::datatype::TupleNewFromList(HList &list) {
 
 MSSize orbiter::datatype::TupleContains(const Tuple *tuple, const OObject *value) {
     for (MSize i = 0; i < tuple->length; i++) {
-        if (Equal(tuple->objects[i], value))
+        bool eq;
+
+        if (!Equal(tuple->objects[i], value, eq))
+            return kTupleContainsError;
+
+        if (eq)
             return (MSSize) i;
     }
 

@@ -15,8 +15,10 @@ using namespace orbiter::datatype;
 // *********************************************************************************************************************
 
 /// Generators are stateful execution contexts — identity equality only.
-static bool GeneratorEqual(const OObject *left, const OObject *right) {
-    return left == right;
+static bool GeneratorEqual(const OObject *left, const OObject *right, bool &out) {
+    out = left == right;
+
+    return true;
 }
 
 // *********************************************************************************************************************

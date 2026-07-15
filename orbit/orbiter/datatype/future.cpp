@@ -30,8 +30,10 @@ bool FutureDtor(Future *self) {
 // *********************************************************************************************************************
 
 /// Futures are unique handles to async computations — identity equality only.
-static bool FutureEqual(const OObject *left, const OObject *right) {
-    return left == right;
+static bool FutureEqual(const OObject *left, const OObject *right, bool &out) {
+    out = left == right;
+
+    return true;
 }
 
 // *********************************************************************************************************************

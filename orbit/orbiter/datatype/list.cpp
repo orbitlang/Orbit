@@ -74,15 +74,24 @@ void ListTrace(const List *self, GCTraceCallback callback, const MSize epoch) {
 // *********************************************************************************************************************
 
 /// Structural equality: same length and element-wise Equal.
-static bool ListEqual(const OObject *left, const OObject *right) {
-    if (left == right)
+static bool ListEqual(const OObject *left, const OObject *right, bool &out) {
+    if (left == right) {
+        out = true;
+
         return true;
+    }
 
-    if (!O_IS_OBJECT(left) || !O_IS_OBJECT(right))
-        return false;
+    if (!O_IS_OBJECT(left) || !O_IS_OBJECT(right)) {
+        out = false;
 
-    if (!O_IS_TYPE(left, InstanceType::LIST) || !O_IS_TYPE(right, InstanceType::LIST))
-        return false;
+        return true;
+    }
+
+    if (!O_IS_TYPE(left, InstanceType::LIST) || !O_IS_TYPE(right, InstanceType::LIST)) {
+        out = false;
+
+        return true;
+    }
 
     auto *l = (List *) left;
     auto *r = (List *) right;
@@ -90,12 +99,18 @@ static bool ListEqual(const OObject *left, const OObject *right) {
     std::shared_lock ll(l->lock);
     std::shared_lock lr(r->lock);
 
-    if (l->length != r->length)
-        return false;
+    if (l->length != r->length) {
+        out = false;
+
+        return true;
+    }
 
     for (MSize i = 0; i < l->length; i++) {
-        if (!Equal(l->objects[i], r->objects[i]))
+        if (!Equal(l->objects[i], r->objects[i], out))
             return false;
+
+        if (!out)
+            return true;
     }
 
     return true;
@@ -487,7 +502,12 @@ Uses structural equality (==) for comparison.
     std::shared_lock _(self->lock);
 
     for (MSize i = 0; i < self->length; i++) {
-        if (Equal(self->objects[i], argv[1]))
+        bool eq;
+
+        if (!Equal(self->objects[i], argv[1], eq))
+            return {};
+
+        if (eq)
             return HOObject((OObject *) BOOL_TO_OBOOL(true));
     }
 
@@ -521,7 +541,12 @@ Uses structural equality (==) for comparison.
     IntegerUnderlying n = 0;
 
     for (MSize i = 0; i < self->length; i++) {
-        if (Equal(self->objects[i], argv[1]))
+        bool eq;
+
+        if (!Equal(self->objects[i], argv[1], eq))
+            return {};
+
+        if (eq)
             n++;
     }
 
@@ -586,7 +611,12 @@ Uses structural equality (==) for comparison.
     std::shared_lock _(self->lock);
 
     for (MSize i = 0; i < self->length; i++) {
-        if (Equal(self->objects[i], argv[1])) {
+        bool eq;
+
+        if (!Equal(self->objects[i], argv[1], eq))
+            return {};
+
+        if (eq) {
             auto n = IntNew(isolate, (IntegerUnderlying) i);
             if (!n)
                 return {};

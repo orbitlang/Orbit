@@ -77,12 +77,18 @@ static bool DictInsertLocked(Dict *dst, OObject *key, OObject *value) {
 /// Two dicts are equal when they have the same length and every key present in
 /// left maps to an equal value in right.  Uses the generic Equal() dispatch so
 /// that nested objects are compared by their own TypeOps.equal rules.
-static bool DictEqual(const OObject *left, const OObject *right) {
-    if (left == right)
-        return true;
+static bool DictEqual(const OObject *left, const OObject *right, bool &out) {
+    if (left == right) {
+        out = true;
 
-    if (!O_IS_OBJECT(right) || !O_IS_TYPE(right, InstanceType::DICT))
-        return false;
+        return true;
+    }
+
+    if (!O_IS_OBJECT(right) || !O_IS_TYPE(right, InstanceType::DICT)) {
+        out = false;
+
+        return true;
+    }
 
     auto *a = (Dict *) left;
     auto *b = (Dict *) right;
@@ -90,18 +96,33 @@ static bool DictEqual(const OObject *left, const OObject *right) {
     std::shared_lock la(a->lock);
     std::shared_lock lb(b->lock);
 
-    if (a->dict.length != b->dict.length)
-        return false;
+    if (a->dict.length != b->dict.length) {
+        out = false;
+
+        return true;
+    }
 
     for (const auto *cur = a->dict.iter_begin; cur != nullptr; cur = cur->iter_next) {
         ORHEntry *entry;
 
-        if (b->dict.Lookup(cur->key, &entry) != LookupResult::OK)
+        const auto status = b->dict.Lookup(cur->key, &entry);
+        if (status == LookupResult::ERROR)
             return false;
 
-        if (!Equal(cur->value, entry->value))
+        if (status == LookupResult::NOT_FOUND) {
+            out = false;
+
+            return true;
+        }
+
+        if (!Equal(cur->value, entry->value, out))
             return false;
+
+        if (!out)
+            return true;
     }
+
+    out = true;
 
     return true;
 }

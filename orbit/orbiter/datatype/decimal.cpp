@@ -70,14 +70,19 @@ static bool DecimalCompare(const OObject *left, const OObject *right, int &resul
     return true;
 }
 
-static bool DecimalEqual(const OObject *left, const OObject *right) {
+static bool DecimalEqual(const OObject *left, const OObject *right, bool &out) {
     DecimalUnderlying a, b;
 
-    if (!DecimalExtract(left, a) || !DecimalExtract(right, b))
-        return false;
+    if (!DecimalExtract(left, a) || !DecimalExtract(right, b)) {
+        out = false;
+
+        return true;
+    }
 
     // NaN != NaN per IEEE 754
-    return a == b;
+    out = a == b;
+
+    return true;
 }
 
 // *********************************************************************************************************************

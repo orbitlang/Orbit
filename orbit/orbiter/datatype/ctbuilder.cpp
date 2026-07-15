@@ -7,6 +7,8 @@
 #include <orbit/orbiter/runtime.h>
 
 #include <orbit/orbiter/datatype/c3/c3.h>
+#include <orbit/orbiter/datatype/error.h>
+#include <orbit/orbiter/datatype/errors.h>
 
 #include <orbit/orbiter/datatype/ctbuilder.h>
 
@@ -91,28 +93,39 @@ bool PushProperties(TypeInfo *type, const ExportedSymbol *exported, const U16 le
 // TYPE OPS — COMPARISON
 // *********************************************************************************************************************
 
-static bool ClassEqual(OObject *left, OObject *right) {
+static bool ClassEqual(const OObject *left, const OObject *right, bool &out) {
     auto *prop = TIFindProperty(O_GET_TYPE(left), nullptr, "equal");
-    if (prop == nullptr)
-        return false;
+    if (prop == nullptr) {
+        out = left == right;
+
+        return true;
+    }
 
     OObject *argv[] = {
-        left,
-        right
+        (OObject *) left,
+        (OObject *) right
     };
 
     OObject *value = nullptr;
-    if (orbiter::Orbiter::EvalSync((Function *) prop->value, argv, 2, &value)) {
-        if (O_IS_TRUE(value))
-            return true;
+    if (!orbiter::Orbiter::EvalSync((Function *) prop->value, argv, 2, &value))
+        return false;
 
-        if (O_IS_FALSE(value))
-            return false;
+    if (!O_IS_TRUE(value) && !O_IS_FALSE(value)) {
+        char name[24];
+        GetTypeName(O_GET_ISOLATE(left), left, name, sizeof(name));
 
-        // TODO: wrong return value
+        ErrorSet(O_GET_ISOLATE(left),
+                 TypeError::Details[TypeError::Reason::ID],
+                 nullptr,
+                 "equal of '%s' returned non-boolean value",
+                 name);
+
+        return false;
     }
 
-    return false;
+    out = O_IS_TRUE(value);
+
+    return true;
 }
 
 // *********************************************************************************************************************
@@ -200,7 +213,7 @@ HOType orbiter::datatype::ClassTypeNew(const Code *code, TypeInfo *super, TypeIn
 
     clazz->aux.dtor = ClassBlueprintDtor;
 
-    ((TypeInfoOps *) clazz.get())->ops.equal = (EqualFn) ClassEqual;
+    ((TypeInfoOps *) clazz.get())->ops.equal = ClassEqual;
     ((TypeInfoOps *) clazz.get())->ops.to_string = (ToStrFn) ClassToString;
 
     return clazz;

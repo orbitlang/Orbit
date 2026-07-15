@@ -35,12 +35,18 @@ void ContextTrace(const Context *self, const GCTraceCallback callback, const MSi
 /// Two contexts are equal when they bind the same set of names to equal values.
 /// Like Dict, only the values are compared (via the generic Equal() dispatch);
 /// the per-binding detail flags (const/public/weak) are not considered.
-static bool ContextEqual(const OObject *left, const OObject *right) {
-    if (left == right)
-        return true;
+static bool ContextEqual(const OObject *left, const OObject *right, bool &out) {
+    if (left == right) {
+        out = true;
 
-    if (!O_IS_OBJECT(right) || !O_IS_TYPE(right, InstanceType::CONTEXT))
-        return false;
+        return true;
+    }
+
+    if (!O_IS_OBJECT(right) || !O_IS_TYPE(right, InstanceType::CONTEXT)) {
+        out = false;
+
+        return true;
+    }
 
     auto *a = (Context *) left;
     auto *b = (Context *) right;
@@ -48,18 +54,33 @@ static bool ContextEqual(const OObject *left, const OObject *right) {
     std::shared_lock la(a->lock);
     std::shared_lock lb(b->lock);
 
-    if (a->names.length != b->names.length)
-        return false;
+    if (a->names.length != b->names.length) {
+        out = false;
+
+        return true;
+    }
 
     for (const auto *cursor = a->names.iter_begin; cursor != nullptr; cursor = cursor->iter_next) {
         CtxHEntry *entry;
 
-        if (b->names.Lookup(cursor->key, &entry) != LookupResult::OK)
+        const auto status = b->names.Lookup(cursor->key, &entry);
+        if (status == LookupResult::ERROR)
             return false;
 
-        if (!Equal(cursor->value.value, entry->value.value))
+        if (status == LookupResult::NOT_FOUND) {
+            out = false;
+
+            return true;
+        }
+
+        if (!Equal(cursor->value.value, entry->value.value, out))
             return false;
+
+        if (!out)
+            return true;
     }
+
+    out = true;
 
     return true;
 }

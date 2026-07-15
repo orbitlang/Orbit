@@ -221,14 +221,22 @@ static void LockTwoSelfUnique(support::SharedBuffer *a, support::SharedBuffer *b
 // *********************************************************************************************************************
 
 /// `==`: byte-wise equality. A non-Bytes operand is never equal.
-static bool BytesOpEqual(const OObject *left, const OObject *right) {
-    if (left == right)
+static bool BytesOpEqual(const OObject *left, const OObject *right, bool &out) {
+    if (left == right) {
+        out = true;
+
         return true;
+    }
 
-    if (!O_IS_OBJECT(right) || !O_IS_TYPE(right, InstanceType::BYTES))
-        return false;
+    if (!O_IS_OBJECT(right) || !O_IS_TYPE(right, InstanceType::BYTES)) {
+        out = false;
 
-    return BytesEqual((const Bytes *) left, (const Bytes *) right);
+        return true;
+    }
+
+    out = BytesEqual((const Bytes *) left, (const Bytes *) right);
+
+    return true;
 }
 
 /// `< / <= / > / >=`: lexicographic byte-wise comparison.

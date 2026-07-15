@@ -6,6 +6,7 @@
 #define ORBIT_ORBITER_DATATYPE_HASHMAP_H_
 
 #include <functional>
+#include <type_traits>
 
 #include <orbit/util/hash.h>
 
@@ -35,10 +36,24 @@ namespace orbiter::datatype {
 
     template<
         typename K, typename V,
-        auto EqualFn, // bool EqualFn(const K, const K)
+        auto EqualFn, // bool EqualFn(const K, const K)  — infallible key equality
+                      // bool EqualFn(const K, const K, bool &out) — fallible: the
+                      // return value reports success (false ⇒ panic set), the
+                      // equality lands in `out`.
         auto HashFn, // size_t HashFn(const K)
         typename Allocator = memory::IsolateAllocator>
     class HashMap {
+        /// Adapts both EqualFn signatures to the fallible convention.
+        static bool KeyEqual(const K a, const K b, bool &out) {
+            if constexpr (std::is_invocable_r_v<bool, decltype(EqualFn), const K, const K, bool &>) {
+                return EqualFn(a, b, out);
+            } else {
+                out = EqualFn(a, b);
+
+                return true;
+            }
+        }
+
         static constexpr auto kHashMapInitialSize = 24;
         static constexpr auto kHashMapLoadFactor = 0.75f;
         static constexpr auto kHashMapMulFactor = 2;
@@ -125,7 +140,12 @@ namespace orbiter::datatype {
             index %= this->capacity;
 
             for (HEntry *cur = this->map[index]; cur != nullptr; cur = cur->next) {
-                if (EqualFn(key, cur->key)) {
+                bool eq;
+
+                if (!KeyEqual(key, cur->key, eq))
+                    return LookupResult::ERROR;
+
+                if (eq) {
                     *entry = cur;
 
                     return LookupResult::OK;
@@ -166,7 +186,12 @@ namespace orbiter::datatype {
             index %= this->capacity;
 
             for (HEntry *cur = this->map[index]; cur != nullptr; cur = cur->next) {
-                if (EqualFn(key, cur->key)) {
+                bool eq;
+
+                if (!KeyEqual(key, cur->key, eq))
+                    return LookupResult::ERROR;
+
+                if (eq) {
                     (*cur->prev) = cur->next;
 
                     if (cur->next != nullptr)

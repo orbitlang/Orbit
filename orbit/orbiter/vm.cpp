@@ -1262,10 +1262,11 @@ CATCH_FINALLY:
                 const auto flags = (EqualityMode) ((instr >> 8) & 0xFu);
                 bool res;
 
-                if (flags == EqualityMode::NORMAL)
-                    res = Equal((const OObject *) REG_N(src_l), (const OObject *) REG_N(src_r));
-                else
-                    res = EqualStrict((const OObject *) REG_N(src_l), (const OObject *) REG_N(src_r));
+                const auto ok = flags == EqualityMode::NORMAL
+                                    ? Equal((const OObject *) REG_N(src_l), (const OObject *) REG_N(src_r), res)
+                                    : EqualStrict((const OObject *) REG_N(src_l), (const OObject *) REG_N(src_r), res);
+                if (!ok)
+                    goto ERROR;
 
                 ACCESS_REG_DST(instr) = BOOL_TO_OBOOL(res);
 

@@ -34,15 +34,23 @@ bool RawPtrDtor(const RawPtr *self) {
 // *********************************************************************************************************************
 
 /// Two raw pointers are equal when they hold the same address.
-static bool RawPtrEqual(const OObject *left, const OObject *right) {
-    if (left == right)
+static bool RawPtrEqual(const OObject *left, const OObject *right, bool &out) {
+    if (left == right) {
+        out = true;
+
         return true;
+    }
 
-    if (!O_IS_OBJECT(right) || !O_IS_TYPE(right, InstanceType::RAWPTR))
-        return false;
+    if (!O_IS_OBJECT(right) || !O_IS_TYPE(right, InstanceType::RAWPTR)) {
+        out = false;
 
-    return ((const RawPtr *) left)->ptr.load(std::memory_order_relaxed) ==
-           ((const RawPtr *) right)->ptr.load(std::memory_order_relaxed);
+        return true;
+    }
+
+    out = ((const RawPtr *) left)->ptr.load(std::memory_order_relaxed) ==
+          ((const RawPtr *) right)->ptr.load(std::memory_order_relaxed);
+
+    return true;
 }
 
 // *********************************************************************************************************************

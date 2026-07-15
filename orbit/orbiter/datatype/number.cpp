@@ -50,13 +50,18 @@ static bool NumberCompare(const OObject *left, const OObject *right, int &result
     return true;
 }
 
-static bool NumberEqual(const OObject *left, const OObject *right) {
+static bool NumberEqual(const OObject *left, const OObject *right, bool &out) {
     IntegerUnderlying a, b;
 
-    if (!NumberExtract(left, a) || !NumberExtract(right, b))
-        return false;
+    if (!NumberExtract(left, a) || !NumberExtract(right, b)) {
+        out = false;
 
-    return a == b;
+        return true;
+    }
+
+    out = a == b;
+
+    return true;
 }
 
 // *********************************************************************************************************************
