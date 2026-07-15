@@ -483,12 +483,16 @@ namespace orbiter::datatype {
      *
      * @param fiber Pointer to the fiber requesting the monitor acquisition
      * @param object Pointer to the object for which the monitor is being acquired
+     * @param can_block Whether the fiber may be enqueued for a wakeup when the
+     *        monitor is contended; pass false from synchronous VM re-entries,
+     *        which cannot suspend (the acquire then fails without side effects)
      *
      * @return 1 if the monitor is successfully acquired or a new monitor is allocated and acquired
-     * @return 0 if the monitor is busy and cannot be acquired
+     * @return 0 if the monitor is busy and cannot be acquired (the fiber is enqueued
+     *         for a wakeup only when can_block is true)
      * @return -1 if a new monitor allocation fails due to insufficient resources
      */
-    int MonitorAcquire(Fiber *fiber, OObject *object) noexcept;
+    int MonitorAcquire(Fiber *fiber, OObject *object, bool can_block) noexcept;
 
     MSize Hash(const OObject *obj);
 

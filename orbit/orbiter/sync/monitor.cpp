@@ -18,11 +18,10 @@ void Monitor::SpinUnlock() {
     this->spinlock_.clear(std::memory_order_release);
 }
 
-bool Monitor::Acquire(Fiber *fiber) {
+bool Monitor::Acquire(Fiber *fiber, const bool can_block) {
     uintptr_t expected = 0;
 
-    if (this->lock_id_.compare_exchange_strong(expected, (uintptr_t) fiber,
-                                               std::memory_order_acquire)) {
+    if (this->lock_id_.compare_exchange_strong(expected, (uintptr_t) fiber, std::memory_order_acquire)) {
         this->locks += 1;
 
         return true;
@@ -37,8 +36,7 @@ bool Monitor::Acquire(Fiber *fiber) {
     this->SpinLock();
 
     expected = 0;
-    if (this->lock_id_.compare_exchange_strong(expected, (uintptr_t) fiber,
-                                               std::memory_order_acquire)) {
+    if (this->lock_id_.compare_exchange_strong(expected, (uintptr_t) fiber, std::memory_order_acquire)) {
         this->locks += 1;
 
         this->SpinUnlock();
@@ -46,7 +44,8 @@ bool Monitor::Acquire(Fiber *fiber) {
         return true;
     }
 
-    this->queue_.Enqueue(fiber);
+    if (can_block)
+        this->queue_.Enqueue(fiber);
 
     this->SpinUnlock();
 

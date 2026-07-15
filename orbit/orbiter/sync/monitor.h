@@ -29,14 +29,18 @@ namespace orbiter::sync {
          * If the lock is successfully acquired, the fiber is granted access
          * and the lock count is incremented. If the lock is already held by
          * another fiber, the method will enqueue the requesting fiber and
-         * return false.
+         * return false; with @p can_block set to false the fiber is NOT
+         * enqueued (no wakeup will ever be delivered) and the acquire simply
+         * fails — used by synchronous VM re-entries, which cannot suspend.
          *
          * @param fiber A pointer to the fiber attempting to acquire the lock.
+         * @param can_block Whether the fiber may be enqueued for a wakeup on
+         *        contention.
          * @return true if the lock is successfully acquired by the fiber,
-         *         false if the lock is held by another fiber and the requesting
-         *         fiber is enqueued.
+         *         false if the lock is held by another fiber (the requesting
+         *         fiber is enqueued only when @p can_block is true).
          */
-        bool Acquire(Fiber *fiber);
+        bool Acquire(Fiber *fiber, bool can_block);
 
         /**
          * @brief Checks if the monitor instance can be safely destroyed.

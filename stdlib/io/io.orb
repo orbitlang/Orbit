@@ -103,7 +103,7 @@ pub let __bstdin__ = bstdin
 # the per-arg loop: subsequent `out(...)` calls reuse the bound
 # function instead of redoing LDOBJP for every argument.
 #
-# Non-Bytes args are coerced to a String via `arg.str()`. Two paths
+# Non-Bytes args are coerced to a String via `arg.tostr()`. Two paths
 # from there, decided once at entry:
 #   - dest is a File: the String is forwarded to `write` directly.
 #     File's extension of the Writeable trait borrows the String's
@@ -120,11 +120,11 @@ func print4(dest, args, end, sep) {
     is_file := dest.is(file.File)
 
     if end && !end.is(Bytes) {
-        end = !is_file ? Bytes.from(end.str()) : end.str()
+        end = !is_file ? Bytes.from(end.tostr()) : end.tostr()
     }
 
     if sep && !sep.is(Bytes) {
-        sep = !is_file ? Bytes.from(sep.str()) : sep.str()
+        sep = !is_file ? Bytes.from(sep.tostr()) : sep.tostr()
     }
 
     psep := false
@@ -138,7 +138,7 @@ func print4(dest, args, end, sep) {
             psep = true
 
             if !arg.is(Bytes) {
-                arg = !is_file ? Bytes.from(arg.str()) : arg.str()
+                arg = !is_file ? Bytes.from(arg.tostr()) : arg.tostr()
             }
 
             out(arg)
@@ -258,7 +258,7 @@ pub func open(path, flags=O_READ, mode=0o644) {
  *                    arguments. Has no effect when fewer than two
  *                    arguments are supplied.
  * @param ...args     Values to write. Non-Bytes arguments are
- *                    converted via `arg.str()`. When the active
+ *                    converted via `arg.tostr()`. When the active
  *                    `stderr` is a `File` (the default) the String
  *                    is forwarded to `write` with no intermediate
  *                    Bytes allocation; for any other Writeable a
@@ -286,7 +286,7 @@ pub func perror(end=b"\n", sep=b" ", ...args) {
  *
  * Arguments are written in order with `sep` inserted between consecutive
  * items and `end` appended after the last. Non-Bytes arguments are coerced
- * via `arg.str()`. The result is either forwarded directly (fast path,
+ * via `arg.tostr()`. The result is either forwarded directly (fast path,
  * when `stdout` is still a `File`) or further wrapped into a Bytes via
  * `Bytes.from` (when `stdout` has been redirected to a generic Writeable
  * like a `BufferedWriter`). In both cases the call is portable across
@@ -299,7 +299,7 @@ pub func perror(end=b"\n", sep=b" ", ...args) {
  * @param sep=b" "    Separator inserted between consecutive
  *                    arguments.
  * @param ...args     Values to write. Non-Bytes arguments are
- *                    converted via `arg.str()`. The resulting String
+ *                    converted via `arg.tostr()`. The resulting String
  *                    is forwarded to the sink directly when possible
  *                    (File destination) or coerced through
  *                    `Bytes.from` otherwise.

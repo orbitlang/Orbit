@@ -242,6 +242,8 @@ namespace orbiter {
 
         ~Orbiter();
 
+        static bool EvalSync(datatype::Function *func,  datatype::OObject **argv, U16 argc, datatype::OObject **out);
+
         bool Finalize() noexcept;
 
         static bool Initialize(const void *config) noexcept;
@@ -251,7 +253,8 @@ namespace orbiter {
 
         datatype::HOObject Eval(datatype::Context *context, datatype::Module *module, datatype::Code *code) noexcept;
 
-        datatype::HFuture EvalAsync(datatype::Context *context, datatype::Module *module, datatype::Code *code) noexcept;
+        datatype::HFuture EvalAsync(datatype::Context *context, datatype::Module *module,
+                                    datatype::Code *code) noexcept;
 
         datatype::HFuture EvalAsync(datatype::Function *func, const unsigned char *stack_begin, U16 size) noexcept;
 

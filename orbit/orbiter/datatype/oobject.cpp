@@ -209,7 +209,7 @@ HOType orbiter::datatype::MakeType(Isolate *isolate, TypeInfo *super, const char
     O_GC_TRACK_RETURN(isolate, ti, false);
 }
 
-int orbiter::datatype::MonitorAcquire(Fiber *fiber, OObject *object) noexcept {
+int orbiter::datatype::MonitorAcquire(Fiber *fiber, OObject *object, const bool can_block) noexcept {
     auto *monitor = O_GET_MON(object).load(std::memory_order_relaxed);
     if (monitor == nullptr) {
         memory::IsolateAllocator allocator(O_GET_ISOLATE(object));
@@ -218,7 +218,9 @@ int orbiter::datatype::MonitorAcquire(Fiber *fiber, OObject *object) noexcept {
         if (monitor == nullptr)
             return -1;
 
-        monitor->Acquire(fiber);
+        // A freshly allocated monitor cannot be contended: this acquire always
+        // succeeds regardless of can_block.
+        monitor->Acquire(fiber, can_block);
 
         sync::Monitor *expected = nullptr;
         if (O_GET_MON(object).compare_exchange_strong(expected, monitor, std::memory_order_acq_rel))
@@ -229,7 +231,7 @@ int orbiter::datatype::MonitorAcquire(Fiber *fiber, OObject *object) noexcept {
         monitor = expected;
     }
 
-    if (monitor->Acquire(fiber))
+    if (monitor->Acquire(fiber, can_block))
         return 1;
 
     return 0;

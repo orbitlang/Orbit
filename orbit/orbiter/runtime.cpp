@@ -249,8 +249,7 @@ void Orbiter::Scheduler(OSThread *ost) noexcept {
 
         Fiber::SetCurrent(fiber);
 
-        auto *result = eval(fiber);
-
+        auto *result = eval(fiber, 0);
         fiber->isolate->gc->ParkAtSafepoint();
 
         fiber->active_ost = nullptr;
@@ -450,6 +449,58 @@ Orbiter::~Orbiter() {
     delete[] this->vcores_;
 }
 
+bool Orbiter::EvalSync(Function *func, OObject **argv, const U16 argc, OObject **out) {
+    auto *fiber = Fiber::Current();
+
+    const auto SP = fiber->vm.regs.SP.reg;
+
+    auto stack_size_required = kStackPrologueOffset +
+                               (func->shared->code->stack_size * sizeof(void *))
+                               + (2 * sizeof(void *));
+
+    if (func->shared->HasDefaultArgs())
+        stack_size_required += (func->shared->defaults->length / 2) * sizeof(void *);
+
+    if (argv != nullptr)
+        stack_size_required += argc * sizeof(OObject *);
+
+    *out = nullptr;
+
+    if (!fiber->vm.stack.Check(O_GET_ISOLATE(func), fiber->vm.regs.SP.reg, stack_size_required))
+        return false;
+
+    if (argv != nullptr) {
+        for (auto i = 0; i < argc; i++)
+            fiber->vm.Push(argv[i]);
+    }
+
+    // PushState saves IP advanced by one word ("the next opcode"), because the
+    // normal CALL flow resumes via `goto BEGIN` after PopState. EvalSync instead
+    // returns into the MIDDLE of the caller's opcode handler, which still runs
+    // its own DISPATCH (NEXT_IP) afterwards — without this rewind the restored
+    // IP would be advanced twice, silently skipping the instruction after the
+    // call.
+    fiber->vm.regs.IP.reg -= sizeof(MachineWord);
+
+    fiber->PushState();
+
+    fiber->SetContext(func);
+
+    fiber->vm.regs.BP.reg = fiber->vm.regs.SP.reg;
+
+    auto *res = eval(fiber, fiber->vm.regs.BP.reg);
+
+    fiber->vm.regs.SP.reg = SP; // Cleanup stack
+
+    if (!fiber->IsPanicking()) {
+        *out = res;
+
+        return true;
+    }
+
+    return false;
+}
+
 bool Orbiter::Finalize() noexcept {
     // TODO: fill this!
     return false;
@@ -572,7 +623,6 @@ HFuture Orbiter::EvalAsync(Function *func, const unsigned char *stack_begin, con
 
     auto *stack_dst = fiber->vm.stack.stack + *SP;
 
-    // TODO: No INCREF here — the GC will handle object lifetime in a future revision.
     memory::MemoryCopy(stack_dst, stack_begin, size);
 
     // Zero the call frame prologue (saved BP, return address slot) so the fiber

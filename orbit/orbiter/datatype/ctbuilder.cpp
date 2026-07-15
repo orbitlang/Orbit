@@ -4,11 +4,17 @@
 
 #include <cassert>
 
+#include <orbit/orbiter/runtime.h>
+
 #include <orbit/orbiter/datatype/c3/c3.h>
 
 #include <orbit/orbiter/datatype/ctbuilder.h>
 
 using namespace orbiter::datatype;
+
+// *********************************************************************************************************************
+// INTERNAL
+// *********************************************************************************************************************
 
 bool ClassBlueprintDtor(TypeInfo *self) {
     if (self->aux.data != nullptr) {
@@ -81,6 +87,57 @@ bool PushProperties(TypeInfo *type, const ExportedSymbol *exported, const U16 le
     return true;
 }
 
+// *********************************************************************************************************************
+// TYPE OPS — COMPARISON
+// *********************************************************************************************************************
+
+static bool ClassEqual(OObject *left, OObject *right) {
+    auto *prop = TIFindProperty(O_GET_TYPE(left), nullptr, "equal");
+    if (prop == nullptr)
+        return false;
+
+    OObject *argv[] = {
+        left,
+        right
+    };
+
+    OObject *value = nullptr;
+    if (orbiter::Orbiter::EvalSync((Function *) prop->value, argv, 2, &value)) {
+        if (O_IS_TRUE(value))
+            return true;
+
+        if (O_IS_FALSE(value))
+            return false;
+
+        // TODO: wrong return value
+    }
+
+    return false;
+}
+
+// *********************************************************************************************************************
+// TYPE OPS — CONVERSION
+// *********************************************************************************************************************
+
+static OObject *ClassToString(orbiter::Isolate *isolate, const Class *self) {
+    auto *prop = TIFindProperty(O_GET_TYPE(self), nullptr, "str");
+    if (prop == nullptr)
+        return nullptr;
+
+    OObject *value = nullptr;
+
+    // Do NOT rely on caller's stack — direct calls leave `self` below
+    // the sync frame, but indirect paths (e.g. container stringify) don't.
+    if (orbiter::Orbiter::EvalSync((Function *) prop->value, (OObject **) &self, 1, &value))
+        return value;
+
+    return nullptr;
+}
+
+// *********************************************************************************************************************
+// PUBLIC API
+// *********************************************************************************************************************
+
 bool orbiter::datatype::ClassTypeSetup(TypeInfo *self) {
     return true;
 }
@@ -123,11 +180,11 @@ HOType orbiter::datatype::ClassTypeNew(const Code *code, TypeInfo *super, TypeIn
     HOType clazz{};
 
     if (super == nullptr)
-        clazz = MakeTypeExtended(isolate, ORSTRING_TO_CSTR(code->name), InstanceType::CLASS, 0, code->exported.length,
-                                 code->slots_count);
+        clazz = MakeTypeExtended(isolate, ORSTRING_TO_CSTR(code->name), InstanceType::CLASS,
+                                 0, code->exported.length, code->slots_count);
     else
-        clazz = MakeType(isolate, super, ORSTRING_TO_CSTR(code->name), InstanceType::CLASS, 0, code->exported.length,
-                         code->slots_count);
+        clazz = MakeType(isolate, super, ORSTRING_TO_CSTR(code->name), InstanceType::CLASS,
+                         0, code->exported.length, code->slots_count);
 
     if (!clazz)
         return {};
@@ -143,6 +200,9 @@ HOType orbiter::datatype::ClassTypeNew(const Code *code, TypeInfo *super, TypeIn
 
     clazz->aux.dtor = ClassBlueprintDtor;
 
+    ((TypeInfoOps *) clazz.get())->ops.equal = (EqualFn) ClassEqual;
+    ((TypeInfoOps *) clazz.get())->ops.to_string = (ToStrFn) ClassToString;
+
     return clazz;
 }
 
@@ -154,8 +214,8 @@ HOType orbiter::datatype::TraitTypeInit(Isolate *isolate) {
 HOType orbiter::datatype::TraitTypeNew(const Code *code, TypeInfo **traits, const U16 traits_count) {
     const auto isolate = O_GET_ISOLATE(code);
 
-    auto trait = MakeTypeExtended(isolate, ORSTRING_TO_CSTR(code->name), InstanceType::TRAIT, 0, code->exported.length,
-                                  0);
+    auto trait = MakeTypeExtended(isolate, ORSTRING_TO_CSTR(code->name), InstanceType::TRAIT,
+                                  0, code->exported.length, 0);
     if (trait) {
         trait->properties.origin = (PtrSize) code;
 

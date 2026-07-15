@@ -201,6 +201,7 @@ namespace orbiter::datatype {
             ZERO_DIVISION,
             NEGATIVE_SHIFT_COUNT,
             CONCURRENT_MODIFICATION,
+            SUSPEND_IN_SYNC_CALL,
         };
 
         static constexpr const char *Details[] = {
@@ -213,6 +214,7 @@ namespace orbiter::datatype {
             (const char *) "division by zero",
             (const char *) "negative shift count",
             (const char *) "%s changed size during iteration",
+            (const char *) "cannot %s within a synchronous type method call",
         };
     };
 

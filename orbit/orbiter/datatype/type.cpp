@@ -124,11 +124,11 @@ for `obj.type().tp_name()`.
     return HOObject((OObject *) name.release());
 }
 
-RUNTIME_METHOD(type_repr, repr,
+RUNTIME_METHOD(type_torepr, torepr,
                R"DOC(
 @brief Return a developer-oriented representation of the object.
 
-Calls the type's to_repr operation when defined.  Falls back to str() when
+Calls the type's to_repr operation when defined.  Falls back to tostr() when
 no to_repr is registered, and ultimately to the default "<TypeName at 0xADDR>"
 form.  The repr string is intended for debugging and should ideally be valid
 Orbit syntax that reconstructs the value.
@@ -138,13 +138,13 @@ Orbit syntax that reconstructs the value.
 @see str
 
 @example
-    "hello".repr()    // '"hello"'  (includes quotes)
-    [1, 2].repr()     // "[1, 2]"
+    "hello".torepr()    // '"hello"'  (includes quotes)
+    [1, 2].torepr()     // "[1, 2]"
 )DOC", 1, nullptr, false, false) {
     return Repr(O_GET_ISOLATE(_func), argv[0]);
 }
 
-RUNTIME_METHOD(type_str, str,
+RUNTIME_METHOD(type_tostr, tostr,
                R"DOC(
 @brief Return a human-readable string representation of the object.
 
@@ -157,9 +157,9 @@ registered for the type.
 @see repr
 
 @example
-    (42).str()         // "42"
-    true.str()         // "true"
-    [1, 2, 3].str()    // "[1, 2, 3]"
+    (42).tostr()         // "42"
+    true.tostr()         // "true"
+    [1, 2, 3].tostr()    // "[1, 2, 3]"
 )DOC", 1, nullptr, false, false) {
     return ToString(O_GET_ISOLATE(_func), argv[0]);
 }
@@ -186,8 +186,8 @@ constexpr FunctionDef type_methods[] = {
     type_id,
     type_is,
     type_name,
-    type_repr,
-    type_str,
+    type_torepr,
+    type_tostr,
     type_type,
 
     FUNCTIONDEF_SENTINEL

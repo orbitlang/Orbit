@@ -72,7 +72,7 @@ namespace orbiter {
         }
     };
 
-    datatype::OObject *eval(Fiber *fiber);
+    datatype::OObject *eval(Fiber *fiber, PtrSize barrier);
 }
 
 #endif // !ORBIT_ORBITER_VM_H_

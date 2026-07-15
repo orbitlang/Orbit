@@ -240,7 +240,7 @@ bool StoreToIndex(const Fiber *fiber, OObject *object, const OObject *index, OOb
     return false;
 }
 
-bool UnwindStack(Fiber *fiber) {
+bool UnwindStack(Fiber *fiber, const PtrSize barrier) {
     const auto *context = &fiber->context;
     auto *regs = &fiber->vm.regs;
     const auto *stack = &fiber->vm.stack;
@@ -251,6 +251,12 @@ bool UnwindStack(Fiber *fiber) {
 
         if (ExecDefer(fiber))
             return true;
+
+        if (regs->BP.reg == barrier) {
+            fiber->PopState();
+
+            return false;
+        }
 
         regs->SP.reg = regs->BP.reg;
 
@@ -863,7 +869,7 @@ void ReleaseExceptionContext(Registers *regs) {
     memory::MemoryZero(ctx, sizeof(ExceptionContext));
 }
 
-void Return(Fiber *fiber, const U32 pops) {
+void Return(Fiber *fiber, const U32 pops, const PtrSize barrier) {
     auto *regs = &fiber->vm.regs;
     auto *func = fiber->context.func;
 
@@ -872,6 +878,9 @@ void Return(Fiber *fiber, const U32 pops) {
 
     if (regs->BP.reg > 0) {
         fiber->PopState();
+
+        if (regs->BP.reg < barrier)
+            return;
 
         // Cleanup parameters
         regs->SP.reg -= pops * sizeof(void *);
@@ -983,7 +992,7 @@ void StoreToObjectProp(const Fiber *fiber, const Function *func, OObject *obj, O
     }
 }
 
-OObject *orbiter::eval(Fiber *fiber) {
+OObject *orbiter::eval(Fiber *fiber, PtrSize barrier) {
 #define TARGET_OP(op)   case OPCode::op:
 #define CGOTO           continue
 #define DISPATCH        \
@@ -1021,7 +1030,13 @@ CGOTO
 #define ACCESS_STACK_BP(offset) ((PtrSize *)(stack->stack + (regs->BP.reg + (offset))))
 #define ACCESS_STACK_SP(offset) ((PtrSize *)(stack->stack + (regs->SP.reg + (offset))))
 #define LOAD_FROM_STACK         ACCESS_STACK_SP((-sizeof(void *)))
-#define CHECK_PREEMPT           do {if(--fiber->vm.preempt_tick == 0) {fiber->state = FiberState::YIELDED; return nullptr;}} while(0)
+#define CHECK_PREEMPT           do {                            \
+        if(barrier == 0 && --fiber->vm.preempt_tick == 0)       \
+        {                                                       \
+            fiber->state = FiberState::YIELDED;                 \
+            return nullptr;                                     \
+        }                                                       \
+    } while(0)
 
     auto *regs = &fiber->vm.regs;
     auto *stack = &fiber->vm.stack;
@@ -1303,7 +1318,10 @@ CATCH_FINALLY:
 
                 REG_RR = ACCESS_REG_SRC(instr);
 
-                Return(fiber, pops);
+                Return(fiber, pops, barrier);
+
+                if (regs->BP.reg < barrier)
+                    return (OObject *) REG_RR;
 
                 goto BEGIN;
             }
@@ -1330,6 +1348,16 @@ CATCH_FINALLY:
                                         TypeError::Details[TypeError::Reason::MISMATCH],
                                         fiber->isolate->primitive[(int) InstanceType::FUTURE]->name,
                                         (OObject *) future);
+
+                    goto ERROR;
+                }
+
+                if (barrier != 0 && future->state == FutureState::PENDING) {
+                    ErrorSet(fiber->isolate,
+                             RuntimeError::Details[RuntimeError::Reason::ID],
+                             nullptr,
+                             RuntimeError::Details[RuntimeError::Reason::SUSPEND_IN_SYNC_CALL],
+                             "await a pending future");
 
                     goto ERROR;
                 }
@@ -1365,6 +1393,18 @@ CATCH_FINALLY:
                         goto ERROR;
 
                     if (res == (int) CallResult::BUSY) {
+                        // BUSY sets no wakeup registration (the CALL is simply re-executed
+                        // on resume), so erroring here leaves nothing dangling.
+                        if (barrier != 0) {
+                            ErrorSet(fiber->isolate,
+                                     RuntimeError::Details[RuntimeError::Reason::ID],
+                                     nullptr,
+                                     RuntimeError::Details[RuntimeError::Reason::SUSPEND_IN_SYNC_CALL],
+                                     "wait for a busy generator");
+
+                            goto ERROR;
+                        }
+
                         fiber->state = FiberState::YIELDED;
                         return nullptr;
                     }
@@ -1764,12 +1804,28 @@ CATCH_FINALLY:
                 DISPATCH;
             }
             TARGET_OP(CHRCV) {
-                auto status = ChannelRecv((Channel *) REG_N(FETCH_R_SRC(instr)), result);
+                auto *channel = (Channel *) REG_N(FETCH_R_SRC(instr));
+
+                // The Try variant never enqueues the fiber on the receiver queue,
+                // inside a synchronous re-entry the enqueue could not be undone.
+                const auto status = barrier == 0
+                                        ? ChannelRecv(channel, result)
+                                        : ChannelTryRecv(channel, result);
 
                 if (status == ChannelRecvStatus::BLOCKED) {
                     fiber->state = FiberState::SUSPENDED;
 
                     return nullptr;
+                }
+
+                if (status == ChannelRecvStatus::EMPTY) {
+                    ErrorSet(fiber->isolate,
+                             RuntimeError::Details[RuntimeError::Reason::ID],
+                             nullptr,
+                             RuntimeError::Details[RuntimeError::Reason::SUSPEND_IN_SYNC_CALL],
+                             "block receiving from a channel");
+
+                    goto ERROR;
                 }
 
                 if (status == ChannelRecvStatus::CLOSED)
@@ -1782,16 +1838,32 @@ CATCH_FINALLY:
             TARGET_OP(CHSND) {
                 ChannelSendStatus status;
 
-                if (!ChannelSend(fiber->isolate,
-                                 (Channel *) REG_N(FETCH_R_DST(instr)),
-                                 (OObject *) REG_N(FETCH_R_SRC(instr)),
-                                 status))
+                auto *channel = (Channel *) REG_N(FETCH_R_DST(instr));
+                auto *value = (OObject *) REG_N(FETCH_R_SRC(instr));
+
+                // The Try variant never enqueues the fiber on the sender queue,
+                // inside a synchronous re-entry the enqueue could not be undone.
+                const auto sent = barrier == 0
+                                      ? ChannelSend(fiber->isolate, channel, value, status)
+                                      : ChannelTrySend(fiber->isolate, channel, value, status);
+
+                if (!sent)
                     goto ERROR;
 
                 if (status == ChannelSendStatus::BLOCKED) {
                     fiber->state = FiberState::SUSPENDED;
 
                     return nullptr;
+                }
+
+                if (status == ChannelSendStatus::FULL) {
+                    ErrorSet(fiber->isolate,
+                             RuntimeError::Details[RuntimeError::Reason::ID],
+                             nullptr,
+                             RuntimeError::Details[RuntimeError::Reason::SUSPEND_IN_SYNC_CALL],
+                             "block sending to a channel");
+
+                    goto ERROR;
                 }
 
                 DISPATCH;
@@ -1835,6 +1907,20 @@ CATCH_FINALLY:
             }
             TARGET_OP(LDMOD) {
                 src = FETCH_R_SRC(instr);
+
+                // Gated before import::Import: a BLOCKED outcome registers the fiber as a
+                // module-entry waiter (or spawns an executor) deep inside the importer,
+                // with no way to cancel. Rejecting even already-loaded modules keeps the
+                // behavior deterministic instead of dependent on load timing.
+                if (barrier != 0) {
+                    ErrorSet(fiber->isolate,
+                             RuntimeError::Details[RuntimeError::Reason::ID],
+                             nullptr,
+                             RuntimeError::Details[RuntimeError::Reason::SUSPEND_IN_SYNC_CALL],
+                             "import a module");
+
+                    goto ERROR;
+                }
 
                 auto status = import::Import(fiber->isolate, (ORString *) REG_N(src), fiber->context.module,
                                              (Module *&) result);
@@ -2156,11 +2242,24 @@ CATCH_FINALLY:
                     goto ERROR;
                 }
 
-                const auto res = MonitorAcquire(fiber, result);
+                // can_block == false keeps a contended acquire from enqueuing the fiber
+                // on the monitor queue — inside a synchronous re-entry the wakeup could
+                // not be undone. Uncontended (and recursive) acquires still succeed.
+                const auto res = MonitorAcquire(fiber, result, barrier == 0);
                 if (res < 0)
                     goto ERROR;
 
                 if (res == 0) {
+                    if (barrier != 0) {
+                        ErrorSet(fiber->isolate,
+                                 RuntimeError::Details[RuntimeError::Reason::ID],
+                                 nullptr,
+                                 RuntimeError::Details[RuntimeError::Reason::SUSPEND_IN_SYNC_CALL],
+                                 "wait for a contended sync object");
+
+                        goto ERROR;
+                    }
+
                     fiber->state = FiberState::YIELDED;
                     return nullptr;
                 }
@@ -2212,7 +2311,10 @@ CATCH_FINALLY:
 
                     ReleaseExceptionContext(regs);
 
-                    Return(fiber, ctx->ret_pops);
+                    Return(fiber, ctx->ret_pops, barrier);
+
+                    if (regs->BP.reg < barrier)
+                        return (OObject *) REG_RR;
 
                     goto BEGIN;
                 }
@@ -2307,7 +2409,7 @@ ERROR:
         }
     }
 
-    if (UnwindStack(fiber))
+    if (UnwindStack(fiber, barrier))
         goto BEGIN;
 
     return (OObject *) regs->RR.reg;
