@@ -2,6 +2,8 @@
 //
 // Licensed under the Apache License v2.0
 
+#include <orbit/liftoff/ir/intervalspiller.h>
+
 #include <orbit/liftoff/ir/ircontext.h>
 
 using namespace liftoff::ir;
@@ -143,6 +145,10 @@ U16 IRContext::PushSubContext(IRContext *context) {
 }
 
 std::vector<LiveInterval> &IRContext::ComputeLiveIntervals() {
+    this->live_intervals_.clear();
+
+    this->SlotIndexes();
+
     for (const auto *block = this->entry_; block != nullptr; block = block->next) {
         for (auto *instr = block->instr.head; instr != nullptr; instr = instr->next) {
             if (instr->use_list != nullptr) {
@@ -194,6 +200,48 @@ void IRContext::AddActiveVar(const Symbol *symbol, Instruction *instr) {
     this->active_regs_.insert({symbol, instr});
 }
 
+void IRContext::CallerSaveSpiller() {
+    std::vector<U32> callers;
+
+    if (live_intervals_.empty())
+        return;
+
+    // Pre-scan: collect the instruction offset of every call site, in program
+    // order. CALL/EXECSUB/NTCALL are caller-clobbered in Orbit's VM — the callee
+    // may overwrite every general-purpose register — so any value that is live
+    // across one of these sites must be saved to the stack beforehand and
+    // reloaded at each use that follows the call. The offsets come out ascending
+    // because we walk blocks and instructions in layout order, which lets the
+    // spill loop below stop early once a call is past an interval's end.
+    for (const auto *block = this->entry_; block != nullptr; block = block->next) {
+        for (auto instr = block->instr.head; instr != nullptr; instr = instr->next) {
+            if (instr->type() == ObjectType::INSTRUCTION) {
+                const auto opcode = ((PhysInstruction *) instr)->opcode;
+                if (opcode == orbiter::OPCode::CALL
+                    || opcode == orbiter::OPCode::EXECSUB
+                    || opcode == orbiter::OPCode::NTCALL) {
+                    callers.push_back(instr->instr_offset);
+                }
+            }
+        }
+    }
+
+    IntervalSpiller spiller(this);
+
+    for (auto &interval: this->live_intervals_) {
+        for (const auto caller: callers) {
+            if (caller > interval.end)
+                break;
+
+            if (caller > interval.start && caller <= interval.end) {
+                spiller.Spill(&interval, caller);
+
+                break;
+            }
+        }
+    }
+}
+
 void IRContext::Delete(IRContext *context) {
     if (context == nullptr)
         return;
@@ -222,6 +270,23 @@ void IRContext::DeleteInstruction(Instruction *instruction) noexcept {
     allocator.free(instruction);
 }
 
+void IRContext::InvalidateActiveVar(const Symbol *symbol) {
+    if (symbol == nullptr) {
+        this->active_regs_.clear();
+        return;
+    }
+
+    this->active_regs_.erase(symbol);
+}
+
+void IRContext::InsertInstructionAfter(Instruction *instruction, Instruction *after) noexcept {
+    instruction->basic_block->AddInstructionAfter(instruction, after);
+}
+
+void IRContext::InsertInstructionBefore(Instruction *instruction, Instruction *before) noexcept {
+    instruction->basic_block->AddInstructionBefore(instruction, before);
+}
+
 void IRContext::RemoveFromObjList(Object *obj) noexcept {
     auto *next = obj->memory_.next;
     auto *prev = obj->memory_.prev;
@@ -239,23 +304,6 @@ void IRContext::RemoveFromObjList(Object *obj) noexcept {
     }
 
     prev->memory_.next = next;
-}
-
-void IRContext::InvalidateActiveVar(const Symbol *symbol) {
-    if (symbol == nullptr) {
-        this->active_regs_.clear();
-        return;
-    }
-
-    this->active_regs_.erase(symbol);
-}
-
-void IRContext::InsertInstructionAfter(Instruction *instruction, Instruction *after) noexcept {
-    instruction->basic_block->AddInstructionAfter(instruction, after);
-}
-
-void IRContext::InsertInstructionBefore(Instruction *instruction, Instruction *before) noexcept {
-    instruction->basic_block->AddInstructionBefore(instruction, before);
 }
 
 void IRContext::SlotIndexes() const noexcept {

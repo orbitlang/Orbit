@@ -475,6 +475,12 @@ namespace liftoff::ir {
         void AddActiveVar(const Symbol *symbol, Instruction *instr);
 
         /**
+         * @brief Handles the identification and spilling of live intervals overlapping
+         *        with caller-clobbered instructions.
+         */
+        void CallerSaveSpiller();
+
+        /**
          * @brief Deletes an IRContext instance, ensuring proper deallocation of resources.
          *
          * This method destroys the IRContext instance and deallocates its memory

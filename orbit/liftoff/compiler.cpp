@@ -41,24 +41,34 @@ orbiter::datatype::HCode Compiler::Compile(IRContext *ir) {
     /*
      * IR Generation
      *   -> Step 1: Optimization
-     *   -> Step 2: Instruction numbering
-     *   -> Step 3: Liveness analysis
-     *   -> Step 4: Register allocation
-     *   -> Step 5: Code generation
+     *   -> Step 2: Liveness analysis          (renumbers instructions, then computes intervals)
+     *   -> Step 3: Caller-save spill insertion (save/reload values live across calls)
+     *   -> Step 4: Liveness analysis          (recomputed on the rewritten IR)
+     *   -> Step 5: Register allocation
+     *   -> Step 6: Code generation
      */
 
     // Step 1: Optimization (DCE, constant folding, ...)
     Optimizer optimizer(ir, this->level_);
     optimizer.Optimize();
 
-    // Step 2: Assign final stable instruction offsets on the fully transformed IR
-    ir->SlotIndexes();
+    // Step 2: Liveness analysis. ComputeLiveIntervals renumbers the instructions
+    ir->ComputeLiveIntervals();
 
-    // Step 3-4: Compute live intervals and allocate registers
+    // Step 3: Caller-save spill insertion. Every value live across a call is
+    // materialized to the stack and reloaded at its later uses as real IR. This
+    // both preserves values the callee would clobber and turns each reload into a
+    // fresh, non-pinned SSA value.
+    ir->CallerSaveSpiller();
+
+    // Step 4: Liveness analysis, recomputed. The spill pass inserted instructions
+    // and shifted the layout, so the intervals fed to allocation must be rebuilt
     auto intervals = ir->ComputeLiveIntervals();
+
+    // Step 5: Register allocation over the finalized IR.
     LinearScan(ir, orbiter::kGeneralPurposeRegistersCount).Allocate(intervals);
 
-    // Step 5: Generate machine code
+    // Step 6: Generate machine code
     auto code = Codegen(ir).Generate();
     if (code) {
         if (ir->GetSubcontextCount() > 0) {

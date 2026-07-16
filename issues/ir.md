@@ -1,7 +1,7 @@
 # ir — bug report
 
 **Component:** `orbit/liftoff/ir` (instruction.h, linearscan.cpp, irbuilder.cpp) · **ID prefix:** `IR`
-**PoCs:** [`poc/ir/`](poc/ir/) · **Last reviewed:** 2026-07-06
+**PoCs:** [`poc/ir/`](poc/ir/) · **Last reviewed:** 2026-07-15
 **Status:** OPEN · PARTIAL · FIXED · WONTFIX — see [GUIDE.md](GUIDE.md).
 
 > Imported 2026-06-15 from `orbit/liftoff/ir/KNOWN_ISSUES.md` (ISSUE-001 → IR-001).
@@ -197,5 +197,55 @@ sequence whose first instruction is at the head of its basic block
 *(2026-07-13: hypothesis disproved — right method, wrong caller; see update.)*
 
 </details>
+
+---
+
+## IR-003 — Two call results live simultaneously collide in the return register R13
+**Severity:** High (silent miscompile) · **Status:** OPEN · **Location:** `orbit/liftoff/ir/linearscan.cpp` (`AllocateSpecificRegister`, `SpillToStackAndReloadUses`), reload register choice at `linearscan.cpp:254` (`load->assigned_reg = instruction->assigned_reg`)
+
+Every `CALL` result is pinned to the return register R13 and *keeps* R13 as its
+`assigned_reg`. When two call results are bound to locals and stay live together,
+the allocator ends up with **two overlapping intervals both assigned R13** — a
+violation of the core invariant that overlapping intervals never share a
+register. Both are spilled across the intervening call and, at their shared use,
+both reload into R13 back-to-back; the second reload overwrites the first.
+
+Post-linearscan bytecode of `two_call` (`a := id(7); b := id(9); return a + b`):
+
+```
+CALL  R13        # a
+...
+CALL  R13        # b
+SKLDR R13        # reload a into R13
+SKLDR R13        # reload b into R13   <-- overwrites a
+ADD   R0         # R0 = R13 + R13 = b + b
+```
+
+So `a + b` evaluates to `b + b` (7+9 → 18). The reload strategy
+(`load->assigned_reg = instruction->assigned_reg`) faithfully reloads each value
+into its own home register, which is correct *unless* two live values were given
+the same home — which R13 pinning does.
+
+**Scope.** Only triggers when ≥2 call results are **bound and kept live** into a
+later op. Results consumed immediately (pushed as call args, folded once) are
+fine, because they never co-reside in R13 — so `add(add(1,2), add(3,4))` and
+`sq(add(2,3))` are correct. `three_call` (`a*100 + b*10 + c`) happens to pass
+because its arithmetic forces the results out of R13. Present at HEAD,
+independent of the IR-004/leak fixes.
+
+**PoC:** [`poc/ir/ir-003-r13-crosscall.orb`](poc/ir/ir-003-r13-crosscall.orb)
+`(confirmed live)` — RED until fixed. Broader tiered coverage lives in
+`ortest/regalloc_*.orb` (suite 04 isolates this; 01–03, 05 stay green), run via
+`ortest/run.sh`.
+
+**Fix.** Model the call result as an ordinary SSA value instead of leaving it
+pinned to R13: right after the call, move it out of R13 into a normally-allocated
+register (a `MOV V, R13`), so two results never share R13. The cleanest form is a
+dedicated pre-pass after `ComputeLiveIntervals` — find calls, materialise the
+spill store/reload of every interval that spans them as real IR, re-run
+`ComputeLiveIntervals`, then allocate — which makes every reloaded value
+first-class and dissolves the R13 special case (it also removes the fragile
+mutate-IR-during-allocation coupling). Since the VM clobbers all registers on a
+call (no callee-saved), spilling every spanning value is optimal, not wasteful.
 
 ---
