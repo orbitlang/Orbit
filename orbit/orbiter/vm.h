@@ -8,7 +8,14 @@
 #include <orbit/orbiter/vmstack.h>
 
 namespace orbiter {
-    constexpr auto kGeneralPurposeRegistersCount = 14; // 13 + Return register
+    // Size of the register file the runtime saves, restores and GC-scans:
+    // 13 general-purpose registers (R0-R12) plus RR (R13, the return register).
+    // Must stay 14, GC root scanning and the generator regs_dump depend on it.
+    constexpr auto kGeneralPurposeRegistersCount = 14;
+
+    // Registers the allocator may hand to ordinary values (R0-R12). RR is pinned
+    // (call results, ITRNXT) and must never enter the free pool.
+    constexpr auto kAllocatableRegistersCount = kGeneralPurposeRegistersCount - 1;
     constexpr auto kSpecialPurposeRegistersCount = 3;
     constexpr auto kInternalRegistersCount = 2;
 

@@ -19,6 +19,8 @@ namespace liftoff::ir {
 
         U16 stack_offset_;
 
+        bool inherit_reg_;
+
         /**
          * @brief Hands out a stack slot for a new spill, reusing a freed one when possible.
          *
@@ -40,13 +42,18 @@ namespace liftoff::ir {
         /**
          * @brief Constructs a spiller bound to an IR context.
          *
-         * @param ir The IR context whose function frame backs the spilled values.
+         * @param ir          The IR context whose function frame backs the spilled values.
+         * @param inherit_reg When true, every emitted reload inherits the spilled
+         *                    instruction's assigned register; when false (default),
+         *                    reloads are left unassigned.
          *
          * Anchors the slot numbering at the context's current stack high-water mark
          * (stack_slots_max), so the slots this spiller allocates never collide with
          * those already reserved by earlier compilation phases.
          */
-        explicit IntervalSpiller(IRContext *ir) : builder_(ir), stack_offset_(ir->stack_slots_max) {
+        explicit IntervalSpiller(IRContext *ir, const bool inherit_reg = false) : builder_(ir),
+                                                                            stack_offset_(ir->stack_slots_max),
+                                                                            inherit_reg_(inherit_reg) {
         }
 
         /**

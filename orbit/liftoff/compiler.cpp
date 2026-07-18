@@ -66,7 +66,7 @@ orbiter::datatype::HCode Compiler::Compile(IRContext *ir) {
     auto intervals = ir->ComputeLiveIntervals();
 
     // Step 5: Register allocation over the finalized IR.
-    LinearScan(ir, orbiter::kGeneralPurposeRegistersCount).Allocate(intervals);
+    LinearScan(ir, orbiter::kAllocatableRegistersCount).Allocate(intervals);
 
     // Step 6: Generate machine code
     auto code = Codegen(ir).Generate();

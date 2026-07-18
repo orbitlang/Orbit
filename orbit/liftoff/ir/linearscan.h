@@ -8,6 +8,7 @@
 #include <set>
 
 #include <orbit/liftoff/ir/builder.h>
+#include <orbit/liftoff/ir/intervalspiller.h>
 #include <orbit/liftoff/ir/ircontext.h>
 
 namespace liftoff::ir {
@@ -21,31 +22,21 @@ namespace liftoff::ir {
             }
         };
 
-        std::set<LiveInterval *, IntervalEndComparator> active_;
-        std::set<LiveInterval *> active_stack_;
-
-        std::set<U16> free_registers_;
-        std::set<U16> free_stack_slot_;
-
         Builder builder_;
 
-        IRContext *ir_;
+        IntervalSpiller spiller_;
 
-        U16 stack_offset_;
+        std::set<LiveInterval *, IntervalEndComparator> active_;
+
+        std::set<U16> free_registers_;
 
         const U16 total_regs_;
-
-        U16 GetFreeStackSlot();
-
-        [[nodiscard]] std::vector<U32> CallPositionPreScan() const;
 
         void AllocateSpecificRegister(LiveInterval &interval);
 
         void ExpireOldIntervals(U32 position);
 
         void SpillAndAssignRegister(LiveInterval *interval);
-
-        void SpillToStackAndReloadUses(Instruction *instruction);
 
     public:
         explicit LinearScan(IRContext *ir, U16 total_regs) noexcept;

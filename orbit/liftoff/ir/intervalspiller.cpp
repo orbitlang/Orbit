@@ -53,6 +53,9 @@ void IntervalSpiller::Spill(const LiveInterval *interval, const U32 after) {
     auto inserted = 0;
 
     auto use = instruction->use_list;
+    if (use == nullptr)
+        return;
+
     auto *target = (PhysInstruction *) use->user;
 
     // Store-to-load forwarding: if the immediately following instruction is a
@@ -91,6 +94,9 @@ void IntervalSpiller::Spill(const LiveInterval *interval, const U32 after) {
             // The value lives in a global slot — emit a direct LDGOFF.
             load = this->builder_.GetLoadFromGlobalOffset(ld_offset);
         }
+
+        if (this->inherit_reg_)
+            load->assigned_reg = instruction->assigned_reg;
 
         IRContext::InsertInstructionBefore(target, load);
 
