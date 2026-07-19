@@ -1,0 +1,38 @@
+# Register-allocator suite 03 -- nested / chained call uses.
+#
+# Level: call results that are CONSUMED IMMEDIATELY -- as arguments to another
+# call, or by a single following operation. Because each result is used right
+# away (pushed as an argument or folded once), it never lingers alongside another
+# call result, so these must all be GREEN. Contrast with suite 04, where results
+# are bound to variables and kept live together.
+#
+# EXPECT: contains: ALL TESTS PASSED
+
+import "io"
+
+var fails = 0
+
+func check(name, got, expected) {
+    if got == expected {
+        io.print("OK   ", name)
+    } else {
+        io.print("FAIL ", name, "-- got:", got, "expected:", expected)
+        fails += 1
+    }
+}
+
+func id(x) { return x }
+func add(x, y) { return x + y }
+func sq(x) { return x * x }
+
+check("triple nesting", id(id(id(6))), 6)
+check("call as argument", sq(add(2, 3)), 25)
+check("result used once", add(3, 4) + 1, 8)
+check("two nested results as args", add(add(1, 2), add(3, 4)), 10)
+check("const plus call", 5 + id(7), 12)
+
+if fails == 0 {
+    io.print("ALL TESTS PASSED")
+} else {
+    io.print(fails, "TEST(S) FAILED")
+}

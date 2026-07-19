@@ -1,7 +1,7 @@
 # ir — bug report
 
 **Component:** `orbit/liftoff/ir` (instruction.h, linearscan.cpp, irbuilder.cpp) · **ID prefix:** `IR`
-**PoCs:** [`poc/ir/`](poc/ir/) · **Last reviewed:** 2026-07-15
+**PoCs:** [`poc/ir/`](poc/ir/) · **Last reviewed:** 2026-07-17
 **Status:** OPEN · PARTIAL · FIXED · WONTFIX — see [GUIDE.md](GUIDE.md).
 
 > Imported 2026-06-15 from `orbit/liftoff/ir/KNOWN_ISSUES.md` (ISSUE-001 → IR-001).
@@ -201,7 +201,55 @@ sequence whose first instruction is at the head of its basic block
 ---
 
 ## IR-003 — Two call results live simultaneously collide in the return register R13
-**Severity:** High (silent miscompile) · **Status:** OPEN · **Location:** `orbit/liftoff/ir/linearscan.cpp` (`AllocateSpecificRegister`, `SpillToStackAndReloadUses`), reload register choice at `linearscan.cpp:254` (`load->assigned_reg = instruction->assigned_reg`)
+**Severity:** High (silent miscompile) · **Status:** FIXED (2026-07-17) · **Location:** `orbit/liftoff/ir/linearscan.cpp`, `orbit/liftoff/ir/intervalspiller.{h,cpp}`, `orbit/liftoff/ir/ircontext.cpp` (`CallerSaveSpiller`)
+
+**Fix verified (`poc/ir/ir-003-r13-crosscall.orb` GREEN — full tracker suite
+20/20; tiered battery `ortest/regalloc/01..05` all green, including suite 04
+which isolates this bug: `two_call`=16, `mul_call`=12, `sum_call`=32,
+`three_call`=123).** Resolved by restructuring the allocation pipeline
+(essentially the pre-pass path suggested in the original report):
+
+- **`IRContext::CallerSaveSpiller`** — new pre-pass between the two liveness
+  computations (`ComputeLiveIntervals` → spill pass → `ComputeLiveIntervals` →
+  `LinearScan`, see `compiler.cpp`). It collects every call site
+  (CALL/EXECSUB/NTCALL, caller-clobbered in Orbit's VM) and, for each interval
+  spanning one, materialises the stack save/reload as real IR via
+  `IntervalSpiller::Spill(interval, call_offset)`. After the re-run of liveness,
+  no interval spans a call, and each reload is a **fresh, unpinned SSA value**
+  the allocator assigns normally — two call results never co-reside in R13.
+- **`IntervalSpiller`** — extracted spill mechanism (slot allocation with
+  expiry-driven reuse, SKSTR/SKLDR emission, STGOFF store-to-load forwarding,
+  operand rewrite). Ctor flag `inherit_reg`: `false` in the pre-pass (reloads
+  left unassigned so they get their own intervals/registers — the crux of this
+  fix), `true` inside `LinearScan` (no liveness re-run there, reloads must
+  inherit the home register).
+- **`LinearScan`** hardening found during review: on register contention
+  (`SpillAndAssignRegister`, and the true-overlap path of
+  `AllocateSpecificRegister`) **both** sharers are spilled from
+  `interval.start` — the incoming def writes the register regardless, so a
+  one-sided spill silently clobbers the "stable" value — and the longer-lived
+  of the two stays in `active_` as the register's owner-of-record (freeing at
+  the shorter end would let a future interval claim the register while the
+  survivor's reloads still write it).
+
+A residual limit initially noted here — R13 sat in `free_registers_` (the pool
+was built from `kGeneralPurposeRegistersCount` = 14), so under full pressure an
+ordinary value could receive it and later collide with a pinned call result on
+one instruction — was **also closed (2026-07-17)**: the allocator is now built
+with `kAllocatableRegistersCount` = 13 (`vm.h`; R0–R12, RR excluded — the
+runtime constant stays 14 because GC root scanning and the generator
+`regs_dump` size the register file with it). Companion changes in `LinearScan`:
+out-of-pool pinned registers are claimed directly by `AllocateSpecificRegister`
+(conflict scan first) instead of hitting the logic-error throw; an expiring
+pinned interval no longer leaks RR into the pool (`ExpireOldIntervals`); the
+"all registers busy" test reads `free_registers_.empty()` rather than
+`active_.size() == total_regs_` (active_ also tracks pinned intervals); and
+`SpillAndAssignRegister` picks its victim only among pool-register holders.
+Verified: full battery green plus a targeted stress (pinned RR result held live
+across 16 temporaries exhausting the pool, and two call results with 14 live
+temporaries in between).
+
+<details><summary>Original report (2026-07-15, OPEN)</summary>
 
 Every `CALL` result is pinned to the return register R13 and *keeps* R13 as its
 `assigned_reg`. When two call results are bound to locals and stay live together,
@@ -231,21 +279,22 @@ later op. Results consumed immediately (pushed as call args, folded once) are
 fine, because they never co-reside in R13 — so `add(add(1,2), add(3,4))` and
 `sq(add(2,3))` are correct. `three_call` (`a*100 + b*10 + c`) happens to pass
 because its arithmetic forces the results out of R13. Present at HEAD,
-independent of the IR-004/leak fixes.
+independent of the register-leak fix.
 
 **PoC:** [`poc/ir/ir-003-r13-crosscall.orb`](poc/ir/ir-003-r13-crosscall.orb)
 `(confirmed live)` — RED until fixed. Broader tiered coverage lives in
-`ortest/regalloc_*.orb` (suite 04 isolates this; 01–03, 05 stay green), run via
+`ortest/regalloc/*.orb` (suite 04 isolates this; 01–03, 05 stay green), run via
 `ortest/run.sh`.
 
-**Fix.** Model the call result as an ordinary SSA value instead of leaving it
-pinned to R13: right after the call, move it out of R13 into a normally-allocated
-register (a `MOV V, R13`), so two results never share R13. The cleanest form is a
-dedicated pre-pass after `ComputeLiveIntervals` — find calls, materialise the
-spill store/reload of every interval that spans them as real IR, re-run
-`ComputeLiveIntervals`, then allocate — which makes every reloaded value
-first-class and dissolves the R13 special case (it also removes the fragile
-mutate-IR-during-allocation coupling). Since the VM clobbers all registers on a
-call (no callee-saved), spilling every spanning value is optimal, not wasteful.
+**Fix (suggested).** Model the call result as an ordinary SSA value instead of
+leaving it pinned to R13. The cleanest form is a dedicated pre-pass after
+`ComputeLiveIntervals` — find calls, materialise the spill store/reload of every
+interval that spans them as real IR, re-run `ComputeLiveIntervals`, then
+allocate — which makes every reloaded value first-class and dissolves the R13
+special case (it also removes the fragile mutate-IR-during-allocation coupling).
+Since the VM clobbers all registers on a call (no callee-saved), spilling every
+spanning value is optimal, not wasteful. *(This is the path that was taken.)*
+
+</details>
 
 ---

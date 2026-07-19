@@ -78,6 +78,12 @@ ORBIT_PATH="$PWD/stdlib" ./bin/Orbit issues/poc/ir/phi-regalloc.orb
 It is part of the `issues/poc/` regression suite — `issues/poc/run.sh` runs it (and
 all other proof-of-concept reproducers) and verifies the marker for you.
 
+Broader, difficulty-tiered acceptance suites (grouped by subsystem) live under
+[`ortest/`](ortest/); run them all with `ortest/run.sh`. Read
+[`ortest/README.md`](ortest/README.md) before adding a test there — it explains
+the layout, the `# EXPECT:` directives, and how `ortest/` (feature suites)
+differs from `issues/poc/` (bug reproducers).
+
 ## Where things live
 
 | You want to change… | Look in |
@@ -142,4 +148,10 @@ re-run `phi-regalloc.orb` (via `issues/poc/run.sh`).
   is the single source of truth for the format and workflow (built to be
   multi-agent safe). When you find or fix a defect, record it there in the same
   pass.
+- **Acceptance & regression suites: [`ortest/`](ortest/).** Difficulty-tiered
+  feature tests grouped by subsystem, run as a release gate via `ortest/run.sh`
+  (all green to ship). **Read [`ortest/README.md`](ortest/README.md) before
+  adding one** — it covers the layout, the `# EXPECT:` directives, and the
+  `ortest/` (features) vs `issues/poc/` (bug reproducers) split. Update the
+  relevant suite in the same pass as any change to the compiler or VM.
 - Stdlib design & layering: [`stdlib/README.md`](stdlib/README.md).

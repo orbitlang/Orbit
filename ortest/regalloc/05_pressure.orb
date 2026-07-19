@@ -1,0 +1,114 @@
+# Register-allocator suite 05 -- high register pressure and spilling.
+#
+# Level: more simultaneously-live temporaries than there are registers, forcing
+# the allocator to spill to the stack and reload. No call results are kept live
+# together, so this isolates the spill/reload path -- it must be GREEN. A failure
+# here means spilled values are reloaded into the wrong slot or clobber each
+# other.
+#
+# EXPECT: contains: ALL TESTS PASSED
+
+import "io"
+
+var fails = 0
+
+func check(name, got, expected) {
+    if got == expected {
+        io.print("OK   ", name)
+    } else {
+        io.print("FAIL ", name, "-- got:", got, "expected:", expected)
+        fails += 1
+    }
+}
+
+func p20() {
+    s0 := 1
+    s1 := 2
+    s2 := 3
+    s3 := 4
+    s4 := 5
+    s5 := 6
+    s6 := 7
+    s7 := 8
+    s8 := 9
+    s9 := 10
+    s10 := 11
+    s11 := 12
+    s12 := 13
+    s13 := 14
+    s14 := 15
+    s15 := 16
+    s16 := 17
+    s17 := 18
+    s18 := 19
+    s19 := 20
+    return s0+s1+s2+s3+s4+s5+s6+s7+s8+s9+s10+s11+s12+s13+s14+s15+s16+s17+s18+s19
+}
+
+func p30() {
+    s0 := 1
+    s1 := 2
+    s2 := 3
+    s3 := 4
+    s4 := 5
+    s5 := 6
+    s6 := 7
+    s7 := 8
+    s8 := 9
+    s9 := 10
+    s10 := 11
+    s11 := 12
+    s12 := 13
+    s13 := 14
+    s14 := 15
+    s15 := 16
+    s16 := 17
+    s17 := 18
+    s18 := 19
+    s19 := 20
+    s20 := 21
+    s21 := 22
+    s22 := 23
+    s23 := 24
+    s24 := 25
+    s25 := 26
+    s26 := 27
+    s27 := 28
+    s28 := 29
+    s29 := 30
+    return s0+s1+s2+s3+s4+s5+s6+s7+s8+s9+s10+s11+s12+s13+s14+s15+s16+s17+s18+s19+s20+s21+s22+s23+s24+s25+s26+s27+s28+s29
+}
+
+func id(x) { return x }
+
+# 16 temporaries all live across a discarded call, exhausting the pool.
+func spill_across_call() {
+    s0 := 1
+    s1 := 2
+    s2 := 3
+    s3 := 4
+    s4 := 5
+    s5 := 6
+    s6 := 7
+    s7 := 8
+    s8 := 9
+    s9 := 10
+    s10 := 11
+    s11 := 12
+    s12 := 13
+    s13 := 14
+    s14 := 15
+    s15 := 16
+    id(0)
+    return s0+s1+s2+s3+s4+s5+s6+s7+s8+s9+s10+s11+s12+s13+s14+s15
+}
+
+check("pressure 20 temps", p20(), 210)
+check("pressure 30 temps", p30(), 465)
+check("pressure across a call", spill_across_call(), 136)
+
+if fails == 0 {
+    io.print("ALL TESTS PASSED")
+} else {
+    io.print(fails, "TEST(S) FAILED")
+}

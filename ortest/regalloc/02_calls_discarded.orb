@@ -1,0 +1,66 @@
+# Register-allocator suite 02 -- calls with discarded results.
+#
+# Level: introduces CALL sites, but only calls whose result is thrown away.
+# The point is cross-call *preservation*: Orbit's VM clobbers every register on
+# a call, so any value live across a discarded call must be spilled and reloaded
+# correctly. No two call RESULTS are ever live together here, so the R13 path is
+# not exercised -- everything must be GREEN.
+#
+# EXPECT: contains: ALL TESTS PASSED
+
+import "io"
+
+var fails = 0
+
+func check(name, got, expected) {
+    if got == expected {
+        io.print("OK   ", name)
+    } else {
+        io.print("FAIL ", name, "-- got:", got, "expected:", expected)
+        fails += 1
+    }
+}
+
+func id(x) { return x }
+
+# A local live across one discarded call.
+func var_across_call() {
+    a := 11
+    id(0)
+    return a
+}
+
+# Two locals live across a discarded call, then combined (both are plain values,
+# not call results -> distinct registers -> no collision).
+func two_vars_across_call() {
+    a := 3
+    b := 4
+    id(0)
+    return a + b
+}
+
+# A value live across two consecutive discarded calls.
+func across_two_calls() {
+    a := 9
+    id(0)
+    id(0)
+    return a
+}
+
+# A single call RESULT that must survive a later discarded call.
+func result_across_call() {
+    a := id(5)
+    id(0)
+    return a
+}
+
+check("var across call", var_across_call(), 11)
+check("two vars across call", two_vars_across_call(), 7)
+check("across two calls", across_two_calls(), 9)
+check("call result survives call", result_across_call(), 5)
+
+if fails == 0 {
+    io.print("ALL TESTS PASSED")
+} else {
+    io.print(fails, "TEST(S) FAILED")
+}

@@ -1,0 +1,56 @@
+# Register-allocator suite 01 -- variables only (no calls).
+#
+# Level: baseline. Exercises plain register assignment, value reuse and small
+# register pressure with NO function calls, so nothing here depends on the
+# caller-save machinery. Everything must be GREEN on any correct allocator; a
+# failure here points at core interval assignment or spill/reload.
+#
+# EXPECT: contains: ALL TESTS PASSED
+
+import "io"
+
+var fails = 0
+
+func check(name, got, expected) {
+    if got == expected {
+        io.print("OK   ", name)
+    } else {
+        io.print("FAIL ", name, "-- got:", got, "expected:", expected)
+        fails += 1
+    }
+}
+
+# A value whose last use keeps feeding freshly-defined values -- stresses
+# register reuse across a dependency chain. chain(10) = 101.
+func chain(a) {
+    b := a + 1
+    c := b * 2
+    d := c - 3
+    e := d + b
+    f := e + c
+    g := f + d
+    h := g + e
+    return h
+}
+
+# Several temporaries all live until a final sum (small pressure, no spill yet).
+func interleave() {
+    a := 1
+    b := 2
+    c := a + b
+    d := c + a
+    e := d + b
+    return a + b + c + d + e
+}
+
+check("single value", 42, 42)
+check("chain reuse", chain(10), 101)
+check("interleaved temps", interleave(), 16)
+check("arithmetic 1", 5 * 3 - 2, 13)
+check("arithmetic 2", (10 + 2) * 3, 36)
+
+if fails == 0 {
+    io.print("ALL TESTS PASSED")
+} else {
+    io.print(fails, "TEST(S) FAILED")
+}

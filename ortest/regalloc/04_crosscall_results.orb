@@ -1,0 +1,67 @@
+# Register-allocator suite 04 -- multiple call results live simultaneously.
+#
+# Level: the hard one. Two or more CALL results are bound to locals and kept
+# live, then combined. This was the R13 cross-call clobber (IR-003): every call
+# result was pinned to the return register and two live results collided, so
+# `a + b` evaluated to `b + b`. Fixed 2026-07-17 by the CallerSaveSpiller
+# pre-pass (reloads become fresh, unpinned SSA values with their own registers)
+# and by excluding the return register from the allocatable pool. This suite was
+# the RED oracle for that bug and must stay GREEN from now on.
+#
+# EXPECT: contains: ALL TESTS PASSED
+
+import "io"
+
+var fails = 0
+
+func check(name, got, expected) {
+    if got == expected {
+        io.print("OK   ", name)
+    } else {
+        io.print("FAIL ", name, "-- got:", got, "expected:", expected)
+        fails += 1
+    }
+}
+
+func id(x) { return x }
+
+# Two call results, added.
+func two_call() {
+    a := id(7)
+    b := id(9)
+    return a + b
+}
+
+# Two call results, multiplied -- same collision shape on a different op.
+func mul_call() {
+    a := id(3)
+    b := id(4)
+    return a * b
+}
+
+# Two results plus a derived value, all live together.
+func sum_call() {
+    a := id(7)
+    b := id(9)
+    c := a + b
+    return a + b + c
+}
+
+# Three call results combined with distinct weights.
+func three_call() {
+    a := id(1)
+    b := id(2)
+    c := id(3)
+    return a * 100 + b * 10 + c
+}
+
+check("two call results added", two_call(), 16)
+check("two call results multiplied", mul_call(), 12)
+check("three values from two calls", sum_call(), 32)
+check("three call results", three_call(), 123)
+
+if fails == 0 {
+    io.print("ALL TESTS PASSED")
+} else {
+    io.print(fails, "TEST(S) FAILED")
+}

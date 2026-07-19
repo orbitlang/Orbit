@@ -1,0 +1,321 @@
+# tostr/torepr user hooks (EvalSync) + suspension ban inside synchronous
+# type methods: await/chan-recv/chan-send inside `str` must panic with
+# RuntimeError instead of suspending the fiber; panics propagate through
+# the sync boundary; trap inside the hook still works.
+#
+# EXPECT: contains: ALL TESTS PASSED
+
+import "io"
+
+var fails = 0
+
+func check(name, got, expected) {
+    if got == expected {
+        io.print("OK   ", name)
+    } else {
+        io.print("FAIL ", name, "-> got:", got, "expected:", expected)
+        fails += 1
+    }
+}
+
+# --- plumbing for the await test: a future that stays pending until fed ---
+
+var gate = Chan()
+
+func napper() async {
+    <- gate
+    return 1
+}
+
+# --- classes under test ---
+
+class Basic {
+    pub init() {
+    }
+
+    pub func str() {
+        return "basic-str"
+    }
+}
+
+class WrongType {
+    pub init() {
+    }
+
+    pub func str() {
+        return 42
+    }
+}
+
+class Panicker {
+    pub init() {
+    }
+
+    pub func str() {
+        q := nil
+        q.boom()
+        return "unreachable"
+    }
+}
+
+class SelfHealing {
+    pub init() {
+    }
+
+    func detonate() {
+        q := nil
+        q.boom()
+    }
+
+    pub func str() {
+        r := trap self.detonate()
+        return r.unwrap_or("recovered")
+    }
+}
+
+class Awaiter {
+    pub var fut
+
+    pub init(fut) {
+        self.fut = fut
+    }
+
+    pub func str() {
+        v := await self.fut
+        return "awaited"
+    }
+}
+
+class ChanReader {
+    pub var ch
+
+    pub init(ch) {
+        self.ch = ch
+    }
+
+    pub func str() {
+        v := <- self.ch
+        return "received"
+    }
+}
+
+class ChanWriter {
+    pub var ch
+
+    pub init(ch) {
+        self.ch = ch
+    }
+
+    pub func str() {
+        self.ch <- 1
+        return "sent"
+    }
+}
+
+class Nested {
+    pub init() {
+    }
+
+    func inner(a, b) {
+        return a + b
+    }
+
+    pub func str() {
+        v := self.inner(30, 12)
+        return v == 42 ? "nested-ok" : "nested-broken"
+    }
+}
+
+class Named {
+    pub var name
+
+    pub init(name) {
+        self.name = name
+    }
+
+    pub func str() {
+        return self.name
+    }
+}
+
+class Point {
+    pub var x
+
+    pub init(x) {
+        self.x = x
+    }
+
+    pub func equal(other) {
+        return self.x == other.x
+    }
+}
+
+class EqBoom {
+    pub init() {
+    }
+
+    pub func equal(other) {
+        q := nil
+        q.boom()
+        return false
+    }
+}
+
+class EqWrongType {
+    pub init() {
+    }
+
+    pub func equal(other) {
+        return 42
+    }
+}
+
+class NoEq {
+    pub init() {
+    }
+}
+
+# --- tests ---
+
+func t_basic() {
+    b := new Basic()
+    check("hook result", b.tostr(), "basic-str")
+    return 0
+}
+
+func t_wrong_type() {
+    w := new WrongType()
+    r := trap w.tostr()
+    check("non-string return traps", r.unwrap_or("TYPE-ERR"), "TYPE-ERR")
+    return 0
+}
+
+func t_panic_propagates() {
+    p := new Panicker()
+    r := trap p.tostr()
+    check("hook panic propagates", r.unwrap_or("CAUGHT"), "CAUGHT")
+    return 0
+}
+
+func t_trap_inside_hook() {
+    s := new SelfHealing()
+    check("trap inside hook", s.tostr(), "recovered")
+    return 0
+}
+
+func t_await_banned() {
+    a := new Awaiter(napper())
+    r := trap a.tostr()
+    check("await banned in hook", r.unwrap_or("BANNED"), "BANNED")
+    return 0
+}
+
+func t_chan_recv_banned() {
+    c := new ChanReader(Chan())
+    r := trap c.tostr()
+    check("chan recv banned in hook", r.unwrap_or("BANNED"), "BANNED")
+    return 0
+}
+
+func t_chan_send_banned() {
+    c := new ChanWriter(Chan())
+    r := trap c.tostr()
+    check("chan send banned in hook", r.unwrap_or("BANNED"), "BANNED")
+    return 0
+}
+
+func t_nested_call() {
+    n := new Nested()
+    check("nested call in hook", n.tostr(), "nested-ok")
+    return 0
+}
+
+# The receiver must reach the hook through EvalSync's argv, not by luck of
+# the caller's stack layout: `x.tostr()` happens to leave self right below
+# the sync frame, while stringifying a container element does not — both
+# paths must see the right `self`.
+func t_self_receiver() {
+    p := new Named("pippo")
+    check("self via direct call", p.tostr(), "pippo")
+    check("self via list element", [p].tostr(), "[pippo]")
+    return 0
+}
+
+func t_eq_hook() {
+    a := new Point(1)
+    b := new Point(1)
+    c := new Point(2)
+
+    check("eq hook true", a == b, true)
+    check("eq hook false", a == c, false)
+    check("eq hook identity", a == a, true)
+    check("neq hook", a != c, true)
+    return 0
+}
+
+func t_eq_no_hook_identity() {
+    a := new NoEq()
+    b := new NoEq()
+
+    check("no-hook identity same", a == a, true)
+    check("no-hook identity diff", a == b, false)
+    return 0
+}
+
+func t_eq_panic_propagates() {
+    a := new EqBoom()
+    b := new EqBoom()
+
+    r := trap a == b
+    check("eq panic propagates", r.unwrap_or("CAUGHT"), "CAUGHT")
+    return 0
+}
+
+func t_eq_wrong_type() {
+    a := new EqWrongType()
+    b := new EqWrongType()
+
+    r := trap a == b
+    check("eq non-bool traps", r.unwrap_or("TYPE-ERR"), "TYPE-ERR")
+    return 0
+}
+
+# The equality chain must propagate hook panics through container paths too
+# (list contains scans elements with ==; a panicking hook must abort the scan,
+# not be swallowed as "not equal").
+func t_eq_in_container() {
+    p := new Point(5)
+    q := new Point(5)
+    l := [p]
+
+    check("eq via list contains", l.contains(q), true)
+
+    boom := [new EqBoom()]
+    r := trap boom.contains(new EqBoom())
+    check("eq panic via contains", r.unwrap_or("CAUGHT"), "CAUGHT")
+    return 0
+}
+
+t_basic()
+t_wrong_type()
+t_panic_propagates()
+t_trap_inside_hook()
+t_await_banned()
+t_chan_recv_banned()
+t_chan_send_banned()
+t_nested_call()
+t_self_receiver()
+t_eq_hook()
+t_eq_no_hook_identity()
+t_eq_panic_propagates()
+t_eq_wrong_type()
+t_eq_in_container()
+
+# unblock the napper fiber so nothing is left waiting
+gate <- 1
+
+if fails == 0 {
+    io.print("ALL TESTS PASSED")
+} else {
+    io.print(fails, "TEST(S) FAILED")
+}

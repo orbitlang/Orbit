@@ -22,7 +22,7 @@ are resolved.
 | [sbuffer.md](sbuffer.md) | `orbit/liftoff/scanner/sbuffer` | 0/3 |
 | [utf8-stringbuilder.md](utf8-stringbuilder.md) | `orbit/orbiter/datatype/stringbuilder` (UTF-8 codec) | 1/4 |
 | [parser.md](parser.md) | `orbit/liftoff/parser` (parser.cpp, context.h, ast.h) | 24/25 |
-| [ir.md](ir.md) | `orbit/liftoff/ir` (linearscan, irbuilder, instruction) | 1/3 |
+| [ir.md](ir.md) | `orbit/liftoff/ir` (linearscan, intervalspiller, irbuilder, instruction) | 0/3 |
 | [compiler.md](compiler.md) | `orbit/liftoff/compiler.cpp` (compile driver) | 1/1 |
 | [vm.md](vm.md) | `orbit/orbiter` (interpreter: trap unwind, registers) | 0/1 |
 | [number.md](number.md) | `orbit/orbiter/datatype/number.cpp` (integer literals & representation) | 2/2 |
@@ -32,7 +32,7 @@ are resolved.
 - ~~**PARSE-001** — `continue` directly inside a loop is rejected (CheckExt skips current context)~~ *(FIXED 2026-06-15)*
 - **PARSE-002** — empty doc comment `/*!*/` segfaults the compiler *(confirmed live)*
 - ~~**IR-002** — `trap new X()` asserts in `AddInstructionBefore` (head-insert miscompile)~~ *(FIXED 2026-07-13)*
-- **IR-003** — two call results live at once collide in R13 → silent miscompile (`a+b` becomes `b+b`) *(confirmed live)*
+- ~~**IR-003** — two call results live at once collide in R13 → silent miscompile (`a+b` becomes `b+b`)~~ *(FIXED 2026-07-17, allocator restructured: CallerSaveSpiller pre-pass + IntervalSpiller)*
 - **COMP-001** — any syntax error in file mode asserts in `Compile` instead of reporting (release: UB on empty AST)
 - ~~**VM-001** — spill slots clobbered after a trapped panic (SP rewound to end of exception block)~~ *(FIXED 2026-07-08)*
 - ~~**SCAN-001** — `"#..."` string literals mis-lexed (hash counting on non-raw strings)~~ *(FIXED 2026-06-13)*
@@ -46,3 +46,4 @@ are resolved.
 - 2026-06-12: `orbit/liftoff/scanner` (all files) + UTF-8 helpers it depends on.
 - 2026-06-12: `orbit/liftoff/parser` (all files); PARSE-001/002/003/004/005 + SCAN-001 reproduced against `bin/Orbit`.
 - 2026-07-15: `orbit/liftoff/ir/linearscan.cpp` (register allocator); IR-003 filed (R13 cross-call miscompile) with tiered `ortest/regalloc_*.orb` coverage. A separate register-leak segfault in `SpillAndAssignRegister` was fixed in the working tree (not yet committed).
+- 2026-07-17: allocator restructured (CallerSaveSpiller pre-pass + IntervalSpiller extraction + LinearScan contention hardening); IR-003 verified FIXED — full PoC suite 20/20, `ortest/regalloc_01..05` all green.
