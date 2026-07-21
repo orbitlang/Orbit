@@ -1,0 +1,116 @@
+# Operators suite 01 -- the `is` type-test operator (`x is T`).
+#
+# `x is T` yields true when the runtime type of `x` is exactly `T` or extends
+# `T` (inheritance- and trait-aware); it compiles to the ISTP opcode. The left
+# type is resolved with GetTypeInfoFromObject, so it works uniformly across
+# heap instances, small integers, class objects and type objects. What this
+# suite pins down:
+#
+#   - SMIs report as `Number` (`23 is Number` -> true); other non-heap oddballs
+#     (booleans, nil) belong to no user-visible type and always yield false;
+#   - builtin-type instances (String, ...) and user-class instances resolve to
+#     their own type, and a subclass satisfies a superclass check;
+#   - a trait is satisfied by any class that `impl`s it;
+#   - a type object on the left resolves to itself, so `Dog is Animal` (both
+#     type objects) follows the class chain too;
+#   - the right operand MUST be a type: `x is <non-type>` raises a TypeError
+#     (checked here through `trap`);
+#   - precedence -- `is` sits at the membership/equality level (looser than
+#     `+`, `.` and calls; `&&` is looser still), so `1 + 2 is C` groups as
+#     `(1 + 2) is C` and `a && b is C` as `a && (b is C)`.
+#
+# EXPECT: contains: ALL TESTS PASSED
+
+import "io"
+
+var fails = 0
+
+func check(name, got, expected) {
+    if got == expected {
+        io.print("OK   ", name)
+    } else {
+        io.print("FAIL ", name, "-- got:", got, "expected:", expected)
+        fails += 1
+    }
+}
+
+# --- types under test ---
+
+class Animal {
+    pub init() { }
+}
+
+class Dog : Animal {
+    pub init() { super.init() }
+}
+
+class Cat : Animal {
+    pub init() { super.init() }
+}
+
+trait Greeter {
+    func hi()
+}
+
+class En impl Greeter {
+    pub init() { }
+    pub func hi() { return "hi" }
+}
+
+class Plain {
+    pub init() { }
+}
+
+d := new Dog()
+a := new Animal()
+c := new Cat()
+
+# --- primitives: SMI is Number, other non-heap values are typeless ---
+check("smi is Number", 23 is Number, true)
+check("smi is String", 23 is String, false)
+check("str is String", "" is String, true)
+check("str is Number", "" is Number, false)
+check("true is Number", true is Number, false)
+check("nil is Number", nil is Number, false)
+
+# --- user classes: own type and inheritance ---
+check("dog is Dog", d is Dog, true)
+check("dog is Animal (super)", d is Animal, true)
+check("animal is Dog (not a sub)", a is Dog, false)
+check("cat is Dog (siblings)", c is Dog, false)
+check("dog is String", d is String, false)
+
+# --- traits: satisfied by any implementor ---
+e := new En()
+p := new Plain()
+check("impl is trait", e is Greeter, true)
+check("non-impl is trait", p is Greeter, false)
+
+# --- a type object on the left resolves to itself ---
+check("type object is itself", String is String, true)
+check("class object follows chain", Dog is Animal, true)
+check("class object is itself", Dog is Dog, true)
+
+# --- the right operand must be a type: non-type raises TypeError ---
+r_int := trap (5 is 3)
+check("non-type rhs (int) traps", r_int.unwrap_or("TYPE-ERR"), "TYPE-ERR")
+r_str := trap (5 is "x")
+check("non-type rhs (str) traps", r_str.unwrap_or("TYPE-ERR"), "TYPE-ERR")
+r_inst := trap (5 is d)
+check("non-type rhs (instance) traps", r_inst.unwrap_or("TYPE-ERR"), "TYPE-ERR")
+
+# --- precedence ---
+# `is` (membership level) binds looser than `+`: `(1 + 2) is Number`, not
+# `1 + (2 is Number)` (which would try to add a bool and misbehave).
+check("looser than +", 1 + 2 is Number, true)
+# calls bind tighter than `is`: `(tostr(d)) is String`, not `tostr(d is String)`.
+check("tighter than call", tostr(d) is String, true)
+# `&&` binds looser than `is`: `true && (d is Dog)`.
+check("looser than &&", true && d is Dog, true)
+check("false && short-circuit", false && d is Dog, false)
+
+if fails == 0 {
+    io.print("ALL TESTS PASSED")
+} else {
+    io.print(fails, "TEST(S) FAILED")
+}

@@ -72,9 +72,9 @@ pub class Pattern {
     pub init(pattern, compile_options=0) {
         var length
 
-        if is(pattern, String) {
+        if pattern is String {
             length = pattern.byte_length()
-        } elif is(pattern, Bytes) {
+        } elif pattern is Bytes {
             length = pattern.length()
         } else {
             panic fmt_typerror(pattern, String, Bytes)
@@ -173,7 +173,7 @@ pub class Pattern {
         matches := []
         count := 0
 
-        is_string := is(subject, String)
+        is_string := subject is String
         length := is_string ? subject.byte_length() : subject.length()
 
         offset := 0
@@ -249,7 +249,7 @@ pub class Pattern {
         }
 
         var length = subject.length()
-        if is(subject, String) {
+        if subject is String {
             length = subject.byte_length()
         }
 
@@ -302,11 +302,11 @@ pub class Pattern {
         p.replace("no digits", "N")                    # "no digits"
     */
     pub func replace(subject, replacement, max_replacements=-1) {
-        is_string := is(subject, String)
+        is_string := subject is String
 
-        if is_string && !is(replacement, String) {
+        if is_string && !(replacement is String) {
             panic fmt_typerror(replacement, String)
-        } elif !is_string && !is(replacement, Bytes) {
+        } elif !is_string && !(replacement is Bytes) {
             panic fmt_typerror(replacement, Bytes)
         }
 
@@ -351,7 +351,7 @@ pub class Pattern {
         new Pattern(",").split("no commas")    # ["no commas"]
     */
     pub func split(subject, max_splits=-1) {
-        is_string := is(subject, String)
+        is_string := subject is String
         total := is_string ? subject.byte_length() : subject.length()
 
         splits := []

@@ -117,13 +117,13 @@ pub let __bstdin__ = bstdin
 # do not change across the loop.
 func print4(dest, args, end, sep) {
     out := dest.write()
-    is_file := is(dest, file.File)
+    is_file := dest is file.File
 
-    if end && !is(end, Bytes) {
+    if end && !(end is Bytes) {
         end = !is_file ? Bytes.from(tostr(end)) : tostr(end)
     }
 
-    if sep && !is(sep, Bytes) {
+    if sep && !(sep is Bytes) {
         sep = !is_file ? Bytes.from(tostr(sep)) : tostr(sep)
     }
 
@@ -137,7 +137,7 @@ func print4(dest, args, end, sep) {
 
             psep = true
 
-            if !is(arg, Bytes) {
+            if !(arg is Bytes) {
                 arg = !is_file ? Bytes.from(tostr(arg)) : tostr(arg)
             }
 

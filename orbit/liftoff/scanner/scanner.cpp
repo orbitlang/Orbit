@@ -65,6 +65,7 @@ constexpr KwToken kw2tktype[] = {
     {"init", TokenType::KW_INIT},
     {"impl", TokenType::KW_IMPL},
     {"import", TokenType::KW_IMPORT},
+    {"is", TokenType::KW_IS},
     {"let", TokenType::KW_LET},
     {"loop", TokenType::KW_LOOP},
     {"namespace", TokenType::KW_NAMESPACE},

@@ -240,36 +240,6 @@ been collected.
     return HOObject(std::move(n));
 }
 
-RUNTIME_FUNCTION(builtin_is, is,
-                 R"DOC(
-@brief Return true if a value is an instance of the given type.
-
-Returns true when the value's type is exactly `t` or when it extends `t`
-(the check is inheritance-aware). Primitive values such as integers,
-booleans and nil that are not heap-allocated always return false.
-
-@param obj  The value to test.
-@param t    The type to check against.
-
-@return true if `obj` is an instance of `t`, false otherwise.
-
-@see type
-
-@example
-    is("hi", String)              // true
-    is(1, String)                 // false
-    is(new MySubClass(), Base)    // true  (subclass satisfies base check)
-)DOC", 2, nullptr, false, false) {
-    // SMIs and oddballs are not heap objects and cannot be class instances.
-    if (!O_IS_OBJECT(argv[0]))
-        return HOObject((OObject *) kOddBallFALSE);
-
-    const auto *self_type = O_GET_TYPE(argv[0]);
-    const auto *target = (TypeInfo *) argv[1];
-
-    return HOObject((OObject *) BOOL_TO_OBOOL(self_type == target || IsTypeExtends(self_type, target)));
-}
-
 RUNTIME_FUNCTION(builtin_panicking, panicking,
                  R"DOC(
 @brief Report whether the current fiber is unwinding a panic.
@@ -443,7 +413,6 @@ const ModuleEntry builtin_entries[] = {
     ORBIT_MODULE_EXPORT_FUNCTION(builtin_eval),
     ORBIT_MODULE_EXPORT_FUNCTION(builtin_hash),
     ORBIT_MODULE_EXPORT_FUNCTION(builtin_id),
-    ORBIT_MODULE_EXPORT_FUNCTION(builtin_is),
     ORBIT_MODULE_EXPORT_FUNCTION(builtin_panicking),
     ORBIT_MODULE_EXPORT_FUNCTION(builtin_tp_name),
     ORBIT_MODULE_EXPORT_FUNCTION(builtin_torepr),

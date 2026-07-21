@@ -120,7 +120,7 @@ pub class Match {
 
         # ovector offsets are byte offsets, so a String must be sliced with the
         # byte-oriented API (substring indexes by codepoint and would be wrong).
-        if is(self.subject, String) {
+        if self.subject is String {
             return self.subject.byte_substring(start, end)
         }
 

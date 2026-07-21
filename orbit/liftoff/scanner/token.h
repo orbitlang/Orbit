@@ -112,6 +112,7 @@ namespace liftoff::scanner {
         KW_INIT,
         KW_IMPL,
         KW_IMPORT,
+        KW_IS,
         KW_LET,
         KW_LOOP,
         KW_NAMESPACE,

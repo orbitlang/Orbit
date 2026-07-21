@@ -3,7 +3,7 @@
     Licensed under the Apache License v2.0
 
     syntax: ISO-14977 EBNF
-    version: 4.0
+    version: 5.0
 *)
 
 (* Basic elements *)
@@ -84,11 +84,12 @@ trap_expr = "trap", expression;
 
 (* Operators *)
 assignment_op = "=" | "+=" | "-=" | "*=" | "/=";
-binary_op = "||" | "&&" | rel_op | add_op | mul_op | in_op;
+binary_op = "||" | "&&" | rel_op | add_op | mul_op | in_op | is_op;
 rel_op = "===" | "!==" | "==" | "!=" | "<" | "<=" | ">" | ">=";
 add_op = "+" | "-" | "|" | "^";
 mul_op = "*" | "/" | "//" | "%" | "<<" | ">>" | "&";
 in_op = "in" | "not", "in";
+is_op = "is";
 unary_op = "+" | "-" | "!" | "^" | "*" | "&" | "<-";
 
 (* Assignable (left-hand side of assignment) *)

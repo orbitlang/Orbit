@@ -74,7 +74,7 @@ pub class BufferedWriter impl Closable + Writeable {
      *     bw := new BufferedWriter(file, own_source=false)     # shared file
      */
     pub init(source, size=BufferedWriter.BUFFER_SIZE, own_source=true) {
-        if !is(source, Writeable) {
+        if !(source is Writeable) {
             panic TypeError("source must implement Writeable trait")
         }
 
@@ -102,7 +102,7 @@ pub class BufferedWriter impl Closable + Writeable {
             return
         }
 
-        if self.own_source && is(self.source, Closable) {
+        if self.own_source && (self.source is Closable) {
             self.source.close()
         }
     }
@@ -130,7 +130,7 @@ pub class BufferedWriter impl Closable + Writeable {
     pub func close() {
         self.flush()
 
-        if self.own_source && is(self.source, Closable) {
+        if self.own_source && (self.source is Closable) {
             self.source.close()
         }
     }

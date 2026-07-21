@@ -266,6 +266,7 @@ namespace orbiter::datatype {
             NO_NAMED_ARGS,
             NO_KWARGS,
             INIT_NO_CURRY,
+            IS_NON_TYPE,
         };
 
         static constexpr const char *Details[] = {
@@ -288,6 +289,7 @@ namespace orbiter::datatype {
             (const char *) "'%s' does not accept named arguments",
             (const char *) "'%s' does not accept keyword arguments",
             (const char *) "constructor of '%s' cannot be partially applied",
+            (const char *) "right-hand operand of 'is' must be a type, got '%s'",
         };
     };
 

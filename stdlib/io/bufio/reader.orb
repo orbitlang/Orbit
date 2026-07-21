@@ -60,7 +60,7 @@ pub class BufferedReader impl LineReadable {
      *     br := new BufferedReader(file, size=65536)  # 64 KiB
      */
     pub init(source, size=BufferedReader.BUFFER_SIZE) {
-        if !is(source, Readable) {
+        if !(source is Readable) {
             panic TypeError("source must implement Readable trait")
         }
 

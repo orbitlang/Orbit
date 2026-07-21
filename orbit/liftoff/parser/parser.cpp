@@ -56,6 +56,7 @@ int PeekPrecedence(const TokenType token) {
         case TokenType::EQUAL_EQUAL:
         case TokenType::EQUAL_STRICT:
         case TokenType::KW_IN:
+        case TokenType::KW_IS:
         case TokenType::KW_NOT:
         case TokenType::NOT_EQUAL:
         case TokenType::NOT_EQUAL_STRICT:
@@ -1683,6 +1684,9 @@ ASTHandle<ASTNode *> Parser::ParseInfix(ASTHandle<ASTNode *> &left) {
         case TokenType::ARROW_LEFT:
             node_type = NodeType::CHAN_SEND;
             break;
+        case TokenType::KW_IS:
+            node_type = NodeType::IS;
+            break;
         case TokenType::LESS:
         case TokenType::LESS_EQ:
         case TokenType::GREATER:
@@ -2428,6 +2432,7 @@ Parser::LedMeth Parser::LookupLED(TokenType token) noexcept {
 
     switch (token) {
         case TokenType::ARROW_LEFT:
+        case TokenType::KW_IS:
             return &Parser::ParseInfix;
         case TokenType::EQUAL:
         case TokenType::ASSIGN_ADD:

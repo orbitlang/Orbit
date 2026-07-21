@@ -1276,6 +1276,32 @@ CATCH_FINALLY:
 
                 DISPATCH;
             }
+            TARGET_OP(ISTP) {
+                const auto src_l = (OObject *) REG_N(FETCH_R_SRC(instr));
+                const auto src_r = (OObject *) REG_N(FETCH_R_RSRC(instr));
+                bool out = false;
+
+                if (!O_IS_OBJECT(src_r) || O_GET_RC(src_r).IsInstance()) {
+                    ErrorSetWithObjType(fiber->isolate,
+                                        TypeError::Details[TypeError::Reason::ID],
+                                        TypeError::Details[TypeError::Reason::IS_NON_TYPE],
+                                        nullptr,
+                                        src_r);
+
+                    goto ERROR;
+                }
+
+                const TypeInfo *self_type = GetTypeInfoFromObject(fiber->isolate, src_l);
+                if (self_type != nullptr) {
+                    const auto *target = (TypeInfo *) src_r;
+
+                    out = self_type == target || IsTypeExtends(self_type, target);
+                }
+
+                ACCESS_REG_DST(instr) = BOOL_TO_OBOOL(out);
+
+                DISPATCH;
+            }
             TARGET_OP(MVN) {
                 if (!ObjectMoveNot(fiber->isolate, (OObject *) ACCESS_REG_SRC(instr), result))
                     goto ERROR;

@@ -139,6 +139,10 @@ namespace orbiter {
         CMP, // Generic compare (flags for <,>,<=,>=)
         EQ, // Equality (== or ===)
 
+        // Type instance
+        // Format: OPCODE | 4 DST | 4 SRC_L | 4 SRC_R | 12 RESERVED
+        ISTP,
+
         // UNARY OP
         // Format: OPCODE | 4 DST | 4 SRC | 16 RESERVED
         MVN, // Move Not (bitwise complement)
