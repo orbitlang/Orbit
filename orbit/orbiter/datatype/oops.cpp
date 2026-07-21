@@ -348,11 +348,11 @@ int orbiter::datatype::Compare(const OObject *left, const OObject *right, const 
     if (left == right && ENUMBITMASK_ISTRUE(mode, ComparisonMode::EQ))
         return 1;
 
-    if (O_IS_OBJECT(left)) {
+    if (O_IS_OBJECT(left) && O_GET_RC(left).IsInstance()) {
         const auto &ops = O_GET_TYPE_OPS(left);
         if (ops.compare != nullptr)
             ok = ops.compare(left, right, delta);
-    } else if (O_IS_OBJECT(right)) {
+    } else if (O_IS_OBJECT(right) && O_GET_RC(right).IsInstance()) {
         const auto &ops = O_GET_TYPE_OPS(right);
         if (ops.compare != nullptr) {
             if (ENUMBITMASK_ISTRUE(real_mode, ComparisonMode::LT))
@@ -369,7 +369,11 @@ int orbiter::datatype::Compare(const OObject *left, const OObject *right, const 
     }
 
     if (!ok) {
-        auto *isolate = Fiber::Current()->isolate;
+        auto *fiber = Fiber::Current();
+        if (fiber->IsPanicking())
+            return -1;
+
+        auto *isolate = fiber->isolate;
 
         // Operator symbol from the caller's point of view (`left op right`),
         // so we use `mode` rather than the internally-swapped `real_mode`.
@@ -421,13 +425,13 @@ bool orbiter::datatype::Equal(const OObject *left, const OObject *right, bool &o
         return true;
     }
 
-    if (O_IS_OBJECT(left)) {
+    if (O_IS_OBJECT(left) && O_GET_RC(left).IsInstance()) {
         const auto &ops = O_GET_TYPE_OPS(left);
         if (ops.equal != nullptr)
             return ops.equal(left, right, out);
     }
 
-    if (O_IS_OBJECT(right)) {
+    if (O_IS_OBJECT(right) && O_GET_RC(right).IsInstance()) {
         const auto &ops = O_GET_TYPE_OPS(right);
         if (ops.equal != nullptr)
             return ops.equal(right, left, out);
@@ -586,7 +590,7 @@ HOObject orbiter::datatype::ToString(Isolate *isolate, const OObject *object) no
     if (O_IS_NIL(object))
         return HOObject(ORStringIntern(isolate, "nil"));
 
-    if (O_IS_OBJECT(object)) {
+    if (O_IS_OBJECT(object) && O_GET_RC(object).IsInstance()) {
         const auto &ops = O_GET_TYPE_OPS(object);
         if (ops.to_string != nullptr) {
             auto result = ops.to_string(isolate, object);
@@ -623,7 +627,7 @@ HOObject orbiter::datatype::ToString(Isolate *isolate, const OObject *object) no
 }
 
 HOObject orbiter::datatype::Repr(Isolate *isolate, const OObject *object) noexcept {
-    if (O_IS_OBJECT(object)) {
+    if (O_IS_OBJECT(object) && O_GET_RC(object).IsInstance()) {
         const auto &ops = O_GET_TYPE_OPS(object);
         if (ops.to_repr != nullptr) {
             auto result = ops.to_repr(isolate, object);
@@ -658,32 +662,34 @@ MSize orbiter::datatype::Hash(const OObject *obj) {
     if (O_IS_SMI(obj) || O_IS_ODDBALL(obj))
         return O_FROM_SMI(obj);
 
-    const auto &ops = O_GET_TYPE_OPS(obj);
-    if (ops.hash != nullptr) {
-        const auto hash = ops.hash(obj);
-        if (hash == HASH_ERROR) {
+    if (O_GET_RC(obj).IsInstance()) {
+        const auto &ops = O_GET_TYPE_OPS(obj);
+        if (ops.hash != nullptr) {
+            const auto hash = ops.hash(obj);
+            if (hash == HASH_ERROR) {
+                ErrorSetWithObjType(O_GET_ISOLATE(obj),
+                                    TypeError::Details[TypeError::Reason::ID],
+                                    TypeError::Details[TypeError::Reason::UNHASHABLE],
+                                    nullptr,
+                                    obj);
+            }
+
+            return hash;
+        }
+
+        // No custom hash: identity-hash is safe only when equality is also identity.
+        // A type that overrides `equal` without providing a compatible `hash` would
+        // silently break the `a == b ⇒ hash(a) == hash(b)` invariant (e.g. a mutable
+        // List with structural equality): mark it as unhashable.
+        if (ops.equal != nullptr) {
             ErrorSetWithObjType(O_GET_ISOLATE(obj),
                                 TypeError::Details[TypeError::Reason::ID],
                                 TypeError::Details[TypeError::Reason::UNHASHABLE],
                                 nullptr,
                                 obj);
+
+            return HASH_ERROR;
         }
-
-        return hash;
-    }
-
-    // No custom hash: identity-hash is safe only when equality is also identity.
-    // A type that overrides `equal` without providing a compatible `hash` would
-    // silently break the `a == b ⇒ hash(a) == hash(b)` invariant (e.g. a mutable
-    // List with structural equality): mark it as unhashable.
-    if (ops.equal != nullptr) {
-        ErrorSetWithObjType(O_GET_ISOLATE(obj),
-                            TypeError::Details[TypeError::Reason::ID],
-                            TypeError::Details[TypeError::Reason::UNHASHABLE],
-                            nullptr,
-                            obj);
-
-        return HASH_ERROR;
     }
 
     return (MSSize) obj;

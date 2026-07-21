@@ -779,9 +779,13 @@ OObject *LoadFromObjectProp(const Fiber *fiber, const Function *func, OObject *o
         type = O_GET_TYPE(type);
 
     const TypeInfo *target_type = nullptr;
-    auto prop = TIFindProperty(type, &target_type, (const char *) key->buffer);
-    if (prop == nullptr && obj_is_type)
+    PropertyDescriptor *prop = nullptr;
+
+    if (obj_is_type)
         prop = TIFindProperty((TypeInfo *) obj, &target_type, (const char *) key->buffer);
+
+    if (prop == nullptr)
+        prop = TIFindProperty(type, &target_type, (const char *) key->buffer);
 
     if (prop == nullptr) {
         char error[24];

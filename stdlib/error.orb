@@ -101,8 +101,8 @@ pub func fmt_typerror(obj, ...types) {
             expected += "/"
         }
 
-        expected += t.tp_name()
+        expected += tp_name(t)
     }
 
-    return TypeError("expected type '%s', got '%s'" % (expected, obj.tp_name()))
+    return TypeError("expected type '%s', got '%s'" % (expected, tp_name(obj)))
 }

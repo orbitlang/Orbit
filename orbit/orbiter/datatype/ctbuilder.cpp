@@ -15,7 +15,13 @@
 
 using namespace orbiter::datatype;
 
+static bool ClassCompare(const OObject *left, const OObject *right, int &result);
+
 static bool ClassEqual(const OObject *left, const OObject *right, bool &out);
+
+static OObject *ClassToString(orbiter::Isolate *isolate, const Class *self);
+
+static OObject *ClassToRepr(orbiter::Isolate *isolate, const Class *self);
 
 static MSize ClassHash(const OObject *self);
 
@@ -47,22 +53,18 @@ bool InitObjectBlueprint(orbiter::Isolate *isolate, TypeInfo *type) {
     if (blueprint == nullptr)
         return {};
 
+    auto *super = O_GET_TYPE(type);
+    if (super->i_type == InstanceType::CLASS && super->i_size > super->offset) {
+        if (super->aux.data == nullptr && !InitObjectBlueprint(isolate, super))
+            return false;
+    }
+
     auto **slot = (OObject **) (((unsigned char *) blueprint) + sizeof(ClassBlueprint));
     for (auto i = 0; i < type->properties.count; i++) {
         const auto *property = type->properties.p_array + i;
 
         if (ENUMBITMASK_ISTRUE(property->detail, PropertyFlag::DUP_INLINE))
             slot[property->slot] = property->value;
-    }
-
-    auto *super = O_GET_TYPE(type);
-    if (super->i_type == InstanceType::CLASS && super->i_size > super->offset) {
-        if (super->aux.data == nullptr) {
-            if (!InitObjectBlueprint(isolate, super))
-                return false;
-        }
-
-        orbiter::memory::MemoryCopy(blueprint, super->aux.data, blueprint_size);
     }
 
     type->aux.data = blueprint;
@@ -73,31 +75,44 @@ bool InitObjectBlueprint(orbiter::Isolate *isolate, TypeInfo *type) {
     // The reason behind this choice is to avoid breaking invariants and to allow custom objects
     // to behave standardly.
 
-    auto *prop = TIFindLocalProperty(type, "equal");
-    if (prop != nullptr) {
-        ((ClassBlueprint *) type->aux.data)->equal = (Function *) prop->value;
+    auto *cache = (ClassBlueprint *) type->aux.data;
+    auto &ops = ((TypeInfoOps *) type)->ops;
+    const TypeInfo *out_type;
 
-        ((TypeInfoOps *) type)->ops.equal = ClassEqual;
+    auto *prop = TIFindProperty(type, &out_type, "equal");
+    if (prop != nullptr) {
+        cache->equal = (Function *) prop->value;
+
+        ops.equal = ClassEqual;
     }
 
-    prop = TIFindLocalProperty(type, "compare");
-    if (prop != nullptr)
-        ((ClassBlueprint *) type->aux.data)->compare = (Function *) prop->value;
-
-    prop = TIFindLocalProperty(type, "hash");
+    prop = TIFindProperty(type, &out_type, "compare");
     if (prop != nullptr) {
-        ((ClassBlueprint *) type->aux.data)->hash = (Function *) prop->value;
+        cache->compare = (Function *) prop->value;
 
-        ((TypeInfoOps *) type)->ops.hash = ClassHash;
+        ops.compare = ClassCompare;
     }
 
-    prop = TIFindLocalProperty(type, "repr");
-    if (prop != nullptr)
-        ((ClassBlueprint *) type->aux.data)->repr = (Function *) prop->value;
+    prop = TIFindProperty(type, &out_type, "hash");
+    if (prop != nullptr) {
+        cache->hash = (Function *) prop->value;
 
-    prop = TIFindLocalProperty(type, "str");
-    if (prop != nullptr)
-        ((ClassBlueprint *) type->aux.data)->str = (Function *) prop->value;
+        ops.hash = ClassHash;
+    }
+
+    prop = TIFindProperty(type, &out_type, "repr");
+    if (prop != nullptr) {
+        cache->repr = (Function *) prop->value;
+
+        ops.to_repr = (ToStrFn)ClassToRepr;
+    }
+
+    prop = TIFindProperty(type, &out_type, "str");
+    if (prop != nullptr) {
+        cache->str = (Function *) prop->value;
+
+        ops.to_string = (ToStrFn)ClassToString;
+    }
 
     return true;
 }
@@ -132,11 +147,7 @@ bool PushProperties(TypeInfo *type, const ExportedSymbol *exported, const U16 le
 // *********************************************************************************************************************
 
 static bool ClassCompare(const OObject *left, const OObject *right, int &result) {
-    const auto *type = O_GET_TYPE(left);
-    const auto *cache = (ClassBlueprint *) type->aux.data;
-
-    if (cache->compare == nullptr)
-        return false;
+    const auto *cache = (const ClassBlueprint *) O_GET_TYPE(left)->aux.data;
 
     IntegerUnderlying cmp;
 
@@ -149,8 +160,18 @@ static bool ClassCompare(const OObject *left, const OObject *right, int &result)
     if (!orbiter::Orbiter::EvalSync(cache->compare, argv, 2, &value))
         return false;
 
-    if (!NumberExtract(value, cmp))
+    if (!NumberExtract(value, cmp)) {
+        char name[24];
+        GetTypeName(O_GET_ISOLATE(left), left, name, sizeof(name));
+
+        ErrorSet(O_GET_ISOLATE(left),
+                 TypeError::Details[TypeError::Reason::ID],
+                 nullptr,
+                 "compare of '%s' returned non-integer value",
+                 name);
+
         return false;
+    }
 
     result = (int) cmp;
 
@@ -158,14 +179,7 @@ static bool ClassCompare(const OObject *left, const OObject *right, int &result)
 }
 
 static bool ClassEqual(const OObject *left, const OObject *right, bool &out) {
-    const auto *type = O_GET_TYPE(left);
-    const auto *cache = (ClassBlueprint *) type->aux.data;
-
-    if (cache->equal == nullptr) {
-        out = left == right;
-
-        return true;
-    }
+    const auto *cache = (const ClassBlueprint *) O_GET_TYPE(left)->aux.data;
 
     OObject *argv[] = {
         (OObject *) left,
@@ -200,30 +214,25 @@ static bool ClassEqual(const OObject *left, const OObject *right, bool &out) {
 
 static OObject *ClassToString(orbiter::Isolate *isolate, const Class *self) {
     const auto *type = O_GET_TYPE(self);
-    const auto *cache = (ClassBlueprint *) type->aux.data;
+    const auto *cache = (const ClassBlueprint *) type->aux.data;
 
-    if (cache->str != nullptr) {
-        OObject *value = nullptr;
+    OObject *value = nullptr;
 
-        // Do NOT rely on caller's stack — direct calls leave `self` below
-        // the sync frame, but indirect paths (e.g. container stringify) don't.
-        if (orbiter::Orbiter::EvalSync(cache->str, (OObject **) &self, 1, &value))
-            return value;
-    }
+    // Do NOT rely on caller's stack — direct calls leave `self` below
+    // the sync frame, but indirect paths (e.g. container stringify) don't.
+    if (orbiter::Orbiter::EvalSync(cache->str, (OObject **) &self, 1, &value))
+        return value;
 
     return (OObject *) ORStringFormat(isolate, "<%s at %p>", type->name, self).get();
 }
 
 static OObject *ClassToRepr(orbiter::Isolate *isolate, const Class *self) {
-    const auto *type = O_GET_TYPE(self);
-    const auto *cache = (ClassBlueprint *) type->aux.data;
+    const auto *cache = (const ClassBlueprint *) O_GET_TYPE(self)->aux.data;
 
-    if (cache->repr != nullptr) {
-        OObject *value = nullptr;
+    OObject *value = nullptr;
 
-        if (orbiter::Orbiter::EvalSync(cache->repr, (OObject **) &self, 1, &value))
-            return value;
-    }
+    if (orbiter::Orbiter::EvalSync(cache->repr, (OObject **) &self, 1, &value))
+        return value;
 
     return ClassToString(isolate, self);
 }
@@ -233,16 +242,28 @@ static OObject *ClassToRepr(orbiter::Isolate *isolate, const Class *self) {
 // *********************************************************************************************************************
 
 static MSize ClassHash(const OObject *self) {
-    const auto *type = O_GET_TYPE(self);
+    const auto *cache = (const ClassBlueprint *) O_GET_TYPE(self)->aux.data;
 
     OObject *value = nullptr;
     IntegerUnderlying hash = 0;
 
-    if (!orbiter::Orbiter::EvalSync(((ClassBlueprint *) type->aux.data)->hash, (OObject **) &self, 1, &value))
+    if (!orbiter::Orbiter::EvalSync(cache->hash, (OObject **) &self, 1, &value))
         return HASH_ERROR;
 
-    if (!NumberExtract(value, hash))
+    // HASH_ERROR is only meaningful to the caller if an error is pending: EvalSync
+    // leaves one on a panicking hook, but a hook returning a non-integer does not.
+    if (!NumberExtract(value, hash)) {
+        char name[24];
+        GetTypeName(O_GET_ISOLATE(self), self, name, sizeof(name));
+
+        ErrorSet(O_GET_ISOLATE(self),
+                 TypeError::Details[TypeError::Reason::ID],
+                 nullptr,
+                 "hash of '%s' returned non-integer value",
+                 name);
+
         return HASH_ERROR;
+    }
 
     return hash;
 }
@@ -312,14 +333,6 @@ HOType orbiter::datatype::ClassTypeNew(const Code *code, TypeInfo *super, TypeIn
         return {};
 
     clazz->aux.dtor = ClassBlueprintDtor;
-
-    auto &ops = ((TypeInfoOps *) clazz.get())->ops;
-
-    // See InitObjectBlueprint ops.equal = ClassEqual;
-    // See InitObjectBlueprint ops.hash = ClassHash;
-    ops.compare = ClassCompare;
-    ops.to_string = (ToStrFn) ClassToString;
-    ops.to_repr = (ToStrFn) ClassToRepr;
 
     return clazz;
 }

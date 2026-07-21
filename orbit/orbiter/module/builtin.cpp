@@ -12,6 +12,7 @@
 #include <orbit/orbiter/datatype/module.h>
 #include <orbit/orbiter/datatype/number.h>
 #include <orbit/orbiter/datatype/oobject.h>
+#include <orbit/orbiter/datatype/orstring.h>
 #include <orbit/orbiter/datatype/pcheck.h>
 
 #include <orbit/orbiter/isolate.h>
@@ -60,7 +61,7 @@ static bool BuiltinInit(Module *self) {
 }
 
 // *********************************************************************************************************************
-// PRIMITIVES
+// BUILT-INS
 // *********************************************************************************************************************
 
 RUNTIME_FUNCTION(builtin_eval, eval,
@@ -186,6 +187,89 @@ deferred to the scheduler and surfaces through the returned future.
     return HOObject((OObject *) future.get());
 }
 
+RUNTIME_FUNCTION(builtin_hash, hash,
+                 R"DOC(
+@brief Return the hash value of a value.
+
+For numeric values the hash equals the integer itself. For heap objects a
+type-specific hash function is used when available; otherwise the object's
+identity address is used as a fallback.
+
+@param obj  The value to hash.
+
+@return An integer hash value.
+
+@see idof
+
+@example
+    hash("hello")   // deterministic hash of the string
+    hash(42)        // 42
+)DOC", 1, nullptr, false, false) {
+    auto n = UIntNew(O_GET_ISOLATE(_func), Hash(argv[0]));
+    if (!n)
+        return {};
+
+    return HOObject(std::move(n));
+}
+
+RUNTIME_FUNCTION(builtin_id, idof,
+                 R"DOC(
+@brief Return a unique integer identifier for a value.
+
+The identifier is derived from the object's memory address and remains
+constant throughout its lifetime. Two distinct live objects always have
+different identifiers; an identifier may be reused after the object has
+been collected.
+
+@param obj  The value to identify.
+
+@return An integer that uniquely identifies the object for its lifetime.
+
+@see hash
+
+@example
+    let a = new SomeClass()
+    let b = new SomeClass()
+    idof(a) == idof(b)   // false — distinct objects
+    idof(a) == idof(a)   // true  — same object
+)DOC", 1, nullptr, false, false) {
+    auto n = UIntNew(O_GET_ISOLATE(_func), (PtrSize) argv[0]);
+    if (!n)
+        return {};
+
+    return HOObject(std::move(n));
+}
+
+RUNTIME_FUNCTION(builtin_is, is,
+                 R"DOC(
+@brief Return true if a value is an instance of the given type.
+
+Returns true when the value's type is exactly `t` or when it extends `t`
+(the check is inheritance-aware). Primitive values such as integers,
+booleans and nil that are not heap-allocated always return false.
+
+@param obj  The value to test.
+@param t    The type to check against.
+
+@return true if `obj` is an instance of `t`, false otherwise.
+
+@see type
+
+@example
+    is("hi", String)              // true
+    is(1, String)                 // false
+    is(new MySubClass(), Base)    // true  (subclass satisfies base check)
+)DOC", 2, nullptr, false, false) {
+    // SMIs and oddballs are not heap objects and cannot be class instances.
+    if (!O_IS_OBJECT(argv[0]))
+        return HOObject((OObject *) kOddBallFALSE);
+
+    const auto *self_type = O_GET_TYPE(argv[0]);
+    const auto *target = (TypeInfo *) argv[1];
+
+    return HOObject((OObject *) BOOL_TO_OBOOL(self_type == target || IsTypeExtends(self_type, target)));
+}
+
 RUNTIME_FUNCTION(builtin_panicking, panicking,
                  R"DOC(
 @brief Report whether the current fiber is unwinding a panic.
@@ -227,6 +311,104 @@ calls will return `false` again.
     return HOObject((OObject *) BOOL_TO_OBOOL(orbiter::Fiber::Current()->IsPanicking()));
 }
 
+RUNTIME_FUNCTION(builtin_tp_name, tp_name,
+                 R"DOC(
+@brief Return the type name of a value as a String.
+
+When the argument is a type (or class) object, its own name is returned.
+For any other value the name of its runtime type is returned — shorthand
+for `tp_name(type(obj))`.
+
+@param obj  The value whose type name is wanted.
+
+@return A String with the type name.
+
+@panic OOMError  When memory allocation fails.
+
+@see type, is
+
+@example
+    tp_name(String)        // "String"
+    tp_name(42)            // "Number"
+    tp_name(type("hi"))    // "String"
+)DOC", 1, nullptr, false, false) {
+    auto *isolate = O_GET_ISOLATE(_func);
+
+    const TypeInfo *type;
+    if (O_IS_OBJECT(argv[0]) && O_IS_TYPE(argv[0], InstanceType::TYPE))
+        type = (const TypeInfo *) argv[0];
+    else
+        type = GetTypeInfoFromObject(isolate, argv[0]);
+
+    auto name = ORStringIntern(isolate, type->name);
+    if (!name)
+        return {};
+
+    return HOObject((OObject *) name.release());
+}
+
+RUNTIME_FUNCTION(builtin_torepr, torepr,
+                 R"DOC(
+@brief Return a developer-oriented representation of a value.
+
+Calls the type's to_repr operation when defined. Falls back to tostr() when
+no to_repr is registered, and ultimately to the default "<TypeName at 0xADDR>"
+form. The repr string is intended for debugging and should ideally be valid
+Orbit syntax that reconstructs the value.
+
+@param obj  The value to represent.
+
+@return A String with the debug representation.
+
+@see tostr
+
+@example
+    torepr("hello")    // '"hello"'  (includes quotes)
+    torepr([1, 2])     // "[1, 2]"
+)DOC", 1, nullptr, false, false) {
+    return Repr(O_GET_ISOLATE(_func), argv[0]);
+}
+
+RUNTIME_FUNCTION(builtin_tostr, tostr,
+                 R"DOC(
+@brief Return a human-readable string representation of a value.
+
+Calls the type's to_string operation when defined. Falls back to a default
+representation of the form "<TypeName at 0xADDR>" when no to_string is
+registered for the type.
+
+@param obj  The value to stringify.
+
+@return A String describing the value.
+
+@see torepr
+
+@example
+    tostr(42)          // "42"
+    tostr(true)        // "true"
+    tostr([1, 2, 3])   // "[1, 2, 3]"
+)DOC", 1, nullptr, false, false) {
+    return ToString(O_GET_ISOLATE(_func), argv[0]);
+}
+
+RUNTIME_FUNCTION(builtin_type, type,
+                 R"DOC(
+@brief Return the runtime type object of a value.
+
+@param obj  The value whose type is wanted.
+
+@return The Type object describing the value's runtime type.
+
+@see is
+
+@example
+    type("hi")         // String
+    type(3.14)         // Decimal
+    type([])           // List
+)DOC", 1, nullptr, false, false) {
+    return HOObject((OObject *) GetTypeInfoFromObject(O_GET_ISOLATE(_func), argv[0]));
+}
+
 // *********************************************************************************************************************
 // MODULE TABLE
 // *********************************************************************************************************************
@@ -259,7 +441,14 @@ const ModuleEntry builtin_entries[] = {
     ORBIT_MODULE_EXPORT_ALIAS("Type", nullptr),
 
     ORBIT_MODULE_EXPORT_FUNCTION(builtin_eval),
+    ORBIT_MODULE_EXPORT_FUNCTION(builtin_hash),
+    ORBIT_MODULE_EXPORT_FUNCTION(builtin_id),
+    ORBIT_MODULE_EXPORT_FUNCTION(builtin_is),
     ORBIT_MODULE_EXPORT_FUNCTION(builtin_panicking),
+    ORBIT_MODULE_EXPORT_FUNCTION(builtin_tp_name),
+    ORBIT_MODULE_EXPORT_FUNCTION(builtin_torepr),
+    ORBIT_MODULE_EXPORT_FUNCTION(builtin_tostr),
+    ORBIT_MODULE_EXPORT_FUNCTION(builtin_type),
 
     ORBIT_MODULE_SENTINEL
 };

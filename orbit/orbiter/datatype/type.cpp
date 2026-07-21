@@ -4,206 +4,21 @@
 
 #include <cassert>
 
-#include <orbit/orbiter/datatype/function.h>
-#include <orbit/orbiter/datatype/number.h>
-#include <orbit/orbiter/datatype/orstring.h>
-#include <orbit/orbiter/datatype/pcheck.h>
 #include <orbit/orbiter/datatype/type.h>
 
 using namespace orbiter::datatype;
-
-RUNTIME_METHOD(type_hash, hash,
-               R"DOC(
-@brief Return the hash value of the object.
-
-For numeric values the hash equals the integer itself.  For heap objects a
-type-specific hash function is used when available; otherwise the object's
-identity address is used as a fallback.
-
-@return An integer hash value.
-
-@see id
-
-@example
-    "hello".hash()   // deterministic hash of the string
-    (42).hash()      // 42
-)DOC", 1, nullptr, false, false) {
-    auto n = UIntNew(O_GET_ISOLATE(_func), Hash(argv[0]));
-    if (!n)
-        return {};
-
-    return HOObject(std::move(n));
-}
-
-RUNTIME_METHOD(type_id, id,
-               R"DOC(
-@brief Return a unique integer identifier for the object.
-
-The identifier is derived from the object's memory address and remains
-constant throughout its lifetime.  Two distinct live objects will always
-have different identifiers; an identifier may be reused after the object
-has been collected.
-
-@return An integer that uniquely identifies the object for its lifetime.
-
-@see hash
-
-@example
-    let a = SomeClass()
-    let b = SomeClass()
-    a.id() == b.id()   // false — distinct objects
-    a.id() == a.id()   // true  — same object
-)DOC", 1, nullptr, false, false) {
-    auto n = UIntNew(O_GET_ISOLATE(_func), (PtrSize) argv[0]);
-    if (!n)
-        return {};
-
-    return HOObject(std::move(n));
-}
-
-RUNTIME_METHOD(type_is, is,
-               R"DOC(
-@brief Return true if the object is an instance of the given type.
-
-Returns true when the object's type is exactly `t` or when the object's type
-extends `t` (i.e. the check is inheritance-aware).  Primitive values such as
-integers, booleans, and nil that are not heap-allocated always return false.
-
-@param t  The type to check against.
-
-@return true if the object is an instance of `t`, false otherwise.
-
-@see type
-
-@example
-    "hi".is(String)         // true
-    (1).is(String)          // false
-    MySubClass().is(Base)   // true  (subclass satisfies base check)
-)DOC", 2, nullptr, false, false) {
-    // SMIs and oddballs are not heap objects and cannot be class instances.
-    if (!O_IS_OBJECT(argv[0]))
-        return HOObject((OObject *) kOddBallFALSE);
-
-    const auto *self_type = O_GET_TYPE(argv[0]);
-    const auto *target = (TypeInfo *) argv[1];
-
-    return HOObject((OObject *) BOOL_TO_OBOOL(self_type == target || IsTypeExtends(self_type, target)));
-}
-
-RUNTIME_METHOD(type_name, tp_name,
-               R"DOC(
-@brief Return the type name as a String.
-
-When the receiver is a type (or class) object, its own name is returned.
-For any other value the name of its runtime type is returned — shorthand
-for `obj.type().tp_name()`.
-
-@return A String with the type name.
-
-@panic OOMError  When memory allocation fails.
-
-@see type, is
-
-@example
-    String.tp_name()        // "String"
-    (42).tp_name()          // "Number"
-    "hi".type().tp_name()   // "String"
-)DOC", 1, nullptr, false, false) {
-    auto *isolate = O_GET_ISOLATE(_func);
-
-    const TypeInfo *type;
-    if (O_IS_OBJECT(argv[0]) && O_IS_TYPE(argv[0], InstanceType::TYPE))
-        type = (const TypeInfo *) argv[0];
-    else
-        type = GetTypeInfoFromObject(isolate, argv[0]);
-
-    auto name = ORStringIntern(isolate, type->name);
-    if (!name)
-        return {};
-
-    return HOObject((OObject *) name.release());
-}
-
-RUNTIME_METHOD(type_torepr, torepr,
-               R"DOC(
-@brief Return a developer-oriented representation of the object.
-
-Calls the type's to_repr operation when defined.  Falls back to tostr() when
-no to_repr is registered, and ultimately to the default "<TypeName at 0xADDR>"
-form.  The repr string is intended for debugging and should ideally be valid
-Orbit syntax that reconstructs the value.
-
-@return A String with the debug representation.
-
-@see str
-
-@example
-    "hello".torepr()    // '"hello"'  (includes quotes)
-    [1, 2].torepr()     // "[1, 2]"
-)DOC", 1, nullptr, false, false) {
-    return Repr(O_GET_ISOLATE(_func), argv[0]);
-}
-
-RUNTIME_METHOD(type_tostr, tostr,
-               R"DOC(
-@brief Return a human-readable string representation of the object.
-
-Calls the type's to_string operation when defined.  Falls back to a default
-representation of the form "<TypeName at 0xADDR>" when no to_string is
-registered for the type.
-
-@return A String describing the object.
-
-@see repr
-
-@example
-    (42).tostr()         // "42"
-    true.tostr()         // "true"
-    [1, 2, 3].tostr()    // "[1, 2, 3]"
-)DOC", 1, nullptr, false, false) {
-    return ToString(O_GET_ISOLATE(_func), argv[0]);
-}
-
-RUNTIME_METHOD(type_type, type,
-               R"DOC(
-@brief Return the runtime type object of the receiver.
-
-@return The Type object describing the receiver's runtime type.
-
-@see is
-
-@example
-    "hi".type()         // String
-    (3.14).type()       // Decimal
-    [].type()           // List
-    "hi".type().str()   // "type String at 0x..."
-)DOC", 1, nullptr, false, false) {
-    return HOObject((OObject *) GetTypeInfoFromObject(O_GET_ISOLATE(_func), argv[0]));
-}
-
-constexpr FunctionDef type_methods[] = {
-    type_hash,
-    type_id,
-    type_is,
-    type_name,
-    type_torepr,
-    type_tostr,
-    type_type,
-
-    FUNCTIONDEF_SENTINEL
-};
 
 // *********************************************************************************************************************
 // PUBLIC API
 // *********************************************************************************************************************
 
 HOType orbiter::datatype::TypeInit(Isolate *isolate) {
-    auto type = MakeType(isolate, nullptr, "Type", InstanceType::TYPE, 0, 7, 0);
+    auto type = MakeType(isolate, nullptr, "Type", InstanceType::TYPE, 0, 0, 0);
     return type;
 }
 
 bool orbiter::datatype::TypeSetup(TypeInfo *self) {
     assert(self != nullptr);
 
-    return TIPropertyAdd(self, type_methods, PropertyFlag::IS_PUBLIC);
+    return true;
 }
