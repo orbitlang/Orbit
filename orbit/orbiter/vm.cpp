@@ -15,6 +15,7 @@
 #include <orbit/orbiter/datatype/generator.h>
 #include <orbit/orbiter/datatype/nativefunc.h>
 #include <orbit/orbiter/datatype/result.h>
+#include <orbit/orbiter/datatype/set.h>
 #include <orbit/orbiter/datatype/tuple.h>
 
 #include <orbit/orbiter/import/importer.h>
@@ -1122,7 +1123,7 @@ CATCH_FINALLY:
                 if (ENUMBITMASK_ISTRUE(flag, DivFlags::IMM8))
                     right = (OObject *) ((PtrSize) FETCH_SMI_8BIT(instr));
 
-                if (flag == DivFlags::NONE) {
+                if (ENUMBITMASK_ISFALSE(flag, DivFlags::FLOAT)) {
                     if (!ObjectIDiv(fiber->isolate, (OObject *) ACCESS_REG_SRC(instr), right, result))
                         goto ERROR;
                 } else {
@@ -2017,8 +2018,11 @@ CATCH_FINALLY:
                 dst = FETCH_R_DST(instr);
                 const auto imm = FETCH_IMM(instr);
 
-                // TODO: Set here!
-                assert(false);
+                auto set = SetNew(fiber->isolate, imm);
+                if (!set)
+                    goto ERROR;
+
+                ACCESS_REG_DST(instr) = (PtrSize) set.get();
 
                 DISPATCH;
             }
@@ -2046,6 +2050,8 @@ CATCH_FINALLY:
                     ListAppend((List *) obj, value);
                 else if (O_IS_TYPE(obj, InstanceType::TUPLE))
                     TupleAppend((Tuple *) obj, value);
+                else if (O_IS_TYPE(obj, InstanceType::SET))
+                    SetAdd((Set *) obj, value);
                 else
                     assert(false);
 
