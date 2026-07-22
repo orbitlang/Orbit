@@ -1462,10 +1462,18 @@ ASTHandle<ASTNode *> Parser::ParseExpressionList(ASTHandle<ASTNode *> &left) {
 ASTHandle<ASTNode *> Parser::ParseExprOrTuple() {
     auto tuple = MakeListExpression(this->isolate_, TKCUR_LOC, NodeType::TUPLE);
 
+    bool single_element = false;
+
     this->Eat(true);
 
     if (!this->Match(TokenType::RIGHT_ROUND)) {
         do {
+            if (this->Match(TokenType::RIGHT_ROUND)) {
+                single_element = true;
+
+                break;
+            }
+
             this->EatNL();
 
             auto item = this->ParseExpression(TokenType::COMMA);
@@ -1481,7 +1489,7 @@ ASTHandle<ASTNode *> Parser::ParseExprOrTuple() {
     if (!this->MatchEat(TokenType::RIGHT_ROUND, false))
         throw ParserException(10);
 
-    if (tuple->elements.size() == 1)
+    if (!single_element && tuple->elements.size() == 1)
         return std::move(tuple->elements.back());
 
     return tuple;
