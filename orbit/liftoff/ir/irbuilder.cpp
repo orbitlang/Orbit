@@ -75,17 +75,19 @@ orbiter::OPCode InfixOp2OpCode(const scanner::TokenType tt, const bool imm, U8 &
         case scanner::TokenType::SLASH_SLASH:
             if (imm)
                 flags |= (U8) orbiter::DivFlags::IMM8;
+
             return orbiter::OPCode::DIV;
         case scanner::TokenType::PERCENT:
-            return orbiter::OPCode::MOD;
+            if (imm)
+                flags |= (U8) orbiter::DivFlags::IMM8;
 
+            return orbiter::OPCode::MOD;
         case scanner::TokenType::AMPERSAND:
             return orbiter::OPCode::AND;
         case scanner::TokenType::PIPE:
             return orbiter::OPCode::OR;
         case scanner::TokenType::CARET:
             return orbiter::OPCode::XOR;
-
         case scanner::TokenType::SHL:
             return imm ? orbiter::OPCode::SHLI : orbiter::OPCode::SHLR;
         case scanner::TokenType::SHR:
@@ -209,7 +211,7 @@ Instruction *IRBuilder::BinaryOP(const parser::Binary *binary) {
         left = this->visit(binary->left);
     }
 
-    assert(right != nullptr);
+    assert(r_ignore || right != nullptr);
 
     auto op_flags = (U8) 0;
 

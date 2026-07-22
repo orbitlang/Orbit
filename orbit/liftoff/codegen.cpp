@@ -146,13 +146,22 @@ unsigned char *Codegen::EmitOpcodes(const BasicBlock *block, unsigned char *m_co
                 break;
             }
             case orbiter::OPCode::DIV:
-            case orbiter::OPCode::MOD:
+            case orbiter::OPCode::MOD: {
+                const auto imm8 = ENUMBITMASK_ISTRUE((orbiter::DivFlags)((BinaryOpInstr *) instr)->flags,
+                                                     orbiter::DivFlags::IMM8);
+
                 *(orbiter::MachineWord *) m_code = EMIT_DSSF(instr->opcode,
                                                              instr->assigned_reg,
                                                              ((Instruction*)instr->operands[0].value)->assigned_reg,
-                                                             ((Instruction*)instr->operands[1].value)->assigned_reg,
+                                                             !imm8 ? ((Instruction*)instr->operands[1].value)->
+                                                             assigned_reg:0,
                                                              ((ir::BinaryOpInstr*) instr)->flags);
+
+                if (imm8)
+                    *(orbiter::MachineWord *) m_code = (*(orbiter::MachineWord *) m_code)
+                                                       | ((BinaryOpImmInstr *) instr)->imm;
                 break;
+            }
             case orbiter::OPCode::AND:
             case orbiter::OPCode::OR:
             case orbiter::OPCode::XOR:
