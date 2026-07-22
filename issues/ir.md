@@ -333,7 +333,23 @@ are fine. The derived constructor was never invoked in the first place: the
 ---
 
 ## IR-005 — Instantiating a class three levels deep in an inheritance chain hangs
-**Severity:** High (interpreter hang) · **Status:** OPEN · **Location:** unconfirmed; candidates are the constructor chain (`EXECSUB`, `orbit/orbiter/vm.cpp:1540`), `InitObjectBlueprint` recursion (`ctbuilder.cpp`), and `TIFindProperty`'s superclass walk (`oobject.cpp:262`)
+**Severity:** High (interpreter hang) · **Status:** FIXED (2026-07-22) · **Location:** `LoadFromObjectProp` SUPER branch (`orbit/orbiter/vm.cpp:779`)
+
+**Root cause (confirmed).** `super.m()` resolved the lookup base from the
+*receiver's runtime type* (`GetTypeInfoFromObject(self)` — always the most-derived
+class) rather than from the class that lexically defines the running method. As
+the constructor chain runs, `self`'s type never changes, so `super.init()` inside
+an inherited `init` re-resolved to that same `init`: `B.init` reached during
+`new C()` computed `super` off `C` and got `B` again → unbounded recursion, which
+grew the VMStack without limit (the sample showed the thread permanently inside
+`VMStack::Grow`/`MemoryCopy`, not a C++ loop). Two levels worked only by
+coincidence — the top method's owner equals the receiver type.
+
+**Fix.** In the SUPER branch, walk from the enclosing class instead:
+`type = O_GET_TYPE(func->shared->owner_type)`. The earlier `TIFindProperty`
+cycle-guard hypothesis was wrong (the chain terminates at nullptr). Regression
+guard: `ortest/oop/02_inheritance_resolution.orb` now exercises 3- and 4-level
+chains (fields + `super.who()` method chain).
 
 `A <- B` constructs fine; `A <- B <- C` makes `new C()` spin forever. The hang is
 at **runtime** — compilation completes and statements before the construction run
@@ -359,11 +375,10 @@ its target before reaching the root, while a three-level one does not. Worth
 checking that root link first — a cycle guard there would be a cheap fix if so.
 
 **PoC:** [`poc/ir/ir-005-three-level-chain-hang.orb`](poc/ir/ir-005-three-level-chain-hang.orb)
-`(confirmed live)` — does not terminate; run it under a timeout.
+`(fixed)` — now terminates and passes; kept in the poc gate as a regression guard.
 
-**Note for the test suite:** `ortest/oop/02_inheritance_resolution.orb` is
-deliberately capped at two levels so the release gate does not hang; extend it to
-three once this is fixed.
+**Test suite:** `ortest/oop/02_inheritance_resolution.orb` now exercises 3- and
+4-level chains (previously capped at two while this was live).
 
 <details><summary>Original report (2026-07-15, OPEN)</summary>
 

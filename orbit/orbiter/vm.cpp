@@ -777,7 +777,7 @@ OObject *LoadFromObjectProp(const Fiber *fiber, const Function *func, OObject *o
     const auto *type = obj_is_type ? O_GET_TYPE(obj) : GetTypeInfoFromObject(fiber->isolate, obj);
 
     if (ENUMBITMASK_ISTRUE(flags, LoadObjectPropFlags::SUPER))
-        type = O_GET_TYPE(type);
+        type = O_GET_TYPE(func->shared->owner_type);
 
     const TypeInfo *target_type = nullptr;
     PropertyDescriptor *prop = nullptr;
@@ -947,7 +947,7 @@ void StoreToObjectProp(const Fiber *fiber, const Function *func, OObject *obj, O
     const PropertyDescriptor *prop = nullptr;
 
     if (ENUMBITMASK_ISTRUE(flags, LoadObjectPropFlags::SUPER))
-        type = O_GET_TYPE(type);
+        type = O_GET_TYPE(func->shared->owner_type);
 
     const TypeInfo *target_type = nullptr;
     prop = TIFindProperty(type, &target_type, (const char *) key->buffer);

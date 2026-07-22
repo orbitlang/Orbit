@@ -10,8 +10,10 @@
 # assignments, statements after `super.init(...)`) and override resolution on
 # both instances and type objects.
 #
-# NOTE: chains three levels deep are NOT exercised here — instantiating one hangs
-# (see issues/ir.md, IR-005). Extend this suite once that is fixed.
+# Also covers chains three (and four) levels deep: `super` must resolve relative
+# to the class that lexically defines the running method, not the receiver's
+# runtime type, or `super.m()` in an inherited method re-resolves to itself and
+# the constructor chain loops forever from the third level on (guard for IR-005).
 #
 # EXPECT: contains: ALL TESTS PASSED
 
@@ -67,6 +69,44 @@ check("base instance unaffected", new Base().who(), "base")
 # Reading a member off the class itself must give the class's own, not the super's.
 check("type object: override not shadowed", Derived.who == Base.who, false)
 check("type object: inherited member shared", Derived.only_base == Base.only_base, true)
+
+# --- deep chains: super resolves per lexical class, not receiver type ---
+# L1 <- L2 <- L3 <- L4; each ctor calls super.init(), each who() prepends via
+# super.who(). A receiver-type-based super would loop forever here (IR-005).
+class L1 {
+    pub var v1 = 10
+    pub init() { }
+    pub func who() { return "L1" }
+}
+
+class L2 : L1 {
+    pub var v2 = 20
+    pub init() { super.init() }
+    pub func who() { return "L2<" + super.who() }
+}
+
+class L3 : L2 {
+    pub var v3 = 30
+    pub init() { super.init() }
+    pub func who() { return "L3<" + super.who() }
+}
+
+class L4 : L3 {
+    pub var v4 = 40
+    pub init() { super.init() }
+    pub func who() { return "L4<" + super.who() }
+}
+
+three := new L3()
+check("3-level: L1 field", three.v1, 10)
+check("3-level: L2 field", three.v2, 20)
+check("3-level: L3 field", three.v3, 30)
+check("3-level: super method chain", three.who(), "L3<L2<L1")
+
+four := new L4()
+check("4-level: deepest field", four.v1, 10)
+check("4-level: own field", four.v4, 40)
+check("4-level: super method chain", four.who(), "L4<L3<L2<L1")
 
 if fails == 0 {
     io.print("ALL TESTS PASSED")
