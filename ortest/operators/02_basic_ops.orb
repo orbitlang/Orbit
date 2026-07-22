@@ -1,0 +1,215 @@
+# Operators suite 02 -- basic operations across the built-in data structures.
+#
+# Exercises the arithmetic, bitwise, comparison and container operators against
+# known-good oracles (computed by hand). Arithmetic operands are taken from
+# variables on purpose: that drives the real runtime opcodes (ADD/DIV/MOD/...)
+# rather than the compile-time constant folder, and keeps the suite focused on
+# operator *semantics*.
+#
+# Semantics pinned down here:
+#   - `/` is true division (`6/3 -> 2`, `7/3 -> 2.333...`); `//` is integer
+#     division that TRUNCATES toward zero (`-7//3 -> -2`, not -3);
+#   - `%` takes the sign of the dividend (`-7%3 -> -1`), C-style, not Python;
+#   - `*` repeats a String by an integer, commutatively (`"xy"*3` == `3*"xy"`);
+#     `+` concatenates String, List and Tuple;
+#   - membership `in` works on String (substring), List/Tuple (element),
+#     Set (element) and Dict (key);
+#   - Set algebra: union `|`, intersection `&`, difference `-`, symmetric
+#     difference `^`; Set equality is membership-based (order-independent);
+#   - indexing / index-assignment on List and Dict;
+#   - a literal `0` on the right of a small-immediate op (`x+0`, `x*0`, ...) is
+#     a valid immediate, not a null operand.
+#
+# Both the runtime opcodes (variable operands) and the compile-time constant
+# folder (literal operands) are checked for `//` and `%`, since the folded path
+# regressed once and must stay correct.
+#
+# Cross-type combinations that have no defined operator raise NotImplementedError
+# (a trappable panic) rather than crashing -- checked below via `trap`.
+#
+# Note: an empty `{}` literal is a Dict, not a Set (there is no empty-set
+# literal), so the Set checks below always start from a non-empty literal.
+#
+# EXPECT: contains: ALL TESTS PASSED
+
+import "io"
+
+var fails = 0
+
+func check(name, got, expected) {
+    if got == expected {
+        io.print("OK   ", name)
+    } else {
+        io.print("FAIL ", name, "-- got:", got, "expected:", expected)
+        fails += 1
+    }
+}
+
+# ---------------------------------------------------------------------------
+# Integer arithmetic
+# ---------------------------------------------------------------------------
+a := 7
+b := 3
+check("add", a + b, 10)
+check("sub", a - b, 4)
+check("mul", a * b, 21)
+check("true div exact", (b * 2) / b, 2)
+check("int div", a // b, 2)
+check("mod", a % b, 1)
+
+# negatives: `//` truncates toward zero, `%` keeps the dividend's sign
+na := -7
+check("neg int div (trunc)", na // b, -2)
+check("neg mod (dividend sign)", na % b, -1)
+
+nb := -3
+check("div neg divisor", na // nb, 2)
+check("mod neg divisor", a % nb, 1)
+
+# same operators through the constant folder (both operands literal): must
+# agree with the runtime results above -- guards the folded `//` / `%` path
+check("literal int div", 7 // 3, 2)
+check("literal int div exact", 6 // 3, 2)
+check("literal neg int div", -7 // 3, -2)
+check("literal mod", 10 % 4, 2)
+check("literal mod 7%3", 7 % 3, 1)
+check("literal neg mod", -7 % 3, -1)
+check("literal mod neg divisor", 7 % -3, 1)
+
+# ---------------------------------------------------------------------------
+# Float arithmetic
+# ---------------------------------------------------------------------------
+fa := 7.5
+fb := 2.0
+check("float add", 1.5 + 2.25, 3.75)
+check("float sub", fa - fb, 5.5)
+check("float mul", fb * 2.5, 5.0)
+check("float div", fa / fb, 3.75)
+check("float floor div", fa // fb, 3)
+check("float mod", fa % fb, 1.5)
+check("mixed int+float", a + 0.5, 7.5)
+
+# ---------------------------------------------------------------------------
+# Bitwise & shifts (literals are fine here)
+# ---------------------------------------------------------------------------
+check("and", 6 & 3, 2)
+check("or", 6 | 3, 7)
+check("xor", 6 ^ 3, 5)
+check("shl", 1 << 4, 16)
+check("shr", 32 >> 2, 8)
+
+# ---------------------------------------------------------------------------
+# Unary
+# ---------------------------------------------------------------------------
+check("negate", -a, -7)
+check("not true", !true, false)
+check("not false", !false, true)
+
+# ---------------------------------------------------------------------------
+# Comparisons
+# ---------------------------------------------------------------------------
+check("lt", 3 < 5, true)
+check("lt false", 5 < 3, false)
+check("le eq", 3 <= 3, true)
+check("gt", 5 > 3, true)
+check("ge false", 3 >= 4, false)
+check("ne", 3 != 4, true)
+check("eq", 3 == 3, true)
+
+# ---------------------------------------------------------------------------
+# String
+# ---------------------------------------------------------------------------
+check("str concat", "foo" + "bar", "foobar")
+check("str repeat", "xy" * 3, "xyxyxy")
+check("str repeat reflected", 3 * "xy", "xyxyxy")
+check("str repeat zero", "xy" * 0, "")
+check("str repeat negative", "xy" * -1, "")
+check("str eq", "ab" == "ab", true)
+check("str lt", "abc" < "abd", true)
+check("substring in", "bc" in "abcd", true)
+check("substring not in", "zz" in "abcd", false)
+
+# ---------------------------------------------------------------------------
+# List
+# ---------------------------------------------------------------------------
+l := [1, 2, 3]
+check("list index 0", l[0], 1)
+check("list index 2", l[2], 3)
+check("list concat", [1, 2] + [3], [1, 2, 3])
+check("list eq", [1, 2] == [1, 2], true)
+check("list neq", [1, 2] == [1, 3], false)
+check("list elem in", 2 in [1, 2, 3], true)
+check("list elem not in", 9 in [1, 2, 3], false)
+check("list not-in operator", 9 not in [1, 2, 3], true)
+l[1] = 20
+check("list index assign", l[1], 20)
+
+# ---------------------------------------------------------------------------
+# Tuple
+# ---------------------------------------------------------------------------
+tp := (10, 20, 30)
+check("tuple index", tp[1], 20)
+check("tuple concat", (1, 2) + (3, 4), (1, 2, 3, 4))
+check("tuple eq", (1, 2) == (1, 2), true)
+check("tuple neq", (1, 2) == (1, 9), false)
+check("tuple elem in", 2 in (1, 2, 3), true)
+check("tuple elem not in", 9 in (1, 2, 3), false)
+# singleton tuple `(x,)` and trailing commas; `(x)` alone is just grouping
+check("singleton tuple index", (1,)[0], 1)
+check("singleton is Tuple", (1,) is Tuple, true)
+check("singleton concat", (1,) + (2, 3), (1, 2, 3))
+check("trailing comma == plain", (1, 2,) == (1, 2), true)
+check("paren is not a tuple", (1 + 2), 3)
+
+# ---------------------------------------------------------------------------
+# Dict
+# ---------------------------------------------------------------------------
+d := {"a": 1, "b": 2}
+check("dict index a", d["a"], 1)
+check("dict index b", d["b"], 2)
+check("dict key in", "a" in d, true)
+check("dict key not in", "z" in d, false)
+d["c"] = 3
+check("dict index assign", d["c"], 3)
+
+# ---------------------------------------------------------------------------
+# Set -- membership, de-duplication, algebra, order-independent equality.
+# (Results compared with `==`, which is by membership, so element order in the
+#  underlying set never matters.)
+# ---------------------------------------------------------------------------
+check("set dedup", {1, 1, 2, 2, 3} == {1, 2, 3}, true)
+check("set eq unordered", {1, 2, 3} == {3, 2, 1}, true)
+check("set neq", {1, 2} == {1, 2, 3}, false)
+check("set elem in", 2 in {1, 2, 3}, true)
+check("set elem not in", 9 in {1, 2, 3}, false)
+check("set not-in operator", 9 not in {1, 2, 3}, true)
+check("set union", {1, 2} | {2, 3}, {1, 2, 3})
+check("set intersection", {1, 2, 3} & {2, 3, 4}, {2, 3})
+check("set difference", {1, 2, 3} - {2}, {1, 3})
+check("set symmetric difference", {1, 2} ^ {2, 3}, {1, 3})
+
+# ---------------------------------------------------------------------------
+# Literal 0 on the right of a small-immediate op: a valid immediate, not null
+# ---------------------------------------------------------------------------
+check("add zero imm", 5 + 0, 5)
+check("sub zero imm", 5 - 0, 5)
+check("mul zero imm", 5 * 0, 0)
+check("shl zero imm", 5 << 0, 5)
+check("str mul zero imm", "ab" * 0, "")
+
+# ---------------------------------------------------------------------------
+# Cross-type combinations with no defined operator: a trappable panic,
+# not a crash (the sentinel is returned only if the op raised)
+# ---------------------------------------------------------------------------
+r_add := trap ("ab" + 3)
+check("str + num not implemented", r_add.unwrap_or("NOTIMPL"), "NOTIMPL")
+r_radd := trap (3 + "ab")
+check("num + str not implemented", r_radd.unwrap_or("NOTIMPL"), "NOTIMPL")
+r_smul := trap ("a" * "b")
+check("str * str not implemented", r_smul.unwrap_or("NOTIMPL"), "NOTIMPL")
+
+if fails == 0 {
+    io.print("ALL TESTS PASSED")
+} else {
+    io.print(fails, "TEST(S) FAILED")
+}
