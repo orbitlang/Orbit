@@ -612,6 +612,31 @@ namespace orbiter::datatype {
         return (TypeInfo *) object;
     }
 
+    /**
+     * @brief Resolves the immediate successor type of a given type within a class hierarchy
+     *
+     * This function determines the type that immediately follows the specified owner
+     * type in the Method Resolution Order (MRO) or superclass chain of the provided base type.
+     * The resolution of the successor type accounts for multiple inheritance scenarios, transitions
+     * between base classes and traits, and the linearization rules associated with the class hierarchy.
+     *
+     * If `owner` corresponds to a class itself, the method selects the first trait in the MRO
+     * or the superclass of the class when no traits are available. If `owner` is one of
+     * the traits in the MRO for a given class, the method proceeds to the next trait
+     * or, if `owner` is the last trait, transitions to the superclass.
+     *
+     * @param base Pointer to the base type from which to resolve the MRO or superclass chain
+     * @param owner Pointer to the type whose immediate successor is being resolved
+     *
+     * @return A pointer to the type that immediately follows `owner` in the class hierarchy,
+     *         or nullptr if no such successor exists or `base` and `owner` are invalid.
+     */
+    TypeInfo *GetSuper(const TypeInfo *base, const TypeInfo *owner);
+
+    inline TypeInfo *GetSuper(const TypeInfo *base) {
+        return GetSuper(base, base);
+    }
+
     U32 GetTypeName(const Isolate *isolate, const OObject *object, char *out_str, U32 out_size);
 
     /**

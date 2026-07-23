@@ -776,17 +776,25 @@ OObject *LoadFromObjectProp(const Fiber *fiber, const Function *func, OObject *o
 
     const auto *type = obj_is_type ? O_GET_TYPE(obj) : GetTypeInfoFromObject(fiber->isolate, obj);
 
-    if (ENUMBITMASK_ISTRUE(flags, LoadObjectPropFlags::SUPER))
-        type = O_GET_TYPE(func->shared->owner_type);
-
     const TypeInfo *target_type = nullptr;
     PropertyDescriptor *prop = nullptr;
 
-    if (obj_is_type)
-        prop = TIFindProperty((TypeInfo *) obj, &target_type, (const char *) key->buffer);
+    if (ENUMBITMASK_ISTRUE(flags, LoadObjectPropFlags::SUPER)) {
+        target_type = GetSuper(type, func->shared->owner_type);
+        while (target_type != nullptr) {
+            prop = TIFindLocalProperty(target_type, (const char *) key->buffer);
+            if (prop != nullptr)
+                break;
 
-    if (prop == nullptr)
-        prop = TIFindProperty(type, &target_type, (const char *) key->buffer);
+            target_type = GetSuper(type, target_type);
+        }
+    } else {
+        if (obj_is_type)
+            prop = TIFindProperty((TypeInfo *) obj, &target_type, (const char *) key->buffer);
+
+        if (prop == nullptr)
+            prop = TIFindProperty(type, &target_type, (const char *) key->buffer);
+    }
 
     if (prop == nullptr) {
         char error[24];

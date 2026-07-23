@@ -1,0 +1,193 @@
+# OOP suite 05 -- C3 linearization of traits (method resolution order).
+#
+# When a class `impl`s traits (and traits `impl` other traits), Orbit builds a
+# Method Resolution Order with C3 linearization (orbiter/datatype/c3/c3.cpp) and
+# stores it in `type->mro`. A method not found on the type itself is then looked
+# up along that MRO, in order (TIFindProperty, oobject.cpp). Trait methods may
+# carry a default body, so the MRO is directly observable: whichever trait comes
+# first in the linearization provides the method that runs.
+#
+# What this suite pins down:
+#   - diamond `Base <- {Left, Right}`, class `impl Left + Right`: C3 keeps the
+#     declaration order, so Left precedes Right and Left's override wins; the
+#     shared Base is placed *after* both (its method is reachable only when no
+#     nearer trait defines it);
+#   - the `impl` order is significant: `Right + Left` flips the winner;
+#   - a method defined on the class itself beats every trait (local first);
+#   - a linear trait chain `A <- B <- D`: the most-derived trait wins, and a
+#     method only on the deepest base is still reachable through the MRO;
+#   - trait membership (`is`) is transitive along the MRO;
+#   - cooperative `super` (stackable-trait style): `super` inside a trait method
+#     follows the *receiver's* linearization, not the trait's own parent, so each
+#     trait in a diamond runs exactly once in MRO order; a class method reaches
+#     its first trait; and when the trait chain is exhausted `super` continues
+#     into the superclass chain (so `super.init()`, which no trait defines, still
+#     reaches the base class ctor).
+#
+# EXPECT: contains: ALL TESTS PASSED
+
+import "io"
+
+var fails = 0
+
+func check(name, got, expected) {
+    if got == expected {
+        io.print("OK   ", name)
+    } else {
+        io.print("FAIL ", name, "-- got:", got, "expected:", expected)
+        fails += 1
+    }
+}
+
+# --- diamond: Base at the top, Left and Right override kind() ---------------
+trait Base {
+    pub func kind() { return "base" }
+    pub func tag() { return "base-tag" }
+    pub func via() { return "base-via" }
+}
+
+trait Left impl Base {
+    pub func kind() { return "left" }
+}
+
+trait Right impl Base {
+    pub func kind() { return "right" }
+    pub func only_right() { return "R" }
+    pub func via() { return "right-via" }
+}
+
+# MRO(C) = C, Left, Right, Base
+class C impl Left + Right {
+    pub init() { }
+}
+
+c := new C()
+check("diamond: Left precedes Right", c.kind(), "left")
+check("diamond: base method reachable", c.tag(), "base-tag")
+check("diamond: right-only method", c.only_right(), "R")
+# `via` is on Base and Right but NOT Left. True C3 (C,Left,Right,Base) resolves
+# to Right; a naive left-to-right DFS (Left,Base,Right) would wrongly pick Base.
+# This is the case that actually distinguishes C3 from DFS.
+check("diamond: C3 not DFS (Right over Base)", c.via(), "right-via")
+
+# --- impl order is significant: Right before Left flips the winner ----------
+class CR impl Right + Left {
+    pub init() { }
+}
+check("flip impl order", new CR().kind(), "right")
+
+# --- the class's own method beats every trait ------------------------------
+class COwn impl Left + Right {
+    pub init() { }
+    pub func kind() { return "own" }
+}
+check("class-local overrides traits", new COwn().kind(), "own")
+
+# --- linear trait chain A <- B <- D ----------------------------------------
+trait A {
+    pub func step() { return "A" }
+    pub func base_only() { return "deep" }
+}
+
+trait B impl A {
+    pub func step() { return "B" }
+}
+
+trait D impl B {
+    pub func step() { return "D" }
+}
+
+# MRO(CL) = CL, D, B, A
+class CL impl D {
+    pub init() { }
+}
+
+cl := new CL()
+check("chain: most-derived trait wins", cl.step(), "D")
+check("chain: deepest base still reachable", cl.base_only(), "deep")
+
+# --- `is` is transitive along the MRO --------------------------------------
+check("is direct trait (Left)", c is Left, true)
+check("is direct trait (Right)", c is Right, true)
+check("is shared base via MRO", c is Base, true)
+check("is chain base via MRO", cl is A, true)
+check("is own class", c is C, true)
+
+# --- cooperative super: follows the receiver's linearization ---------------
+# Each trait prepends its tag and delegates with super; super lands on the NEXT
+# type in the receiver's MRO, not on the trait's declared parent.
+trait SBase {
+    pub func run() { return "Base" }
+}
+
+trait SLeft impl SBase {
+    pub func run() { return "L<" + super.run() }
+}
+
+trait SRight impl SBase {
+    pub func run() { return "R<" + super.run() }
+}
+
+# MRO(Diamond) = Diamond, SLeft, SRight, SBase -> L<R<Base
+class Diamond impl SLeft + SRight {
+    pub init() { }
+}
+check("cooperative diamond", new Diamond().run(), "L<R<Base")
+
+# flipping the impl order flips the super chain
+class DiamondFlip impl SRight + SLeft {
+    pub init() { }
+}
+check("cooperative diamond flipped", new DiamondFlip().run(), "R<L<Base")
+
+# a class method enters the trait chain via super
+class DiamondClass impl SLeft + SRight {
+    pub init() { }
+    pub func run() { return "C<" + super.run() }
+}
+check("class enters trait chain", new DiamondClass().run(), "C<L<R<Base")
+
+# 3-way merge, each trait runs exactly once, in declaration order
+trait S1 impl SBase { pub func run() { return "1<" + super.run() } }
+trait S2 impl SBase { pub func run() { return "2<" + super.run() } }
+trait S3 impl SBase { pub func run() { return "3<" + super.run() } }
+class Three impl S1 + S2 + S3 {
+    pub init() { }
+}
+check("cooperative 3-way", new Three().run(), "1<2<3<Base")
+
+# --- super crosses the trait/superclass boundary ---------------------------
+# When the trait chain is exhausted, super continues into the superclass; and a
+# member no trait defines (like `init`) is found on the base class through the
+# very same linearization walk.
+trait Deco {
+    pub func run() { return "T<" + super.run() }
+}
+
+class SinkA {
+    pub var built = 0
+    pub init() { self.built = 1 }
+    pub func run() { return "A" }
+}
+
+class SinkB : SinkA {
+    pub init() { super.init() }
+    pub func run() { return "B<" + super.run() }
+}
+
+# Q has a superclass chain (SinkB <- SinkA) AND a trait (Deco).
+# MRO for run(): Mix, Deco, SinkB, SinkA -> Mix<T<B<A
+# super.init() (no trait defines init) must still reach SinkB/SinkA ctors.
+class Mix : SinkB impl Deco {
+    pub init() { super.init() }
+    pub func run() { return "Mix<" + super.run() }
+}
+m := new Mix()
+check("super.init reaches base ctor (no crash)", m.built, 1)
+check("super crosses trait->superclass", m.run(), "Mix<T<B<A")
+
+if fails == 0 {
+    io.print("ALL TESTS PASSED")
+} else {
+    io.print(fails, "TEST(S) FAILED")
+}

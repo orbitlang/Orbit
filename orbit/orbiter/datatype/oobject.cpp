@@ -41,7 +41,8 @@ bool orbiter::datatype::IsTypeExtends(const TypeInfo *type, const TypeInfo *targ
     return cursor != nullptr;
 }
 
-bool orbiter::datatype::TIPropertyAdd(TypeInfo *type, const char *name, OObject *value, const U16 slot, const PropertyFlag flags) {
+bool orbiter::datatype::TIPropertyAdd(TypeInfo *type, const char *name, OObject *value, const U16 slot,
+                                      const PropertyFlag flags) {
     const auto orname = ORStringIntern(type->isolate, name);
     if (!orname)
         return false;
@@ -49,7 +50,8 @@ bool orbiter::datatype::TIPropertyAdd(TypeInfo *type, const char *name, OObject 
     return TIPropertyAdd(type, (OObject *) orname.get(), value, slot, flags);
 }
 
-bool orbiter::datatype::TIPropertyAdd(TypeInfo *type, OObject *name, OObject *value, const U16 slot, const PropertyFlag flags) {
+bool orbiter::datatype::TIPropertyAdd(TypeInfo *type, OObject *name, OObject *value, const U16 slot,
+                                      const PropertyFlag flags) {
     PropertyDescriptor tmp{};
 
     auto *orname = (ORString *) name;
@@ -284,6 +286,30 @@ PropertyDescriptor *orbiter::datatype::TIFindProperty(const TypeInfo *type, cons
     }
 
     return prop;
+}
+
+TypeInfo *orbiter::datatype::GetSuper(const TypeInfo *base, const TypeInfo *owner) {
+    if (base == nullptr || owner == nullptr)
+        return nullptr;
+
+    for (const auto *cls = base; cls != nullptr; cls = O_GET_TYPE(cls)) {
+        const auto *mro = (Tuple *) cls->mro;
+
+        // `owner` is this class itself: go to its first trait, else its superclass.
+        if (cls == owner)
+            return (mro != nullptr && mro->length > 0) ? (TypeInfo *) mro->objects[0] : O_GET_TYPE(cls);
+
+        // `owner` is one of this class's traits: the next trait, or (when it is
+        // the last one) this class's superclass.
+        if (mro != nullptr) {
+            for (auto i = 0; i < mro->length; i++) {
+                if (mro->objects[i] == (OObject *) owner)
+                    return (i + 1 < mro->length) ? (TypeInfo *) mro->objects[i + 1] : O_GET_TYPE(cls);
+            }
+        }
+    }
+
+    return nullptr;
 }
 
 U32 orbiter::datatype::GetTypeName(const Isolate *isolate, const OObject *object, char *out_str, const U32 out_size) {
