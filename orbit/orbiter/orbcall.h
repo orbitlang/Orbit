@@ -2,21 +2,21 @@
 //
 // Licensed under the Apache License v2.0
 
-#ifndef ORBIT_ORBITER_ORCALL_H_
-#define ORBIT_ORBITER_ORCALL_H_
+#ifndef ORBIT_ORBITER_ORBCALL_H_
+#define ORBIT_ORBITER_ORBCALL_H_
 
 #include <orbit/orbiter/datatype/dict.h>
 #include <orbit/orbiter/datatype/function.h>
 #include <orbit/orbiter/datatype/list.h>
 
+#include <orbit/orbiter/fiber.h>
 #include <orbit/orbiter/vm.h>
 
 namespace orbiter {
-    class CallCtx {
-        Registers *regs = nullptr;
-        VMStack *stack = nullptr;
+    class ArgumentBinder {
+        Fiber *fiber = nullptr;
 
-        const datatype::FuncShared *fn_shared = nullptr;
+        const datatype::Function *func = nullptr;
 
         datatype::Dict *nargs = nullptr;
         datatype::List *rest = nullptr;
@@ -42,58 +42,62 @@ namespace orbiter {
          *         This pointer is adjusted by the given number of slots.
          */
         [[nodiscard]] datatype::OObject **StackTop(const MSize slots) const noexcept {
-            return (datatype::OObject **) ((this->stack->stack + this->regs->SP.reg) - (slots * sizeof(void *)));
+            return (datatype::OObject **) ((this->fiber->vm.stack.stack + this->fiber->vm.regs.SP.reg) - (slots * sizeof(void *)));
         }
 
         /**
-         * @brief Retrieves the base pointer of the argument frame on the VM stack.
+         * @brief Retrieves the base pointer of the argument region on the VM stack.
          *
          * This method calculates and returns the starting point for the arguments
          * laid out on the stack. It internally uses the stack top position adjusted
          * by the number of argument slots.
          *
          * @return A double pointer to the datatype::OObject representing the base of
-         *         the argument frame on the stack.
+         *         the argument region on the stack.
          */
         [[nodiscard]] datatype::OObject **ArgsBase() const noexcept {
             return this->StackTop(this->stack_args);
         }
 
-        bool EnsureStack(Isolate *isolate) const;
+        bool EnsureStack() const;
 
-        bool ExpandDefaultArgs(Fiber *fiber);
+        bool ExpandDefaultArgs();
 
-        bool FinalizeKwargs(Fiber *fiber);
+        bool FinalizeKwargs();
 
-        bool FinalizeRestArgs(Fiber *fiber);
+        bool FinalizeRestArgs();
 
-        bool NormalizeMethod(Isolate *isolate);
+        bool NormalizeMethod();
 
-        void LoadCurrying(const datatype::Function *func);
+        void LoadCurrying();
 
     public:
         /**
-         * @brief Lay out the callee's argument frame on the VM stack.
+         * @brief Bind the call's arguments to the callee's parameters, laying them
+         * out on the VM stack.
+         *
+         * Note this builds only the argument region: the call frame proper (BP,
+         * prologue) is set up later by the caller.
          *
          * Resolves the callee, normalizes a method receiver, applies currying,
          * fills from the rest list, expands defaults and finalizes rest/kwargs.
          *
-         * @param fiber   Fiber owning the stack the frame is built on.
+         * @param fiber   Fiber owning the stack the arguments are laid out on.
          * @param func    Value being called; on success it is replaced by the
          *                function that will actually run (a type's constructor).
          * @param p_count Number of arguments already pushed by the caller.
          * @param mode    Call modifiers (method, named/kw/rest arguments).
          *
-         * @return CallResult::OK when the frame is ready — read the resulting
+         * @return CallResult::OK when the arguments are laid out — read the resulting
          *         argument count with StackArgs();
          *         CallResult::DONE when currying already satisfied the call and
          *         nothing has to be invoked;
          *         CallResult::ERROR with the error set on the fiber.
          */
-        datatype::CallResult CallInit(Fiber *fiber, datatype::Function *&func, U16 p_count, CallMode mode);
+        datatype::CallResult Bind(Fiber *fiber, datatype::Function *&func, U16 p_count, CallMode mode);
 
         /**
-         * @brief Calculates the total size, in bytes, of the argument frame on the stack.
+         * @brief Calculates the total size, in bytes, of the argument region on the stack.
          *
          * This method computes the memory footprint of the arguments currently laid out on
          * the stack. The size is determined using the number of argument slots and the size
@@ -106,10 +110,10 @@ namespace orbiter {
         }
 
         /**
-         * @brief Retrieves the number of argument slots for the current call frame.
+         * @brief Retrieves the number of argument slots bound for the current call.
          *
          * This method provides access to the count of arguments that have been laid out
-         * on the call frame stack. The returned value can be used to determine how many
+         * on the stack. The returned value can be used to determine how many
          * arguments are involved in the current invocation.
          *
          * @return The number of argument slots as an unsigned 16-bit integer.
@@ -133,4 +137,4 @@ namespace orbiter {
     datatype::Function *ResolveCallable(Isolate *isolate, datatype::Function *func);
 }
 
-#endif // !ORBIT_ORBITER_ORCALL_H_
+#endif // !ORBIT_ORBITER_ORBCALL_H_

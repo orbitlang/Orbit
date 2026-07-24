@@ -715,7 +715,7 @@ CGOTO
         }                                                       \
     } while(0)
 
-    CallCtx call_ctx;
+    ArgumentBinder binder;
 
     auto *regs = &fiber->vm.regs;
     auto *stack = &fiber->vm.stack;
@@ -1118,7 +1118,7 @@ CATCH_FINALLY:
                     goto BEGIN;
                 }
 
-                const auto call_res = call_ctx.CallInit(fiber, func, p_count, flags);
+                const auto call_res = binder.Bind(fiber, func, p_count, flags);
                 if (call_res == CallResult::ERROR)
                     goto ERROR;
 
@@ -1137,7 +1137,7 @@ CATCH_FINALLY:
                     DISPATCH;
                 }
 
-                if (Call(fiber, func, call_ctx.StackArgs())) {
+                if (Call(fiber, func, binder.StackArgs())) {
                     CHECK_PREEMPT;
 
                     goto BEGIN;
@@ -1194,10 +1194,10 @@ CATCH_FINALLY:
                     goto ERROR;
                 }
 
-                if (call_ctx.CallInit(fiber, func, p_count, flags) == CallResult::ERROR)
+                if (binder.Bind(fiber, func, p_count, flags) == CallResult::ERROR)
                     goto ERROR;
 
-                const auto size = call_ctx.StackArgsBytes();
+                const auto size = binder.StackArgsBytes();
                 if (!Orbiter::GetInstance()->EvalAsync(func,
                                                        (fiber->vm.stack.stack + regs->SP.reg) - size,
                                                        size).get())
@@ -1214,7 +1214,7 @@ CATCH_FINALLY:
 
                 auto func = (Function *) ACCESS_REG_SRC(instr);
 
-                if (call_ctx.CallInit(fiber, func, p_count, flags) == CallResult::ERROR)
+                if (binder.Bind(fiber, func, p_count, flags) == CallResult::ERROR)
                     goto ERROR;
 
                 auto *defer = fiber->isolate->dpool_->NewDefer();
@@ -1223,7 +1223,7 @@ CATCH_FINALLY:
 
                 defer->func = func;
 
-                defer->argc = call_ctx.StackArgs();
+                defer->argc = binder.StackArgs();
 
                 defer->r10 = regs->r10.reg;
                 defer->r11 = regs->r11.reg;
