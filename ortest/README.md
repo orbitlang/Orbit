@@ -38,7 +38,8 @@ ortest/
 
 Current topics: `regalloc/` (register allocator, tiers `01_variables` …
 `05_pressure`, rising in difficulty), `oop/` (class hooks, inheritance, instance
-layout, trait C3/MRO), `typehooks/` (str/eq user hooks), `operators/` (language operators, e.g.
+layout, trait C3/MRO), `calls/` (argument passing: defaults, named, rest/spread,
+kwargs, methods, currying), `typehooks/` (str/eq user hooks), `operators/` (language operators, e.g.
 `01_is` for the `is` type test). Add a new subsystem as a new subfolder — the
 runner picks it up automatically.
 

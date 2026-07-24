@@ -1,0 +1,257 @@
+# Calls suite 01 -- argument passing in every supported form.
+#
+# Everything a call site can express, and how ArgumentBinder must lay it out on
+# the VM stack: positional arguments, defaults, named arguments, a variadic
+# (rest) parameter, spread at the call site, keyword arguments, and the
+# combinations of those. Method receivers and currying go through the same
+# machinery and are covered too.
+#
+# Two language rules this pins down:
+#
+#   - defaults are NOT positional (by design): `f(1, 2)` on `func f(a, b=9)` is
+#     an arity error, the default is set by NAME (`f(1, b=2)`). Only a variadic
+#     parameter absorbs extra positional arguments;
+#   - a spread into a NON-variadic callee is consumed entirely by the declared
+#     parameters -- the list must not also arrive as an extra argument.
+#
+# The section on consecutive calls is a regression guard for IR-006: the
+# named/rest/keyword values travel in fixed registers (R10/R11/R12), and pinning
+# them for longer than the call itself made two calls collide, which crashed or
+# silently handed a call the previous call's rest list.
+#
+# EXPECT: contains: ALL TESTS PASSED
+
+import "io"
+
+var fails = 0
+
+func check(name, got, expected) {
+    if got == expected {
+        io.print("OK   ", name)
+    } else {
+        io.print("FAIL ", name, "-- got:", got, "expected:", expected)
+        fails += 1
+    }
+}
+
+# ---------------------------------------------------------------------------
+# Positional
+# ---------------------------------------------------------------------------
+func pos2(a, b) {
+    return tostr(a) + "," + tostr(b)
+}
+
+func pos1(a) {
+    return tostr(a)
+}
+
+check("positional exact", pos2(1, 2), "1,2")
+check("single positional", pos1(7), "7")
+
+# ---------------------------------------------------------------------------
+# Defaults -- filled when omitted, set by NAME (never positionally)
+# ---------------------------------------------------------------------------
+func def3(a, b=2, c=3) {
+    return tostr(a) + "," + tostr(b) + "," + tostr(c)
+}
+
+check("defaults omitted", def3(1), "1,2,3")
+check("named skips middle", def3(1, c=9), "1,2,9")
+check("named sets both", def3(1, b=8, c=9), "1,8,9")
+check("named order irrelevant", def3(1, c=9, b=8), "1,8,9")
+
+# a default is not positional: the extra argument overflows the arity
+r_pos_default := trap def3(1, 2)
+check("default not positional", r_pos_default.unwrap_or("ARITY-ERR"), "ARITY-ERR")
+
+# ---------------------------------------------------------------------------
+# Variadic (rest) parameter
+# ---------------------------------------------------------------------------
+func var1(a, ...rest) {
+    return tostr(a) + "|" + tostr(rest)
+}
+
+check("variadic none", var1(1), "1|[]")
+check("variadic one", var1(1, 2), "1|[2]")
+check("variadic many", var1(1, 2, 3, 4), "1|[2, 3, 4]")
+
+# ---------------------------------------------------------------------------
+# Spread at the call site
+# ---------------------------------------------------------------------------
+two_items := [1, 2]
+one_item := [5]
+three_items := [1, 2, 3]
+
+# into a non-variadic callee: fully consumed by the declared parameters
+check("spread fills arity", pos2(two_items...), "1,2")
+check("spread arity 1", pos1(one_item...), "5")
+check("positional then spread", pos2(9, one_item...), "9,5")
+
+# into a variadic callee: fills the declared ones, remainder becomes the rest
+check("spread into variadic", var1(three_items...), "1|[2, 3]")
+check("spread exact into variadic", var1(one_item...), "5|[]")
+
+# the spread source must not be mutated by the call
+check("spread source intact", tostr(three_items), "[1, 2, 3]")
+
+# ---------------------------------------------------------------------------
+# Keyword arguments
+# ---------------------------------------------------------------------------
+func kw1(a, *kw) {
+    return kw
+}
+
+func kw_repr(a, *kw) {
+    return tostr(a) + "|" + tostr(kw)
+}
+
+check("kwargs empty when omitted", kw_repr(1), "1|{}")
+
+kwd := {"z": 26, "y": 25}
+collected := kw1(1, *kwd)
+check("kwargs collected (z)", collected["z"], 26)
+check("kwargs collected (y)", collected["y"], 25)
+
+# a callee without a kwargs parameter must reject them
+func no_kw(a) {
+    return a
+}
+
+r_no_kw := trap no_kw(1, *kwd)
+check("kwargs rejected when undeclared", r_no_kw.unwrap_or("NO-KWARGS"), "NO-KWARGS")
+
+# ---------------------------------------------------------------------------
+# Mixed forms
+# ---------------------------------------------------------------------------
+func mixed(a, ...rest, *kw) {
+    return tostr(a) + "|" + tostr(rest) + "|" + tostr(kw)
+}
+
+one_key := {"k": 1}
+check("variadic + kwargs", mixed(1, 2, 3, *one_key), "1|[2, 3]|{\"k\": 1}")
+check("spread + kwargs", mixed(three_items..., *one_key), "1|[2, 3]|{\"k\": 1}")
+
+func def_var(a, b=7, ...rest) {
+    return tostr(a) + "," + tostr(b) + "|" + tostr(rest)
+}
+
+check("spread + named default", def_var(three_items..., b=9), "1,9|[2, 3]")
+check("spread leaves default", def_var(three_items...), "1,7|[2, 3]")
+
+# ---------------------------------------------------------------------------
+# Method receivers -- the receiver occupies the first argument slot
+# ---------------------------------------------------------------------------
+class Box {
+    pub var v
+
+    pub init(v) {
+        self.v = v
+    }
+
+    pub func add(x) {
+        return self.v + x
+    }
+
+    pub func pair(a, b) {
+        return tostr(a) + "," + tostr(b)
+    }
+
+    pub func gather(a, ...rest) {
+        return tostr(a) + "|" + tostr(rest)
+    }
+}
+
+box := new Box(10)
+check("method positional", box.add(5), 15)
+check("method two args", box.pair(1, 2), "1,2")
+check("method with spread", box.pair(two_items...), "1,2")
+check("method variadic", box.gather(1, 2, 3), "1|[2, 3]")
+
+# ---------------------------------------------------------------------------
+# Currying -- too few arguments yields a partial application
+# ---------------------------------------------------------------------------
+func three(a, b, c) {
+    return tostr(a) + "," + tostr(b) + "," + tostr(c)
+}
+
+curried_one := three(1)
+check("curry one then rest", curried_one(2, 3), "1,2,3")
+
+curried_two := three(1)
+step := curried_two(2)
+check("curry step by step", step(3), "1,2,3")
+
+# Supplying several arguments at once to a partial application: the already
+# curried values are prepended by shifting the supplied ones up, and that shift
+# works on overlapping storage -- copying it in the wrong direction duplicated
+# an argument (`1,2,2` for `three(1)` then `(2, 3)`).
+func four(a, b, c, d) {
+    return tostr(a) + "," + tostr(b) + "," + tostr(c) + "," + tostr(d)
+}
+
+c1 := four(1)
+check("curry 1 then 3", c1(2, 3, 4), "1,2,3,4")
+
+c2 := four(1, 2)
+check("curry 2 then 2", c2(3, 4), "1,2,3,4")
+
+c3 := four(1, 2, 3)
+check("curry 3 then 1", c3(4), "1,2,3,4")
+
+c4 := four(1)
+c4b := c4(2, 3)
+check("curry 1 then 2 then 1", c4b(4), "1,2,3,4")
+
+# a constructor cannot be partially applied
+class NeedsTwo {
+    pub init(a, b) { }
+}
+
+r_ctor := trap (new NeedsTwo(1))
+check("ctor not curryable", r_ctor.unwrap_or("NO-CURRY"), "NO-CURRY")
+
+# ---------------------------------------------------------------------------
+# Consecutive calls -- regression guard for IR-006 (R10/R11/R12 collision)
+# ---------------------------------------------------------------------------
+first := [1, 2, 3]
+second := [7, 8, 9]
+
+a1 := var1(first...)
+a2 := var1(second...)
+check("two spreads in a row (1st)", a1, "1|[2, 3]")
+check("two spreads in a row (2nd)", a2, "7|[8, 9]")
+
+b1 := var1(first...)
+b2 := var1(11, 12)
+b3 := var1(second...)
+check("spread, plain, spread (1st)", b1, "1|[2, 3]")
+check("spread, plain, spread (2nd)", b2, "11|[12]")
+check("spread, plain, spread (3rd)", b3, "7|[8, 9]")
+
+# a spread nested in another call's argument list must not disturb it
+check("spread nested in a call", pos2("tag", var1(first...)), "tag,1|[2, 3]")
+
+# two keyword calls in a row must not share the keyword register
+k1 := kw1(1, *kwd)
+k2 := kw1(2, *one_key)
+check("two kwargs calls (1st)", k1["z"], 26)
+check("two kwargs calls (2nd)", k2["k"], 1)
+
+# named arguments on consecutive calls
+check("two named calls (1st)", def3(1, c=9), "1,2,9")
+check("two named calls (2nd)", def3(4, b=5), "4,5,3")
+
+# ---------------------------------------------------------------------------
+# Arity errors
+# ---------------------------------------------------------------------------
+r_many := trap pos1(1, 2, 3)
+check("too many positional traps", r_many.unwrap_or("ARITY-ERR"), "ARITY-ERR")
+
+r_noncallable := trap ("not a function")()
+check("non-callable traps", r_noncallable.unwrap_or("NOT-CALLABLE"), "NOT-CALLABLE")
+
+if fails == 0 {
+    io.print("ALL TESTS PASSED")
+} else {
+    io.print(fails, "TEST(S) FAILED")
+}

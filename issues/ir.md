@@ -429,3 +429,81 @@ spanning value is optimal, not wasteful. *(This is the path that was taken.)*
 </details>
 
 ---
+
+## IR-006 — The call-protocol registers (R10/R11/R12) are pinned on the value's producer, so two such values collide
+**Severity:** High (silent miscompile + interpreter crash) · **Status:** FIXED (2026-07-24) · **Location:** `SetNargs`/`SetRest`/`SetKwargs` (`orbit/liftoff/ir/instruction.h:170-186`), fixed in `IRBuilder::CreateCall` (`orbit/liftoff/ir/irbuilder.cpp`)
+
+Named, rest and keyword arguments reach the callee through fixed registers —
+`kCallNArgsReg = 10`, `kCallRestReg = 11`, `kCallKWArgsReg = 12` — read back by
+`ArgumentBinder::Bind` from `regs.r10/r11/r12`.
+
+`SetRest` (and its siblings) applied the pin to the **producing** instruction:
+
+```cpp
+void SetRest(Instruction *instr) const {
+    instr->assigned_reg = kCallRestReg;   // the producer is homed in R11 for its whole life
+    this->SetOperand(2, instr);
+}
+```
+
+so the value stayed homed in R11 for its entire live range rather than just
+around the call. With two spread calls whose operands are live at the same time,
+**both producers were homed to R11** — two overlapping intervals sharing one
+register, the exact invariant violation of [IR-003](#ir-003--two-call-results-live-simultaneously-collide-in-the-return-register-r13),
+only on R11 instead of RR.
+
+`AllocateSpecificRegister` does handle pins on pool registers (it spills both and
+keeps the longer-lived as owner-of-record, "*from interval.start onward the
+register is shared scratch*"), but that only works when the uses are separated.
+Two long, interleaved live ranges sharing a home register cannot both be correct:
+the reloads overwrite each other.
+
+```orb
+func f(a, ...rest) { return tostr(a) + "|" + tostr(rest) }
+
+x := [1, 2, 3]
+y := [7, 8, 9]
+
+f(x...)   # ok
+f(y...)   # assertion, or silently receives the previous call's rest list
+```
+
+Two symptoms, depending on what the clobbered register held:
+
+- **crash** — a container under construction lived in R11, the call wrote the
+  rest list over it, and `ADDELEM` asserted on a non-object (`vm.cpp`, `assert(O_IS_OBJECT(obj))`);
+- **silent miscompile** — a later call read a stale R11 and received the
+  *previous* call's rest list (`h(args...)` returned `7,99|[8]` instead of `1,99|[2, 3, 4, 5]`).
+
+Confirmed in the IR dump: both list literals were assigned `REG: 11`.
+
+**Fix.** Keep the pin, but shorten its live range: copy the value into the
+protocol register immediately before the call instead of homing the producer
+there. In `IRBuilder::CreateCall` the call is still *detached* at that point
+(`CreateCallDetached` uses `CreateObject`, which does not attach) while
+`CreateMove` attaches immediately, so the moves land right in front of the call:
+
+```cpp
+if (nargs != nullptr)  call->SetNargs(this->builder_.CreateMove(nargs));
+if (rest != nullptr)   call->SetRest(this->builder_.CreateMove(rest));
+if (kwargs != nullptr) call->SetKwargs(this->builder_.CreateMove(kwargs));
+```
+
+The pinned interval now spans only `MOV -> CALL` and cannot overlap another
+call's. R10/R11/R12 stay general-purpose in the allocator's pool, and neither
+LinearScan, the codegen (which only ever emitted `operands[0]` for a call) nor
+the VM needed changing.
+
+```
+before:  NLIST REG:11 · NLIST REG:11 · ... · CALL
+after:   NLIST REG:0  · NLIST REG:2  · ... · MOV REG:11 · CALL · MOV REG:11 · CALL
+```
+
+**PoC:** [`poc/ir/ir-006-spread-reg-collision.orb`](poc/ir/ir-006-spread-reg-collision.orb)
+`(fixed)` — 12 checks; verified red (assertion) before the fix and green after.
+
+**Note.** Found while testing the rest-argument paths of `ArgumentBinder`; no
+suite covered argument passing at the time, so the gate was green with this bug
+live. Call-mechanics coverage now lives in `ortest/calls/`.
+
+---

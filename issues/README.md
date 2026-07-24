@@ -22,7 +22,7 @@ are resolved.
 | [sbuffer.md](sbuffer.md) | `orbit/liftoff/scanner/sbuffer` | 0/3 |
 | [utf8-stringbuilder.md](utf8-stringbuilder.md) | `orbit/orbiter/datatype/stringbuilder` (UTF-8 codec) | 1/4 |
 | [parser.md](parser.md) | `orbit/liftoff/parser` (parser.cpp, context.h, ast.h) | 24/25 |
-| [ir.md](ir.md) | `orbit/liftoff/ir` (linearscan, intervalspiller, irbuilder, instruction) | 0/5 |
+| [ir.md](ir.md) | `orbit/liftoff/ir` (linearscan, intervalspiller, irbuilder, instruction) | 0/6 |
 | [compiler.md](compiler.md) | `orbit/liftoff/compiler.cpp` (compile driver) | 1/1 |
 | [ctbuilder.md](ctbuilder.md) | `orbit/orbiter/datatype/ctbuilder.cpp` (class types, blueprint, hook dispatch) | 0/1 |
 | [vm.md](vm.md) | `orbit/orbiter` (interpreter: trap unwind, registers) | 0/1 |
@@ -36,6 +36,7 @@ are resolved.
 - ~~**IR-003** — two call results live at once collide in R13 → silent miscompile (`a+b` becomes `b+b`)~~ *(FIXED 2026-07-17, allocator restructured: CallerSaveSpiller pre-pass + IntervalSpiller)*
 - ~~**IR-004** — a derived class resolved its own members through its superclass (wrong `init`, shadowed properties)~~ *(FIXED 2026-07-17, `LoadFromObjectProp` searches a class's own chain first)*
 - ~~**IR-005** — instantiating a class three levels deep in an inheritance chain hangs the interpreter~~ *(FIXED 2026-07-22, `super` resolves from the enclosing class, not the receiver's runtime type)*
+- ~~**IR-006** — two calls passing rest/named/keyword arguments collide on R10/R11/R12 (crash or silently wrong rest list)~~ *(FIXED 2026-07-24, the value is copied into the protocol register right before the call instead of the producer being pinned to it)*
 - **COMP-001** — any syntax error in file mode asserts in `Compile` instead of reporting (release: UB on empty AST)
 - ~~**VM-001** — spill slots clobbered after a trapped panic (SP rewound to end of exception block)~~ *(FIXED 2026-07-08)*
 - ~~**SCAN-001** — `"#..."` string literals mis-lexed (hash counting on non-raw strings)~~ *(FIXED 2026-06-13)*
