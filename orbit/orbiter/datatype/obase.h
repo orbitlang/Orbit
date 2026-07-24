@@ -197,6 +197,8 @@ namespace orbiter::datatype {
     // *****************************************************************************************************************
 
     enum class CallResult : I16 {
+        OK = 0, // Success; any value the operation produces is read separately.
+
         ERROR = -1,
         BUSY = -2,
         CONTINUE = -3,

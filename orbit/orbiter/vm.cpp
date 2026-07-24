@@ -23,12 +23,12 @@
 #include <orbit/orbiter/native/ffi.h>
 #include <orbit/orbiter/native/loader.h>
 
-#include <orbit/orbiter/opcode.h>
+#include <orbit/orbiter/excstack.h>
 #include <orbit/orbiter/fiber.h>
-
+#include <orbit/orbiter/opcode.h>
+#include <orbit/orbiter/orbcall.h>
 #include <orbit/orbiter/runtime.h>
 
-#include <orbit/orbiter/excstack.h>
 #include <orbit/orbiter/vm.h>
 
 using namespace orbiter;
@@ -337,342 +337,6 @@ bool VMGetIter(const Fiber *fiber, OObject *object, PtrSize *dst) {
                         object);
 
     return false;
-}
-
-// *********************************************************************************************************************
-// VM CALL
-// *********************************************************************************************************************
-
-struct CallCtx {
-    Registers *regs;
-    VMStack *stack;
-
-    const FuncShared *fn_shared;
-
-    Dict *nargs;
-    List *rest;
-    Dict *kwargs;
-
-    U16 stack_args;
-
-    bool call_mode_is_kwarg;
-    bool call_mode_is_nargs;
-    bool call_mode_is_rest;
-};
-
-bool CallNormalizeMethodCall(Isolate *isolate, CallCtx &ctx) {
-    if (!ctx.fn_shared->IsMethod()) {
-        ctx.stack_args -= 1;
-        return true;
-    }
-
-    // Check object is instance
-    const auto args = *((OObject **) ((ctx.stack->stack + ctx.regs->SP.reg) - (ctx.stack_args * sizeof(void *))));
-    const auto *type = GetTypeInfoFromObject(isolate, args);
-
-    if (O_IS_OBJECT(args) && !O_GET_RC(args).IsInstance())
-        type = O_GET_TYPE(type);
-
-    if (!IsTypeExtends(type, ctx.fn_shared->owner_type)) {
-        ErrorSetWithObjType(isolate,
-                            TypeError::Details[TypeError::Reason::ID],
-                            TypeError::Details[TypeError::Reason::METHOD_RECEIVER],
-                            nullptr,
-                            args);
-
-        return false;
-    }
-
-    return true;
-}
-
-bool CallEnsureStack(Isolate *isolate, const CallCtx &ctx) {
-    U32 stack_size_required = 0;
-
-    if (ctx.fn_shared->IsInterpreted())
-        stack_size_required = kStackPrologueOffset
-                              + (ctx.fn_shared->code->stack_size * sizeof(void *))
-                              + (2 * sizeof(void *));
-
-    if (ctx.fn_shared->HasDefaultArgs())
-        stack_size_required += (ctx.fn_shared->defaults->length / 2) * sizeof(void *);
-
-    return ctx.stack->Check(isolate, ctx.regs->SP.reg, stack_size_required);
-}
-
-bool CallExpandDefaultArgs(Fiber *fiber, CallCtx &ctx) {
-    if (!ctx.fn_shared->HasDefaultArgs()) {
-        if (ctx.call_mode_is_nargs) {
-            ErrorSet(fiber->isolate,
-                     TypeError::Details[TypeError::Reason::ID],
-                     nullptr,
-                     TypeError::Details[TypeError::Reason::NO_NAMED_ARGS],
-                     ORSTRING_TO_CSTR(ctx.fn_shared->name));
-
-            return false;
-        }
-
-        return true;
-    }
-
-    const auto defaults = ctx.fn_shared->defaults;
-    for (auto i = 0; i < defaults->length; i += 2) {
-        HOObject out;
-
-        ctx.stack_args += 1;
-
-        if (ctx.call_mode_is_nargs && DictLookup(ctx.nargs, defaults->objects[i], out) == LookupResult::OK) {
-            fiber->vm.Push(out.get());
-
-            continue;
-        }
-
-        if (ctx.call_mode_is_kwarg && DictLookup(ctx.kwargs, defaults->objects[i], out) == LookupResult::OK) {
-            fiber->vm.Push(out.get());
-
-            continue;
-        }
-
-        // Push default
-        fiber->vm.Push(defaults->objects[i + 1]);
-    }
-
-    return true;
-}
-
-bool CallFinalizeKwargs(Fiber *fiber, const CallCtx &ctx) {
-    if (ctx.call_mode_is_kwarg) {
-        if (ENUMBITMASK_ISFALSE(ctx.fn_shared->kind, FunctionKind::KWARGS)) {
-            ErrorSet(fiber->isolate,
-                     TypeError::Details[TypeError::Reason::ID],
-                     nullptr,
-                     TypeError::Details[TypeError::Reason::NO_KWARGS],
-                     ORSTRING_TO_CSTR(ctx.fn_shared->name));
-
-            return false;
-        }
-
-        fiber->vm.Push((OObject *) ctx.kwargs);
-
-        return true;
-    }
-
-    if (ctx.fn_shared->IsKWargs()) {
-        const auto dict = DictNew(fiber->isolate);
-        if (!dict)
-            return false;
-
-        fiber->vm.Push((OObject *) dict.get());
-    }
-
-    return true;
-}
-
-bool CallFinalizeRestArgs(Fiber *fiber, const CallCtx &ctx) {
-    if (ctx.call_mode_is_rest) {
-        fiber->vm.Push((OObject *) ctx.rest);
-
-        return true;
-    }
-
-    if (ctx.fn_shared->IsVariadic()) {
-        const auto list = ListNew(fiber->isolate, 0);
-        if (!list)
-            return false;
-
-        fiber->vm.Push((OObject *) list.get());
-    }
-
-    return true;
-}
-
-void CallLoadCurrying(const Function *func, CallCtx &ctx) {
-    const auto args = (OObject **) ((ctx.stack->stack + ctx.regs->SP.reg) - (ctx.stack_args * sizeof(void *)));
-    const auto offset = func->currying->length;
-
-    for (auto i = 0; i < ctx.stack_args; i++)
-        args[offset + i] = args[i];
-
-    for (auto i = 0; i < func->currying->length; i++)
-        args[i] = func->currying->objects[i];
-
-    ctx.stack_args += func->currying->length;
-    ctx.regs->SP.reg += (offset * sizeof(void *));
-}
-
-int CallInit(Fiber *fiber, Function *&func, const unsigned short p_count, const CallMode mode) {
-    if (!O_IS_OBJECT(func)) {
-        ErrorSetWithObjType(fiber->isolate,
-                            TypeError::Details[TypeError::Reason::ID],
-                            TypeError::Details[TypeError::Reason::NON_CALLABLE],
-                            nullptr,
-                            (OObject *) func);
-
-        return (int) CallResult::ERROR;
-    }
-
-    if (!O_IS_TYPE(func, InstanceType::FUNCTION)) {
-        if (!O_IS_TYPE(func, InstanceType::TYPE) || ((TypeInfo *) func)->ctor == nullptr) {
-            ErrorSetWithObjType(fiber->isolate,
-                                TypeError::Details[TypeError::Reason::ID],
-                                TypeError::Details[TypeError::Reason::NON_CALLABLE],
-                                nullptr,
-                                (OObject *) func);
-
-            return (int) CallResult::ERROR;
-        }
-
-        func = (Function *) ((TypeInfo *) func)->ctor;
-    }
-
-    CallCtx ctx{
-        .regs = &fiber->vm.regs,
-        .stack = &fiber->vm.stack,
-        .fn_shared = func->shared,
-        .nargs = (Dict *) fiber->vm.regs.r10.reg,
-        .rest = (List *) fiber->vm.regs.r11.reg,
-        .kwargs = (Dict *) fiber->vm.regs.r12.reg,
-        .stack_args = p_count,
-        .call_mode_is_kwarg = ENUMBITMASK_ISTRUE(mode, CallMode::KW_ARG),
-        .call_mode_is_nargs = ENUMBITMASK_ISTRUE(mode, CallMode::NARGS),
-        .call_mode_is_rest = ENUMBITMASK_ISTRUE(mode, CallMode::REST_ARG)
-    };
-
-    if (ENUMBITMASK_ISTRUE(mode, CallMode::METHOD) && !CallNormalizeMethodCall(fiber->isolate, ctx))
-        return (int) CallResult::ERROR;
-
-    if (!CallEnsureStack(fiber->isolate, ctx)) {
-        ErrorSet(fiber->isolate,
-                 MemoryError::Details[MemoryError::Reason::ID],
-                 nullptr,
-                 MemoryError::Details[MemoryError::Reason::STACK]);
-
-        return (int) CallResult::ERROR;
-    }
-
-    bool rest_edited = false;
-    bool currying_pushed = false;
-
-    auto total_args = ctx.stack_args;
-    if (func->currying != nullptr)
-        total_args += func->currying->length;
-
-    if (total_args < ctx.fn_shared->arity) {
-        const auto args_diff = ctx.fn_shared->arity - total_args;
-
-        if (!ctx.call_mode_is_rest || ctx.rest->length < args_diff) {
-            if (func->shared->IsInit()) {
-                ErrorSet(fiber->isolate,
-                         TypeError::Details[TypeError::Reason::ID],
-                         nullptr,
-                         TypeError::Details[TypeError::Reason::INIT_NO_CURRY],
-                         ctx.fn_shared->owner_type->name);
-
-                return (int) CallResult::ERROR;
-            }
-
-            const auto args = (OObject **) ((ctx.stack->stack + ctx.regs->SP.reg) - (ctx.stack_args * sizeof(void *)));
-
-            ctx.regs->RR.reg = (PtrSize) FunctionNew(func, args, ctx.stack_args).get();
-            ctx.regs->SP.reg -= ctx.stack_args * sizeof(void *);
-
-            return (int) CallResult::DONE;
-        }
-
-        if (!func->shared->IsVariadic() && ctx.rest->length > args_diff) {
-            ErrorSet(fiber->isolate,
-                     TypeError::Details[TypeError::Reason::ID],
-                     nullptr,
-                     TypeError::Details[TypeError::Reason::TOO_MANY_ARGS],
-                     ORSTRING_TO_CSTR(ctx.fn_shared->name),
-                     (int) ctx.fn_shared->arity,
-                     (int) (ctx.stack_args + ctx.rest->length));
-
-            return (int) CallResult::ERROR;
-        }
-
-        if (func->currying != nullptr) {
-            CallLoadCurrying(func, ctx);
-
-            currying_pushed = true;
-        }
-
-        for (auto i = 0; i < args_diff; i++) {
-            fiber->vm.Push(ctx.rest->objects[i]);
-            ctx.stack_args += 1;
-        }
-
-        if (func->shared->IsVariadic()) {
-            const auto tmp = ListNew(fiber->isolate, ctx.rest->length - args_diff);
-            if (!tmp)
-                return (int) CallResult::ERROR;
-
-            ListExtend(tmp.get(), ctx.rest->objects + args_diff, ctx.rest->length - args_diff);
-
-            ctx.rest = tmp.get();
-
-            rest_edited = true;
-        }
-    }
-
-    if (!currying_pushed && func->currying != nullptr)
-        CallLoadCurrying(func, ctx);
-
-    if (ctx.call_mode_is_rest)
-        total_args += ctx.rest->length;
-
-    if (total_args > ctx.fn_shared->arity) {
-        if (!func->shared->IsVariadic()) {
-            ErrorSet(fiber->isolate,
-                     TypeError::Details[TypeError::Reason::ID],
-                     nullptr,
-                     TypeError::Details[TypeError::Reason::TOO_MANY_ARGS],
-                     ORSTRING_TO_CSTR(ctx.fn_shared->name),
-                     (int) ctx.fn_shared->arity,
-                     (int) total_args);
-
-            return (int) CallResult::ERROR;
-        }
-
-        if (!rest_edited) {
-            const auto excess_on_stack = ctx.stack_args > ctx.fn_shared->arity
-                                             ? ctx.stack_args - ctx.fn_shared->arity
-                                             : 0;
-
-            const auto rest_len = ctx.call_mode_is_rest ? ctx.rest->length : 0;
-
-            const auto tmp = ListNew(fiber->isolate, excess_on_stack + rest_len);
-            if (!tmp)
-                return (int) CallResult::ERROR;
-
-            if (excess_on_stack > 0) {
-                const auto args = (OObject **) ((ctx.stack->stack + ctx.regs->SP.reg)
-                                                - (excess_on_stack * sizeof(void *)));
-                ListExtend(tmp.get(), args, excess_on_stack);
-
-                ctx.regs->SP.reg -= excess_on_stack * sizeof(void *);
-                ctx.stack_args -= excess_on_stack;
-            }
-
-            if (ctx.call_mode_is_rest)
-                ListExtend(tmp.get(), (OObject *) ctx.rest);
-
-            ctx.rest = tmp.get();
-        }
-
-        ctx.call_mode_is_rest = true;
-    }
-
-    if (!CallExpandDefaultArgs(fiber, ctx))
-        return (int) CallResult::ERROR;
-
-    if (!CallFinalizeRestArgs(fiber, ctx))
-        return (int) CallResult::ERROR;
-
-    if (!CallFinalizeKwargs(fiber, ctx))
-        return (int) CallResult::ERROR;
-
-    return ctx.stack_args;
 }
 
 // *********************************************************************************************************************
@@ -1050,6 +714,8 @@ CGOTO
             return nullptr;                                     \
         }                                                       \
     } while(0)
+
+    CallCtx call_ctx;
 
     auto *regs = &fiber->vm.regs;
     auto *stack = &fiber->vm.stack;
@@ -1452,11 +1118,11 @@ CATCH_FINALLY:
                     goto BEGIN;
                 }
 
-                res = CallInit(fiber, func, p_count, flags);
-                if (res == (int) CallResult::ERROR)
+                const auto call_res = call_ctx.CallInit(fiber, func, p_count, flags);
+                if (call_res == CallResult::ERROR)
                     goto ERROR;
 
-                if (res == (int) CallResult::DONE) {
+                if (call_res == CallResult::DONE) {
                     DISPATCH;
                 }
 
@@ -1471,7 +1137,7 @@ CATCH_FINALLY:
                     DISPATCH;
                 }
 
-                if (Call(fiber, func, res)) {
+                if (Call(fiber, func, call_ctx.StackArgs())) {
                     CHECK_PREEMPT;
 
                     goto BEGIN;
@@ -1528,11 +1194,10 @@ CATCH_FINALLY:
                     goto ERROR;
                 }
 
-                auto res = CallInit(fiber, func, p_count, flags);
-                if (res == (int) CallResult::ERROR)
+                if (call_ctx.CallInit(fiber, func, p_count, flags) == CallResult::ERROR)
                     goto ERROR;
 
-                const auto size = res * sizeof(void *);
+                const auto size = call_ctx.StackArgsBytes();
                 if (!Orbiter::GetInstance()->EvalAsync(func,
                                                        (fiber->vm.stack.stack + regs->SP.reg) - size,
                                                        size).get())
@@ -1549,8 +1214,7 @@ CATCH_FINALLY:
 
                 auto func = (Function *) ACCESS_REG_SRC(instr);
 
-                const auto res = CallInit(fiber, func, p_count, flags);
-                if (res == (int) CallResult::ERROR)
+                if (call_ctx.CallInit(fiber, func, p_count, flags) == CallResult::ERROR)
                     goto ERROR;
 
                 auto *defer = fiber->isolate->dpool_->NewDefer();
@@ -1559,7 +1223,7 @@ CATCH_FINALLY:
 
                 defer->func = func;
 
-                defer->argc = res;
+                defer->argc = call_ctx.StackArgs();
 
                 defer->r10 = regs->r10.reg;
                 defer->r11 = regs->r11.reg;
