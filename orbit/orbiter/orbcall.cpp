@@ -153,7 +153,7 @@ void ArgumentBinder::LoadCurrying() {
 
     const auto offset = this->func->currying->length;
 
-    for (auto i = 0; i < this->stack_args; i++)
+    for (auto i = (int) this->stack_args - 1; i >= 0; i--)
         args[offset + i] = args[i];
 
     for (auto i = 0; i < this->func->currying->length; i++)
@@ -251,6 +251,15 @@ CallResult ArgumentBinder::Bind(Fiber *fiber, Function *&func, const U16 p_count
             this->rest = synthesized_rest.get();
 
             rest_edited = true;
+        } else {
+            // The list was fully consumed into the declared parameters (reaching
+            // here means rest->length == args_diff: a shorter list took the
+            // currying path above, a longer one already errored) and there is no
+            // variadic parameter to receive a remainder. Clearing the flag stops
+            // FinalizeRestArgs from pushing the spent list a second time, which
+            // would both misbind the callee and leave SP off by one slot, since
+            // that push is not counted in stack_args.
+            this->call_mode_is_rest = false;
         }
     }
 
