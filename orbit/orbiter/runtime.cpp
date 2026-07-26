@@ -10,6 +10,7 @@
 
 #include <orbit/orbiter/import/importer.h>
 
+#include <orbit/orbiter/orbcall.h>
 #include <orbit/orbiter/fpool.h>
 
 #include <orbit/orbiter/runtime.h>
@@ -454,30 +455,38 @@ bool Orbiter::EvalSync(Function *func, OObject **argv, const U16 argc, OObject *
 
     const auto saved_regs = fiber->vm.regs;
 
-    auto stack_size_required = kStackPrologueOffset +
-                               (func->shared->code->stack_size * sizeof(void *))
-                               + (2 * sizeof(void *));
-
-    if (func->shared->HasDefaultArgs())
-        stack_size_required += (func->shared->defaults->length / 2) * sizeof(void *);
-
-    if (argv != nullptr)
-        stack_size_required += argc * sizeof(OObject *);
-
     *out = nullptr;
 
-    if (!fiber->vm.stack.Check(O_GET_ISOLATE(func), fiber->vm.regs.SP.reg, stack_size_required))
-        return false;
-
     if (argv != nullptr) {
+        if (!fiber->vm.stack.Check(fiber->isolate, fiber->vm.regs.SP.reg, argc * sizeof(void *)))
+            return false;
+
         for (auto i = 0; i < argc; i++)
             fiber->vm.Push(argv[i]);
+    }
+
+    ArgumentBinder binder;
+    if (binder.Bind(fiber, func, argc, CallMode::FASTCALL) == CallResult::ERROR) {
+        fiber->vm.regs = saved_regs;
+
+        return false;
+    }
+
+    // Partial application check:
+    // binder.Bind may modify RR to store a partially applied function (currying).
+    // If RR changed from its saved value, the binding produced a curried function.
+    if (saved_regs.RR.reg != fiber->vm.regs.RR.reg) {
+        *out = (OObject *) fiber->vm.regs.RR.reg;
+
+        fiber->vm.regs = saved_regs;
+
+        return true;
     }
 
     // PushState saves IP advanced by one word ("the next opcode"), because the
     // normal CALL flow resumes via `goto BEGIN` after PopState. EvalSync instead
     // returns into the MIDDLE of the caller's opcode handler, which still runs
-    // its own DISPATCH (NEXT_IP) afterwards — without this rewind the restored
+    // its own DISPATCH (NEXT_IP) afterwards. Without this rewind the restored
     // IP would be advanced twice, silently skipping the instruction after the
     // call.
     fiber->vm.regs.IP.reg -= sizeof(MachineWord);
