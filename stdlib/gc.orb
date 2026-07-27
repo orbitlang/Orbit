@@ -19,5 +19,6 @@
  */
 
 pub import
-    collect
+    collect,
+    rearm
     from "::orbit::gc"

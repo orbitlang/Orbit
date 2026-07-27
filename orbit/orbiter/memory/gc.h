@@ -14,8 +14,8 @@
 #include <orbit/orbiter/memory/iallocator.h>
 #include <orbit/orbiter/memory/bitoffset.h>
 
-#define GC_GET_HEAD(ptr) ((GCHead *) (((unsigned char *) ptr) - sizeof(GCHead)))
-#define GC_GET_OBJ(head) ((datatype::OObject*) (((unsigned char*) head) + sizeof(GCHead)))
+#define GC_GET_HEAD(ptr) ((orbiter::memory::GCHead *) (((unsigned char *) ptr) - sizeof(orbiter::memory::GCHead)))
+#define GC_GET_OBJ(head) ((orbiter::datatype::OObject*) (((unsigned char*) head) + sizeof(orbiter::memory::GCHead)))
 
 namespace orbiter {
     class Fiber;
