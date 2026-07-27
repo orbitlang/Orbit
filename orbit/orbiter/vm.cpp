@@ -1093,7 +1093,7 @@ CATCH_FINALLY:
 
                 int res;
 
-                if (func != nullptr && O_IS_TYPE(func, InstanceType::GENERATOR)) {
+                if (O_IS_OBJECT(func) && O_IS_TYPE(func, InstanceType::GENERATOR)) {
                     res = CallGenerator(fiber, (Generator *) func, p_count, flags, true);
                     if (res == (int) CallResult::ERROR)
                         goto ERROR;
@@ -1185,7 +1185,7 @@ CATCH_FINALLY:
 
                 auto func = (Function *) ACCESS_REG_SRC(instr);
 
-                if (func != nullptr && O_IS_TYPE(func, InstanceType::GENERATOR)) {
+                if (O_IS_OBJECT(func) && O_IS_TYPE(func, InstanceType::GENERATOR)) {
                     ErrorSet(fiber->isolate,
                              TypeError::Details[TypeError::Reason::ID],
                              nullptr,
