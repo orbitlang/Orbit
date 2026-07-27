@@ -23,6 +23,7 @@ namespace orbiter::datatype {
     using HTrait = Handle<Trait>;
 
     struct ClassBlueprint {
+        Function *dtor;
         Function *equal;
         Function *compare;
         Function *hash;

@@ -17,6 +17,8 @@ using namespace orbiter::datatype;
 
 static bool ClassCompare(const OObject *left, const OObject *right, int &result);
 
+static bool ClassDtor(OObject *self);
+
 static bool ClassEqual(const OObject *left, const OObject *right, bool &out);
 
 static OObject *ClassToString(orbiter::Isolate *isolate, const Class *self);
@@ -79,7 +81,14 @@ bool InitObjectBlueprint(orbiter::Isolate *isolate, TypeInfo *type) {
     auto &ops = ((TypeInfoOps *) type)->ops;
     const TypeInfo *out_type;
 
-    auto *prop = TIFindProperty(type, &out_type, "equal");
+    const auto *prop = TIFindProperty(type, &out_type, "cleanup");
+    if (prop != nullptr) {
+        cache->dtor = (Function *) prop->value;
+
+        type->dtor = ClassDtor;
+    }
+
+    prop = TIFindProperty(type, &out_type, "equal");
     if (prop != nullptr) {
         cache->equal = (Function *) prop->value;
 
@@ -104,14 +113,14 @@ bool InitObjectBlueprint(orbiter::Isolate *isolate, TypeInfo *type) {
     if (prop != nullptr) {
         cache->repr = (Function *) prop->value;
 
-        ops.to_repr = (ToStrFn)ClassToRepr;
+        ops.to_repr = (ToStrFn) ClassToRepr;
     }
 
     prop = TIFindProperty(type, &out_type, "str");
     if (prop != nullptr) {
         cache->str = (Function *) prop->value;
 
-        ops.to_string = (ToStrFn)ClassToString;
+        ops.to_string = (ToStrFn) ClassToString;
     }
 
     return true;
@@ -174,6 +183,30 @@ static bool ClassCompare(const OObject *left, const OObject *right, int &result)
     }
 
     result = (int) cmp;
+
+    return true;
+}
+
+static bool ClassDtor(OObject *self) {
+    const auto *cache = (const ClassBlueprint *) O_GET_TYPE(self)->aux.data;
+    if (cache->dtor) {
+        auto *fiber = orbiter::Fiber::Current();
+        auto *orbiter = orbiter::Orbiter::GetInstance();
+
+        constexpr auto size = (U16) sizeof(OObject *);
+
+        fiber->vm.Push(self);
+
+        // Ignore return value
+        orbiter->EvalAsync(
+            cache->dtor,
+            (fiber->vm.stack.stack + fiber->vm.regs.SP.reg) - size,
+            size);
+
+        fiber->vm.regs.SP.reg -= size;
+
+        return false;
+    }
 
     return true;
 }
