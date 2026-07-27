@@ -5,7 +5,7 @@
 **A modern, concurrent programming language with a register-based virtual machine.**
 
 [![status: alpha](https://img.shields.io/badge/status-alpha-orange)](#project-status)
-[![version: 0.1.0](https://img.shields.io/badge/version-0.1.0-blue)](orbit/orbiter/version.h)
+[![version: 0.2.0](https://img.shields.io/badge/version-0.2.0-blue)](orbit/orbiter/version.h)
 [![language: C++17](https://img.shields.io/badge/language-C%2B%2B17-00599C?logo=cplusplus)](CMakeLists.txt)
 [![license: Apache 2.0](https://img.shields.io/badge/license-Apache--2.0-green)](LICENSE)
 [![platforms](https://img.shields.io/badge/platforms-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey)](#building-from-source)
@@ -14,7 +14,7 @@
 
 ---
 
-> ⚠️ **Orbit is in early alpha (0.1.0).** The language compiles and runs, the
+> ⚠️ **Orbit is in early alpha (0.2.0).** The language compiles and runs, the
 > core runtime is functional, and the standard library is taking shape — but
 > syntax, bytecode, and APIs are still moving. It is not yet ready for
 > production use. See [Project status](#project-status).
@@ -82,7 +82,7 @@ Working today on the VM and compiler:
 
 - **Object model** — classes with single inheritance, traits with **C3
   linearization**, `init`/`cleanup`, `pub`/`prot` visibility, `const` methods,
-  `weak` references.
+  `weak` references, and runtime type tests (`x is T`).
 - **First-class functions** — closures, currying, inline/anonymous functions,
   default & keyword & variadic parameters, decorators.
 - **Concurrency** — `spawn` fibers, `async`/`await` with futures, typed
@@ -182,7 +182,7 @@ Orbit is an **actively developed alpha**.
 | Fiber scheduler & concurrency | ✅ Functional |
 | Classes, traits, generators, async, channels | ✅ Functional |
 | FFI (`native func`) | 🚧 POSIX complete, Windows partial |
-| Standard library | 🚧 Early — `io` taking shape, most modules planned |
+| Standard library | 🚧 Early — `io`/`gc`/`regex` taking shape, most modules planned |
 | Static type annotations | 🚧 Parsed, not yet enforced |
 | Bytecode stability | ❌ Not stable — expect breaking changes |
 | Tooling (formatter, LSP, debugger) | ❌ Not started |

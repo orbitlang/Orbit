@@ -39,6 +39,7 @@ Status legend: ✅ available · 🚧 work in progress (usable, with caveats) ·
 | **io** | `import "io"` | `::orbit::io` builtin + pure Orbit | Standard streams as `File` objects (`stdin`/`stdout`/`stderr`), `print`/`perror`/`input`, `open`, buffered reader/writer, and the core IO traits. The most complete module. |
 | **error** | `import "error"` | pure Orbit | Ready-made error constructors aligned with the kinds the engine raises (`ValueError`, `TypeError`, `OSError`, `IndexError`, `KeyError`, …). Each is a partial application of `Error.create(@Kind)`; call with a reason to build one: `panic ValueError("count must be positive")`. Also ships helpers that format engine-standard messages, e.g. `fmt_typerror(obj, String, Bytes)` → `expected type 'String/Bytes', got '…'`. |
 | **ffi** | `import "ffi"` | `::orbit::ffi` builtin | Native-interop platform metadata: `SIZEOF_*` for every native type usable in `native` declarations (`SIZEOF_PTR`, `SIZEOF_U64`, …) and the byte order (`ENDIAN`). Use it to compute `Rawptr.alloc` layouts instead of hardcoding sizes. |
+| **gc** | `import "gc"` | `::orbit::gc` builtin | Manual control over the garbage collector, which otherwise runs automatically: `collect()` forces a full collection cycle and returns the number of objects reclaimed; `rearm(obj)` re-arms the finalizer of a resurrected object. |
 | **regex** | `import "regex"` | native binding (PCRE2) + pure Orbit | Perl-compatible regular expressions over [PCRE2](https://www.pcre.org) (`libpcre2-8` must be installed). `Pattern`, `Match`, `CompileContext` tuning, one-shot helpers. |
 | **runtime** | `import "runtime"` | `::orbit::runtime` builtin | Environment introspection: `os`, `executable`, `get_argv()`, `get_config()`, and the engine `version` (plus parsed `version_major`/`minor`/`patch`). |
 
@@ -196,7 +197,7 @@ working style reference.
 Ordered by enablement (what unblocks what):
 
 ```
-DONE  io / error / runtime / ffi / regex   (usable today)
+DONE  io / error / runtime / ffi / regex / gc   (usable today)
 WIP   readline / repl                      (POSIX/macOS; depend on FFI + eval/Context)
 ─────────────────────────────────────────────────────────────────
 Pure-Orbit first (need only the language + import pipeline):
