@@ -1,0 +1,23 @@
+# This source file is part of the Orbit project.
+#
+# Licensed under the Apache License v2.0
+
+/*!
+ * @brief Garbage collector control.
+ *
+ * Re-exports the native `::orbit::gc` module: manual control over the garbage
+ * collector. Collection normally runs automatically when allocation crosses a
+ * threshold; this module lets a program force a full cycle on demand, useful
+ * to reclaim memory at a known-quiet point or to measure how much is live.
+ *
+ * @example
+ *     import "gc"
+ *     import "io"
+ *
+ *     freed := gc.collect()
+ *     io.print("reclaimed", freed, "objects")
+ */
+
+pub import
+    collect
+    from "::orbit::gc"

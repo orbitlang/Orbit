@@ -26,6 +26,7 @@ using namespace orbiter::import;
 static const ModuleInit *const kBuiltins[] = {
     orbiter::module::module_builtin_,
     orbiter::module::module_ffi_,
+    orbiter::module::module_gc_,
     orbiter::module::module_io_,
     orbiter::module::module_runtime_
 };
