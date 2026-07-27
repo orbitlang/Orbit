@@ -1313,7 +1313,7 @@ CATCH_FINALLY:
                     && ((Function *) value)->shared->IsMethod())
                     ((Function *) value)->shared->owner_type = tp;
 
-                prop->value = value;
+                prop->value = O_INCREF(value);
 
                 DISPATCH;
             }
