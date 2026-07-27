@@ -1,0 +1,89 @@
+# PoC IR-002 — `trap new X()` under register pressure.
+# Historically: compile-time assert in AddInstructionBefore (instr->prev==nullptr).
+# After the partial fix: the SKLDR reload of the spilled NOBJ (inserted before
+# STRES, head of the trap's finally block) is skipped by codegen and the block
+# offsets desync (+4), so the trap handler lands past STRES — the panic path
+# yields a stale value instead of an error Result, and the success-path value
+# can be wrong under different allocation.
+# EXPECT: contains: ALL TESTS PASSED
+
+import "io"
+
+var fails = 0
+
+func check(name, got, expected) {
+    if got == expected {
+        io.print("OK   ", name)
+    } else {
+        io.print("FAIL ", name, "-> got:", got, "expected:", expected)
+        fails += 1
+    }
+}
+
+class Good {
+    pub var x
+    pub init(p1, p2, p3, p4, p5, p6, p7, p8) {
+        self.x = p1 + p2 + p3 + p4 + p5 + p6 + p7 + p8
+    }
+}
+
+class Boom {
+    pub var x
+    pub init(p1, p2, p3, p4, p5, p6, p7, p8) {
+        self.x = p1 + p2 + p3 + p4 + p5 + p6 + p7 + p8
+        q := nil
+        q.boom()  # panic inside the constructor (a call — a bare `q.boom`
+                  # load with no uses gets removed by DCE and never panics)
+    }
+}
+
+# Enough live locals to force NOBJ to spill across the trap.
+func success_path() {
+    a := 1
+    b := 2
+    c := 3
+    d := 4
+    e := 5
+    f := 6
+    g := 7
+    h := 8
+    i := 9
+    j := 10
+
+    res := trap new Good(a + 100, b + 100, c + 100, d + 100, e + 100, f + 100, g + 100, h + 100)
+    v := res.unwrap_or(nil)
+
+    check("locals survive", a + b + c + d + e + f + g + h + i + j, 55)
+    check("success value", v.x, 836)
+
+    return 0
+}
+
+func panic_path() {
+    a := 1
+    b := 2
+    c := 3
+    d := 4
+    e := 5
+    f := 6
+    g := 7
+    h := 8
+    i := 9
+    j := 10
+
+    res := trap new Boom(a + 100, b + 100, c + 100, d + 100, e + 100, f + 100, g + 100, h + 100)
+
+    check("locals survive", a + b + c + d + e + f + g + h + i + j, 55)
+    check("panic caught", res.unwrap_or("CAUGHT"), "CAUGHT")
+
+    return 0
+}
+
+success_path()
+panic_path()
+
+if fails == 0 {
+    io.print("ALL TESTS PASSED")
+} else {
+    io.print(fails, "TEST(S) FAILED")
+}

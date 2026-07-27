@@ -1,0 +1,82 @@
+# PoC ir-003-r13-crosscall — two call results live simultaneously collide in the
+# return register R13 (IR-003). Every call result is pinned to R13; when two are
+# bound to locals and kept live, the reload of the first is overwritten by the
+# reload of the second and the value is silently wrong.
+#
+# Runtime test: prints "ALL CHECKS PASSED" only when every case is correct.
+# FIXED 2026-07-17: the CallerSaveSpiller pre-pass cuts every interval at call
+# sites and emits reloads as fresh, unpinned SSA values, so two call results
+# never co-reside in R13 (see issues/ir.md, IR-003).
+# EXPECT: contains: ALL CHECKS PASSED
+
+import "io"
+
+var fails = 0
+
+func check(name, got, expected) {
+    if got == expected {
+        io.print("OK   ", name)
+    } else {
+        fails += 1
+        io.print("FAIL ", name, " got=", got, " expected=", expected)
+    }
+}
+
+func id(x) { return x }
+
+# --- BUGGY: two call results bound to locals, then combined ---
+
+# a + b, both from calls. Observed: 18 (b + b), a clobbered to b's value.
+func two_call() {
+    a := id(7)
+    b := id(9)
+    return a + b
+}
+
+# a * b, same collision on a different op. Observed: 16 (b * b).
+func mul_call() {
+    a := id(3)
+    b := id(4)
+    return a * b
+}
+
+# a, b and a derived c, all live together. Observed: 36 (a clobbered to b=9).
+func sum_call() {
+    a := id(7)
+    b := id(9)
+    c := a + b
+    return a + b + c
+}
+
+# --- CONTROL: these already work and must stay correct ---
+
+# Only one operand is a call result (the other is a constant) -> no R13 clash.
+func one_call() {
+    a := id(7)
+    b := 9
+    return a + b
+}
+
+# Three call results; the extra arithmetic happens to force them out of R13.
+func three_call() {
+    a := id(1)
+    b := id(2)
+    c := id(3)
+    return a * 100 + b * 10 + c
+}
+
+# Nested results are consumed immediately (pushed as args), never co-resident.
+func add(x, y) { return x + y }
+
+check("two call results added", two_call(), 16)
+check("two call results multiplied", mul_call(), 12)
+check("three values from two calls", sum_call(), 32)
+check("one call + constant (control)", one_call(), 16)
+check("three call results (control)", three_call(), 123)
+check("nested results as args (control)", add(add(1, 2), add(3, 4)), 10)
+
+if fails == 0 {
+    io.print("ALL CHECKS PASSED")
+} else {
+    io.print(fails, "CHECK(S) FAILED")
+}

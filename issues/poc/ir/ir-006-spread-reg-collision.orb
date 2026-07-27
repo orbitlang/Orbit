@@ -1,0 +1,85 @@
+# PoC ir-006-spread-reg-collision — the nargs/rest/kwargs call-protocol registers
+# (R10/R11/R12) are pinned on the *producing* instruction, so two such values
+# live at the same time collide on one register (IR-006).
+#
+# `SetRest` (liftoff/ir/instruction.h) writes `assigned_reg = kCallRestReg` onto
+# the instruction that PRODUCES the spread value, which keeps that value homed in
+# R11 for its whole live range instead of only around the call. With two spread
+# calls whose operands are live together, both producers are homed to R11 — two
+# overlapping intervals sharing a register, the same invariant violation as
+# IR-003 (which was RR/R13).
+#
+# Symptoms: either a clobbered container (`ADDELEM` asserts on a non-object) or,
+# when it does not crash, a call silently receiving the *previous* call's rest
+# list.
+#
+# EXPECT: contains: ALL CHECKS PASSED
+
+import "io"
+
+var fails = 0
+
+func check(name, got, expected) {
+    if got == expected {
+        io.print("OK   ", name)
+    } else {
+        fails += 1
+        io.print("FAIL ", name, " got=", got, " expected=", expected)
+    }
+}
+
+func take(a, ...rest) {
+    return tostr(a) + "|" + tostr(rest)
+}
+
+# --- two spread calls, both operands live across the first call ---
+x := [1, 2, 3]
+y := [7, 8, 9]
+
+r1 := take(x...)
+r2 := take(y...)
+
+check("first spread", r1, "1|[2, 3]")
+check("second spread", r2, "7|[8, 9]")
+
+# the spread lists must not be mutated by the call machinery
+check("x intact", tostr(x), "[1, 2, 3]")
+check("y intact", tostr(y), "[7, 8, 9]")
+
+# --- a plain call between two spreads must not disturb them ---
+a := [10, 20, 30]
+b := [40, 50, 60]
+
+s1 := take(a...)
+s2 := take(11, 12)
+s3 := take(b...)
+
+check("spread before plain", s1, "10|[20, 30]")
+check("plain between spreads", s2, "11|[12]")
+check("spread after plain", s3, "40|[50, 60]")
+
+# --- three spreads in a row ---
+p := [1, 2]
+q := [3, 4]
+r := [5, 6]
+
+check("three spreads (1st)", take(p...), "1|[2]")
+check("three spreads (2nd)", take(q...), "3|[4]")
+check("three spreads (3rd)", take(r...), "5|[6]")
+
+# --- spread reaching a callee with defaults, after another spread ---
+func opt(a, b=99, ...rest) {
+    return tostr(a) + "," + tostr(b) + "|" + tostr(rest)
+}
+
+two := [7, 8]
+five := [1, 2, 3, 4, 5]
+
+check("spread into 2-arity", take(two...), "7|[8]")
+check("spread into defaults", opt(five...), "1,99|[2, 3, 4, 5]")
+
+if fails == 0 {
+    io.print("ALL CHECKS PASSED")
+} else {
+    io.print(fails, "CHECK(S) FAILED")
+}

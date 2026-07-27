@@ -1,0 +1,71 @@
+# PoC ir-004-derived-ctor-body — in a derived class constructor, every statement
+# after the mandatory `super.init(...)` is silently never executed (IR-004).
+#
+# The parser requires `super.init(...)` to be the first statement of a derived
+# constructor; everything that follows it is then dead code at runtime. No error,
+# no diagnostic — the constructor simply does nothing else, so field defaults and
+# any constructor logic are dropped.
+#
+# Runtime test: prints "ALL CHECKS PASSED" only when every case is correct.
+# FIXED 2026-07-17: the derived constructor was never invoked — `LoadFromObjectProp`
+# resolved `init` through the class's `type_`, which for a user class is the
+# SUPERCLASS (not a metatype), so `new Derived()` ran Base's constructor.
+# See issues/ir.md, IR-004.
+# EXPECT: contains: ALL CHECKS PASSED
+
+import "io"
+
+var fails = 0
+
+func check(name, got, expected) {
+    if got == expected {
+        io.print("OK   ", name)
+    } else {
+        fails += 1
+        io.print("FAIL ", name, " got=", got, " expected=", expected)
+    }
+}
+
+var side_effect = 0
+
+class Base {
+    pub var a = 10
+    pub init() { }
+}
+
+# The derived constructor sets a field, writes a global, and declares a default.
+class Derived : Base {
+    pub var b = 20
+    pub var c
+
+    pub init() {
+        super.init()
+        self.c = 30
+        side_effect = 99
+    }
+}
+
+# A regular (non-constructor) method proves storage and slot resolution are fine.
+class Plain : Base {
+    pub var d
+    pub init() { super.init() }
+    pub func setd() { self.d = 7 }
+}
+
+d := new Derived()
+
+check("inherited field from super ctor", d.a, 10)
+check("derived field default", d.b, 20)
+check("derived field set in ctor", d.c, 30)
+check("statement after super.init ran", side_effect, 99)
+
+# Control: writing the same kind of field from an ordinary method works.
+p := new Plain()
+p.setd()
+check("derived field via method (control)", p.d, 7)
+
+if fails == 0 {
+    io.print("ALL CHECKS PASSED")
+} else {
+    io.print(fails, "CHECK(S) FAILED")
+}

@@ -1,0 +1,55 @@
+# PoC ir-005-three-level-chain-hang — instantiating a class three levels deep in
+# an inheritance chain hangs the interpreter (IR-005).
+#
+# Two levels (A <- B) construct fine; adding a third (A <- B <- C) makes
+# `new C()` spin forever. Pre-existing: reproduces with and without the IR-004
+# LoadFromObjectProp fix.
+#
+# This PoC does NOT terminate while the bug is live — run it under a timeout:
+#   timeout 15 ./bin/Orbit issues/poc/ir/ir-005-three-level-chain-hang.orb
+# EXPECT: contains: ALL CHECKS PASSED
+
+import "io"
+
+var fails = 0
+
+func check(name, got, expected) {
+    if got == expected {
+        io.print("OK   ", name)
+    } else {
+        fails += 1
+        io.print("FAIL ", name, " got=", got, " expected=", expected)
+    }
+}
+
+class L1 {
+    pub var a = 1
+    pub init() { }
+}
+
+class L2 : L1 {
+    pub var b = 2
+    pub init() { super.init() }
+}
+
+class L3 : L2 {
+    pub var c = 3
+    pub init() { super.init() }
+}
+
+# Two levels: fine today.
+two := new L2()
+check("two-level: base field", two.a, 1)
+check("two-level: own field", two.b, 2)
+
+# Three levels: hangs here.
+three := new L3()
+check("three-level: base field", three.a, 1)
+check("three-level: middle field", three.b, 2)
+check("three-level: own field", three.c, 3)
+
+if fails == 0 {
+    io.print("ALL CHECKS PASSED")
+} else {
+    io.print(fails, "CHECK(S) FAILED")
+}
