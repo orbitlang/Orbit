@@ -1,0 +1,90 @@
+# GC suite 01 -- the `gc` module: forcing collection and reclaiming instances.
+#
+# `gc.collect()` forces a full collection cycle and returns the number of
+# objects reclaimed. This suite covers the deterministic surface: the return
+# contract, that a cycle reclaims dead garbage, and -- the regression that
+# matters most -- that a class whose instances are collected keeps its own
+# methods (collecting an instance used to strip the class type's `init`).
+#
+# NOTE: custom-class `cleanup { ... }` finalizers are intentionally NOT asserted
+# here. They run asynchronously on a dedicated fiber (no deterministic
+# completion signal to await), and conservative stack scanning does not
+# guarantee any specific object is collected on a given cycle -- so a test that
+# blocked waiting for one object's cleanup would be racy and could hang the
+# release gate. Cleanup/resurrection are exercised manually instead.
+#
+# Determinism: garbage is built inside a callee whose stack frame is then
+# overwritten by a second, identically-shaped call, so the conservative scan no
+# longer pins it and the cycle can reclaim it.
+#
+# EXPECT: contains: ALL TESTS PASSED
+
+import "io"
+import "gc"
+
+var fails = 0
+
+func check(name, got, expected) {
+    if got == expected {
+        io.print("OK   ", name)
+    } else {
+        io.print("FAIL ", name, "-- got:", got, "expected:", expected)
+        fails += 1
+    }
+}
+
+# Overwrite the previous callee's stack frame with unrelated values, so a
+# just-created object left in those slots is no longer conservatively pinned.
+func over(a, b, c) {
+    x := a + b + c
+    return 0
+}
+
+class Plain {
+    pub var v
+    pub init(v) { self.v = v }
+}
+
+func garbage() {
+    p := new Plain([1, 2, 3])
+    s := "throwaway " + "value"
+    return 0
+}
+
+# --- return contract ---
+f0 := gc.collect()
+check("collect returns a Number", f0 is Number, true)
+check("collect count is non-negative", f0 >= 0, true)
+
+# --- a cycle reclaims dead garbage ---
+garbage()
+garbage()
+garbage()
+over(1, 2, 3)
+f1 := gc.collect()
+check("collect reclaims garbage", f1 > 0, true)
+
+# --- nothing new died: the next cycle reclaims strictly less ---
+f2 := gc.collect()
+check("second collect reclaims less", f2 < f1, true)
+
+# --- regression: collecting instances must not strip the class's own methods ---
+# (a collected instance used to leave `new Plain(...)` failing with
+#  "'Class' object has no property 'init'")
+reused := new Plain(7)
+check("class usable after collecting its instances", reused.v, 7)
+
+another := new Plain(8)
+check("class still constructs repeatedly", another.v, 8)
+
+# --- a live instance is never reclaimed across cycles ---
+keeper := new Plain(99)
+gc.collect()
+gc.collect()
+check("live instance survives collection", keeper.v, 99)
+
+if fails == 0 {
+    io.print("ALL TESTS PASSED")
+} else {
+    io.print(fails, "TEST(S) FAILED")
+}
