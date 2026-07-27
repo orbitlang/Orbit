@@ -48,7 +48,7 @@ MSize GC::Collect(int start, int end) noexcept {
 
         // The object list is empty, no need to continue
         if (selected->list == nullptr)
-            return 0;
+            break;
 
         // Increment the number of times this generation has been collected
         selected->times += 1;
@@ -251,12 +251,10 @@ void GC::ScanRoots(const GCGeneration *generation) const noexcept {
         auto *obj = GC_GET_OBJ(cursor);
 
         if (O_GET_RC(obj).GetCount() > 0) {
-            const auto visited = cursor->IsVisited(this->epoch_);
-
-            cursor->epoch = this->epoch_;
-
-            if (!visited && cursor->IsContainer())
+            if (cursor->IsContainer())
                 Trace(obj, this->epoch_);
+            else
+                cursor->SetVisited(this->epoch_);
         }
     }
 }
@@ -282,9 +280,15 @@ void GC::Trace(OObject *object, const MSize epoch) noexcept {
     if (object == nullptr)
         return;
 
-    const auto *info = O_GET_TYPE(object);
+    if (GC_GET_HEAD(object)->CheckSetVisited(epoch))
+        return;
 
-    assert(info != nullptr);
+    const auto *info = O_GET_TYPE(object);
+    if (info == nullptr) {
+        assert(((TypeInfo*)object)->i_type == InstanceType::TYPE);
+
+        return;
+    }
 
     do {
         const auto *slots = O_SLOT(object, info);
@@ -297,12 +301,10 @@ void GC::Trace(OObject *object, const MSize epoch) noexcept {
                 continue;
 
             auto *head = GC_GET_HEAD(obj);
-            if (!head->IsVisited(epoch)) {
+            if (head->IsContainer())
+                Trace(obj, epoch);
+            else
                 head->SetVisited(epoch);
-
-                if (head->IsContainer())
-                    Trace(obj, epoch);
-            }
         }
 
         if (info->trace != nullptr)
@@ -349,10 +351,10 @@ void GC::Visit(OObject *object, const MSize epoch) noexcept {
         return;
 
     auto *head = GC_GET_HEAD(object);
-    if (!head->CheckSetVisited(epoch)) {
-        if (head->IsContainer())
-            Trace(object, epoch);
-    }
+    if (head->IsContainer())
+        Trace(object, epoch);
+    else
+        head->SetVisited(epoch);
 }
 
 // *********************************************************************************************************************
@@ -382,6 +384,8 @@ MSize GC::ForceCollect() noexcept {
     const auto result = this->Collect();
 
     this->ReleaseSTW();
+
+    this->Sweep();
 
     return result;
 }
@@ -442,7 +446,8 @@ void GC::EnterManagedRegion() noexcept {
 void GC::LeaveManagedRegion() noexcept {
     std::unique_lock lock(this->barrier_lock_);
 
-    this->mutators_ -= 1;
+    if (this->mutators_ > 0)
+        this->mutators_ -= 1;
 
     lock.unlock();
 

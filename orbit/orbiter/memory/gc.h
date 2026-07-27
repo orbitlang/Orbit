@@ -273,7 +273,7 @@ namespace orbiter {
             }
 
             MSize Collect() noexcept {
-                return this->Collect(0, kGCGenerations);
+                return this->Collect(0, kGCGenerations - 1);
             }
 
             MSize Collect(int start, int end) noexcept;
