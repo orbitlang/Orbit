@@ -126,7 +126,7 @@ void GC::HeadRemove(const GCHead *head) noexcept {
     auto *next = head->Next();
 
     if (head->prev != nullptr)
-        *head->prev = next;
+        ((GCHead *) head->prev)->SetNext(next);
 
     if (next != nullptr)
         next->prev = head->prev;
@@ -277,7 +277,7 @@ void GC::Sweep() noexcept {
 }
 
 void GC::Trace(OObject *object, const MSize epoch) noexcept {
-    if (object == nullptr)
+    if (object == nullptr || !O_IS_OBJECT(object))
         return;
 
     if (GC_GET_HEAD(object)->CheckSetVisited(epoch))

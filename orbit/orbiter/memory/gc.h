@@ -6,6 +6,7 @@
 #define ORBIT_ORBITER_MEMORY_GC_H_
 
 #include <atomic>
+#include <cstddef>
 
 #include <orbit/util/macros.h>
 
@@ -122,6 +123,12 @@ namespace orbiter {
                 this->epoch = epoch;
             }
         };
+
+        // The list machinery reinterprets a node's `prev` (a `GCHead **` pointing
+        // at the previous node's `next` field) as the previous node itself, and
+        // updates it through SetNext to preserve the tagged flag bits. That only
+        // holds while `next` is the first member, so `&head->next == head`.
+        static_assert(offsetof(GCHead, next) == 0, "GCHead::next must be the first member");
 
         /**
          * @brief Represents a transient list for managing garbage collection (GC) objects in a temporary context.
