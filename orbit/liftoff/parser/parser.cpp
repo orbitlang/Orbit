@@ -2371,7 +2371,13 @@ HORString Parser::GetDocString(const bool module_doc) {
     if (this->doc_.type != doc_type)
         return {};
 
-    auto str = ORStringNewHoldBuffer(this->isolate_, this->doc_.buffer, this->doc_.length);
+    HORString str;
+
+    if (this->doc_.length > 0)
+        str = ORStringNewHoldBuffer(this->isolate_, this->doc_.buffer, this->doc_.length);
+    else
+        str = ORStringIntern(this->isolate_, (const unsigned char *) "", 0);
+
     if (!str)
         throw DatatypeException();
 

@@ -46,25 +46,28 @@ nothing, and threw. (Nested-loop `continue` worked, which is why it could hide.)
 ---
 
 ## PARSE-002 — Empty doc/module comment crashes the compiler (SIGSEGV) **[confirmed]**
-**Severity:** High · **Status:** OPEN · **Location:** `parser.cpp:2242` (`GetDocString`) + `orstring.cpp:1545`
+**Severity:** High · **Status:** FIXED (2026-07-27) · **Location:** `parser.cpp` (`GetDocString`) + `orstring.cpp`
 
 An empty doc comment produces a token with `buffer == nullptr, length == 0`
-(the scanner's `GetBuffer` on an empty StoreBuffer). `GetDocString` passes it
+(the scanner's `GetBuffer` on an empty StoreBuffer). `GetDocString` passed it
 straight to `ORStringNewHoldBuffer`, which begins with
 `assert(buffer[length] == '\0')` → null pointer dereference.
 
-**PoC (reproduced, exit code 139 / SIGSEGV):**
+**PoC (was exit 139 / SIGSEGV):**
 ```
 /*!*/
 x := 1
 ```
-`/** */` immediately before a `func`/`class` hits the same path via
+`/** */` immediately before a `func`/`class` hit the same path via
 `GetDocString(false)` (the comment body becomes empty after the scanner strips
 leading whitespace).
 
-**Fix:** in `GetDocString`, treat a null/empty buffer as "no docstring"
-(return `{}`); defensively, `ORStringNewHoldBuffer` should also handle
-`buffer == nullptr`.
+**Fix:** an empty/null doc buffer is now treated as "no docstring". Verified:
+the module-doc `/*!*/`, the empty and whitespace-only `/** */` before a
+`func`/`class`, all compile and run cleanly, and non-empty docs are unaffected.
+
+**PoC:** [`poc/parser/parse-002.orb`](poc/parser/parse-002.orb) `(fixed)` —
+`# EXPECT: ok`, part of the poc gate.
 
 ---
 

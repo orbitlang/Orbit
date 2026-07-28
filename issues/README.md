@@ -21,7 +21,7 @@ are resolved.
 | [ibuffer.md](ibuffer.md) | `orbit/liftoff/scanner/ibuffer` | 2/7 |
 | [sbuffer.md](sbuffer.md) | `orbit/liftoff/scanner/sbuffer` | 0/3 |
 | [utf8-stringbuilder.md](utf8-stringbuilder.md) | `orbit/orbiter/datatype/stringbuilder` (UTF-8 codec) | 1/4 |
-| [parser.md](parser.md) | `orbit/liftoff/parser` (parser.cpp, context.h, ast.h) | 24/25 |
+| [parser.md](parser.md) | `orbit/liftoff/parser` (parser.cpp, context.h, ast.h) | 23/25 |
 | [ir.md](ir.md) | `orbit/liftoff/ir` (linearscan, intervalspiller, irbuilder, instruction) | 0/6 |
 | [compiler.md](compiler.md) | `orbit/liftoff/compiler.cpp` (compile driver) | 1/1 |
 | [ctbuilder.md](ctbuilder.md) | `orbit/orbiter/datatype/ctbuilder.cpp` (class types, blueprint, hook dispatch) | 0/1 |
@@ -31,7 +31,7 @@ are resolved.
 ## Top priorities (High severity, quick wins)
 
 - ~~**PARSE-001** — `continue` directly inside a loop is rejected (CheckExt skips current context)~~ *(FIXED 2026-06-15)*
-- **PARSE-002** — empty doc comment `/*!*/` segfaults the compiler *(confirmed live)*
+- ~~**PARSE-002** — empty doc comment `/*!*/` segfaults the compiler~~ *(FIXED 2026-07-27, empty doc buffer treated as no docstring)*
 - ~~**IR-002** — `trap new X()` asserts in `AddInstructionBefore` (head-insert miscompile)~~ *(FIXED 2026-07-13)*
 - ~~**IR-003** — two call results live at once collide in R13 → silent miscompile (`a+b` becomes `b+b`)~~ *(FIXED 2026-07-17, allocator restructured: CallerSaveSpiller pre-pass + IntervalSpiller)*
 - ~~**IR-004** — a derived class resolved its own members through its superclass (wrong `init`, shadowed properties)~~ *(FIXED 2026-07-17, `LoadFromObjectProp` searches a class's own chain first)*

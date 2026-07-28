@@ -2043,7 +2043,7 @@ IRCHandle IRBuilder::Generate(const parser::ASTHandle<parser::Module *> &module)
         assert(this->builder_.context == context);
 
         if (!this->builder_.CheckIfLastInstructionIs(orbiter::OPCode::RET)) {
-            const auto *last = module->statements.back().get();
+            const auto *last = !module->statements.empty() ? module->statements.back().get() : nullptr;
 
             if (last_value != nullptr && last != nullptr && last->is_expr && !IsNeverEcho(last->node_type))
                 this->builder_.CreateReturn(last_value, 0);
