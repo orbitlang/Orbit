@@ -22,7 +22,7 @@ MSize GC::Collect(int start, int end) noexcept {
 
     // Ensure 'start' and 'end' are within valid generation indices
     start = start % kGCGenerations;
-    end = end % kGCGenerations;
+    end = end > kGCGenerations ? kGCGenerations : end;
 
     assert(start <= end);
 
@@ -45,10 +45,6 @@ MSize GC::Collect(int start, int end) noexcept {
 
         // Reset collection statistics for the current generation
         this->ResetStats(i);
-
-        // The object list is empty, no need to continue
-        if (selected->list == nullptr)
-            break;
 
         // Increment the number of times this generation has been collected
         selected->times += 1;
