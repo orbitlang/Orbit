@@ -325,6 +325,7 @@ void GC::TraceRoots(GCGeneration *generation, GCTransientList *nextgen, GCTransi
 
                 HeadRemove(cursor);
                 generation->count -= 1;
+                cursor->gen = (U8) ((generation + 1) - this->generations_);
 
                 nextgen->AddHead(cursor);
             }

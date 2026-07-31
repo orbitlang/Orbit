@@ -28,7 +28,6 @@ namespace orbiter {
         constexpr unsigned int kGCMaxHeapSize = 256 * kToMBytes;
 
         constexpr unsigned int kGCThresholdElementsCount = 10000;
-        constexpr unsigned int kGCRCThresholdElementsCount = 2000;
 
         constexpr unsigned char kGCPromotionThresholdGen0 = 2;
         constexpr unsigned char kGCPromotionThresholdGen1 = 3;
@@ -37,9 +36,9 @@ namespace orbiter {
         constexpr unsigned int kGCThresholdGen2 = 10;
 
 #ifdef _ORBIT_ENVIRON_64BIT_
-        constexpr unsigned char kGCMaxEpoch = 0xFFFFFFFFFFFFFE; // (1u<<56) - 2
+        constexpr MSize kGCMaxEpoch = (((MSize) 1) << 54) - 1; // 54-bit epoch field
 #elif  _ORBIT_ENVIRON_32BIT_
-        constexpr unsigned char kGCMaxEpoch = 0xFFFFFE; // (1u<<24) - 2
+        constexpr MSize kGCMaxEpoch = (((MSize) 1) << 22) - 1; // 22-bit epoch field
 #else
 #error "invalid environment."
 #endif
@@ -60,13 +59,15 @@ namespace orbiter {
 
 #ifdef _ORBIT_ENVIRON_64BIT_
             struct {
-                MSize epoch: 56 = 0;
+                MSize epoch: 54 = 0;
                 MSize age: 8 = 0;
+                MSize gen: 2 = 0;
             };
 #elif  _ORBIT_ENVIRON_32BIT_
             struct {
-                MSize epoch: 24 = 0;
+                MSize epoch: 22 = 0;
                 MSize age: 8 = 0;
+                MSize gen: 2 = 0;
             };
 #else
 #error "invalid environment"
