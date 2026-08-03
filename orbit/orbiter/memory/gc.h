@@ -94,6 +94,11 @@ namespace orbiter {
                 return ((((uintptr_t) this->next) & GCBitOffsets::FinalizedMask) >> GCBitOffsets::FinalizedShift);
             }
 
+            [[nodiscard]] bool IsRemembered() const {
+                return ((((uintptr_t) this->next) & GCBitOffsets::RememberMask) >>
+                        GCBitOffsets::RememberShift);
+            }
+
             [[nodiscard]] bool IsTracked() const {
                 return this->prev != nullptr;
             }
@@ -118,6 +123,14 @@ namespace orbiter {
 
             void SetNext(GCHead *head) {
                 this->next = (GCHead *) (((uintptr_t) head) | ((uintptr_t) this->next & ~GCBitOffsets::AddressMask));
+            }
+
+            void SetRemembered() {
+                this->next = (GCHead *) ((uintptr_t) this->next | GCBitOffsets::RememberMask);
+            }
+
+            void ClearRemembered() {
+                this->next = (GCHead *) ((uintptr_t) this->next & ~GCBitOffsets::RememberMask);
             }
 
             void SetVisited(const MSize epoch) {

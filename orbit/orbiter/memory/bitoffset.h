@@ -10,7 +10,7 @@
 namespace orbiter::memory {
 #if (ORBIT_ORBITER_MEMORY_QUANTUM % 8)
 #error  This header contains the fields for tagged pointer management \
-        (used by GC) and needs at least 1 (less significant) bits free
+        (used by GC) and needs at least 3 (less significant) bits free
 #endif
 
 #define Mask(name)          (((uintptr_t(1)<<name##Bits)-1) << name##Shift)
@@ -56,11 +56,20 @@ namespace orbiter::memory {
         static constexpr unsigned char ContainerTypeBits = 1;
         static constexpr uintptr_t ContainerTypeMask = Mask(ContainerType);
 
-        // Bits 2..N — next pointer.
+        // Bit 2 — remembered flag.
+        // Set once a container has been logged into a mutator's remembered set as
+        // holding an old→young reference, so later stores to it are not enqueued
+        // again (a best-effort, non-atomic log-once filter for the generational
+        // write barrier).
+        static constexpr unsigned char RememberShift = After(ContainerType);
+        static constexpr unsigned char RememberBits = 1;
+        static constexpr uintptr_t RememberMask = Mask(Remember);
+
+        // Bits 3..N — next pointer.
         // The actual address of the next GCHead in the intrusive linked list,
         // with the lower metadata bits masked out.
-        static constexpr unsigned char AddressShift = After(ContainerType);
-        static constexpr unsigned char AddressBits = CounterBits(ContainerType);
+        static constexpr unsigned char AddressShift = After(Remember);
+        static constexpr unsigned char AddressBits = CounterBits(Remember);
         static constexpr uintptr_t AddressMask = Mask(Address);
     };
 
