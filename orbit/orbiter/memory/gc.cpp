@@ -13,6 +13,44 @@ using namespace orbiter;
 using namespace orbiter::datatype;
 using namespace orbiter::memory;
 
+thread_local GCRememberedSet *tl_remembered_set = nullptr;
+
+GCRememberedSet *GC::AcquireRSet() noexcept {
+    assert(tl_remembered_set == nullptr);
+
+    if (this->remembered_set_.free != nullptr) {
+        tl_remembered_set = this->remembered_set_.free;
+
+        tl_remembered_set->DetachSet();
+        tl_remembered_set->AttachSet(&this->remembered_set_.linked);
+
+        return tl_remembered_set;
+    }
+
+    for (auto *cursor = this->remembered_set_.dirty; cursor != nullptr; cursor = cursor->next) {
+        if (cursor->count < cursor->capacity) {
+            tl_remembered_set = cursor;
+
+            cursor->DetachSet();
+            cursor->AttachSet(&this->remembered_set_.linked);
+
+            return cursor;
+        }
+    }
+
+    auto *rs = this->allocator_.alloc<GCRememberedSet>(sizeof(GCRememberedSet));
+    if (rs != nullptr) {
+        new(rs)GCRememberedSet();
+
+        tl_remembered_set = rs;
+        rs->AttachSet(&this->remembered_set_.linked);
+
+        return rs;
+    }
+
+    return nullptr;
+}
+
 MSize GC::Collect(int start, int end) noexcept {
     GCTransientList unreachable{};
     GCTransientList nextgen[2]{};
@@ -74,8 +112,29 @@ MSize GC::Collect(int start, int end) noexcept {
         selected->count += nextgen[chg].MergeTo(&selected->list);
     }
 
+    if (start == 0 && end == kGCGenerations) {
+        if (this->degraded_mutators_ == 0)
+            this->remembered_degraded_ = false;
+    }
+
     // Move unreachable objects to the garbage list
     return unreachable.MergeTo(&this->garbage_);
+}
+
+void GC::DetachRSet() noexcept {
+    if (tl_remembered_set == nullptr) {
+        this->degraded_mutators_ -= 1;
+
+        return;
+    }
+
+    tl_remembered_set->DetachSet();
+
+    tl_remembered_set->AttachSet(tl_remembered_set->count > 0
+                                     ? &this->remembered_set_.dirty
+                                     : &this->remembered_set_.free);
+
+    tl_remembered_set = nullptr;
 }
 
 void GC::Free(GCHead *head) noexcept {
@@ -437,6 +496,39 @@ void GC::EnterManagedRegion() noexcept {
         return !this->requested_;
     });
 
+    if (this->AcquireRSet() == nullptr) {
+        // Out of memory: no free/reusable set and the allocation failed. Run a
+        // full STW collection inline to reclaim, then retry the acquisition.
+        //
+        // We already hold barrier_lock_, so we cannot call RequestSTW() (it would
+        // re-lock it and deadlock); the barrier is driven by hand here.
+        this->requested_ = true;
+
+        this->wait_barrier_.wait(lock, [this] {
+            return this->parked_mutators_ == this->mutators_;
+        });
+
+        this->Collect();
+
+        // Sweep without releasing the lock, so the memory is actually reclaimed
+        // before we retry the allocation.
+        this->Sweep();
+
+        this->requested_ = false;
+
+        this->wait_barrier_.notify_all();
+
+        // Retry; if this still fails tl_remembered_set stays null and the mutator
+        // runs degraded, ThresholdCollect then forces a full collection every
+        // time, since a partial one would be unsound without a remembered set.
+        this->AcquireRSet();
+    }
+
+    if (tl_remembered_set == nullptr) {
+        this->degraded_mutators_ += 1;
+        this->remembered_degraded_ = true;
+    }
+
     this->mutators_ += 1;
 }
 
@@ -445,6 +537,8 @@ void GC::LeaveManagedRegion() noexcept {
 
     if (this->mutators_ > 0)
         this->mutators_ -= 1;
+
+    this->DetachRSet();
 
     lock.unlock();
 
@@ -488,7 +582,9 @@ void GC::ThresholdCollect() noexcept {
 
     allocated_bytes = this->allocated_bytes_.load(std::memory_order_relaxed);
 
-    if (allocated_bytes < ((this->max_heap_size_ * 90) / 100)) {
+    // Without a remembered set (degraded mutator, see EnterManagedRegion) a
+    // partial collection would miss old->young references, so force a full one.
+    if (!this->remembered_degraded_ && allocated_bytes < ((this->max_heap_size_ * 90) / 100)) {
         if (allocated_bytes >= (U32) ((this->max_heap_size_ * 40) / 100)) {
             auto i = 1;
 

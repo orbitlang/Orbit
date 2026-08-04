@@ -138,11 +138,83 @@ namespace orbiter {
             }
         };
 
+        /**
+         * @brief Represents a generation in a generational garbage collection system.
+         *
+         * The GCGeneration struct is used to manage and track objects within a specific generation in a garbage-collected memory system.
+         * Generational garbage collection segregates objects based on their age, allowing optimizations for frequently collected younger objects
+         * while reducing overhead for older, frequently referenced objects. Each generation maintains metadata about the objects under its control
+         * and the collection process.
+         */
+        struct GCGeneration {
+            GCHead *list;
+
+            MSize count;
+
+            MSize collected;
+            MSize uncollected;
+
+            U16 promotion_threshold;
+            U16 threshold;
+            U16 times;
+        };
+
+        class GCRememberedSet {
+        public:
+            GCRememberedSet *next = nullptr;
+            GCRememberedSet **prev = nullptr;
+
+            GCHead **list = nullptr;
+
+            MSize count = 0;
+            MSize capacity = 0;
+
+            bool AddHead(GCHead *head) {
+                if (this->count == this->capacity)
+                    return false;
+
+                this->list[this->count++] = head;
+
+                return true;
+            }
+
+            void AttachSet(GCRememberedSet **list) {
+                this->next = *list;
+                this->prev = list;
+
+                if (*list != nullptr)
+                    (*list)->prev = &this->next;
+
+                *list = this;
+            }
+
+            void Clear() {
+                this->count = 0;
+            }
+
+            void DetachSet() {
+                if (this->next != nullptr)
+                    this->next->prev = this->prev;
+
+                if (this->prev != nullptr)
+                    ((GCRememberedSet *) this->prev)->next = this->next;
+
+                this->next = nullptr;
+                this->prev = nullptr;
+            }
+        };
+
         // The list machinery reinterprets a node's `prev` (a `GCHead **` pointing
         // at the previous node's `next` field) as the previous node itself, and
         // updates it through SetNext to preserve the tagged flag bits. That only
         // holds while `next` is the first member, so `&head->next == head`.
         static_assert(offsetof(GCHead, next) == 0, "GCHead::next must be the first member");
+
+        // DetachSet reinterprets a node's `prev` (a `GCRememberedSet **`) as the
+        // previous node through its `next` field, so `next` must be the first
+        // member (`&node->next == node`), mirroring GCHead.
+        static_assert(offsetof(GCRememberedSet, next) == 0,
+                      "GCRememberedSet::next must be the first member");
 
         /**
          * @brief Represents a transient list for managing garbage collection (GC) objects in a temporary context.
@@ -220,27 +292,6 @@ namespace orbiter {
         };
 
         /**
-         * @brief Represents a generation in a generational garbage collection system.
-         *
-         * The GCGeneration struct is used to manage and track objects within a specific generation in a garbage-collected memory system.
-         * Generational garbage collection segregates objects based on their age, allowing optimizations for frequently collected younger objects
-         * while reducing overhead for older, frequently referenced objects. Each generation maintains metadata about the objects under its control
-         * and the collection process.
-         */
-        struct GCGeneration {
-            GCHead *list;
-
-            MSize count;
-
-            MSize collected;
-            MSize uncollected;
-
-            U16 promotion_threshold;
-            U16 threshold;
-            U16 times;
-        };
-
-        /**
          * @brief Represents a garbage collector responsible for memory management and cleanup of unused objects.
          *
          * The GC class provides mechanisms to allocate, free, and manage memory in a controlled environment.
@@ -262,6 +313,12 @@ namespace orbiter {
 
             GCGeneration generations_[kGCGenerations]{};
 
+            struct {
+                GCRememberedSet *dirty = nullptr;
+                GCRememberedSet *free = nullptr;
+                GCRememberedSet *linked = nullptr;
+            } remembered_set_;
+
             GCHead *garbage_ = nullptr;
 
             MSize epoch_ = 2;
@@ -273,9 +330,11 @@ namespace orbiter {
 
             unsigned int mutators_ = 0;
             unsigned int parked_mutators_ = 0;
+            unsigned int degraded_mutators_ = 0;
 
             std::atomic_bool enabled_ = true;
             bool requested_ = false;
+            bool remembered_degraded_ = false;
 
             explicit GC(Isolate *isolate, const U32 heap_size) noexcept : allocator_(isolate),
                                                                           fibers_(nullptr),
@@ -293,11 +352,15 @@ namespace orbiter {
             explicit GC(Isolate *isolate) noexcept : GC(isolate, kGCMaxHeapSize) {
             }
 
+            GCRememberedSet *AcquireRSet() noexcept;
+
             MSize Collect() noexcept {
-                return this->Collect(0, kGCGenerations - 1);
+                return this->Collect(0, kGCGenerations);
             }
 
             MSize Collect(int start, int end) noexcept;
+
+            void DetachRSet() noexcept;
 
             void Free(GCHead *head) noexcept;
 
