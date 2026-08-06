@@ -102,7 +102,7 @@ static LookupResult SetRemoveLocked(Set *dst, OObject *value) {
 void SetTrace(const Set *self, const GCTraceCallback callback, const MSize epoch) {
     // The `value` slot of every entry is unused (always nullptr) — only keys need to be reported to the GC.
     for (const auto *cursor = self->set.iter_begin; cursor != nullptr; cursor = cursor->iter_next)
-        callback((OObject *) cursor->key, epoch);
+        callback((OObject *) self, (OObject *) cursor->key, epoch);
 }
 
 // *********************************************************************************************************************

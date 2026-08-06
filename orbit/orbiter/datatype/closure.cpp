@@ -13,7 +13,7 @@ void ClosureTrace(const Closure *self, const GCTraceCallback callback, const MSi
     const auto slots = (OObject **) ((unsigned char *) self + sizeof(Closure));
 
     for (int i = 0; i < self->slots; i++)
-        callback(slots[i], epoch);
+        callback((OObject *) self, slots[i], epoch);
 }
 
 bool orbiter::datatype::ClosureTypeSetup(TypeInfo *self) {

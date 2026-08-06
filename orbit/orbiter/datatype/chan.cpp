@@ -144,7 +144,7 @@ void ChannelTrace(const Channel *self, const GCTraceCallback callback, const MSi
         const auto obj = self->buffer.buffer[idx];
 
         if (O_IS_OBJECT(obj))
-            callback(obj, epoch);
+            callback((OObject *) self, obj, epoch);
     }
 }
 

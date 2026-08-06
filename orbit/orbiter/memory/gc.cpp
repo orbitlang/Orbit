@@ -42,6 +42,15 @@ GCRememberedSet *GC::AcquireRSet() noexcept {
     if (rs != nullptr) {
         new(rs)GCRememberedSet();
 
+        rs->list = this->allocator_.alloc<GCHead *>(kGCRememberedSetItemCapacity * sizeof(void *));
+        if (rs->list == nullptr) {
+            this->allocator_.free(rs);
+
+            return nullptr;
+        }
+
+        rs->capacity = kGCRememberedSetItemCapacity;
+
         tl_remembered_set = rs;
         rs->AttachSet(&this->remembered_set_.linked);
 
@@ -67,11 +76,21 @@ MSize GC::Collect(int start, int end) noexcept {
     // Move to the next epoch to avoid revisiting old objects
     this->NextEpoch();
 
+    if (start == 0 && end == kGCGenerations) {
+        if (this->degraded_mutators_ == 0)
+            this->remembered_degraded_ = false;
+
+        this->ClearRSet();
+    }
+
     // 1) Scan isolate
     this->ScanIsolate();
 
     // 2) Scan active fibers and VMs for reachable objects
     this->ScanFibers();
+
+    // 3) Scan remembered set
+    this->ScanRememberedSets();
 
     for (auto i = start; i < end; i++) {
         // Determine the next generation for promoting objects
@@ -87,10 +106,10 @@ MSize GC::Collect(int start, int end) noexcept {
         // Increment the number of times this generation has been collected
         selected->times += 1;
 
-        // 3) Scan root elements (objects directly accessible from the generation)
+        // 4) Scan root elements (objects directly accessible from the generation)
         ScanRoots(selected);
 
-        // 4) Trace and classify unreachable objects
+        // 5) Trace and classify unreachable objects
         TraceRoots(selected, &nextgen[1 - chg], &unreachable);
 
         // Promote objects from the previous generation to the current generation
@@ -112,13 +131,32 @@ MSize GC::Collect(int start, int end) noexcept {
         selected->count += nextgen[chg].MergeTo(&selected->list);
     }
 
-    if (start == 0 && end == kGCGenerations) {
-        if (this->degraded_mutators_ == 0)
-            this->remembered_degraded_ = false;
-    }
-
     // Move unreachable objects to the garbage list
     return unreachable.MergeTo(&this->garbage_);
+}
+
+void GC::ClearRSet() noexcept {
+    for (auto *cursor = this->remembered_set_.linked; cursor != nullptr; cursor = cursor->next)
+        cursor->Clear();
+
+    GCRememberedSet *last = nullptr;
+    for (auto *cursor = this->remembered_set_.dirty; cursor != nullptr; cursor = cursor->next) {
+        last = cursor;
+
+        cursor->Clear();
+    }
+
+    if (last != nullptr) {
+        last->next = this->remembered_set_.free;
+
+        if (this->remembered_set_.free != nullptr)
+            this->remembered_set_.free->prev = &last->next;
+
+        this->remembered_set_.free = this->remembered_set_.dirty;
+        this->remembered_set_.dirty->prev = &this->remembered_set_.free;
+
+        this->remembered_set_.dirty = nullptr;
+    }
 }
 
 void GC::DetachRSet() noexcept {
@@ -194,6 +232,51 @@ void GC::NextEpoch() noexcept {
         this->epoch_ = 1;
 }
 
+void GC::PushToRSet(GCHead *head) noexcept {
+    if (head->IsRemembered())
+        return;
+
+    if (this->remembered_degraded_)
+        return;
+
+    if (tl_remembered_set != nullptr) {
+        if (tl_remembered_set->AddHead(head)) {
+            head->SetRemembered();
+
+            return;
+        }
+    }
+
+    for (auto *cursor = this->remembered_set_.linked; cursor != nullptr; cursor = cursor->next) {
+        if (cursor != tl_remembered_set && cursor->AddHead(head)) {
+            head->SetRemembered();
+
+            return;
+        }
+    }
+
+    for (auto *cursor = this->remembered_set_.dirty; cursor != nullptr; cursor = cursor->next) {
+        if (cursor->AddHead(head)) {
+            head->SetRemembered();
+
+            return;
+        }
+    }
+
+    for (auto *cursor = this->remembered_set_.free; cursor != nullptr; cursor = cursor->next) {
+        if (cursor->AddHead(head)) {
+            cursor->DetachSet();
+            cursor->AttachSet(&this->remembered_set_.dirty);
+
+            head->SetRemembered();
+
+            return;
+        }
+    }
+
+    this->remembered_degraded_ = true;
+}
+
 void GC::ReleaseSTW() noexcept {
     std::unique_lock lock(this->barrier_lock_);
 
@@ -263,6 +346,25 @@ void GC::ScanIsolate() const noexcept {
         Visit(panic->error, this->epoch_);
 }
 
+void GC::ScanRememberedSets() const noexcept {
+    const GCRememberedSet *sets[] = {
+        this->remembered_set_.dirty,
+        this->remembered_set_.linked,
+    };
+
+    for (auto *set: sets) {
+        for (const auto *cursor = set; cursor != nullptr; cursor = cursor->next) {
+            for (auto i = 0; i < cursor->count; i++) {
+                auto *head = cursor->list[i];
+                if (head->IsContainer())
+                    Trace(nullptr, GC_GET_OBJ(head), this->epoch_);
+                else
+                    head->SetVisited(this->epoch_);
+            }
+        }
+    }
+}
+
 void GC::ScanVMRegisters(Fiber *fiber) const noexcept {
     const auto *regs = (Register *) &fiber->vm.regs;
 
@@ -307,7 +409,7 @@ void GC::ScanRoots(const GCGeneration *generation) const noexcept {
 
         if (O_GET_RC(obj).GetCount() > 0) {
             if (cursor->IsContainer())
-                Trace(obj, this->epoch_);
+                Trace(nullptr, obj, this->epoch_);
             else
                 cursor->SetVisited(this->epoch_);
         }
@@ -331,23 +433,34 @@ void GC::Sweep() noexcept {
     }
 }
 
-void GC::Trace(OObject *object, const MSize epoch) noexcept {
-    if (object == nullptr || !O_IS_OBJECT(object))
+void GC::Trace(OObject *container, OObject *target, const MSize epoch) noexcept {
+    if (target == nullptr || !O_IS_OBJECT(target))
         return;
 
-    if (GC_GET_HEAD(object)->CheckSetVisited(epoch))
+    auto *t_head = GC_GET_HEAD(target);
+
+    if (container != nullptr) {
+        auto *c_head = GC_GET_HEAD(container);
+
+        if (c_head->gen > t_head->gen && !c_head->IsRemembered()) {
+            auto *instance = O_GET_ISOLATE(container)->gc;
+            instance->PushToRSet(c_head);
+        }
+    }
+
+    if (t_head->CheckSetVisited(epoch))
         return;
 
-    const auto *info = O_GET_TYPE(object);
+    const auto *info = O_GET_TYPE(target);
     if (info == nullptr) {
-        assert(((TypeInfo*)object)->i_type == InstanceType::TYPE);
+        assert(((TypeInfo*)target)->i_type == InstanceType::TYPE);
 
         return;
     }
 
     do {
-        const auto *slots = O_SLOT(object, info);
-        const auto slots_count = O_SLOT_COUNT(object, info);
+        const auto *slots = O_SLOT(target, info);
+        const auto slots_count = O_SLOT_COUNT(target, info);
 
         for (auto i = 0; i < slots_count; i++) {
             auto *obj = slots[i];
@@ -357,13 +470,13 @@ void GC::Trace(OObject *object, const MSize epoch) noexcept {
 
             auto *head = GC_GET_HEAD(obj);
             if (head->IsContainer())
-                Trace(obj, epoch);
+                Trace(target, obj, epoch);
             else
                 head->SetVisited(epoch);
         }
 
         if (info->trace != nullptr)
-            info->trace(object, Trace, epoch);
+            info->trace(target, Trace, epoch);
 
         info = info->head_.type_;
     } while (info != nullptr);
@@ -384,9 +497,12 @@ void GC::TraceRoots(GCGeneration *generation, GCTransientList *nextgen, GCTransi
 
                 HeadRemove(cursor);
                 generation->count -= 1;
-                cursor->gen = (U8) ((generation + 1) - this->generations_);
 
+                cursor->gen = (U8) ((generation + 1) - this->generations_);
                 nextgen->AddHead(cursor);
+
+                if (cursor->IsContainer())
+                    this->PushToRSet(cursor);
             }
 
             continue;
@@ -408,7 +524,7 @@ void GC::Visit(OObject *object, const MSize epoch) noexcept {
 
     auto *head = GC_GET_HEAD(object);
     if (head->IsContainer())
-        Trace(object, epoch);
+        Trace(nullptr, object, epoch);
     else
         head->SetVisited(epoch);
 }

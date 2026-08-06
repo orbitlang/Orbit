@@ -46,10 +46,14 @@ static OObject *GeneratorToString(orbiter::Isolate *isolate, const OObject *self
     const char *state_str;
 
     switch (gen->state.load(std::memory_order_relaxed)) {
-        case GeneratorState::READY:     state_str = "ready";     break;
-        case GeneratorState::RUNNING:   state_str = "running";   break;
-        case GeneratorState::EXHAUSTED: state_str = "exhausted"; break;
-        default:                        state_str = "unknown";   break;
+        case GeneratorState::READY: state_str = "ready";
+            break;
+        case GeneratorState::RUNNING: state_str = "running";
+            break;
+        case GeneratorState::EXHAUSTED: state_str = "exhausted";
+            break;
+        default: state_str = "unknown";
+            break;
     }
 
     const auto *fn_name = ORSTRING_TO_CSTR(gen->base->shared->name);
@@ -72,39 +76,39 @@ bool GeneratorDtor(const Generator *self) {
 }
 
 void GeneratorTrace(const Generator *self, const GCTraceCallback callback, const MSize epoch) {
-    callback((OObject *) self->base, epoch);
+    callback((OObject *) self, (OObject *) self->base, epoch);
 
     // Trace VM registry dump
     for (auto cursor = self->regs_dump; cursor < self->params; cursor++) {
         if (O_IS_OBJECT(*cursor))
-            callback(*cursor, epoch);
+            callback((OObject *) self, *cursor, epoch);
     }
 
     // Trace function parameters (if any)
     for (auto cursor = self->params; cursor < self->stack; cursor++) {
         if (O_IS_OBJECT(*cursor))
-            callback(*cursor, epoch);
+            callback((OObject *) self, *cursor, epoch);
     }
 
     // Trace function stack
     for (auto i = 0; i < self->stack_size; i++) {
         auto **cursor = self->stack + i;
         if (O_IS_OBJECT(*cursor))
-            callback(*cursor, epoch);
+            callback((OObject *) self, *cursor, epoch);
     }
 }
 
 bool orbiter::datatype::GeneratorTypeSetup(TypeInfo *self) {
-    self->dtor  = (DtorFn)  GeneratorDtor;
+    self->dtor = (DtorFn) GeneratorDtor;
     self->trace = (TraceFn) GeneratorTrace;
 
     auto &ops = ((TypeInfoOps *) self)->ops;
 
-    ops.equal    = GeneratorEqual;
+    ops.equal = GeneratorEqual;
     ops.get_iter = GeneratorGetIter;
-    ops.to_bool  = GeneratorToBool;
+    ops.to_bool = GeneratorToBool;
     ops.to_string = GeneratorToString;
-    ops.to_repr   = GeneratorToString;
+    ops.to_repr = GeneratorToString;
 
     return true;
 }

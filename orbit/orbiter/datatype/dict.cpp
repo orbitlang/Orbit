@@ -35,9 +35,9 @@ bool DictDtor(Dict *self) {
 
 void DictTrace(const Dict *self, const GCTraceCallback callback, const MSize epoch) {
     for (const auto *cursor = self->dict.iter_begin; cursor != nullptr; cursor = cursor->iter_next) {
-        callback((OObject *) cursor->key, epoch);
+        callback((OObject *) self, (OObject *) cursor->key, epoch);
 
-        callback(cursor->value, epoch);
+        callback((OObject *) self, cursor->value, epoch);
     }
 }
 

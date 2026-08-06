@@ -35,7 +35,7 @@ void TupleTrace(const Tuple *self, const GCTraceCallback callback, const MSize e
         const auto obj = self->objects[i];
 
         if (O_IS_OBJECT(obj))
-            callback(obj, epoch);
+            callback((OObject *) self, obj, epoch);
     }
 }
 

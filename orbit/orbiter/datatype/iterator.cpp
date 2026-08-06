@@ -13,7 +13,7 @@ using namespace orbiter::datatype;
 // *********************************************************************************************************************
 
 void IteratorTrace(const Iterator *self, const GCTraceCallback callback, const MSize epoch) {
-    callback((OObject *) self->source, epoch);
+    callback((OObject *) self, (OObject *) self->source, epoch);
 }
 
 // *********************************************************************************************************************

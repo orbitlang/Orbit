@@ -26,9 +26,9 @@ bool ContextDtor(Context *self) {
 
 void ContextTrace(const Context *self, const GCTraceCallback callback, const MSize epoch) {
     for (const auto *cursor = self->names.iter_begin; cursor != nullptr; cursor = cursor->iter_next) {
-        callback((OObject *) cursor->key, epoch);
+        callback((OObject *) self, (OObject *) cursor->key, epoch);
 
-        callback(cursor->value.value, epoch);
+        callback((OObject *) self, cursor->value.value, epoch);
     }
 }
 

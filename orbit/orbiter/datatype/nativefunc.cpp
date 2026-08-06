@@ -54,13 +54,13 @@ bool NativeFuncDtor(const NativeFunc *self) {
 }
 
 void NativeFuncTrace(const NativeFunc *self, const GCTraceCallback callback, const MSize epoch) {
-    callback((OObject *) self->name, epoch);
+    callback((OObject *) self, (OObject *) self->name, epoch);
 
     if (self->doc != nullptr)
-        callback((OObject *) self->doc, epoch);
+        callback((OObject *) self, (OObject *) self->doc, epoch);
 
     for (auto i = 0; i < self->arity; ++i)
-        callback((OObject *) self->params[i].name, epoch);
+        callback((OObject *) self, (OObject *) self->params[i].name, epoch);
 }
 
 // *********************************************************************************************************************

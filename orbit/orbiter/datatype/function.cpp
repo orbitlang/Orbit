@@ -114,8 +114,8 @@ bool FunctionDtor(const Function *self) {
 }
 
 void FunctionTrace(const Function *self, const GCTraceCallback callback, const MSize epoch) {
-    callback((OObject *) self->closure, epoch);
-    callback((OObject *) self->currying, epoch);
+    callback((OObject *) self, (OObject *) self->closure, epoch);
+    callback((OObject *) self, (OObject *) self->currying, epoch);
 }
 
 // *********************************************************************************************************************

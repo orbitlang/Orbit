@@ -208,7 +208,7 @@ namespace orbiter::datatype {
 
     // --- Lifecycle ---
     using DtorFn = bool (*)(OObject *);
-    using GCTraceCallback = void (*)(OObject *, MSize);
+    using GCTraceCallback = void (*)(OObject *, OObject *, MSize);
     using TraceFn = void (*)(const OObject *self, GCTraceCallback callback, MSize epoch);
     using TypeInfoAUXDtor = bool (*)(struct TypeInfo *self);
 

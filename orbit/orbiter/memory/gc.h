@@ -35,6 +35,8 @@ namespace orbiter {
         constexpr unsigned int kGCThresholdGen1 = 5;
         constexpr unsigned int kGCThresholdGen2 = 10;
 
+        constexpr unsigned int kGCRememberedSetItemCapacity = 256;
+
 #ifdef _ORBIT_ENVIRON_64BIT_
         constexpr MSize kGCMaxEpoch = (((MSize) 1) << 54) - 1; // 54-bit epoch field
 #elif  _ORBIT_ENVIRON_32BIT_
@@ -189,6 +191,9 @@ namespace orbiter {
             }
 
             void Clear() {
+                for (auto i = 0; i < this->count; i++)
+                    this->list[i]->ClearRemembered();
+
                 this->count = 0;
             }
 
@@ -360,6 +365,8 @@ namespace orbiter {
 
             MSize Collect(int start, int end) noexcept;
 
+            void ClearRSet() noexcept;
+
             void DetachRSet() noexcept;
 
             void Free(GCHead *head) noexcept;
@@ -369,6 +376,8 @@ namespace orbiter {
             static void HeadRemove(const GCHead *head) noexcept;
 
             void NextEpoch() noexcept;
+
+            void PushToRSet(GCHead *head) noexcept;
 
             void ReleaseSTW() noexcept;
 
@@ -380,6 +389,8 @@ namespace orbiter {
 
             void ScanIsolate() const noexcept;
 
+            void ScanRememberedSets() const noexcept;
+
             void ScanVMRegisters(Fiber *fiber) const noexcept;
 
             void ScanVMStack(const Fiber *fiber) const noexcept;
@@ -388,7 +399,7 @@ namespace orbiter {
 
             void ScanRoots(const GCGeneration *generation) const noexcept;
 
-            static void Trace(datatype::OObject *object, MSize epoch) noexcept;
+            static void Trace(datatype::OObject *container, datatype::OObject *target, MSize epoch) noexcept;
 
             void TraceRoots(GCGeneration *generation, GCTransientList *nextgen, GCTransientList *unreachable) noexcept;
 
