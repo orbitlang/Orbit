@@ -460,7 +460,7 @@ void GC::Trace(OObject *container, OObject *target, const MSize epoch) noexcept 
 
     do {
         const auto *slots = O_SLOT(target, info);
-        const auto slots_count = O_SLOT_COUNT(target, info);
+        const auto slots_count = O_SLOT_COUNT(info);
 
         for (auto i = 0; i < slots_count; i++) {
             auto *obj = slots[i];

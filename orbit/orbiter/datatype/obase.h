@@ -366,7 +366,7 @@ namespace orbiter::datatype {
 #define O_CAST(object, tp_info, type_)      ((type_ *) (((unsigned char*) object) + (tp_info)->offset))
 
 #define O_SLOT(object, tp_info)             ((orbiter::datatype::OObject **) (O_CAST(object, tp_info, unsigned char) + (tp_info)->headroom))
-#define O_SLOT_COUNT(object, tp_info)       (((tp_info)->i_size - (tp_info)->offset - (tp_info)->headroom) / sizeof(void *))
+#define O_SLOT_COUNT(tp_info)               (((tp_info)->i_size - (tp_info)->offset - (tp_info)->headroom) / sizeof(void *))
 
 #define O_IS_SMI(object)                    ((((MSize)object) & orbiter::datatype::kOddBallMask) == 0x01)
 #define O_IS_ODDBALL(object)                (((OObject *)object == nullptr) || ((!O_IS_SMI(object)) && (((MSize)object & orbiter::datatype::kOddBallMask) == orbiter::datatype::kOddBallMask)))
