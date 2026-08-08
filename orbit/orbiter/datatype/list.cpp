@@ -16,6 +16,8 @@
 #include <orbit/orbiter/datatype/stringbuilder.h>
 #include <orbit/orbiter/datatype/tuple.h>
 
+#include <orbit/orbiter/memory/gc.h>
+
 #include <orbit/orbiter/datatype/support/slice.h>
 
 #include <orbit/orbiter/datatype/list.h>
@@ -787,7 +789,7 @@ bool orbiter::datatype::ListAppend(List *list, OObject *object) {
     if (!ListCheckSize(list, 1))
         return false;
 
-    list->objects[list->length++] = object;
+    list->objects[list->length++] = memory::GC::WriteBarrier((OObject *) list, object);
 
     return true;
 }
@@ -808,7 +810,7 @@ bool orbiter::datatype::ListAppend(List *list, List *other) {
 
     const auto src_length = other->length;
     for (MSize i = 0; i < src_length; i++)
-        list->objects[list->length++] = other->objects[i];
+        list->objects[list->length++] = memory::GC::WriteBarrier((OObject *) list, other->objects[i]);
 
     return true;
 }
@@ -827,7 +829,7 @@ bool orbiter::datatype::ListExtend(List *list, OObject *other) {
             return false;
 
         for (auto i = 0; i < count; i++)
-            list->objects[list->length + i] = objects[i];
+            list->objects[list->length + i] = memory::GC::WriteBarrier((OObject *) list, objects[i]);
 
         list->length += count;
 
@@ -844,7 +846,7 @@ bool orbiter::datatype::ListExtend(List *list, OObject **other, const MSize coun
         return false;
 
     for (auto i = 0; i < count; i++)
-        list->objects[list->length + i] = other[i];
+        list->objects[list->length + i] = memory::GC::WriteBarrier((OObject *) list, other[i]);
 
     list->length += count;
 
@@ -858,14 +860,14 @@ bool orbiter::datatype::ListInsert(List *list, OObject *object, MSSize index) {
         if (!ListCheckSize(list, 1))
             return false;
 
-        list->objects[list->length++] = object;
+        list->objects[list->length++] = memory::GC::WriteBarrier((OObject *) list, object);
 
         return true;
     }
 
     index = ((index % (MSSize) list->length) + (MSSize) list->length) % (MSSize) list->length;
 
-    list->objects[index] = object;
+    list->objects[index] = memory::GC::WriteBarrier((OObject *) list, object);
 
     return true;
 }
@@ -879,7 +881,7 @@ bool orbiter::datatype::ListPrepend(List *list, OObject *object) {
     for (MSize i = list->length; i > 0; i--)
         list->objects[i] = list->objects[i - 1];
 
-    list->objects[0] = object;
+    list->objects[0] = memory::GC::WriteBarrier((OObject *) list, object);
 
     list->length++;
 

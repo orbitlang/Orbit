@@ -587,6 +587,31 @@ OObject *GC::AllocObject(const MSize size) noexcept {
     return nullptr;
 }
 
+OObject *GC::WriteBarrier(OObject *container, OObject *value) {
+    auto *h_container = GC_GET_HEAD(container);
+
+    assert(h_container->IsContainer());
+
+    if (O_IS_OBJECT(value)) {
+        const auto *h_value = GC_GET_HEAD(value);
+        if (h_container->gen > h_value->gen && !h_container->IsRemembered()) {
+            if (tl_remembered_set != nullptr && tl_remembered_set->AddHead(h_container)) {
+                h_container->SetRemembered();
+
+                return value;
+            }
+
+            auto *instance = O_GET_ISOLATE(container)->gc;
+
+            std::unique_lock _(instance->barrier_lock_);
+
+            instance->PushToRSet(h_container);
+        }
+    }
+
+    return value;
+}
+
 void GC::AddFiber(Fiber *fiber) noexcept {
     std::unique_lock _(this->vm_lock_);
 

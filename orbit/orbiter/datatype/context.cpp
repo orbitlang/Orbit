@@ -11,6 +11,8 @@
 #include <orbit/orbiter/datatype/function.h>
 #include <orbit/orbiter/datatype/pcheck.h>
 
+#include <orbit/orbiter/memory/gc.h>
+
 #include <orbit/orbiter/datatype/context.h>
 
 using namespace orbiter::datatype;
@@ -93,7 +95,7 @@ bool orbiter::datatype::ContextDefine(Context *context, ORString *name, OObject 
     context->names.Lookup(name, &entry);
 
     if (entry != nullptr) {
-        entry->value.value = value;
+        entry->value.value = memory::GC::WriteBarrier((OObject *) context, value);
         entry->value.detail = flags;
 
         return true;
@@ -103,8 +105,8 @@ bool orbiter::datatype::ContextDefine(Context *context, ORString *name, OObject 
     if (entry == nullptr)
         return false;
 
-    entry->key = name;
-    entry->value.value = value;
+    entry->key = (ORString *) memory::GC::WriteBarrier((OObject *) context, (OObject *) name);
+    entry->value.value = memory::GC::WriteBarrier((OObject *) context, value);
     entry->value.detail = flags;
 
     if (context->names.Insert(entry) != LookupResult::OK) {
@@ -224,7 +226,7 @@ bool orbiter::datatype::ContextSet(Context *context, ORString *name, OObject *va
         return false;
     }
 
-    entry->value.value = value;
+    entry->value.value = memory::GC::WriteBarrier((OObject *) context, value);
 
     return true;
 }

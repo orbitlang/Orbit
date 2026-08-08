@@ -9,6 +9,8 @@
 #include <orbit/orbiter/datatype/orstring.h>
 #include <orbit/orbiter/datatype/pcheck.h>
 
+#include <orbit/orbiter/memory/gc.h>
+
 #include <orbit/orbiter/datatype/future.h>
 
 using namespace orbiter::datatype;
@@ -175,7 +177,7 @@ void orbiter::datatype::FutureReject(Future *future, OObject *result) {
 
     std::unique_lock lock(future->mutex);
 
-    future->result = result;
+    future->result = memory::GC::WriteBarrier((OObject *) future, result);
     future->state = FutureState::REJECTED;
 
     orbiter->PushFiber(future->waiters);
@@ -191,7 +193,7 @@ void orbiter::datatype::FutureResolve(Future *future, OObject *result) {
 
     std::unique_lock lock(future->mutex);
 
-    future->result = result;
+    future->result = memory::GC::WriteBarrier((OObject *) future, result);
     future->state = FutureState::RESOLVED;
 
     orbiter->PushFiber(future->waiters);

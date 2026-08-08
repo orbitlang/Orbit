@@ -14,6 +14,8 @@
 #include <orbit/orbiter/datatype/rguard.h>
 #include <orbit/orbiter/datatype/stringbuilder.h>
 
+#include <orbit/orbiter/memory/gc.h>
+
 #include <orbit/orbiter/datatype/set.h>
 
 using namespace orbiter::datatype;
@@ -59,7 +61,7 @@ static LookupResult SetAddLocked(Set *dst, OObject *value) {
         if (entry == nullptr)
             return LookupResult::ERROR;
 
-        entry->key = value;
+        entry->key = orbiter::memory::GC::WriteBarrier((OObject *) dst, value);
         entry->value = nullptr;
 
         if (dst->set.Insert(entry) != LookupResult::OK) {

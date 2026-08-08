@@ -607,6 +607,19 @@ void SaveGenerator(Fiber *fiber) {
     // Dump the current registers into the generator
     stratum::util::MemoryCopy(gen->regs_dump, regs, kGeneralPurposeRegistersCount);
 
+    // The bulk dumps above (stack + registers) bypass the write barrier: an old
+    // generator may now hold references to young objects. Re-establish the
+    // generational invariant by barriering the freshly-captured references.
+    for (auto *cursor = gen->regs_dump; cursor < gen->params; cursor++)
+        if (O_IS_OBJECT(*cursor))
+            memory::GC::WriteBarrier((OObject *) gen, *cursor);
+
+    for (auto i = 0; i < gen->stack_size; i += sizeof(void *)) {
+        auto *param = *(OObject **) ((unsigned char *) gen->stack + i);
+        if (O_IS_OBJECT(param))
+            memory::GC::WriteBarrier((OObject *) gen, param);
+    }
+
     gen->acquired = 0;
 }
 
@@ -665,7 +678,7 @@ void StoreToObjectProp(const Fiber *fiber, const Function *func, OObject *obj, O
     if (ENUMBITMASK_ISTRUE(prop->detail, PropertyFlag::IN_OBJECT)) {
         auto *slot = O_SLOT(obj, target_type);
 
-        slot[prop->slot] = value;
+        slot[prop->slot] = memory::GC::WriteBarrier(obj, value);
     }
 }
 

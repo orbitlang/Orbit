@@ -7,6 +7,8 @@
 #include <orbit/orbiter/datatype/closure.h>
 #include <orbit/orbiter/datatype/function.h>
 
+#include <orbit/orbiter/memory/gc.h>
+
 using namespace orbiter::datatype;
 
 void ClosureTrace(const Closure *self, const GCTraceCallback callback, const MSize epoch) {
@@ -53,5 +55,5 @@ void orbiter::datatype::ClosureSet(Closure *closure, const U16 index, OObject *o
 
     std::unique_lock _(closure->lock);
 
-    slots[index] = object;
+    slots[index] = memory::GC::WriteBarrier((OObject *) closure, object);
 }

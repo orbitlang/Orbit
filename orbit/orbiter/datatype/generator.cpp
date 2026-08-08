@@ -90,11 +90,11 @@ void GeneratorTrace(const Generator *self, const GCTraceCallback callback, const
             callback((OObject *) self, *cursor, epoch);
     }
 
-    // Trace function stack
-    for (auto i = 0; i < self->stack_size; i++) {
-        auto **cursor = self->stack + i;
-        if (O_IS_OBJECT(*cursor))
-            callback((OObject *) self, *cursor, epoch);
+    // Trace function stack (stack_size is in bytes)
+    for (auto i = 0; i < self->stack_size; i += sizeof(void *)) {
+        auto *obj = *(OObject **) ((unsigned char *) self->stack + i);
+        if (O_IS_OBJECT(obj))
+            callback((OObject *) self, obj, epoch);
     }
 }
 

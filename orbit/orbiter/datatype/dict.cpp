@@ -16,6 +16,8 @@
 #include <orbit/orbiter/datatype/stringbuilder.h>
 #include <orbit/orbiter/datatype/tuple.h>
 
+#include <orbit/orbiter/memory/gc.h>
+
 #include <orbit/orbiter/datatype/dict.h>
 
 using namespace orbiter::datatype;
@@ -49,7 +51,7 @@ static bool DictInsertLocked(Dict *dst, OObject *key, OObject *value) {
     dst->dict.Lookup(key, &entry);
 
     if (entry != nullptr) {
-        entry->value = value;
+        entry->value = orbiter::memory::GC::WriteBarrier((OObject *) dst, value);
 
         return true;
     }
@@ -58,8 +60,8 @@ static bool DictInsertLocked(Dict *dst, OObject *key, OObject *value) {
     if (entry == nullptr)
         return false;
 
-    entry->key = key;
-    entry->value = value;
+    entry->key = orbiter::memory::GC::WriteBarrier((OObject *) dst, key);
+    entry->value = orbiter::memory::GC::WriteBarrier((OObject *) dst, value);
 
     if (dst->dict.Insert(entry) != LookupResult::OK) {
         dst->dict.FreeHEntry(entry);

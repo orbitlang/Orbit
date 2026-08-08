@@ -14,6 +14,8 @@
 #include <orbit/orbiter/datatype/pcheck.h>
 #include <orbit/orbiter/datatype/result.h>
 
+#include <orbit/orbiter/memory/gc.h>
+
 #include <orbit/orbiter/datatype/chan.h>
 
 using namespace orbiter::datatype;
@@ -60,7 +62,7 @@ bool ChannelSendCommon(orbiter::Isolate *isolate, Channel *channel, OObject *val
         // empty (a non-empty buffer would have woken at least one
         // of them), so RingPush cannot overflow.
 
-        channel->buffer.Push(value);
+        channel->buffer.Push(orbiter::memory::GC::WriteBarrier((OObject *) channel, value));
 
         orbiter->PushFiber(channel->receivers.Dequeue());
 
@@ -70,7 +72,7 @@ bool ChannelSendCommon(orbiter::Isolate *isolate, Channel *channel, OObject *val
     }
 
     if (!channel->is_unbuffered && channel->buffer.length < channel->buffer.capacity) {
-        channel->buffer.Push(value);
+        channel->buffer.Push(orbiter::memory::GC::WriteBarrier((OObject *) channel, value));
 
         out_status = ChannelSendStatus::SENT;
 

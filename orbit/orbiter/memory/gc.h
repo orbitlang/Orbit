@@ -436,6 +436,8 @@ namespace orbiter {
              */
             datatype::OObject *AllocObject(MSize size) noexcept;
 
+            static datatype::OObject *WriteBarrier(datatype::OObject *container, datatype::OObject *value);
+
             /**
              * @brief Adds a Fiber object to the garbage collector's list for tracking.
              *
