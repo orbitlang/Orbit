@@ -375,10 +375,10 @@ int CallGenerator(Fiber *fiber, Generator *gen, const U16 total_args, const Call
     }
 
     // Load registers
-    stratum::util::MemoryCopy(regs, gen->regs_dump, kGeneralPurposeRegistersCount);
+    stratum::util::MemoryCopy(regs, gen->regs_dump, kGeneralPurposeRegistersCount * sizeof(void *));
 
-    // Load generator params
-    const auto params_length = gen->stack - gen->params;
+    // Load generator params (params region size in bytes)
+    const auto params_length = (unsigned char *) gen->stack - (unsigned char *) gen->params;
     stratum::util::MemoryCopy(stack->stack + regs->SP.reg, gen->params, params_length);
     regs->SP.reg += params_length;
 
@@ -393,7 +393,7 @@ int CallGenerator(Fiber *fiber, Generator *gen, const U16 total_args, const Call
 
     // Load generator stack
     if (gen->stack_size > 0) {
-        stratum::util::MemoryCopy(stack->stack + regs->SP.reg, gen->params, gen->stack_size);
+        stratum::util::MemoryCopy(stack->stack + regs->SP.reg, gen->stack, gen->stack_size);
         regs->SP.reg += gen->stack_size;
     }
 
@@ -601,11 +601,11 @@ void SaveGenerator(Fiber *fiber) {
     regs->SP.reg -= sizeof(FiberContext);
     stratum::util::MemoryCopy(&fiber->context.context, stack->stack + regs->SP.reg, sizeof(FiberContext));
 
-    // Remove the generator parameters from the stack
-    regs->SP.reg -= gen->stack - gen->params;
+    // Remove the generator parameters from the stack (params region size in bytes)
+    regs->SP.reg -= (unsigned char *) gen->stack - (unsigned char *) gen->params;
 
     // Dump the current registers into the generator
-    stratum::util::MemoryCopy(gen->regs_dump, regs, kGeneralPurposeRegistersCount);
+    stratum::util::MemoryCopy(gen->regs_dump, regs, kGeneralPurposeRegistersCount * sizeof(void *));
 
     // The bulk dumps above (stack + registers) bypass the write barrier: an old
     // generator may now hold references to young objects. Re-establish the

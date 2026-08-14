@@ -134,7 +134,7 @@ HGenerator orbiter::datatype::GeneratorNew(const Fiber *fiber, Function *base, c
     gen->base = base;
     gen->regs_dump = buffer;
     gen->params = buffer + kGeneralPurposeRegistersCount;
-    gen->stack = gen->params + param_size;
+    gen->stack = (OObject **) ((unsigned char *) gen->params + param_size);
     gen->stack_size = 0;
     gen->acquired = 0;
     gen->state = GeneratorState::READY;
