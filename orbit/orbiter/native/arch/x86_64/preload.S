@@ -24,6 +24,10 @@
 
 .p2align 2
 
+// This stub is written in Intel syntax, but GAS defaults to AT&T; switch the
+// assembler for the rest of the file.
+.intel_syntax noprefix
+
 // Function: fpu_preload
 // Signature: void fpu_preload(double *floats)
 //   RDI = pointer to an array of up to 8 doubles
