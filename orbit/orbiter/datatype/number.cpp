@@ -2,6 +2,8 @@
 //
 // Licensed under the Apache License v2.0
 
+#include <cstdlib>
+#include <cmath>
 #include <numeric>
 
 #include <orbit/orbiter/fiber.h>

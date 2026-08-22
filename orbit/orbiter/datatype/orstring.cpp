@@ -5,6 +5,7 @@
 #include <cassert>
 #include <cctype>
 #include <cstdarg>
+#include <cstdio>
 #include <shared_mutex>
 
 #include <orbit/util/hash.h>

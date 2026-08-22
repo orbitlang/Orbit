@@ -4,6 +4,7 @@
 
 #include <cerrno>
 #include <cstdarg>
+#include <cstdio>
 
 #include <orbit/orbiter/fiber.h>
 #include <orbit/orbiter/runtime.h>

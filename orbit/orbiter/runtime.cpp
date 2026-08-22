@@ -709,7 +709,7 @@ void Orbiter::RuntimeOOMPanic(Isolate *isolate) noexcept {
 void Orbiter::RuntimePanic(Isolate *isolate, OObject *error) {
     auto *fiber = Fiber::Current();
     if (fiber != nullptr) {
-        fiber->Panic(error);
+        fiber->RaisePanic(error);
 
         return;
     }

@@ -5,6 +5,8 @@
 #ifndef ORBIT_ORBITER_DATATYPE_OSTRING_H_
 #define ORBIT_ORBITER_DATATYPE_OSTRING_H_
 
+#include <cstring>
+
 #include <orbit/orbiter/datatype/list.h>
 #include <orbit/orbiter/datatype/oobject.h>
 

@@ -2,6 +2,7 @@
 //
 // Licensed under the Apache License v2.0
 
+#include <cstdlib>
 
 #include <orbit/orbiter/datatype/bytes.h>
 #include <orbit/orbiter/datatype/decimal.h>

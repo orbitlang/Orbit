@@ -7,6 +7,7 @@
 
 #include <atomic>
 #include <cstddef>
+#include <condition_variable>
 
 #include <orbit/util/macros.h>
 

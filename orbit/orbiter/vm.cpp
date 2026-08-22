@@ -1028,7 +1028,7 @@ CATCH_FINALLY:
                     goto ERROR;
                 }
 
-                fiber->Panic(value);
+                fiber->RaisePanic(value);
 
                 goto ERROR;
             }
@@ -1088,7 +1088,7 @@ CATCH_FINALLY:
                 }
 
                 if (future->state == FutureState::REJECTED) {
-                    fiber->Panic(future->result);
+                    fiber->RaisePanic(future->result);
 
                     goto ERROR;
                 }

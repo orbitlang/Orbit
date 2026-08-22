@@ -2,6 +2,7 @@
 //
 // Licensed under the Apache License v2.0
 
+#include <algorithm>
 #include <cassert>
 
 #include <orbit/orbiter/vmstack.h>

@@ -160,19 +160,6 @@ namespace orbiter {
         void DiscardPanic() noexcept;
 
         /**
-         * @brief Handles a fiber-level exception by recording the provided error object.
-         *
-         * When a fiber encounters an exceptional state, this method captures the error
-         * object and pushes it onto the fiber's panic chain. If no pre-allocated panic
-         * structures are available, memory allocation is performed using the fiber's
-         * isolate allocator. The error object is safely retained by incrementing its
-         * reference count.
-         *
-         * @param error The error object representing the exceptional state to be recorded.
-         */
-        void Panic(datatype::OObject *error) noexcept;
-
-        /**
          * @brief Restores the fiber's execution state from its stack.
          *
          * This method retrieves the previously saved fiber context and register states,
@@ -184,6 +171,19 @@ namespace orbiter {
          * and ensures the integrity of the fiber's execution environment.
          */
         void PopState() noexcept;
+
+        /**
+         * @brief Handles a fiber-level exception by recording the provided error object.
+         *
+         * When a fiber encounters an exceptional state, this method captures the error
+         * object and pushes it onto the fiber's panic chain. If no pre-allocated panic
+         * structures are available, memory allocation is performed using the fiber's
+         * isolate allocator. The error object is safely retained by incrementing its
+         * reference count.
+         *
+         * @param error The error object representing the exceptional state to be recorded.
+         */
+        void RaisePanic(datatype::OObject *error) noexcept;
 
         /**
          * @brief Resets the state of the current Fiber instance to its default values.

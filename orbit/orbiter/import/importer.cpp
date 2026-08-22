@@ -394,7 +394,7 @@ void Importer::Fail(ModuleEntry *entry) {
         if (this->wait_for_.Remove(cursor, &we) == LookupResult::OK)
             this->wait_for_.FreeHEntry(we);
 
-        cursor->Panic(self->GetPanicError().get());
+        cursor->RaisePanic(self->GetPanicError().get());
 
         Orbiter::GetInstance()->PushFiber(cursor);
         cursor = entry->waiters.Dequeue();

@@ -3,6 +3,9 @@
 // Licensed under the Apache License v2.0
 // M.G :)
 
+#include <algorithm>
+#include <stdexcept>
+
 #include <orbit/liftoff/ir/linearscan.h>
 
 using namespace liftoff::ir;

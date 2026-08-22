@@ -2,6 +2,8 @@
 //
 // Licensed under the Apache License v2.0
 
+#include <algorithm>
+
 #include <orbit/liftoff/ir/intervalspiller.h>
 
 #include <orbit/liftoff/ir/ircontext.h>

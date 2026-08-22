@@ -37,9 +37,9 @@ namespace orbiter::datatype {
     template<
         typename K, typename V,
         auto EqualFn, // bool EqualFn(const K, const K)  — infallible key equality
-                      // bool EqualFn(const K, const K, bool &out) — fallible: the
-                      // return value reports success (false ⇒ panic set), the
-                      // equality lands in `out`.
+        // bool EqualFn(const K, const K, bool &out) — fallible: the
+        // return value reports success (false ⇒ panic set), the
+        // equality lands in `out`.
         auto HashFn, // size_t HashFn(const K)
         typename Allocator = memory::IsolateAllocator>
     class HashMap {
@@ -90,7 +90,7 @@ namespace orbiter::datatype {
                 this->free_count = 0;
                 this->free_max = free_nodes;
 
-                memset(this->map, 0, capacity_ * sizeof(void *));
+                memory::MemoryZero(this->map, capacity_ * sizeof(void *));
             }
 
             return this->map != nullptr;
@@ -220,7 +220,7 @@ namespace orbiter::datatype {
             if (new_map == nullptr)
                 return false;
 
-            memset(new_map + this->capacity, 0, (new_cap - this->capacity) * sizeof(void *));
+            memory::MemoryZero(new_map + this->capacity,  (new_cap - this->capacity) * sizeof(void *));
 
             for (auto i = 0; i < this->capacity; i++) {
                 for (HEntry *prev = nullptr, *cur = new_map[i], *next; cur != nullptr; cur = next) {
@@ -281,7 +281,7 @@ namespace orbiter::datatype {
                 if (ret == nullptr)
                     return nullptr;
 
-                memset(ret, 0, sizeof(HEntry));
+                memory::MemoryZero(ret, sizeof(HEntry));
             }
 
             ret->ref = 1;
