@@ -107,7 +107,8 @@ namespace liftoff::parser {
         "Invalid native block: expected 'func', 'var', or 'let' declaration inside 'native from' block",
         "Invalid native block: expected end of line, ';' or '}' after declaration in 'native from' block",
         "Unclosed native block: expected '}' at the end of 'native from' block",
-        "Invalid 'from' clause: declarations inside a 'native from' block cannot specify their own module"
+        "Invalid 'from' clause: declarations inside a 'native from' block cannot specify their own module",
+        "Invalid character literal: expected a single valid Unicode code point (e.g., 'a', '\\n', '\\x41')"
     };
 
     constexpr auto kInitMethodName = "init";

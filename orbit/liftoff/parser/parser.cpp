@@ -1793,9 +1793,13 @@ ASTHandle<ASTNode *> Parser::ParseLiteral() {
         case TokenType::NUMBER_BIN:
             handle = IntNew(this->isolate_, (const char *) this->tkcur_.buffer, 2);
             break;
-        case TokenType::NUMBER_CHR:
+        case TokenType::NUMBER_CHR: {
+            if (!StringUTF8IsSingleCodePoint(this->tkcur_.buffer, this->tkcur_.length))
+                throw ParserException(96);
+
             handle = UIntNew(this->isolate_, StringUTF8ToInt(this->tkcur_.buffer));
             break;
+        }
         case TokenType::NUMBER_HEX:
             handle = IntNew(this->isolate_, (const char *) this->tkcur_.buffer, 16);
             break;
