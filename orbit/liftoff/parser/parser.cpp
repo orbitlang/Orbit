@@ -1970,6 +1970,9 @@ ASTHandle<ASTNode *> Parser::ParseStatement() {
 
     while (this->Match(TokenType::KW_PUB, TokenType::KW_PROT, TokenType::KW_WEAK)) {
         if (this->MatchEat(TokenType::KW_PUB, true)) {
+            if (access != AccessModifier::PRIVATE)
+                throw ParserException(98);
+
             access = AccessModifier::PUBLIC;
 
             continue;
@@ -1978,6 +1981,9 @@ ASTHandle<ASTNode *> Parser::ParseStatement() {
         if (this->MatchEat(TokenType::KW_PROT, true)) {
             if (!this->context_->Check(ContextType::CLASS) && !this->context_->Check(ContextType::TRAIT))
                 throw ParserException(81);
+
+            if (access != AccessModifier::PRIVATE)
+                throw ParserException(98);
 
             access = AccessModifier::PROTECTED;
 
@@ -1988,11 +1994,38 @@ ASTHandle<ASTNode *> Parser::ParseStatement() {
             if (!this->context_->Check(ContextType::CLASS))
                 throw ParserException(25);
 
+            if (weak)
+                throw ParserException(98);
+
             weak = true;
         }
     }
 
     this->EatNL();
+
+    if (access != AccessModifier::PRIVATE || weak) {
+        // Only declarations carry access/weak. An IDENTIFIER is let through because a short
+        // declaration (`pub x := 1`) starts with one; that case is settled at the bottom of
+        // this function, where the parsed node type tells a declaration from an expression.
+        switch (TKCUR_TYPE) {
+            case TokenType::IDENTIFIER:
+            case TokenType::KW_VAR:
+                break;
+            case TokenType::KW_CLASS:
+            case TokenType::KW_CLEANUP:
+            case TokenType::KW_FUNC:
+            case TokenType::KW_IMPORT:
+            case TokenType::KW_INIT:
+            case TokenType::KW_LET:
+            case TokenType::KW_TRAIT:
+                if (weak)
+                    throw ParserException(100);
+
+                break;
+            default:
+                throw ParserException(weak ? 100 : 99);
+        }
+    }
 
     do {
         switch (TKCUR_TYPE) {
@@ -2125,6 +2158,9 @@ ASTHandle<ASTNode *> Parser::ParseStatement() {
     } while (true);
 
     if (label) {
+        if (access != AccessModifier::PRIVATE || weak)
+            throw ParserException(weak ? 100 : 99);
+
         if (stmt->node_type != NodeType::FOR
             && stmt->node_type != NodeType::FOR_IN
             && stmt->node_type != NodeType::LOOP)
@@ -2148,6 +2184,8 @@ ASTHandle<ASTNode *> Parser::ParseStatement() {
 
     if (stmt->node_type == NodeType::VAR_DECLARATION || stmt->node_type == NodeType::VAR_DECLARATIONS)
         this->AdjustInlineExport((Assignment *) stmt.get(), access, weak);
+    else if (stmt->node_type != NodeType::FUNCTION && (access != AccessModifier::PRIVATE || weak))
+        throw ParserException(weak ? 100 : 99);
 
     return stmt;
 }

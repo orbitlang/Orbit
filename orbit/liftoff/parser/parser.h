@@ -109,7 +109,10 @@ namespace liftoff::parser {
         "Unclosed native block: expected '}' at the end of 'native from' block",
         "Invalid 'from' clause: declarations inside a 'native from' block cannot specify their own module",
         "Invalid character literal: expected a single valid Unicode code point (e.g., 'a', '\\n', '\\x41')",
-        "Invalid label target: only an identifier can be used as a label (e.g., 'outer: loop { ... }')"
+        "Invalid label target: only an identifier can be used as a label (e.g., 'outer: loop { ... }')",
+        "Invalid modifier list: 'pub' and 'prot' are mutually exclusive, and no modifier can be repeated",
+        "Invalid access modifier: 'pub'/'prot' can only be applied to declarations (var, let, func, class, trait, init, cleanup, import)",
+        "Invalid 'weak' usage: can only be applied to variable declarations"
     };
 
     constexpr auto kInitMethodName = "init";
