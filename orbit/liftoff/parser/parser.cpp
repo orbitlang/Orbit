@@ -1198,7 +1198,8 @@ ASTHandle<ASTNode *> Parser::ParseBlock(const bool nested) {
     while (!this->Match(TokenType::RIGHT_BRACES)) {
         if (this->context_->Check(ContextType::CLASS)) {
             if (!this->Match(TokenType::KW_CLEANUP, TokenType::KW_FUNC, TokenType::KW_INIT,
-                             TokenType::KW_LET, TokenType::KW_PUB, TokenType::KW_PROT, TokenType::KW_VAR))
+                             TokenType::KW_LET, TokenType::KW_PUB, TokenType::KW_PROT, TokenType::KW_VAR,
+                             TokenType::KW_WEAK))
                 throw ParserException(71);
         } else if (this->context_->Check(ContextType::TRAIT)) {
             if (!this->Match(TokenType::KW_FUNC, TokenType::KW_LET, TokenType::KW_PUB, TokenType::KW_PROT))
