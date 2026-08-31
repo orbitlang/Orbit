@@ -2020,6 +2020,9 @@ ASTHandle<ASTNode *> Parser::ParseStatement() {
                 return bc;
             }
             case TokenType::DECORATOR:
+                if (access != AccessModifier::PRIVATE)
+                    throw ParserException(0);
+
                 return this->ParseDecorator();
             case TokenType::KW_CLASS:
             case TokenType::KW_TRAIT:
