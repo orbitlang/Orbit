@@ -138,6 +138,9 @@ ASTHandle<ASTNode *> Parser::ParseClassTrait(const AccessModifier access) {
 
     this->Eat(true);
 
+    if (!this->Match(TokenType::IDENTIFIER))
+        throw ParserException(16);
+
     ct->name = ORStringNew(this->isolate_, this->tkcur_.buffer, this->tkcur_.length).release();
     if (ct->name == nullptr)
         throw DatatypeException();
