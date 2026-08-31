@@ -2559,7 +2559,7 @@ void Parser::AdjustInlineExport(const Assignment *decl, AccessModifier access, b
 
             id->symbol->access = AccessModifier::PUBLIC;
 
-            this->exports.emplace_back(O_INCREF(id->value));
+            this->exports.emplace_back(id->value);
         } else {
             const auto &tuple = (ListExpression *) decl->name;
             for (const auto &cursor: tuple->elements) {
@@ -2567,7 +2567,7 @@ void Parser::AdjustInlineExport(const Assignment *decl, AccessModifier access, b
 
                 id->symbol->access = AccessModifier::PUBLIC;
 
-                this->exports.emplace_back(O_INCREF(id->value));
+                this->exports.emplace_back(id->value);
             }
         }
     }
