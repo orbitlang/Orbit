@@ -1951,7 +1951,7 @@ ASTHandle<ASTNode *> Parser::ParsePrefix() {
     // we encounter, correctly parsing unary expressions.
     prefix->value = this->ParseExpression(TokenType::ASTERISK).release();
 
-    prefix->value->loc.end = prefix->value->loc.end;
+    prefix->loc.end = prefix->value->loc.end;
 
     return prefix;
 }
