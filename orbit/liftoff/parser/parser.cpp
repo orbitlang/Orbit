@@ -2583,10 +2583,10 @@ void Parser::CheckSetImportAlias(HORString alias, Import *imp) const {
         const auto length = ORSTRING_LENGTH(imp->path);
 
         unsigned int idx = 0;
-        while (idx < length && std::isalnum(*((mod_name_end - idx) - 1)))
+        while (idx < length && std::isalnum((unsigned char) *((mod_name_end - idx) - 1)))
             idx++;
 
-        if (!std::isalpha(*(mod_name_end - idx)))
+        if (!std::isalpha((unsigned char) *(mod_name_end - idx)))
             throw ParserException(85);
 
         alias = ORStringNew(this->isolate_, mod_name_end - idx, idx);
