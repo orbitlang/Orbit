@@ -108,7 +108,8 @@ namespace liftoff::parser {
         "Invalid native block: expected end of line, ';' or '}' after declaration in 'native from' block",
         "Unclosed native block: expected '}' at the end of 'native from' block",
         "Invalid 'from' clause: declarations inside a 'native from' block cannot specify their own module",
-        "Invalid character literal: expected a single valid Unicode code point (e.g., 'a', '\\n', '\\x41')"
+        "Invalid character literal: expected a single valid Unicode code point (e.g., 'a', '\\n', '\\x41')",
+        "Invalid label target: only an identifier can be used as a label (e.g., 'outer: loop { ... }')"
     };
 
     constexpr auto kInitMethodName = "init";

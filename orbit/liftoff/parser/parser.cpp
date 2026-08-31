@@ -2114,7 +2114,7 @@ ASTHandle<ASTNode *> Parser::ParseStatement() {
         this->EatNL();
 
         if (stmt->node_type != NodeType::IDENTIFIER)
-            throw ParserException(33);
+            throw ParserException(97);
 
         if (label)
             throw ParserException(34);
