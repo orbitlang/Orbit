@@ -1,0 +1,9 @@
+# PoC PARSE-018 — a non-identifier label target gets the right diagnostic.
+# `a + b:` used to throw ParserException(33) — the *catch-clause* message
+# ("expected @atom after catch"). It now throws the dedicated label-target error.
+# EXPECT: error: only an identifier can be used as a label
+
+a := 1
+b := 2
+
+a + b: loop { break }

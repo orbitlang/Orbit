@@ -1,0 +1,7 @@
+# PoC PARSE-003 — a class/trait name must be a real identifier.
+# Before the fix the parser used tkcur_ as the name without Match(IDENTIFIER),
+# so `class 123 { }` declared a class literally named `123`. Now ParseClassTrait
+# throws ParserException(16) when the name token is not an identifier.
+# EXPECT: error
+
+class 123 { }

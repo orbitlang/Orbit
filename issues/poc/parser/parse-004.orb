@@ -1,0 +1,9 @@
+# PoC PARSE-004 — `weak var` (without pub/prot) is usable in a class body.
+# The class-body statement whitelist was missing KW_WEAK, so a line starting
+# with `weak` threw "Invalid syntax within class definition" before the weak
+# handler ever saw it. KW_WEAK is now in the whitelist.
+# EXPECT: ok
+
+class A {
+    weak var x = nil
+}

@@ -1,0 +1,7 @@
+# PoC PARSE-012 — a char literal must be exactly one well-formed code point.
+# `'\q'` is preserved by the scanner as the two bytes `\`,`q` (SCAN-011); the old
+# ParseLiteral fed the buffer straight to StringUTF8ToInt and silently produced a
+# wrong value. ParseLiteral now rejects anything that is not a single code point.
+# EXPECT: error: single valid Unicode code point
+
+x := '\q'

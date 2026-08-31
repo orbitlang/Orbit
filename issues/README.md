@@ -21,7 +21,7 @@ are resolved.
 | [ibuffer.md](ibuffer.md) | `orbit/liftoff/scanner/ibuffer` | 2/7 |
 | [sbuffer.md](sbuffer.md) | `orbit/liftoff/scanner/sbuffer` | 0/3 |
 | [utf8-stringbuilder.md](utf8-stringbuilder.md) | `orbit/orbiter/datatype/stringbuilder` (UTF-8 codec) | 1/4 |
-| [parser.md](parser.md) | `orbit/liftoff/parser` (parser.cpp, context.h, ast.h) | 23/25 |
+| [parser.md](parser.md) | `orbit/liftoff/parser` (parser.cpp, context.h, ast.h) | 13/25 |
 | [ir.md](ir.md) | `orbit/liftoff/ir` (linearscan, intervalspiller, irbuilder, instruction) | 0/6 |
 | [compiler.md](compiler.md) | `orbit/liftoff/compiler.cpp` (compile driver) | 1/1 |
 | [ctbuilder.md](ctbuilder.md) | `orbit/orbiter/datatype/ctbuilder.cpp` (class types, blueprint, hook dispatch) | 0/1 |
@@ -52,3 +52,4 @@ are resolved.
 - 2026-07-15: `orbit/liftoff/ir/linearscan.cpp` (register allocator); IR-003 filed (R13 cross-call miscompile) with tiered `ortest/regalloc_*.orb` coverage. A separate register-leak segfault in `SpillAndAssignRegister` was fixed in the working tree (not yet committed).
 - 2026-07-17: allocator restructured (CallerSaveSpiller pre-pass + IntervalSpiller extraction + LinearScan contention hardening); IR-003 verified FIXED — full PoC suite 20/20, `ortest/regalloc_01..05` all green.
 - 2026-07-17: class/inheritance machinery (`LoadFromObjectProp`, `ctbuilder.cpp`); IR-004 and CTB-001 filed and FIXED, IR-005 filed OPEN. New `ortest/oop/` topic (4 suites) covers hooks, inheritance resolution, accessor/method namespace separation and type-object receivers.
+- 2026-08-31: `orbit/liftoff/parser` — verified & closed PARSE-003/004/005/007/008/011/012/016/018/020 (parser open 23→13). 003/004/005/007/012/018/020 confirmed live against `bin/Orbit` with new `poc/parser/parse-*.orb` (gate 9/9); 008/011/016 by inspection. `pub import` confirmed valid (PARSE-020).

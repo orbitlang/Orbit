@@ -1,0 +1,11 @@
+# PoC PARSE-005 — decorated methods are allowed in class/trait bodies.
+# DECORATOR was missing from the class-body whitelist, so any `@[deco]` inside a
+# class threw error 71. DECORATOR is now in the whitelist and the decorated
+# method parses and compiles.
+# EXPECT: ok
+
+func foo(f) { return f }
+
+class B {
+    @[foo] func m() { }
+}

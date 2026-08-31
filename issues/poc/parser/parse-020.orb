@@ -1,0 +1,8 @@
+# PoC PARSE-020 — a meaningless access modifier is rejected.
+# `pub if x {}`, `pub return`, `weak func`, `pub pub var` used to be parsed and
+# then silently ignored. Modifiers are now rejected on statements that cannot
+# carry them. (`pub import "io"` stays valid — a public re-export — see the
+# sibling case in the finding.)
+# EXPECT: error: can only be applied to declarations
+
+pub if true { }

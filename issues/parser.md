@@ -1,7 +1,7 @@
 # parser — bug report
 
 **Component:** `orbit/liftoff/parser` (parser.cpp, parser.h, context.h, ast.h) · **ID prefix:** `PARSE`
-**PoCs:** [`poc/parser/`](poc/parser/) · **Last reviewed:** 2026-06-15
+**PoCs:** [`poc/parser/`](poc/parser/) · **Last reviewed:** 2026-08-31
 **Status:** OPEN · PARTIAL · FIXED · WONTFIX — see [GUIDE.md](GUIDE.md).
 
 > Findings marked **[confirmed]** were reproduced against the current
@@ -72,7 +72,19 @@ the module-doc `/*!*/`, the empty and whitespace-only `/** */` before a
 ---
 
 ## PARSE-003 — class/trait name is never validated **[confirmed]**
-**Severity:** Medium · **Status:** OPEN · **Location:** `parser.cpp:138-142` (`ParseClassTrait`)
+**Severity:** Medium · **Status:** FIXED (2026-08-31) · **Location:** `parser.cpp:141-142` (`ParseClassTrait`)
+
+**Fix verified (confirmed live; PoC `poc/parser/parse-003.orb`).** `ParseClassTrait`
+now guards the name token before reading its buffer:
+
+```c
+if (!this->Match(TokenType::IDENTIFIER))
+    throw ParserException(16);
+```
+
+`class 123 { }` is now rejected (was: a class literally named `123` compiled).
+
+<details><summary>Original report</summary>
 
 After eating the `class`/`trait` keyword the parser uses
 `tkcur_.buffer`/`length` directly as the name without checking
@@ -85,10 +97,19 @@ without a buffer produce an empty name.
 **Fix:** `if (!this->Match(TokenType::IDENTIFIER)) throw ParserException(16);`
 before reading the buffer.
 
+</details>
+
 ---
 
 ## PARSE-004 — `weak var` (without pub/prot) is unusable in class bodies **[confirmed]**
-**Severity:** Medium · **Status:** OPEN · **Location:** `parser.cpp:1088-1091` (`ParseBlock`)
+**Severity:** Medium · **Status:** FIXED (2026-08-31) · **Location:** `parser.cpp:1200-1202` (`ParseBlock`)
+
+**Fix verified (confirmed live; PoC `poc/parser/parse-004.orb`).** `KW_WEAK` is now in
+the class-body statement whitelist, so `weak var` reaches the handler that
+supports it (which also enforces CLASS context). `class A { weak var x = nil }`
+compiles (was: error 71 "Invalid syntax within class definition").
+
+<details><summary>Original report</summary>
 
 The class-body statement whitelist (`CLEANUP, FUNC, INIT, LET, PUB, PROT,
 VAR`) does not include `KW_WEAK`, so `weak var x = ...` throws error 71 before
@@ -100,10 +121,18 @@ class definition".
 
 **Fix:** add `TokenType::KW_WEAK` to the whitelist.
 
+</details>
+
 ---
 
 ## PARSE-005 — Decorated methods are impossible in class/trait bodies **[confirmed]**
-**Severity:** Medium · **Status:** OPEN · **Location:** `parser.cpp:1088-1094` (`ParseBlock`)
+**Severity:** Medium · **Status:** FIXED (2026-08-31) · **Location:** `parser.cpp:1200-1202` (`ParseBlock`)
+
+**Fix verified (confirmed live; PoC `poc/parser/parse-005.orb`).** `DECORATOR` is now
+in the class/trait body whitelist, so a decorated method parses and compiles.
+`class B { @[foo] func m() {} }` compiles (was: error 71).
+
+<details><summary>Original report</summary>
 
 Same whitelist as PARSE-004: `DECORATOR` is missing, so any `@[deco]` inside a
 class or trait body throws error 71/72, even though `ParseDecorator` happily
@@ -113,6 +142,8 @@ parses decorated functions elsewhere.
 
 **Fix:** add `TokenType::DECORATOR` to both class and trait whitelists (if
 decorated methods are meant to be supported).
+
+</details>
 
 ---
 
@@ -135,7 +166,23 @@ libstdc++ by accident; it is UB and breaks with any vector layout change
 ---
 
 ## PARSE-007 — `pub` before a decorator is silently dropped
-**Severity:** Medium · **Status:** OPEN · **Location:** `parser.cpp:1899-1900` (`ParseStatement`)
+**Severity:** Medium · **Status:** FIXED (2026-08-31) · **Location:** `parser.cpp:2059-2062` (`ParseStatement`)
+
+**Fix verified (confirmed live; PoC `poc/parser/parse-007.orb`).** The `DECORATOR`
+branch now rejects a modifier it cannot carry instead of dropping it:
+
+```c
+case TokenType::DECORATOR:
+    if (access != AccessModifier::PRIVATE)
+        throw ParserException(0);
+    return this->ParseDecorator();
+```
+
+`pub @[deco] func f()` is now a diagnosed error ("…can only be applied to
+declarations…") instead of silently declaring a private `f`. `@[deco] pub func f()`
+still works.
+
+<details><summary>Original report</summary>
 
 `ParseStatement` consumes `pub`/`prot` into `access`, but the
 `case TokenType::DECORATOR` branch calls `ParseDecorator()` which re-enters
@@ -146,10 +193,20 @@ therefore declares a *private*, non-exported `f` with no diagnostic
 **Fix:** pass `access` through to `ParseDecorator`, or reject modifiers before
 decorators explicitly.
 
+</details>
+
 ---
 
 ## PARSE-008 — Double incref in `AdjustInlineExport` leaks the exported name
-**Severity:** Medium (leak) · **Status:** OPEN · **Location:** `parser.cpp:2416, 2424`
+**Severity:** Medium (leak) · **Status:** FIXED (2026-08-31) · **Location:** `parser.cpp:2604, 2612`
+
+**Fix verified (by inspection).** Both branches of `AdjustInlineExport` now do
+`this->exports.emplace_back(id->value)` with no manual `O_INCREF` — the
+`Handle<T>` pointer constructor already increfs once, matching `ParseFunction`
+(`exports.emplace_back(func->name)`). Each `pub x := …` no longer over-increfs
+the name by one, so the `ORString` is released correctly.
+
+<details><summary>Original report</summary>
 
 ```c
 this->exports.emplace_back(O_INCREF(id->value));
@@ -162,6 +219,8 @@ the handle releases only 1 → the `ORString` leaks. Compare `ParseFunction`
 with no manual incref.
 
 **Fix:** drop the `O_INCREF` in both branches of `AdjustInlineExport`.
+
+</details>
 
 ---
 
@@ -208,7 +267,19 @@ case.
 ---
 
 ## PARSE-011 — `ParsePrefix`: self-assignment instead of propagating loc
-**Severity:** Low · **Status:** OPEN · **Location:** `parser.cpp:1831`
+**Severity:** Low · **Status:** FIXED (2026-08-31) · **Location:** `parser.cpp:1958`
+
+**Fix verified (by inspection).** The line now propagates the operand's end into
+the prefix node:
+
+```c
+prefix->loc.end = prefix->value->loc.end;
+```
+
+so unary expressions (`-x`, `!x`, `~x`, `<-ch`…) carry the full source range
+instead of stopping at the operator token.
+
+<details><summary>Original report</summary>
 
 ```c
 prefix->value->loc.end = prefix->value->loc.end;   // no-op
@@ -217,10 +288,27 @@ Intended: `prefix->loc.end = prefix->value->loc.end;`. Every unary expression
 (`-x`, `!x`, `~x`, `<-ch`…) keeps `loc.end` at the operator token —
 wrong ranges in diagnostics.
 
+</details>
+
 ---
 
 ## PARSE-012 — Char literals decoded via broken `StringUTF8ToInt`
-**Severity:** Low · **Status:** OPEN · **Location:** `parser.cpp:1674` (`ParseLiteral`, NUMBER_CHR)
+**Severity:** Low · **Status:** FIXED (2026-08-31) · **Location:** `parser.cpp:1796-1800` (`ParseLiteral`, NUMBER_CHR)
+
+**Fix verified (confirmed live; PoC `poc/parser/parse-012.orb`).** The NUMBER_CHR case
+now validates the buffer is exactly one well-formed code point before decoding:
+
+```c
+if (!StringUTF8IsSingleCodePoint(this->tkcur_.buffer, this->tkcur_.length))
+    throw ParserException(96);
+handle = UIntNew(this->isolate_, StringUTF8ToInt(this->tkcur_.buffer));
+```
+
+A multi-byte or invalid buffer (e.g. `'\q'` preserved as `\`,`q`) is now rejected
+("expected a single valid Unicode code point") instead of silently truncating or
+producing a huge value.
+
+<details><summary>Original report</summary>
 
 `UIntNew(isolate_, StringUTF8ToInt(tkcur_.buffer))`:
 - For a byte ≥ 0xF1 (e.g. `'\xFF'`) `StringUTF8ToInt` returns **-1**
@@ -231,6 +319,8 @@ wrong ranges in diagnostics.
 
 **Fix:** validate the buffer is exactly one well-formed codepoint and reject
 otherwise; fix UTF8-002 first.
+
+</details>
 
 ---
 
@@ -269,12 +359,28 @@ null field into later phases instead of throwing `DatatypeException`.
 ---
 
 ## PARSE-016 — `isalnum`/`isalpha` on signed `char` (UB for non-ASCII paths)
-**Severity:** Low · **Status:** OPEN · **Location:** `parser.cpp:2436-2439` (`CheckSetImportAlias`)
+**Severity:** Low · **Status:** FIXED (2026-08-31) · **Location:** `parser.cpp:2624, 2627` (`CheckSetImportAlias`)
+
+**Fix verified (by inspection).** The auto-alias scan now casts each path byte to
+`unsigned char` before the ctype calls:
+
+```c
+while (idx < length && std::isalnum((unsigned char) *((mod_name_end - idx) - 1)))
+...
+if (!std::isalpha((unsigned char) *(mod_name_end - idx)))
+```
+
+so UTF-8 path bytes ≥ 0x80 (negative `char` on arm64/x86_64) no longer feed a
+negative value to `isalnum`/`isalpha` (UB).
+
+<details><summary>Original report</summary>
 
 The auto-alias scan feeds raw `char` values from the module path into
 `isalnum`/`isalpha`. For UTF-8 path bytes ≥ 0x80, `char` is negative on
 macOS/arm64 and passing negative values (other than EOF) to ctype functions is
 UB. Cast to `unsigned char` first.
+
+</details>
 
 ---
 
@@ -290,12 +396,29 @@ check is dead and should be removed.
 ---
 
 ## PARSE-018 — Wrong error index for invalid label target
-**Severity:** Low (diagnostics) · **Status:** OPEN · **Location:** `parser.cpp:1973-1974`
+**Severity:** Low (diagnostics) · **Status:** FIXED (2026-08-31) · **Location:** `parser.cpp:2149-2150`
+
+**Fix verified (confirmed live; PoC `poc/parser/parse-018.orb`).** A non-identifier
+label target now throws the dedicated label error:
+
+```c
+if (stmt->node_type != NodeType::IDENTIFIER)
+    throw ParserException(97);
+```
+
+`a + b: loop {…}` now reports "only an identifier can be used as a label" instead
+of the catch-clause message (index 33). The surrounding label rework also gives
+duplicate-label (34), non-loop-target (35) and modifier-on-label (99/100) their
+own diagnostics.
+
+<details><summary>Original report</summary>
 
 `if (stmt->node_type != NodeType::IDENTIFIER) throw ParserException(33);` —
 index 33 is *"Invalid catch clause: expected @atom after catch"*. A statement
 like `a + b: loop {…}` reports a catch-clause error. Should be a dedicated
 message (34/35 family).
+
+</details>
 
 ---
 
@@ -314,12 +437,26 @@ message (34/35 family).
 ---
 
 ## PARSE-020 — Meaningless access modifiers silently accepted
-**Severity:** Info · **Status:** OPEN · **Location:** `parser.cpp:1844-1866` (`ParseStatement`)
+**Severity:** Info · **Status:** FIXED (2026-08-31) · **Location:** `parser.cpp:1971-2003, 2059-2062` (`ParseStatement`)
+
+**Fix verified (confirmed live; PoC `poc/parser/parse-020.orb`).** Modifiers are now
+validated instead of parsed-and-ignored: duplicate `pub pub`/`weak weak` (98),
+`prot` outside class/trait (81), `weak` outside a class (25), a modifier before a
+decorator (0, see PARSE-007), and a modifier on a labeled statement (99/100) all
+diagnose. A statement that cannot carry a modifier rejects it ("…can only be
+applied to declarations…"): `pub if x {}`, `pub return`, `weak func` now error.
+
+Note: `pub import "io"` — listed in the original report — is in fact **valid** (a
+public re-export is a real declaration) and stays accepted.
+
+<details><summary>Original report</summary>
 
 `pub if x {}`, `pub import "io"`, `pub return`, `weak func …`, `pub pub var x`
 — modifiers are parsed and then ignored by statement branches that don't use
 `access`/`weak`, with no diagnostic. Reject modifiers when the following
 statement can't carry them.
+
+</details>
 
 ---
 

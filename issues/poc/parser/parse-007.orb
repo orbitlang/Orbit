@@ -1,0 +1,7 @@
+# PoC PARSE-007 — `pub` before a decorator is no longer silently dropped.
+# Before the fix `pub @[deco] func f()` declared a private, non-exported f with
+# no diagnostic (ParseDecorator re-entered ParseStatement with access=PRIVATE).
+# The DECORATOR branch now rejects a non-PRIVATE access.
+# EXPECT: error: can only be applied to declarations
+
+pub @[deco] func f() { }

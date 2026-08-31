@@ -1,0 +1,21 @@
+/*!*/
+# PoC PARSE-002 — an empty doc/module comment used to crash the compiler
+# (SIGSEGV): the empty comment yields a token with buffer == nullptr, which
+# `GetDocString` handed to `ORStringNewHoldBuffer` → `assert(buffer[0])` on a
+# null pointer. Empty docs must now be treated as "no docstring".
+#
+# Covers the module-doc `/*!*/` above and the empty/whitespace-only `/** */`
+# forms before a func and a class below.
+# EXPECT: ok
+
+/** */
+func f() {
+    return 1
+}
+
+/**   */
+class K {
+    pub init() { }
+}
+
+x := f()
