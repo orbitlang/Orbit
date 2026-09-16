@@ -1,6 +1,11 @@
 <div align="center">
 
-# Orbit
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset=".github/orbit-lockup-horizontal-dark-1x.png">
+    <img src=".github/orbit-lockup-horizontal-light-1x.png" alt="Gyro" width="340">
+  </picture>
+</p>
 
 **A modern, concurrent programming language with a register-based virtual machine.**
 
