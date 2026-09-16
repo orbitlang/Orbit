@@ -30,3 +30,10 @@
 *.exe
 *.out
 *.app
+
+# Build trees (CMake presets use build/<preset>, CLion uses cmake-build-*)
+build/
+cmake-build-*/
+
+# Generated into the build tree; must never live in the source tree
+orbit/orbiter/version.h

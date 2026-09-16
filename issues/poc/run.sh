@@ -24,7 +24,20 @@ set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-ORBIT="$ROOT/bin/Orbit"
+
+# Locate the build tree (artifacts live in <build>/bin and <build>/lib).
+# ORBIT_BUILD_DIR wins (ctest sets it); otherwise pick the first preset/CLion
+# build dir that contains a built Orbit.
+if [ -z "${ORBIT_BUILD_DIR:-}" ]; then
+    for d in "$ROOT/build/dev" "$ROOT/build/debug" "$ROOT/build/release" "$ROOT/cmake-build-debug"; do
+        if [ -x "$d/bin/Orbit" ]; then ORBIT_BUILD_DIR="$d"; break; fi
+    done
+fi
+if [ -z "${ORBIT_BUILD_DIR:-}" ] || [ ! -x "$ORBIT_BUILD_DIR/bin/Orbit" ]; then
+    echo "poc: no built Orbit found; build first, or set ORBIT_BUILD_DIR" >&2
+    exit 2
+fi
+ORBIT="$ORBIT_BUILD_DIR/bin/Orbit"
 export ORBIT_PATH="$ROOT/stdlib"
 
 # A reproducer for a hang must not hang the suite: cap every run. Override with
@@ -74,8 +87,11 @@ run_orb() {
 run_cpp() {
     local f="$1" rel="$2"
     local bin="/tmp/poc_$(basename "$f" .cpp)"
-    if ! clang++ -std=c++17 -I "$ROOT/bin/include" -I "$ROOT/lib/stratum" "$f" \
-            -L "$ROOT/bin" -lOrbiter -lStratum -Wl,-rpath,"$ROOT/bin" -o "$bin" \
+    # Headers: the source root (#include <orbit/...>), the build tree (generated
+    # version.h) and stratum. Stratum is folded into libOrbiter, so only
+    # -lOrbiter is needed.
+    if ! clang++ -std=c++17 -I "$ROOT" -I "$ORBIT_BUILD_DIR/include" -I "$ROOT/lib/stratum" "$f" \
+            -L "$ORBIT_BUILD_DIR/lib" -lOrbiter -Wl,-rpath,"$ORBIT_BUILD_DIR/lib" -o "$bin" \
             2>/tmp/poc_build.log; then
         bad_line "$rel" "build failed: $(grep -i error /tmp/poc_build.log | head -1)"; return
     fi

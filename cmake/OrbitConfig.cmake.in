@@ -1,0 +1,11 @@
+@PACKAGE_INIT@
+
+include(CMakeFindDependencyMacro)
+find_dependency(Threads)
+
+# gyro and stratum are folded into libOrbiter (static, private): consumers of
+# the installed package do not need them as separate dependencies.
+
+include("${CMAKE_CURRENT_LIST_DIR}/OrbitTargets.cmake")
+
+check_required_components(Orbit)

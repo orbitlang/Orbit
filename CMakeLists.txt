@@ -1,98 +1,114 @@
-cmake_minimum_required(VERSION 3.15)
-project(Orbit VERSION 0.2.0)
+cmake_minimum_required(VERSION 3.20)
 
-set(OR_MAJOR ${PROJECT_VERSION_MAJOR})
-set(OR_MINOR ${PROJECT_VERSION_MINOR})
-set(OR_PATCH ${PROJECT_VERSION_PATCH})
-set(OR_RELEASE_LEVEL "alpha")
+project(Orbit
+        VERSION 0.2.0
+        DESCRIPTION "The Orbit programming language"
+        LANGUAGES CXX)
 
-set(BASE_OUTPUT_DIRECTORY "${PROJECT_SOURCE_DIR}/bin")
-set(BASE_OUTPUT_HEADERS ${BASE_OUTPUT_DIRECTORY}/include/Orbit)
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
-if (${CMAKE_BUILD_TYPE} MATCHES "Release")
-    set(BASE_OUTPUT_DIRECTORY "${BASE_OUTPUT_DIRECTORY}/${CMAKE_BUILD_TYPE}")
+set(ORBIT_RELEASE_LEVEL "alpha")
+
+# ---------------------------------------------------------------------------
+# Options
+# ---------------------------------------------------------------------------
+option(ORBIT_BUILD_TESTS "Enable CTest and register the .orb suites (ortest, poc)" ${PROJECT_IS_TOP_LEVEL})
+option(ORBIT_BUILD_UNIT_TESTS "Build the GoogleTest unit-test executable" OFF)
+option(ORBIT_INSTALL "Generate the install target" ${PROJECT_IS_TOP_LEVEL})
+option(ORBIT_FF_CGOTO "Compile the VM dispatch loop with the computed-goto extension" OFF)
+option(ORBIT_WERROR "Treat compiler warnings as errors" OFF)
+
+# ---------------------------------------------------------------------------
+# Global configuration; when Orbit is the top-level project, so that a
+# consumer embedding Orbit keeps control of its own build settings.
+# ---------------------------------------------------------------------------
+if (PROJECT_IS_TOP_LEVEL)
+    set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
+    # Strict ISO C++ (-std=c++17) by default, so accidental GNU-isms are caught.
+    # The one deliberate GNU extension (the computed-goto dispatch loop) is
+    # re-enabled per-target on Orbiter only when ORBIT_FF_CGOTO is ON.
+    set(CMAKE_CXX_EXTENSIONS OFF)
+
+    # Keep all artifacts in one place regardless of generator.
+    set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib")
+    set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib")
+    set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+
+    if (NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+        set(CMAKE_BUILD_TYPE Debug CACHE STRING "Build type" FORCE)
+        set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS Debug Release RelWithDebInfo MinSizeRel)
+    endif ()
 endif ()
 
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${BASE_OUTPUT_DIRECTORY})
-set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${BASE_OUTPUT_DIRECTORY})
+find_package(Threads REQUIRED)
 
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-
-set(CMAKE_CXX_STANDARD 17)
-
-if (MSVC)
-    set(CMAKE_CXX_STANDARD 20)
-endif ()
-
-if (${CMAKE_SYSTEM_NAME} MATCHES "Linux")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pthread")
-elseif (${CMAKE_SYSTEM_NAME} MATCHES "Windows")
-    set(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS ON)
-endif ()
+# gyro::gyro: The async event loop / I/O runtime (installed package, or a
+# pinned fetch, or a sibling checkout during co-development).
+include(FindOrFetchGyro)
 
 add_subdirectory(lib/stratum)
 add_subdirectory(orbit)
-add_subdirectory(test EXCLUDE_FROM_ALL)
 
-# *** Orbit main executable ***
+# ---------------------------------------------------------------------------
+# Orbit: the command-line driver
+# ---------------------------------------------------------------------------
+add_executable(Orbit orbit/main.cpp)
+add_executable(Orbit::Orbit ALIAS Orbit)
 
-add_executable(${CMAKE_PROJECT_NAME} "${CMAKE_SOURCE_DIR}/orbit/main.cpp")
-add_dependencies(${CMAKE_PROJECT_NAME} Orbiter)
-target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE Orbiter)
+target_link_libraries(Orbit PRIVATE Orbit::Orbiter)
 
-# *** Install ***
+# ---------------------------------------------------------------------------
+# Tests
+# ---------------------------------------------------------------------------
+if (ORBIT_BUILD_TESTS)
+    enable_testing()
+    add_subdirectory(test)
+endif ()
 
-set(PROJECT_NAME_MAJOR_MINOR ${PROJECT_NAME}${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR})
-set(PROJECT_NAME_OUTPUT_LIB "orbit${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}")
+# ---------------------------------------------------------------------------
+# Install / package
+# ---------------------------------------------------------------------------
+if (ORBIT_INSTALL)
+    include(GNUInstallDirs)
+    include(CMakePackageConfigHelpers)
 
-# *** Export Orbit headers file ***
+    install(TARGETS Orbit Orbiter
+            EXPORT OrbitTargets
+            RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+            LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+            ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
 
-file(GLOB_RECURSE HEADERS
-        "${PROJECT_SOURCE_DIR}/orbit/*.h"
-        "${PROJECT_SOURCE_DIR}/orbit/*.hpp")
+    # Public headers. The include root is the repository root (#include <orbit/...>),
+    # and the public API also includes <stratum/...>.
+    install(DIRECTORY orbit/
+            DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/orbit
+            FILES_MATCHING PATTERN "*.h" PATTERN "*.hpp")
 
-file(MAKE_DIRECTORY ${BASE_OUTPUT_HEADERS})
+    install(DIRECTORY lib/stratum/stratum/
+            DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/stratum
+            FILES_MATCHING PATTERN "*.h")
 
-foreach (header_file ${HEADERS})
-    file(RELATIVE_PATH rel_header_file ${PROJECT_SOURCE_DIR}/orbit ${header_file})
-    get_filename_component(header_path "${rel_header_file}" DIRECTORY)
-    file(MAKE_DIRECTORY ${BASE_OUTPUT_HEADERS}/${header_path})
-    configure_file(${header_file} ${BASE_OUTPUT_HEADERS}/${rel_header_file} COPYONLY)
-endforeach ()
+    install(FILES "${PROJECT_BINARY_DIR}/include/orbit/orbiter/version.h"
+            DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/orbit/orbiter)
 
-install(TARGETS ${CMAKE_PROJECT_NAME} Orbiter
-        EXPORT OrbitTargets)
+    install(EXPORT OrbitTargets
+            FILE OrbitTargets.cmake
+            NAMESPACE Orbit::
+            DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/orbit)
 
-# Install headers
-install(DIRECTORY ${BASE_OUTPUT_HEADERS} DESTINATION include)
+    configure_package_config_file(
+            "${PROJECT_SOURCE_DIR}/cmake/OrbitConfig.cmake.in"
+            "${PROJECT_BINARY_DIR}/OrbitConfig.cmake"
+            INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/orbit)
 
-install(EXPORT OrbitTargets
-        FILE OrbitTargets.cmake
-        NAMESPACE Orbit::
-        DESTINATION lib/cmake/${PROJECT_NAME_MAJOR_MINOR})
+    write_basic_package_version_file(
+            "${PROJECT_BINARY_DIR}/OrbitConfigVersion.cmake"
+            VERSION ${PROJECT_VERSION}
+            COMPATIBILITY SameMajorVersion)
 
-include(CMakePackageConfigHelpers)
-
-configure_package_config_file(${CMAKE_CURRENT_SOURCE_DIR}/Config.cmake.in
-        "${CMAKE_CURRENT_BINARY_DIR}/OrbitConfig.cmake"
-        INSTALL_DESTINATION "lib/cmake/${PROJECT_NAME_MAJOR_MINOR}")
-
-write_basic_package_version_file(
-        "${CMAKE_CURRENT_BINARY_DIR}/OrbitConfigVersion.cmake"
-        VERSION "${PROJECT_VERSION}"
-        COMPATIBILITY AnyNewerVersion)
-
-install(FILES
-        ${CMAKE_CURRENT_BINARY_DIR}/OrbitConfig.cmake
-        ${CMAKE_CURRENT_BINARY_DIR}/OrbitConfigVersion.cmake
-        DESTINATION lib/cmake/${PROJECT_NAME_MAJOR_MINOR})
-
-# *** Export package ***
-
-set(CMAKE_EXPORT_PACKAGE_REGISTRY ON)
-
-export(TARGETS Orbiter
-        NAMESPACE Orbit::
-        FILE "${CMAKE_CURRENT_BINARY_DIR}/OrbitTargets.cmake")
-
-export(PACKAGE Orbit)
+    install(FILES
+            "${PROJECT_BINARY_DIR}/OrbitConfig.cmake"
+            "${PROJECT_BINARY_DIR}/OrbitConfigVersion.cmake"
+            DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/orbit)
+endif ()

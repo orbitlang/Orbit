@@ -351,9 +351,13 @@ finding's PoC documents the target behavior (it may fail until the fix lands).
 
 **Runner** — `issues/poc/run.sh [component]` runs every PoC and checks it against
 its expectation; exits non-zero if any fail. **Rebuild the project first** so
-`bin/Orbit` and the linked library reflect current code (a stale binary lies —
-see §6). `.cpp` probes are compiled on the fly against `bin/include` +
-`lib/stratum` and `bin/libOrbiter`.
+the `Orbit` binary and the linked library reflect current code (a stale binary
+lies — see §6). The runner locates the build tree through `ORBIT_BUILD_DIR`
+(set automatically by `ctest`; otherwise it picks the first of `build/dev`,
+`build/debug`, `build/release`, `cmake-build-debug` that contains a built
+`Orbit`). `.cpp` probes are compiled on the fly against the source root, the
+build tree's generated headers and `lib/stratum`, and linked to
+`<build>/lib/libOrbiter`.
 
 ---
 

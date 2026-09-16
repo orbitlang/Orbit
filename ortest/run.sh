@@ -27,7 +27,20 @@ set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-ORBIT="$ROOT/bin/Orbit"
+
+# Locate the build tree (artifacts live in <build>/bin and <build>/lib).
+# ORBIT_BUILD_DIR wins (ctest sets it); otherwise pick the first preset/CLion
+# build dir that contains a built Orbit.
+if [ -z "${ORBIT_BUILD_DIR:-}" ]; then
+    for d in "$ROOT/build/dev" "$ROOT/build/debug" "$ROOT/build/release" "$ROOT/cmake-build-debug"; do
+        if [ -x "$d/bin/Orbit" ]; then ORBIT_BUILD_DIR="$d"; break; fi
+    done
+fi
+if [ -z "${ORBIT_BUILD_DIR:-}" ] || [ ! -x "$ORBIT_BUILD_DIR/bin/Orbit" ]; then
+    echo "ortest: no built Orbit found; build first, or set ORBIT_BUILD_DIR" >&2
+    exit 2
+fi
+ORBIT="$ORBIT_BUILD_DIR/bin/Orbit"
 export ORBIT_PATH="$ROOT/stdlib"
 
 # A suite that hangs must not hang the gate: cap every run. Override with
