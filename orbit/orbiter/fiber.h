@@ -5,6 +5,7 @@
 #ifndef ORBIT_ORBITER_FIBER_H_
 #define ORBIT_ORBITER_FIBER_H_
 
+#include <atomic>
 #include <cassert>
 
 #include <orbit/orbiter/datatype/context.h>
@@ -26,6 +27,23 @@ namespace orbiter {
         datatype::OObject *func;
     };
 
+    using ResumeFn = bool (*)(Fiber *fiber);
+
+    /**
+     * @brief Per-operation state shared between a native that submits an operation
+     * to the event loop and the on_resume callback that consumes its outcome.
+     */
+    struct FiberIO {
+        datatype::HOObject object;
+
+        ResumeFn on_resume;
+
+        I32 status;
+
+        U64 transferred;
+        U64 udata;
+    };
+
     constexpr auto kStackPrologueOffset = sizeof(FiberContext) + (sizeof(void *) * 2);
     constexpr auto kPreemptTick = 32;
 
@@ -33,9 +51,10 @@ namespace orbiter {
         RUNNABLE, // ready, never executed or resumed after yield
         RUNNING, // currently executing (set by eval() on entry)
         YIELDED, // cooperatively yielded or preempted (re-enqueue)
-        SUSPENDED, // waiting for event (not re-enqueued)
+        SUSPENDED_IO,
+        SUSPENDED_RETRY, // waiting for event (not re-enqueued)
         COMPLETED, // terminated normally
-        PANICKED // unhandled panic propagated to top
+        // PANICKED // unhandled panic propagated to top
     };
 
     class Fiber {
@@ -43,6 +62,8 @@ namespace orbiter {
         VMContext vm{};
 
         FiberContext context{};
+
+        FiberIO io{};
 
         PanicContainer panic{};
 
@@ -68,7 +89,7 @@ namespace orbiter {
             Fiber *prev;
         } queue{};
 
-        void *active_ost = nullptr;
+        std::atomic<void *> active_ost = nullptr;
 
         FiberState state = FiberState::RUNNABLE;
 
@@ -141,6 +162,15 @@ namespace orbiter {
         [[nodiscard]] datatype::HOObject GetPanicError() const noexcept;
 
         /**
+         * @brief Undoes PrepareForEventLoop when the submit itself failed.
+         *
+         * Only valid when loop refused the operation synchronously (negative return),
+         * i.e. no completion callback will ever fire for it. The fiber goes back to
+         * RUNNING and the native can report the error as it would for any other failure.
+         */
+        void AbortEventLoop() noexcept;
+
+        /**
          * @brief Deletes the provided Fiber instance, releasing associated resources.
          *
          * Behavior is undefined if an invalid Fiber instance is passed.
@@ -171,6 +201,17 @@ namespace orbiter {
          * and ensures the integrity of the fiber's execution environment.
          */
         void PopState() noexcept;
+
+        /**
+         * @brief Marks the fiber as suspended on the event loop.
+         *
+         * Must be called BEFORE submitting the operation to the loop: the completion
+         * callback may run on the loop thread as soon as the submit returns, and it
+         * expects the fiber to be already parked. `on_resume` runs on the mutator
+         * that picks the fiber up again, before eval, and is responsible for
+         * publishing the outcome (return value in RR, or a panic) and for advancing IP.
+         */
+        void PrepareForEventLoop(ResumeFn on_resume) noexcept;
 
         /**
          * @brief Handles a fiber-level exception by recording the provided error object.
@@ -209,6 +250,7 @@ namespace orbiter {
 
             this->vm.preempt_tick = kPreemptTick;
 
+            this->active_ost.store(nullptr, std::memory_order_relaxed);
             this->state = FiberState::RUNNABLE;
         }
 

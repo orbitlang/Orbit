@@ -116,7 +116,7 @@ bool ExecDefer(Fiber *fiber) {
     }
 }
 
-bool Call(Fiber *fiber, Function *func, const U16 total_args) {
+static bool Call(Fiber *fiber, Function *func, const U16 total_args) {
     auto *regs = &fiber->vm.regs;
 
     if (!func->shared->IsInterpreted()) {
@@ -1082,7 +1082,7 @@ CATCH_FINALLY:
                 }
 
                 if (FutureAsyncAwait(future)) {
-                    fiber->state = FiberState::SUSPENDED;
+                    fiber->state = FiberState::SUSPENDED_RETRY;
 
                     return nullptr;
                 }
@@ -1155,6 +1155,9 @@ CATCH_FINALLY:
 
                     goto BEGIN;
                 }
+
+                if (fiber->state == FiberState::SUSPENDED_IO || fiber->state == FiberState::SUSPENDED_RETRY)
+                    return nullptr;
 
                 if (fiber->IsPanicking())
                     goto ERROR;
@@ -1530,7 +1533,7 @@ CATCH_FINALLY:
                                         : ChannelTryRecv(channel, result);
 
                 if (status == ChannelRecvStatus::BLOCKED) {
-                    fiber->state = FiberState::SUSPENDED;
+                    fiber->state = FiberState::SUSPENDED_RETRY;
 
                     return nullptr;
                 }
@@ -1568,7 +1571,7 @@ CATCH_FINALLY:
                     goto ERROR;
 
                 if (status == ChannelSendStatus::BLOCKED) {
-                    fiber->state = FiberState::SUSPENDED;
+                    fiber->state = FiberState::SUSPENDED_RETRY;
 
                     return nullptr;
                 }
@@ -1643,7 +1646,7 @@ CATCH_FINALLY:
                                              (Module *&) result);
 
                 if (status == import::ImportStatus::BLOCKED) {
-                    fiber->state = FiberState::SUSPENDED;
+                    fiber->state = FiberState::SUSPENDED_RETRY;
 
                     return nullptr;
                 }

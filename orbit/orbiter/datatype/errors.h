@@ -168,6 +168,7 @@ namespace orbiter::datatype {
             TIMEOUT,            // ETIMEDOUT           / WSAETIMEDOUT
             INVALID_ARGUMENT,   // EINVAL              / ERROR_INVALID_PARAMETER
             NO_MEMORY,          // ENOMEM              / ERROR_NOT_ENOUGH_MEMORY
+            IO_LOOP,
 
             // Catch-all for any errno value not mapped above.
             OTHER,
@@ -186,6 +187,7 @@ namespace orbiter::datatype {
             (const char *) "operation timed out: %s",
             (const char *) "invalid argument: %s",
             (const char *) "out of memory: %s",
+            (const char *) "I/O event loop error: %s",
             (const char *) "OS error %d (%s): %s"
         };
     };

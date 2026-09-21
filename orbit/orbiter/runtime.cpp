@@ -188,6 +188,30 @@ void Orbiter::AcquireVCoreOrSuspend(OSThread *ost) noexcept {
     }
 }
 
+void Orbiter::IOLoop() noexcept {
+    std::unique_lock lock(this->ev_loop_lock_);
+
+    while (!this->should_exit_) {
+        this->ev_loop_count = 0;
+
+        lock.unlock();
+
+        gyro_run(this->ev_loop_); // TODO: check return value!
+
+        lock.lock();
+
+        if (this->ev_loop_count > 0)
+            continue;
+
+        this->ev_loop_cond_.wait(lock, [this]() {
+            if (this->ev_loop_count > 0)
+                return true;
+
+            return this->should_exit_;
+        });
+    }
+}
+
 void Orbiter::Scheduler(OSThread *ost) noexcept {
     Fiber *last = nullptr;
     const Isolate *last_isolate = nullptr;
@@ -229,7 +253,7 @@ void Orbiter::Scheduler(OSThread *ost) noexcept {
         // Check the fiber is not yet connected to a previous OSThread,
         // this can happen when the fiber is interrupted by an asynchronous operation (e.g. socket read/write).
         // Such an operation may complete before the thread that started it has actually released the fiber.
-        if (ost->fiber->active_ost != nullptr) {
+        if (ost->fiber->active_ost.load(std::memory_order_acquire) != nullptr) {
             std::this_thread::yield();
 
             continue;
@@ -246,14 +270,18 @@ void Orbiter::Scheduler(OSThread *ost) noexcept {
             last_isolate = fiber->isolate;
         }
 
-        fiber->active_ost = ost;
+        fiber->active_ost.store(ost, std::memory_order_relaxed);
 
         Fiber::SetCurrent(fiber);
 
-        auto *result = eval(fiber, 0);
-        fiber->isolate->gc->ParkAtSafepoint();
+        if (fiber->io.on_resume != nullptr) {
+            fiber->io.on_resume(fiber);
+            fiber->io.on_resume = nullptr;
+        }
 
-        fiber->active_ost = nullptr;
+        auto *result = eval(fiber, 0);
+
+        fiber->isolate->gc->ParkAtSafepoint();
 
         if (fiber->state == FiberState::RUNNING) {
             PublishResult(ost, result);
@@ -263,13 +291,29 @@ void Orbiter::Scheduler(OSThread *ost) noexcept {
             continue;
         }
 
-        if (fiber->state == FiberState::SUSPENDED) {
-            ost->fiber = nullptr;
+        // active_ost must remain assigned until final state classification;
+        // releasing it earlier could let another thread resume an incompletely handled fiber.
+        switch (fiber->state) {
+            case FiberState::SUSPENDED_IO:
+                this->ev_loop_lock_.lock();
+                this->ev_loop_count += 1;
+                this->ev_loop_lock_.unlock();
 
-            continue;
+                this->ev_loop_cond_.notify_one();
+
+                [[fallthrough]];
+            case FiberState::SUSPENDED_RETRY:
+                fiber->active_ost.store(nullptr, std::memory_order_release);
+                ost->fiber = nullptr;
+
+                continue;
+            default:
+                break;
         }
 
         assert(fiber->state == FiberState::YIELDED);
+
+        fiber->active_ost.store(nullptr, std::memory_order_release);
 
         fiber->vm.preempt_tick = kPreemptTick; // TODO: get from config
     }
@@ -445,8 +489,6 @@ void Orbiter::ReleaseVCore(OSThread *ost) noexcept {
 // *********************************************************************************************************************
 
 Orbiter::~Orbiter() {
-    // TODO: fill this!
-
     delete[] this->vcores_;
 }
 
@@ -512,7 +554,15 @@ bool Orbiter::EvalSync(Function *func, OObject **argv, const U16 argc, OObject *
 }
 
 bool Orbiter::Finalize() noexcept {
-    // TODO: fill this!
+    //    if (gyro_free(orbiter_->io_loop_) != GYRO_COMPLETED)
+    //      return false;
+
+    // fixme: check fiberqueue contents!
+
+    delete orbiter_;
+
+    orbiter_ = nullptr;
+
     return false;
 }
 
@@ -525,7 +575,16 @@ bool Orbiter::Initialize(const void *config) noexcept {
         if (!orbiter_->InitVCores(kVCoreDefault))
             return false; // TODO: from config!
 
+        if ((orbiter_->ev_loop_ = gyro_new(nullptr)) == nullptr) {
+            Finalize();
+
+            return false;
+        }
+
         orbiter_->ost_max_ = 4; // FIXME
+
+        std::thread(&Orbiter::IOLoop, orbiter_).detach();
+
         return true;
     }
 

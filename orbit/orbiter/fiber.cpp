@@ -129,6 +129,15 @@ datatype::HOObject Fiber::GetPanicError() const noexcept {
     return datatype::HOObject((*this->panic.r_current_)->error);
 }
 
+void Fiber::AbortEventLoop() noexcept {
+    assert(this->state == FiberState::SUSPENDED_IO);
+
+    this->io.object.reset();
+    this->io.on_resume = nullptr;
+
+    this->state = FiberState::RUNNING;
+}
+
 void Fiber::Delete(Fiber *fiber) noexcept {
     if (fiber == nullptr)
         return;
@@ -167,6 +176,17 @@ void Fiber::PopState() noexcept {
     memory::MemoryCopy(&this->context, stack, sizeof(FiberContext));
 
     this->vm.regs.SP.reg = frame_base - kStackPrologueOffset;
+}
+
+void Fiber::PrepareForEventLoop(const ResumeFn on_resume) noexcept {
+    this->io.object.reset();
+    this->io.on_resume = on_resume;
+    this->io.status = 0;
+
+    this->io.transferred = 0;
+    this->io.udata = 0;
+
+    this->state = FiberState::SUSPENDED_IO;
 }
 
 void Fiber::RaisePanic(datatype::OObject *error) noexcept {

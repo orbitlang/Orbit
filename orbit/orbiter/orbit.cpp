@@ -184,7 +184,7 @@ int orbiter::main(const int argc, char **argv) {
                     liftoff::kDefaultOptimization);
     }
 
-    Orbiter::GetInstance()->Finalize();
+    Orbiter::Finalize();
 
     return EXIT_SUCCESS;
 }

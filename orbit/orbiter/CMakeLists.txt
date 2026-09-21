@@ -5,6 +5,7 @@
 
 target_sources(Orbiter PRIVATE
         config.cpp
+        evloop.cpp
         fiber.cpp
         fqueue.cpp
         isolate.cpp

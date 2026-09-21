@@ -7,6 +7,8 @@
 
 #include <thread>
 
+#include <gyro/gyro.h>
+
 #include <orbit/orbiter/datatype/future.h>
 
 #include <orbit/orbiter/config.h>
@@ -84,12 +86,17 @@ namespace orbiter {
     class Orbiter {
         std::mutex ost_lock_;
         std::mutex vcore_lock_;
+        std::mutex ev_loop_lock_;
 
         std::condition_variable ost_cond_;
+        std::condition_variable ev_loop_cond_;
 
         FiberQueue<> fiber_queue_;
 
         static inline Orbiter *orbiter_ = nullptr;
+
+        // I/O loop instance
+        gyro_t *ev_loop_ = nullptr;
 
         // OSThread variables
         OSThread *ost_active_ = nullptr; // Working OSThread
@@ -100,6 +107,8 @@ namespace orbiter {
         VCore *vcores_idle_ = nullptr; // Active VCore
 
         // Runtime Counters
+        unsigned int ev_loop_count = 0;
+
         unsigned int ost_total_ = 0; // OSThread counter
         unsigned int ost_idle_count_ = 0; // OSThread counter (idle)
         unsigned int ost_max_ = 0; // Maximum OS thread allowed
@@ -156,6 +165,8 @@ namespace orbiter {
         OSThread *AllocOSThread() noexcept;
 
         void AcquireVCoreOrSuspend(OSThread *ost) noexcept;
+
+        void IOLoop() noexcept;
 
         void Scheduler(OSThread *ost) noexcept;
 
@@ -242,14 +253,18 @@ namespace orbiter {
 
         ~Orbiter();
 
-        static bool EvalSync(datatype::Function *func,  datatype::OObject **argv, U16 argc, datatype::OObject **out);
+        static bool EvalSync(datatype::Function *func, datatype::OObject **argv, U16 argc, datatype::OObject **out);
 
-        bool Finalize() noexcept;
+        static bool Finalize() noexcept;
 
         static bool Initialize(const void *config) noexcept;
 
         [[nodiscard]] static Fiber *EvalDetached(datatype::Context *context, datatype::Module *module,
                                                  datatype::Code *code) noexcept;
+
+        [[nodiscard]] gyro_t *GetEventLoop() const noexcept {
+            return this->ev_loop_;
+        }
 
         datatype::HOObject Eval(datatype::Context *context, datatype::Module *module, datatype::Code *code) noexcept;
 
@@ -259,6 +274,8 @@ namespace orbiter {
         datatype::HFuture EvalAsync(datatype::Function *func, const unsigned char *stack_begin, U16 size) noexcept;
 
         static Orbiter *GetInstance() noexcept;
+
+        static void DiscardDetachedFiber(Fiber *fiber) noexcept;
 
         void PushFiber(Fiber *fiber) noexcept {
             if (ost_self == nullptr || ost_self->current == nullptr) {
@@ -281,8 +298,6 @@ namespace orbiter {
                 this->OSTWakeRun();
             }
         }
-
-        static void DiscardDetachedFiber(Fiber *fiber) noexcept;
 
         static void RuntimeDiscardPanic(Isolate *isolate);
 
