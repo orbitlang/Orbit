@@ -1,0 +1,24 @@
+# This source file is part of the Orbit project.
+#
+# Licensed under the Apache License v2.0
+
+/*!
+ * @brief Time and sleeping.
+ *
+ * Re-exports the native `::orbit::chrono` module: a monotonic clock for
+ * measuring intervals and a sleep that parks the current fiber on the event
+ * loop, leaving its scheduler thread free to run other fibers.
+ *
+ * @example
+ *     import "chrono"
+ *     import "io"
+ *
+ *     start := chrono.monotonic()
+ *     slept := chrono.sleep(250)
+ *     io.print("slept", slept, "ms, clock says", chrono.monotonic() - start)
+ */
+
+pub import
+    monotonic,
+    sleep
+    from "::orbit::chrono"

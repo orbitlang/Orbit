@@ -65,6 +65,7 @@ target_sources(Orbiter PRIVATE
 
         # Builtin native modules
         module/builtin.cpp
+        module/chrono.cpp
         module/ffi.cpp
         module/gc.cpp
         module/io.cpp

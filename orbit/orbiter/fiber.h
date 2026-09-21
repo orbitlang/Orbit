@@ -170,6 +170,10 @@ namespace orbiter {
          */
         void AbortEventLoop() noexcept;
 
+        void AddIP() noexcept {
+            this->vm.regs.IP.reg += sizeof(MachineWord);
+        }
+
         /**
          * @brief Deletes the provided Fiber instance, releasing associated resources.
          *
@@ -303,6 +307,11 @@ namespace orbiter {
          *              Can be nullptr to clear the current Fiber instance.
          */
         static void SetCurrent(Fiber *fiber) noexcept;
+
+        template<typename T, typename = std::enable_if_t<std::is_integral_v<T> || std::is_pointer_v<T>> >
+        void SetRRValue(const T value) noexcept {
+            this->vm.regs.RR.reg = (PtrSize) value;
+        }
     };
 } // namespace orbiter
 
