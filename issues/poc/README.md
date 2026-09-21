@@ -5,10 +5,14 @@ one file per finding ID (`scanner/scan-001.orb`, …). Re-run them as a fast
 regression suite to confirm fixed bugs stay fixed.
 
 ```sh
-# Rebuild the project first so bin/Orbit reflects current code, then:
+# Rebuild the project first so the Orbit binary reflects current code, then:
 issues/poc/run.sh            # run all components
 issues/poc/run.sh scanner    # run one component
 ```
+
+The runner locates the build tree on its own (`ORBIT_BUILD_DIR`, else the first
+of `build/dev`, `build/debug`, `build/release`, `cmake-build-debug` holding a
+built `bin/Orbit`); `ctest` sets the variable for you.
 
 - **`.orb`** files declare their expectation in a `# EXPECT:` line
   (`ok` / `error` / `error: <substring>`).

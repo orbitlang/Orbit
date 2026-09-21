@@ -3,14 +3,14 @@
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset=".github/orbit-lockup-horizontal-dark-1x.png">
-    <img src=".github/orbit-lockup-horizontal-light-1x.png" alt="Gyro" width="340">
+    <img src=".github/orbit-lockup-horizontal-light-1x.png" alt="Orbit" width="340">
   </picture>
 </p>
 
 **A modern, concurrent programming language with a register-based virtual machine.**
 
 [![status: alpha](https://img.shields.io/badge/status-alpha-orange)](#project-status)
-[![version: 0.2.0](https://img.shields.io/badge/version-0.2.0-blue)](orbit/orbiter/version.h)
+[![version: 0.3.0](https://img.shields.io/badge/version-0.3.0-blue)](CMakeLists.txt)
 [![language: C++17](https://img.shields.io/badge/language-C%2B%2B17-00599C?logo=cplusplus)](CMakeLists.txt)
 [![license: Apache 2.0](https://img.shields.io/badge/license-Apache--2.0-green)](LICENSE)
 [![platforms](https://img.shields.io/badge/platforms-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey)](#building-from-source)
@@ -19,7 +19,7 @@
 
 ---
 
-> ⚠️ **Orbit is in early alpha (0.2.0).** The language compiles and runs, the
+> ⚠️ **Orbit is in early alpha (0.3.0).** The language compiles and runs, the
 > core runtime is functional, and the standard library is taking shape — but
 > syntax, bytecode, and APIs are still moving. It is not yet ready for
 > production use. See [Project status](#project-status).
@@ -42,13 +42,14 @@ dependencies. That keeps it small and self-contained — a place to understand
 how a dynamic language fits together end to end, and a comfortable base to keep
 experimenting on.
 
-The toolchain is written in C++17 and split into three components:
+The toolchain is written in C++17 and split into these components:
 
 | Component | Role | Location |
 |---|---|---|
 | **Liftoff** | The compiler | [`orbit/liftoff/`](orbit/liftoff/) |
 | **Orbiter** | The virtual machine | [`orbit/orbiter/`](orbit/orbiter/) |
-| **Stratum** | The memory manager | [`lib/stratum/`](lib/stratum/) |
+| **Gyro** | The asynchronous I/O event loop the VM parks fibers on (timers, sockets) | [`orbitlang/gyro`](https://github.com/orbitlang/gyro), a companion repository |
+| **Stratum** | The memory manager | [`lib/stratum/`](lib/stratum/), vendored |
 
 ## A taste of the language
 
@@ -110,8 +111,10 @@ The full grammar lives in [`orbit/liftoff/grammar.ebnf`](orbit/liftoff/grammar.e
 
 ## Building from source
 
-Orbit vendors its only dependency (Stratum) under [`lib/`](lib/), so there is
-nothing else to fetch.
+Orbit has no third-party dependencies. Stratum is vendored under
+[`lib/`](lib/); Gyro is resolved by CMake at configure time, in this order: an
+installed `gyro` package, a sibling checkout at `../gyro` (handy when working on
+both), or a fetch of [`orbitlang/gyro`](https://github.com/orbitlang/gyro).
 
 ### Platform support
 
@@ -128,20 +131,32 @@ nothing else to fetch.
 Requirements:
 
 - A C++17 compiler (Clang or GCC)
-- [CMake](https://cmake.org/) ≥ 3.15
+- [CMake](https://cmake.org/) ≥ 3.20
 - A build backend (Ninja or Make)
 - POSIX threads (`-pthread`, linked automatically)
 
-From the repository root:
+From the repository root, using the bundled presets:
 
 ```sh
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build
+cmake --preset release
+cmake --build --preset release
 ```
 
-The `Orbit` executable and the `Orbiter` shared library are written to
-[`bin/`](bin/) (or `bin/Release/` for release builds); public headers are
-exported to `bin/include/Orbit/`.
+Presets: `debug`, `release`, `asan`, `tsan` (the last two are Debug builds with
+the sanitizer enabled). Each configures into `build/<preset>/`, and the `Orbit`
+executable and the `Orbiter` shared library land in `build/<preset>/bin/` and
+`build/<preset>/lib/`. The plain form works too:
+
+```sh
+cmake -S . -B build/release -DCMAKE_BUILD_TYPE=Release
+cmake --build build/release
+```
+
+Useful options: `ORBIT_FF_CGOTO=ON` compiles the dispatch loop with computed
+goto (GCC/Clang only), `ORBIT_WERROR=ON` turns warnings into errors,
+`ORBIT_BUILD_TESTS` (on by default) registers the `.orb` suites with CTest.
+`cmake --install build/release --prefix <dir>` installs the binary, the
+library, the public headers and a CMake package (`find_package(Orbit)`).
 
 ### Building on Windows
 
@@ -155,21 +170,21 @@ Prompt*.
 
 ```sh
 # Run a script
-./bin/Orbit path/to/script.orb
+./build/release/bin/Orbit path/to/script.orb
 
 # Evaluate an inline program
-./bin/Orbit -c 'import "io"; io.print(b"hi")'
+./build/release/bin/Orbit -c 'import "io"; io.print(b"hi")'
 
 # Help and version
-./bin/Orbit --help
-./bin/Orbit --version
+./build/release/bin/Orbit --help
+./build/release/bin/Orbit --version
 ```
 
 For now, point `ORBIT_PATH` at the bundled standard library so `import "io"`
 and friends resolve:
 
 ```sh
-ORBIT_PATH="$PWD/stdlib" ./bin/Orbit script.orb
+ORBIT_PATH="$PWD/stdlib" ./build/release/bin/Orbit script.orb
 ```
 
 > This step is temporary: the build will eventually copy `stdlib/` next to the
@@ -187,7 +202,7 @@ Orbit is an **actively developed alpha**.
 | Fiber scheduler & concurrency | ✅ Functional |
 | Classes, traits, generators, async, channels | ✅ Functional |
 | FFI (`native func`) | 🚧 POSIX complete, Windows partial |
-| Standard library | 🚧 Early — `io`/`gc`/`regex` taking shape, most modules planned |
+| Standard library | 🚧 Early — `io`/`gc`/`regex`/`chrono` usable, most modules planned |
 | Static type annotations | 🚧 Parsed, not yet enforced |
 | Bytecode stability | ❌ Not stable — expect breaking changes |
 | Tooling (formatter, LSP, debugger) | ❌ Not started |
@@ -208,16 +223,20 @@ orbit/
 │   ├── orbiter/          # Runtime (Orbiter)
 │   │   ├── datatype/     #   built-in object types
 │   │   ├── memory/       #   garbage collector
-│   │   ├── module/       #   built-in modules
+│   │   ├── module/       #   built-in modules (::orbit::*)
 │   │   ├── native/       #   FFI
+│   │   ├── evloop.cpp    #   bridge between fibers and the Gyro event loop
 │   │   ├── vm.cpp        #   the bytecode interpreter
 │   │   └── opcode.h      #   the instruction set
 │   └── main.cpp          # CLI entry point
 ├── stdlib/               # Orbit-side standard library (.orb modules)
 ├── lib/stratum/          # Vendored memory allocator
+├── cmake/                # CMake modules (Gyro resolution, package config)
+├── CMakePresets.json     # debug / release / asan / tsan presets
 ├── docs/                 # Project documentation (guides for everyone)
 ├── issues/               # In-tree issue tracker + regression PoC suite
-└── test/                 # C++ test suite
+├── ortest/               # .orb acceptance suites (the release gate)
+└── test/                 # CTest wiring for the .orb suites (+ gtest scaffold, off)
 ```
 
 ## Documentation

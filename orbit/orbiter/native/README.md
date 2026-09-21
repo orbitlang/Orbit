@@ -59,29 +59,23 @@ The FFI engine uses CMake to automatically select and compile the correct assemb
 
 ```cmake
 # From orbit/CMakeLists.txt
-
-# On Windows MSVC the assembler language is ASM_MASM; everywhere else plain ASM.
-if(MSVC)
-    enable_language(ASM_MASM)
-else()
+if (CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64|ARM64")
     enable_language(ASM)
-endif()
-
-if(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64|ARM64")
-    file(GLOB ASM_SRC_ARCH ".../arch/arm64/*.S")
+    target_sources(Orbiter PRIVATE orbiter/native/arch/arm64/preload.S)
     target_compile_definitions(Orbiter PRIVATE ORBIT_HAS_FFI_STUB)
-
-elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
-    if(MSVC)
-        # MASM (ml64) requires .asm extension
-        file(GLOB ASM_SRC_ARCH ".../arch/x86_64/win64/*.asm")
-    else()
-        file(GLOB ASM_SRC_ARCH
-            ".../arch/x86_64/*.S"
-            ".../arch/x86_64/*/*.S")
-    endif()
+elseif (CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
+    if (MSVC)
+        # MASM (ml64) requires the .asm extension.
+        enable_language(ASM_MASM)
+        target_sources(Orbiter PRIVATE
+                orbiter/native/arch/x86_64/win64/ffi_call.asm
+                orbiter/native/arch/x86_64/win64/preload.asm)
+    else ()
+        enable_language(ASM)
+        target_sources(Orbiter PRIVATE orbiter/native/arch/x86_64/preload.S)
+    endif ()
     target_compile_definitions(Orbiter PRIVATE ORBIT_HAS_FFI_STUB)
-endif()
+endif ()
 ```
 
 The `ORBIT_HAS_FFI_STUB` preprocessor definition enables floating-point FFI support `ucall.cpp`.
@@ -104,7 +98,7 @@ For platforms where integer and floating-point registers are independent, implem
 
 3. Handle platform-specific symbol naming with the `SYMBOL()` macro (underscore prefix on macOS).
 
-4. Add a CMake branch to detect the architecture via `CMAKE_SYSTEM_PROCESSOR`, glob the `.S` files, and define `ORBIT_HAS_FFI_STUB`.
+4. Add a CMake branch in `orbit/CMakeLists.txt` that detects the architecture via `CMAKE_SYSTEM_PROCESSOR`, lists the `.S` files explicitly with `target_sources`, and defines `ORBIT_HAS_FFI_STUB`.
 
 ### Complex Calling Conventions (Windows x64 style)
 
@@ -119,6 +113,6 @@ For platforms with interleaved or tightly coupled register conventions, a comple
 
 3. Write a platform-specific `<platform>call.cpp` that calls `ffi_call` and handles the FP return value via `fpu_get_return`, guarded by the appropriate platform macro.
 
-4. Update CMake to include the new files and define `ORBIT_HAS_FFI_STUB`.
+4. Update `orbit/CMakeLists.txt` to list the new files with `target_sources` and define `ORBIT_HAS_FFI_STUB`.
 
 5. Test thoroughly with mixed integer/float argument combinations and FP return values.

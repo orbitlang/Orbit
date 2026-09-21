@@ -12,13 +12,18 @@ hard-won gotchas, not bureaucracy.
 
 ## The 30-second orientation
 
-Orbit is a programming language implemented in C++17. Three components:
+Orbit is a programming language implemented in C++17. Main components:
 
 - **Liftoff** — `orbit/liftoff/` — the compiler (scanner → parser → IR →
   register allocation → bytecode).
 - **Orbiter** — `orbit/orbiter/` — the runtime: register VM (`vm.cpp`),
   instruction set (`opcode.h`), GC (`memory/`), fibers, object model
   (`datatype/`), FFI (`native/`).
+- **Gyro** — the asynchronous I/O event loop the VM parks fibers on
+  (`orbit/orbiter/evloop.*` is the bridge). It lives in a **separate
+  repository** ([`orbitlang/gyro`](https://github.com/orbitlang/gyro)); CMake
+  uses an installed package, else a sibling checkout at `../gyro`, else
+  fetches it. **Do not edit it from this repository unless explicitly asked.**
 - **Stratum** — `lib/stratum/` — vendored memory allocator. **Do not edit
   unless explicitly asked**; it is an upstream dependency.
 
@@ -30,11 +35,13 @@ The grammar of the language is the source of truth for syntax:
 Standard path:
 
 ```sh
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
-cmake --build build
+cmake --preset debug
+cmake --build --preset debug
 ```
 
-Output goes to `bin/`. **If `cmake`/`ninja` are not on `PATH`** (common in
+Output goes to `build/debug/bin/` (each preset builds into its own
+`build/<preset>/`; `ortest/run.sh` and `issues/poc/run.sh` find it on their
+own, or take `ORBIT_BUILD_DIR`). **If `cmake`/`ninja` are not on `PATH`** (common in
 sandboxed or IDE-managed environments), invoke the binaries shipped with your
 toolchain by their full path, and build the configured directory directly —
 for example:
@@ -49,7 +56,7 @@ directory), reuse that directory rather than reconfiguring from scratch.
 Run a script (the stdlib needs `ORBIT_PATH`):
 
 ```sh
-ORBIT_PATH="$PWD/stdlib" ./bin/Orbit script.orb
+ORBIT_PATH="$PWD/stdlib" ./build/debug/bin/Orbit script.orb
 ```
 
 ## Language gotchas (when writing `.orb` test programs)
@@ -72,7 +79,7 @@ A ready-made register-allocation regression suite lives at
 and confirm `ALL TESTS PASSED`:
 
 ```sh
-ORBIT_PATH="$PWD/stdlib" ./bin/Orbit issues/poc/ir/phi-regalloc.orb
+ORBIT_PATH="$PWD/stdlib" ./build/debug/bin/Orbit issues/poc/ir/phi-regalloc.orb
 ```
 
 It is part of the `issues/poc/` regression suite — `issues/poc/run.sh` runs it (and
@@ -97,11 +104,12 @@ differs from `issues/poc/` (bug reproducers).
 | Built-in object types | `orbit/orbiter/datatype/` |
 | Garbage collector | `orbit/orbiter/memory/` |
 | FFI | `orbit/orbiter/native/` |
+| Event-loop bridge (fibers <-> Gyro) | `orbit/orbiter/evloop.{h,cpp}`, `orbit/orbiter/module/chrono.cpp` as the reference user |
 | Standard library (`.orb`) | `stdlib/` |
 
 ## Conventions you must follow
 
-- **C++17**, no new third-party runtime dependencies.
+- **C++17**, no new third-party runtime dependencies (Gyro and Stratum are first-party).
 - Every source file starts with the project header
   (`// This source file is part of the Orbit project. // Licensed under the
   Apache License v2.0`).

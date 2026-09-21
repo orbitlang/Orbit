@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.20)
 
 project(Orbit
-        VERSION 0.2.0
+        VERSION 0.3.0
         DESCRIPTION "The Orbit programming language"
         LANGUAGES CXX)
 

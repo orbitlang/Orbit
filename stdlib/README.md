@@ -16,8 +16,11 @@ The interpreter finds these modules via the `ORBIT_PATH` environment variable
 (`:`-separated, like `PATH`). Point it at this directory:
 
 ```sh
-ORBIT_PATH="$PWD/stdlib" ./bin/Orbit your_script.orb
+ORBIT_PATH="$PWD/stdlib" ./build/release/bin/Orbit your_script.orb
 ```
+
+(`build/<preset>/bin/Orbit` is where a `cmake --preset <preset>` build puts the
+executable; see the [root README](../README.md#building-from-source).)
 
 ```orbit
 import "io"
@@ -37,6 +40,7 @@ Status legend: ✅ available · 🚧 work in progress (usable, with caveats) ·
 | Module | Import | Backing | Notes |
 |---|---|---|---|
 | **io** | `import "io"` | `::orbit::io` builtin + pure Orbit | Standard streams as `File` objects (`stdin`/`stdout`/`stderr`), `print`/`perror`/`input`, `open`, buffered reader/writer, and the core IO traits. The most complete module. |
+| **chrono** | `import "chrono"` | `::orbit::chrono` builtin | Time and sleeping: `monotonic()` reads the monotonic clock in milliseconds (origin unspecified, use it for intervals); `sleep(ms)` parks the current fiber on the event loop, leaving its scheduler thread free, and returns the milliseconds actually elapsed. Very short sleeps are served inline. |
 | **error** | `import "error"` | pure Orbit | Ready-made error constructors aligned with the kinds the engine raises (`ValueError`, `TypeError`, `OSError`, `IndexError`, `KeyError`, …). Each is a partial application of `Error.create(@Kind)`; call with a reason to build one: `panic ValueError("count must be positive")`. Also ships helpers that format engine-standard messages, e.g. `fmt_typerror(obj, String, Bytes)` → `expected type 'String/Bytes', got '…'`. |
 | **ffi** | `import "ffi"` | `::orbit::ffi` builtin | Native-interop platform metadata: `SIZEOF_*` for every native type usable in `native` declarations (`SIZEOF_PTR`, `SIZEOF_U64`, …) and the byte order (`ENDIAN`). Use it to compute `Rawptr.alloc` layouts instead of hardcoding sizes. |
 | **gc** | `import "gc"` | `::orbit::gc` builtin | Manual control over the garbage collector, which otherwise runs automatically: `collect()` forces a full collection cycle and returns the number of objects reclaimed; `rearm(obj)` re-arms the finalizer of a resurrected object. |
@@ -197,8 +201,8 @@ working style reference.
 Ordered by enablement (what unblocks what):
 
 ```
-DONE  io / error / runtime / ffi / regex / gc   (usable today)
-WIP   readline / repl                      (POSIX/macOS; depend on FFI + eval/Context)
+DONE  io / error / runtime / ffi / regex / gc / chrono   (usable today)
+WIP   readline / repl                               (POSIX/macOS; depend on FFI + eval/Context)
 ─────────────────────────────────────────────────────────────────
 Pure-Orbit first (need only the language + import pipeline):
       enum · ospath · json · base64 · url

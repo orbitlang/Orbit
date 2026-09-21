@@ -11,7 +11,10 @@ ortest/run.sh regalloc     # run a single topic
 ```
 
 The runner decides pass/fail from each suite's exit code and output, so it is
-robust to bytecode-dump noise on stdout. Exit 0 = all green.
+robust to bytecode-dump noise on stdout. Exit 0 = all green. It locates the
+build tree on its own (`ORBIT_BUILD_DIR`, else the first of `build/dev`,
+`build/debug`, `build/release`, `cmake-build-debug` holding a built
+`bin/Orbit`); `ctest --preset <preset>` runs it as the `ortest` test.
 
 ## `ortest/` vs `issues/poc/`
 
@@ -41,8 +44,9 @@ Current topics: `regalloc/` (register allocator, tiers `01_variables` …
 layout, trait C3/MRO), `calls/` (argument passing: defaults, named, rest/spread,
 kwargs, methods, currying), `gc/` (the `gc` module: forced collection and
 instance reclaim), `typehooks/` (str/eq user hooks), `operators/` (language operators, e.g.
-`01_is` for the `is` type test). Add a new subsystem as a new subfolder — the
-runner picks it up automatically.
+`01_is` for the `is` type test), `generators/` (yield/resume: params, locals
+and a held heap object surviving a GC between two yields). Add a new subsystem
+as a new subfolder — the runner picks it up automatically.
 
 ## Writing a suite
 
@@ -93,7 +97,7 @@ Conventions:
 - Assert against **known-good oracles** (compute the expected value by hand),
   not against the interpreter's current output.
 - A suite that encodes a fixed bug should note it (which finding, what shape),
-  so a future regression is legible — e.g. `regalloc/04_crosscall_results.orb`.
+  so a future regression is legible; e.g. `regalloc/04_crosscall_results.orb`.
 - Mind the [language gotchas in `AGENTS.md`](../AGENTS.md#language-gotchas-when-writing-orb-test-programs):
   `:=` (not `let`) inside functions, reserved type keywords (`u8`, `i32`, `f64`,
   … cannot be identifiers), one statement per line.

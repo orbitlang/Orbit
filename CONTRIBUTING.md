@@ -22,36 +22,40 @@ lightweight, and a few conventions keep the codebase coherent as it grows.
 
 ## Project structure
 
-See the [repository layout](README.md#repository-layout) in the README. The
-three pillars are:
+See the [repository layout](README.md#repository-layout) in the README. The main components are:
 
 - **Liftoff** (`orbit/liftoff/`) — the compiler.
 - **Orbiter** (`orbit/orbiter/`) — the runtime and VM.
+- **Gyro** ([`orbitlang/gyro`](https://github.com/orbitlang/gyro)) — the
+  asynchronous I/O event loop, a companion repository resolved by CMake
+  (installed package, `../gyro` sibling checkout, or fetched).
 - **Stratum** (`lib/stratum/`) — the vendored allocator.
 
 ## Building & testing
 
 ```sh
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
-cmake --build build
+cmake --preset debug
+cmake --build --preset debug
 ```
 
-The `Orbit` binary lands in `bin/`. To run a script against the bundled
-standard library:
+The `Orbit` binary lands in `build/debug/bin/` (presets: `debug`, `release`,
+`asan`, `tsan`, each in its own `build/<preset>/`). To run a script against
+the bundled standard library:
 
 ```sh
-ORBIT_PATH="$PWD/stdlib" ./bin/Orbit your_script.orb
+ORBIT_PATH="$PWD/stdlib" ./build/debug/bin/Orbit your_script.orb
 ```
 
-The C++ test target under [`test/`](test/) is **not currently maintained** — it
-is out of date and effectively unusable for now; restoring it is planned future
-work, so don't rely on it.
+`ctest --preset debug` runs the two `.orb` suites (`ortest`, the release gate,
+and the `issues/poc` reproducers). The GoogleTest target under
+[`test/`](test/) is a scaffold only (`ORBIT_BUILD_UNIT_TESTS=ON`): it has no
+valid tests yet, so don't rely on it.
 
 When you change the **compiler IR or register allocator**, run the bytecode
 regression script and confirm it still prints `ALL TESTS PASSED`:
 
 ```sh
-ORBIT_PATH="$PWD/stdlib" ./bin/Orbit issues/poc/ir/phi-regalloc.orb
+ORBIT_PATH="$PWD/stdlib" ./build/debug/bin/Orbit issues/poc/ir/phi-regalloc.orb
 ```
 
 That script is part of the in-tree regression suite under
@@ -62,7 +66,8 @@ can re-run every reproducer at once with `issues/poc/run.sh`.
 
 ### C++ (engine code)
 
-- **C++17** (MSVC builds in C++20). No new third-party runtime dependencies.
+- **C++17** (MSVC builds in C++20). No new third-party runtime dependencies
+  (Gyro and Stratum are first-party).
 - Follow the **Google C++ Style Guide** for naming and layout, and keep the
   existing file header (`// This source file is part of the Orbit project. //
   Licensed under the Apache License v2.0`).
