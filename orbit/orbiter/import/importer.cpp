@@ -586,9 +586,13 @@ HORString orbiter::import::Canonicalize(Isolate *isolate, ORString *raw, const I
 
     bool empty = true;
 
-    // Leading "./" → relative to dirname(origin->name).
-    const bool is_relative = rlen >= 2 && rbuf[0] == '.' && (rbuf[1] == '/' || rbuf[1] == '\\');
-    if (is_relative) {
+    // Leading "./" → relative to the directory holding the importing file.
+    // That directory is derived from the origin's canonical key, and the
+    // derivation depends on how the key was resolved on disk:
+    //   - plain file module  (key.orb)        → dirname(key)
+    //   - directory package  (key/<base>.orb) → key itself
+    // A top-level file module (no '/' in the key) has no prefix at all.
+    if (rlen >= 2 && rbuf[0] == '.' && (rbuf[1] == '/' || rbuf[1] == '\\')) {
         if (origin == nullptr) {
             ErrorSet(isolate,
                      ImportError::Details[ImportError::ID],
@@ -611,9 +615,11 @@ HORString orbiter::import::Canonicalize(Isolate *isolate, ORString *raw, const I
 
         const auto *obuf = ORSTRING_TO_CSTR(origin->name);
 
-        const auto last_slash = ORStringRFind(origin->name, kPathSep);
-        if (last_slash >= 0) {
-            if (!builder.Write((const unsigned char *) obuf, last_slash, rlen))
+        const auto base_len = origin->IsPackage()
+                                  ? (MSSize) ORSTRING_LENGTH(origin->name)
+                                  : ORStringRFind(origin->name, kPathSep);
+        if (base_len > 0) {
+            if (!builder.Write((const unsigned char *) obuf, base_len, rlen))
                 return {};
 
             empty = false;

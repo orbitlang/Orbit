@@ -43,9 +43,10 @@ namespace orbiter::import {
      * Fields (all five are the object's trailing pointer slots):
      *   - `name`        the canonical, absolute, OS-independent import key
      *                   (e.g. `"a/b/c"` or `"::orbit::io"`). This is also the
-     *                   registry cache key. The base directory for this
-     *                   module's relative (`./`) imports is `dirname(name)` —
-     *                   derived on demand, never stored twice.
+     *                   registry cache key. The base for this module's
+     *                   relative (`./`) imports is derived from it on demand
+     *                   (`dirname(name)`, or `name` itself for a directory
+     *                   package), never stored twice.
      *   - `origin`      absolute on-disk path of the loaded file, or a synthetic
      *                   marker for builtin / virtual modules.
      *   - `locator`     for `VIRTUAL` modules only: the locator handle (as

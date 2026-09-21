@@ -47,7 +47,7 @@ An import string is a **logical key**, not a filesystem path. The separator is
 | Form           | Resolved against                       | Use for                                    |
 |----------------|----------------------------------------|--------------------------------------------|
 | `"x/y"`        | the search roots, in order             | stdlib, packages, anything shared          |
-| `"./y"`        | `dirname` of the importing module's key | a module's own siblings inside a package  |
+| `"./y"`        | the directory holding the importing file | a package's own submodules               |
 | `"::orbit::x"` | the builtin table, verbatim            | engine primitives (stdlib internals only)  |
 
 `Canonicalize` (`importer.cpp`) turns the raw string into the **canonical key**,
@@ -71,8 +71,14 @@ Rules, in order:
    `INVALID_ORIGIN`.
 5. A key that is empty after normalization (`"."`, `"/"`) is `INVALID_KEY`.
 
+The directory holding the importing file is `dirname(name)` for a plain file
+module and `name` itself for a directory-as-package (the entry file
+`pkg/pkg.orb` has key `pkg` and lives in `pkg/`); `ImportSpec::is_package`
+tells the two apart.
+
 Examples: `"io"` stays `io`; `"a//b/./c"` becomes `a/b/c`; from the module
-`pkg/sub`, `"./leaf"` becomes `pkg/leaf`; from `pkg/sub`, `"../x"` is an error.
+`pkg/sub`, `"./leaf"` becomes `pkg/leaf`; from the package entry `pkg`,
+`"./sub"` becomes `pkg/sub`; from `pkg/sub`, `"../x"` is an error.
 
 ## Search roots
 
@@ -325,24 +331,17 @@ for the module. Importing inside a `sync` block is a `RuntimeError`
 Things the code does not do yet, or does wrong, as of this writing. Each is
 small; they are listed so nobody reads the sections above as a promise.
 
-1. **`./` from a package entry file resolves next to the package, not inside
-   it.** The base is `dirname(name)`, and for `import "pkg"` resolved as
-   `pkg/pkg.orb` the key is `pkg`, so `./sub` becomes `sub`. From a submodule
-   (`pkg/sub`) it works as expected (`pkg/leaf`). The stdlib sidesteps this by
-   using absolute keys (`import "io/file"`) in entry files. The fix is to use
-   `name` itself as the base when `is_package` is set, which depends on the
-   next item.
-2. **`FSSource` also probes the shared-library extension** (`kExtension`
+1. **`FSSource` also probes the shared-library extension** (`kExtension`
    ends with `.dylib` / `.so` / `.dll`) but tags every hit as `SOURCE`, so a
    `foo.so` next to the roots would be handed to the compiler. The `NATIVE`
    loader itself is a stub that raises `LOADER_NOT_IMPLEMENTED`. Until native
    modules land, the second extension should not be probed, or should
    produce a `NATIVE` descriptor.
-5. **Unreadable files look like "not found".** `FSSource` treats any `stat`
+2. **Unreadable files look like "not found".** `FSSource` treats any `stat`
    outcome other than "regular file" as `NOT_MINE`; a permission error should
    be `ERROR`. Likewise a failing `fopen` in `LoadScriptSource` drops the entry
    without setting an errno-based panic (there is a `TODO`).
-6. **User locators and the `VIRTUAL` loader are reserved.** `LoaderKind::VIRTUAL`,
+3. **User locators and the `VIRTUAL` loader are reserved.** `LoaderKind::VIRTUAL`,
    `Descriptor::source`, `Descriptor::locator` and `ImportSpec::locator` exist
    so that a runtime-registered locator can one day return either an
    in-memory source or a ready-made module, inserted between `Builtin` and

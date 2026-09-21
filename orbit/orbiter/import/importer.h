@@ -446,8 +446,10 @@ namespace orbiter::import {
      *   - Otherwise filesystem-style: `\` → `/`, collapse `//`, collapse `.`
      *     segments, reject any `..` segment with `INVALID_KEY` (imports are
      *     not disk paths; no upward traversal).
-     *   - A leading `./` is *relative*: resolved against `dirname(origin->name)`,
-     *     then folded into an absolute key. Without an @p origin this yields
+     *   - A leading `./` is *relative*: resolved against the directory that
+     *     holds the importing file (`dirname(origin->name)` for a plain file
+     *     module, `origin->name` itself when `origin->IsPackage()`), then
+     *     folded into an absolute key. Without an @p origin this yields
      *     `ImportError(NO_ORIGIN)`; when @p origin is not a SOURCE module
      *     (e.g. a builtin), `ImportError(INVALID_ORIGIN)` — relative imports
      *     only have meaning for disk-loaded modules.
