@@ -168,7 +168,7 @@ HModule Importer::LoadScriptSource(ORString *key, const Descriptor &desc, HCode 
         return {};
     }
 
-    const auto spec = ImportSpecNew(this->isolate_, key, desc.origin, desc.locator, desc.kind, true);
+    const auto spec = ImportSpecNew(this->isolate_, key, desc.origin, desc.locator, desc.kind, desc.is_package);
     if (!spec) {
         this->Fail(entry);
 
