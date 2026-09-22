@@ -61,6 +61,28 @@ namespace orbiter::datatype {
     using HModule = Handle<Module>;
 
     /**
+     * @brief Sets a local property for the specified module
+     *
+     * This function assigns or updates a local property of a type object. If the property name is
+     * not provided (i.e., `name` is `nullptr`), the function attempts to infer the name using the
+     * type information of the provided object. If the property already exists, its value will
+     * be updated. If the property does not exist, the function returns false.
+     *
+     * The function performs the following steps:
+     * - If `name` is `nullptr`, it validates that the provided `value` is an object.
+     *   If valid, it derives the property name using the type information of `value`.
+     * - Searches for the corresponding local property within the type object.
+     * - Updates the property's value if it exists.
+     *
+     * @param self Pointer to the TypeInfo structure associated with the type object
+     * @param name Name of the property to set (nullable; can be inferred if `nullptr`)
+     * @param value Pointer to the object representing the property value
+     *
+     * @return true if the property was successfully set or updated, false otherwise
+     */
+    bool ModuleSetLocalProperty(const TypeInfo *self, const char *name, OObject *value);
+
+    /**
      * @brief Set up additional features and properties for the specified type
      *
      * This function enriches the previously created type with various functionalities.

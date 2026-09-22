@@ -249,13 +249,15 @@ namespace orbiter::datatype {
      * When `def->method` is true, the function is marked as a method and associated with `owner`.
      *
      * @param isolate Pointer to the Isolate used to allocate the function.
+     * @param module Pointer to the module instance the function belongs to, or
+     *        nullptr when it has none (a type method, for instance).
      * @param owner Pointer to the owning type, used only when the function
      *        is exported as a method.
      * @param def Pointer to the native function definition.
      *
      * @return Handle to the newly created Function, or an empty handle on failure.
      */
-    HFunction FunctionNew(Isolate *isolate, TypeInfo *owner, const FunctionDef *def);
+    HFunction FunctionNew(Isolate *isolate, Module *module, TypeInfo *owner, const FunctionDef *def);
 
     /**
      * @brief Creates a new Function object with the specified code, closure, defaults and function kind.

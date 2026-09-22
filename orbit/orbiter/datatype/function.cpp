@@ -142,7 +142,7 @@ HFunction orbiter::datatype::FunctionFromDef(const TypeInfo *type, const Functio
     return {};
 }
 
-HFunction orbiter::datatype::FunctionNew(Isolate *isolate, TypeInfo *owner, const FunctionDef *def) {
+HFunction orbiter::datatype::FunctionNew(Isolate *isolate, Module *module, TypeInfo *owner, const FunctionDef *def) {
     auto kind = FunctionKind::NATIVE;
 
     if (def->method)
@@ -166,6 +166,8 @@ HFunction orbiter::datatype::FunctionNew(Isolate *isolate, TypeInfo *owner, cons
             return {};
         }
     }
+
+    f_shared->module = O_FAST_INCREF(module);
 
     if (def->method)
         f_shared->owner_type = O_INCREF(owner);

@@ -103,7 +103,7 @@ bool orbiter::datatype::TIPropertyAdd(TypeInfo *type, const FunctionDef *bulk, P
     flags &= ~PropertyFlag::IN_OBJECT; // Clear IN_OBJECT flag since it's not applicable in this context
 
     for (auto *cursor = bulk; cursor->name != nullptr; cursor++) {
-        auto fn = FunctionNew(type->isolate, type, cursor);
+        auto fn = FunctionNew(type->isolate, nullptr, type, cursor);
         if (!fn)
             return false;
 

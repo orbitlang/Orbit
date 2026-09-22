@@ -11,6 +11,16 @@
 
 using namespace orbiter::datatype;
 
+static bool ModuleAUXDtor(TypeInfo *self) {
+    const orbiter::memory::IsolateAllocator allocator(self->isolate);
+
+    allocator.free(self->aux.data);
+
+    self->aux.data = nullptr;
+
+    return true;
+}
+
 // *********************************************************************************************************************
 // TYPE OPS — CONVERSION
 // *********************************************************************************************************************
@@ -25,6 +35,29 @@ static OObject *ModuleToString(orbiter::Isolate *isolate, const OObject *self) {
 // PUBLIC API
 // *********************************************************************************************************************
 
+bool orbiter::datatype::ModuleSetLocalProperty(const TypeInfo *self, const char *name, OObject *value) {
+    if (name == nullptr) {
+        if (!O_IS_OBJECT(value))
+            return false;
+
+        const auto *type = GetTypeInfoFromObject(self->isolate, value);
+        name = type->name;
+    }
+
+    auto prop = TIFindLocalProperty(self, name);
+    if (prop != nullptr) {
+        auto *old = prop->value;
+
+        prop->value = O_INCREF(value);
+
+        O_DECREF(old);
+
+        return true;
+    }
+
+    return false;
+}
+
 bool orbiter::datatype::ModuleTypeSetup(TypeInfo *self) {
     auto &ops = ((TypeInfoOps *) self)->ops;
 
@@ -34,16 +67,48 @@ bool orbiter::datatype::ModuleTypeSetup(TypeInfo *self) {
 }
 
 HModule orbiter::datatype::ModuleNew(TypeInfo *tp_module) {
-    const auto *isolate = O_GET_ISOLATE(tp_module);
+    auto *isolate = O_GET_ISOLATE(tp_module);
 
     assert(tp_module->i_type == InstanceType::MODULE);
 
     auto *module = MakeObject<Module>(tp_module);
-    if (module != nullptr)
-        memory::MemoryZero(((unsigned char *) module) + tp_module->offset + tp_module->headroom,
-                           tp_module->i_size - (tp_module->offset + tp_module->headroom));
+    if (module == nullptr)
+        return {};
 
-    O_GC_TRACK_RETURN(isolate, module, true);
+    memory::MemoryZero(((unsigned char *) module) + tp_module->offset + tp_module->headroom,
+                       tp_module->i_size - (tp_module->offset + tp_module->headroom));
+
+    // The handle is taken before anything else can allocate: a tracked object
+    // is only a root while its refcount is above zero, and this one starts at
+    // zero.
+    auto handle = HModule(module);
+
+    isolate->gc->Track((OObject *) module, true);
+
+    // Native module functions are built here, not while the module type is
+    // described, because a function needs the module *instance* to reach its
+    // state at call time, and the instance only exists now.
+    //
+    // Each function is handed to its slot without keeping a reference: the
+    // module is a traced container and a root, so its slots are what keeps them
+    // alive. No write barrier is needed either, the module is freshly allocated
+    // in the youngest generation, and if a collection promotes it mid-loop the
+    // promotion hook puts it in the remembered set.
+    if (tp_module->aux.data != nullptr) {
+        auto *slot = O_SLOT(module, tp_module);
+        const auto funcs = (FunctionDef **) tp_module->aux.data;
+
+        int f_count = 0;
+        for (auto **cursor = funcs; *cursor != nullptr; cursor++) {
+            auto func = FunctionNew(isolate, module, nullptr, *cursor);
+            if (!func)
+                return {};
+
+            slot[f_count++] = (OObject *) func.get();
+        }
+    }
+
+    return handle;
 }
 
 HOType orbiter::datatype::ModuleTypeInit(Isolate *isolate) {
@@ -84,28 +149,54 @@ HOType orbiter::datatype::ModuleTypeNew(Isolate *isolate, const ModuleInit *init
         return {};
 
     int exp_count = 0;
+    int f_count = 0;
     if (init->bulk != nullptr) {
-        for (auto cursor = init->bulk; cursor->name != nullptr; cursor++)
-            exp_count++;
+        for (auto cursor = init->bulk; cursor->name != nullptr; cursor++) {
+            exp_count += 1;
+
+            if (cursor->is_func)
+                f_count += 1;
+        }
     }
 
-    auto module = ModuleTypeNew(isolate, name.get(), doc.get(), exp_count, 0);
+    auto module = ModuleTypeNew(isolate, name.get(), doc.get(), exp_count, f_count);
     if (!module)
         return {};
+
+    const FunctionDef **f_exported = nullptr;
+    if (f_count > 0) {
+        memory::IsolateAllocator allocator(isolate);
+
+        f_exported = allocator.alloc<const FunctionDef *>(sizeof(FunctionDef *) * (f_count + 1));
+        if (f_exported == nullptr)
+            return {};
+
+        f_exported[f_count] = nullptr;
+
+        module->aux.data = f_exported;
+        module->aux.dtor = ModuleAUXDtor;
+    }
+
+    f_count = 0;
 
     for (auto cursor = init->bulk; cursor != nullptr && cursor->name != nullptr; cursor++) {
         HOObject value;
 
         if (cursor->is_func) {
-            value = std::move(FunctionNew(isolate, nullptr, cursor->prop.func));
-            if (!value)
-                return {};
-        } else
-            value = std::move(HOObject(cursor->prop.object));
+            f_exported[f_count] = cursor->prop.func;
 
-        if (!TIPropertyAdd(module.get(), cursor->name, value.get(), 0,
-                           PropertyFlag::IS_CONSTANT | PropertyFlag::IS_PUBLIC))
-            return {};
+            if (!TIPropertyAdd(module.get(), cursor->name, nullptr, f_count,
+                               PropertyFlag::IS_CONSTANT | PropertyFlag::IS_PUBLIC | PropertyFlag::IN_OBJECT))
+                return {};
+
+            f_count += 1;
+        } else {
+            value = HOObject(cursor->prop.object);
+
+            if (!TIPropertyAdd(module.get(), cursor->name, value.get(), 0,
+                               PropertyFlag::IS_CONSTANT | PropertyFlag::IS_PUBLIC))
+                return {};
+        }
     }
 
     return module;
