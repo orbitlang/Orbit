@@ -12,6 +12,7 @@ namespace orbiter::module {
     extern const datatype::ModuleInit *module_chrono_;
     extern const datatype::ModuleInit *module_ffi_;
     extern const datatype::ModuleInit *module_gc_;
+    extern const datatype::ModuleInit *module_net_socket_;
     extern const datatype::ModuleInit *module_io_;
     extern const datatype::ModuleInit *module_runtime_;
 }

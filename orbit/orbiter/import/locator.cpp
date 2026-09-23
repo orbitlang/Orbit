@@ -29,6 +29,7 @@ static const ModuleInit *const kBuiltins[] = {
     orbiter::module::module_ffi_,
     orbiter::module::module_gc_,
     orbiter::module::module_io_,
+    orbiter::module::module_net_socket_,
     orbiter::module::module_runtime_
 };
 

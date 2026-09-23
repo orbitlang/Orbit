@@ -70,6 +70,7 @@ target_sources(Orbiter PRIVATE
         module/gc.cpp
         module/io.cpp
         module/runtime.cpp
+        module/socket.cpp
 
         # Native FFI
         native/dlwrap.cpp
