@@ -7,10 +7,13 @@
 #ifdef _ORBIT_PLATFORM_WINDOWS
 #else
 #include <arpa/inet.h>
-#include <sys/socket.h>
+#include <sys/un.h>
+#include <netdb.h>
 #endif
 
+#include <algorithm>
 #include <cassert>
+#include <cstddef>
 #include <cstring>
 
 #include <orbit/orbiter/datatype/atom.h>
@@ -19,13 +22,12 @@
 #include <orbit/orbiter/datatype/errors.h>
 #include <orbit/orbiter/datatype/function.h>
 #include <orbit/orbiter/datatype/module.h>
+#include <orbit/orbiter/datatype/number.h>
 #include <orbit/orbiter/datatype/oobject.h>
 #include <orbit/orbiter/datatype/pcheck.h>
 
 #include <orbit/orbiter/module/modules.h>
 #include <orbit/orbiter/module/socket.h>
-
-#include "orbit/orbiter/datatype/number.h"
 
 using namespace orbiter::datatype;
 using namespace orbiter::module;
@@ -33,13 +35,6 @@ using namespace orbiter::module;
 // *********************************************************************************************************************
 // INTERNAL
 // *********************************************************************************************************************
-
-struct Sockaddr {
-    OROBJ_HEAD;
-
-    sockaddr_storage addr;
-    socklen_t length;
-};
 
 bool orbiter::module::SocketAtomToInetFamily(Isolate *isolate, const char *atom, int *out_family) {
     if (strcmp(atom, "INET") == 0) {
@@ -73,6 +68,144 @@ bool orbiter::module::SocketAtomToInetFamily(Isolate *isolate, const char *atom,
 
     return false;
 }
+
+HAtom orbiter::module::SocketInetFamilyToAtom(Isolate *isolate, const int family) {
+    if (family == AF_INET)
+        return AtomNew(isolate, "INET");
+
+    if (family == AF_INET6)
+        return AtomNew(isolate, "INET6");
+
+#ifndef _ORBIT_PLATFORM_WINDOWS
+    if (family == AF_UNIX)
+        return AtomNew(isolate, "UNIX");
+#endif
+
+    ErrorSet(isolate,
+             ValueError::Details[ValueError::ID],
+             nullptr,
+             "unknown address family '%d'",
+             family);
+
+    return {};
+}
+
+#ifndef _ORBIT_PLATFORM_WINDOWS
+OObject *orbiter::module::SockaddrUnixToString(Isolate *isolate, const Sockaddr *s) {
+    const auto *un = (const sockaddr_un *) &s->addr;
+
+    constexpr auto path_offset = offsetof(sockaddr_un, sun_path);
+
+    size_t path_len = 0;
+    if (s->length > path_offset)
+        path_len = std::min<size_t>(s->length - path_offset, sizeof(un->sun_path));
+
+    char path[sizeof(un->sun_path) + 1];
+    size_t size = 0;
+
+#ifdef _ORBIT_PLATFORM_LINUX
+    if (path_len > 1 && un->sun_path[0] == '\0') {
+        path[size++] = '@';
+
+        for (size_t i = 1; i < path_len; i++)
+            path[size++] = un->sun_path[i] == '\0' ? '@' : un->sun_path[i];
+    } else
+#endif
+    {
+        size = strnlen(un->sun_path, path_len);
+        memory::MemoryCopy(path, un->sun_path, size);
+    }
+
+    if (size == 0)
+        return (OObject *) ORStringFormat(isolate, "%s(unnamed, @UNIX)",
+                                          O_GET_TYPE(s)->name).get();
+
+    return (OObject *) ORStringFormat(isolate, "%s(%.*s, @UNIX)",
+                                      O_GET_TYPE(s)->name,
+                                      (int) size,
+                                      path).get();
+}
+#endif
+
+void orbiter::module::SocketSetGaiError(Isolate *isolate, const int code, const char *context) {
+#ifdef EAI_SYSTEM
+    if (code == EAI_SYSTEM) {
+        ErrorSetFromErrno(isolate, context);
+
+        return;
+    }
+#endif
+
+    auto *details = (OObject *) O_TO_SMI((MSSize) code);
+
+    if (code == EAI_MEMORY) {
+        ErrorSet(isolate,
+                 OSError::Details[OSError::ID],
+                 details,
+                 OSError::Details[OSError::NO_MEMORY],
+                 context);
+
+        return;
+    }
+
+    ErrorSet(isolate,
+             OSError::Details[OSError::ID],
+             details,
+             OSError::Details[OSError::OTHER],
+             code,
+             gai_strerror(code),
+             context);
+}
+
+// *********************************************************************************************************************
+// TYPE OPS — CONVERSION
+// *********************************************************************************************************************
+
+static OObject *SockaddrToString(orbiter::Isolate *isolate, const OObject *self) {
+    char ip_string[NI_MAXHOST];
+
+    auto *s = (Sockaddr *) self;
+
+#ifndef _ORBIT_PLATFORM_WINDOWS
+    if (s->addr.ss_family == AF_UNIX)
+        return SockaddrUnixToString(isolate, s);
+#endif
+
+    int port;
+    if (s->addr.ss_family == AF_INET)
+        port = ((sockaddr_in *) &s->addr)->sin_port;
+    else
+        port = ((sockaddr_in6 *) &s->addr)->sin6_port;
+
+    const int err = getnameinfo((sockaddr *) &s->addr,
+                                s->length,
+                                ip_string,
+                                sizeof(ip_string),
+                                nullptr,
+                                0,
+                                NI_NUMERICHOST);
+    if (err != 0) {
+        SocketSetGaiError(isolate, err, "getnameinfo");
+
+        return nullptr;
+    }
+
+    const auto family = SocketInetFamilyToAtom(isolate, s->addr.ss_family);
+    if (!family)
+        return nullptr;
+
+    return (OObject *) ORStringFormat(isolate, "%s(%s, %d, @%s)",
+                                      O_GET_TYPE(self)->name,
+                                      ip_string,
+                                      ntohs(port),
+                                      ORSTRING_TO_CSTR(family->id)).get();
+}
+
+// *********************************************************************************************************************
+// RUNTIME METHODS
+// *********************************************************************************************************************
+
+
 
 // *********************************************************************************************************************
 // EXPORTED FUNCTIONS
@@ -250,11 +383,15 @@ static bool ModuleSocketInit(Module *self) {
     const auto tp_handle = MakeType(isolate, "Sockaddr", InstanceType::OBJECT,
                                     sizeof(Sockaddr) - sizeof(OObject), 1,
                                     0);
-
-    if (!ModuleSetLocalProperty(type, nullptr, (OObject *) tp_handle.get()))
+    if (!tp_handle)
         return false;
 
+    ((TypeInfoOps *) tp_handle.get())->ops.to_string = SockaddrToString;
+
     if (!TIPropertyAdd(tp_handle.get(), sockaddr_methods, PropertyFlag::IS_PUBLIC))
+        return false;
+
+    if (!ModuleSetLocalProperty(type, nullptr, (OObject *) tp_handle.get()))
         return false;
 
     return true;

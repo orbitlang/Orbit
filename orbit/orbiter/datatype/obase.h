@@ -106,8 +106,8 @@ namespace orbiter::datatype {
 
 #define OROBJ_HEAD                                                      \
     struct {                                                            \
-        RefCount ref_count_;                                            \
-        struct TypeInfo *type_;                                         \
+        orbiter::datatype::RefCount ref_count_;                         \
+        orbiter::datatype::TypeInfo *type_;                             \
         std::atomic<orbiter::sync::Monitor *> mon_;                     \
     } head_
 
