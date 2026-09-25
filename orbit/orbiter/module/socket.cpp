@@ -25,6 +25,7 @@
 #include <orbit/orbiter/datatype/number.h>
 #include <orbit/orbiter/datatype/oobject.h>
 #include <orbit/orbiter/datatype/pcheck.h>
+#include <orbit/orbiter/datatype/tuple.h>
 
 #include <orbit/orbiter/module/modules.h>
 #include <orbit/orbiter/module/socket.h>
@@ -91,7 +92,7 @@ HAtom orbiter::module::SocketInetFamilyToAtom(Isolate *isolate, const int family
 }
 
 #ifndef _ORBIT_PLATFORM_WINDOWS
-OObject *orbiter::module::SockaddrUnixToString(Isolate *isolate, const Sockaddr *s) {
+HORString orbiter::module::SockaddrUnixPath(Isolate *isolate, const Sockaddr *s) {
     const auto *un = (const sockaddr_un *) &s->addr;
 
     constexpr auto path_offset = offsetof(sockaddr_un, sun_path);
@@ -116,14 +117,24 @@ OObject *orbiter::module::SockaddrUnixToString(Isolate *isolate, const Sockaddr 
         memory::MemoryCopy(path, un->sun_path, size);
     }
 
-    if (size == 0)
+    return ORStringNew(isolate, path, size);
+}
+
+OObject *orbiter::module::SockaddrUnixToString(Isolate *isolate, const Sockaddr *s) {
+    const auto path = SockaddrUnixPath(isolate, s);
+    if (!path)
+        return nullptr;
+
+    const auto length = ORSTRING_LENGTH(path.get());
+
+    if (length == 0)
         return (OObject *) ORStringFormat(isolate, "%s(unnamed, @UNIX)",
                                           O_GET_TYPE(s)->name).get();
 
     return (OObject *) ORStringFormat(isolate, "%s(%.*s, @UNIX)",
                                       O_GET_TYPE(s)->name,
-                                      (int) size,
-                                      path).get();
+                                      (int) length,
+                                      ORSTRING_TO_CSTR(path.get())).get();
 }
 #endif
 
@@ -205,7 +216,110 @@ static OObject *SockaddrToString(orbiter::Isolate *isolate, const OObject *self)
 // RUNTIME METHODS
 // *********************************************************************************************************************
 
+RUNTIME_METHOD(sockaddr_unpack, unpack,
+               R"DOC(
+@brief Return the address as a (host, port, family) tuple.
 
+The host is the address in its numeric textual form, never a hostname: no
+reverse lookup is performed, so the call does not touch the network and never
+blocks. An IPv6 address bound to a particular interface keeps its zone suffix,
+as in `fe80::1%en0`.
+
+A @UNIX address has a path where the others have a host, and no port at all,
+so its port comes back as nil; an unnamed socket has an empty path.
+
+@return A tuple of the host string, the port number and the family atom.
+
+@panic OOMError   When memory allocation fails.
+@panic ValueError When the address belongs to a family that has no host and
+                  port form.
+
+@example
+    parse("127.0.0.1", 8080).unpack()           // ("127.0.0.1", 8080, @INET)
+    parse("::1", 80, family=@INET6).unpack()     // ("::1", 80, @INET6)
+)DOC", 1, nullptr, false, false) {
+    PCHECK_ENTRIES(params);
+    PCHECK_CHECK(params);
+
+    auto *isolate = O_GET_ISOLATE(_func);
+
+    const auto *self = (const Sockaddr *) argv[0];
+
+    const auto family = SocketInetFamilyToAtom(isolate, self->addr.ss_family);
+    if (!family)
+        return {};
+
+    HOObject o_host;
+    HOObject o_port;
+
+    switch (self->addr.ss_family) {
+        case AF_INET:
+        case AF_INET6: {
+            const auto port = self->addr.ss_family == AF_INET
+                                  ? ntohs(((const sockaddr_in *) &self->addr)->sin_port)
+                                  : ntohs(((const sockaddr_in6 *) &self->addr)->sin6_port);
+
+            char ip_string[NI_MAXHOST];
+
+            const int err = getnameinfo((const sockaddr *) &self->addr,
+                                        self->length,
+                                        ip_string,
+                                        sizeof(ip_string),
+                                        nullptr,
+                                        0,
+                                        NI_NUMERICHOST);
+            if (err != 0) {
+                SocketSetGaiError(isolate, err, "getnameinfo");
+
+                return {};
+            }
+
+            auto host = ORStringNew(isolate, ip_string);
+            if (!host)
+                return {};
+
+            auto number = IntNew(isolate, port);
+            if (!number)
+                return {};
+
+            o_host = HOObject(std::move(host));
+            o_port = HOObject(std::move(number));
+
+            break;
+        }
+#ifndef _ORBIT_PLATFORM_WINDOWS
+        case AF_UNIX: {
+            auto path = SockaddrUnixPath(isolate, self);
+            if (!path)
+                return {};
+
+            o_host = HOObject(std::move(path));
+            o_port = HOObject(kOddBallNIL);
+
+            break;
+        }
+#endif
+        default:
+            // Unreachable: every family the atom mapping knows is handled above.
+            ErrorSet(isolate,
+                     ValueError::Details[ValueError::ID],
+                     nullptr,
+                     "a @%s address has no host and port",
+                     ORSTRING_TO_CSTR(family->id));
+
+            return {};
+    }
+
+    auto tuple = TupleNew(isolate, 3);
+    if (!tuple)
+        return {};
+
+    TupleAppend(tuple.get(), o_host.get());
+    TupleAppend(tuple.get(), o_port.get());
+    TupleAppend(tuple.get(), (OObject *) family.get());
+
+    return HOObject(std::move(tuple));
+}
 
 // *********************************************************************************************************************
 // EXPORTED FUNCTIONS
@@ -362,6 +476,8 @@ rejected rather than looked up.
 }
 
 constexpr FunctionDef sockaddr_methods[] = {
+    sockaddr_unpack,
+
     FUNCTIONDEF_SENTINEL
 };
 

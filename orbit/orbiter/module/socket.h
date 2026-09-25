@@ -70,14 +70,28 @@ namespace orbiter::module {
 
 #ifndef _ORBIT_PLATFORM_WINDOWS
     /**
-     * @brief Render an AF_UNIX address the way unix(7) classifies it.
+     * @brief Render the path of an AF_UNIX address the way unix(7) classifies it.
      *
      * Only the first `length - offsetof(sun_path)` bytes of sun_path are part of
      * the address, and they are not guaranteed to be NUL-terminated:
-     *   - unnamed:  no path bytes at all (or an empty path) -> `unnamed`;
+     *   - unnamed:  no path bytes at all (or an empty path) -> the empty string;
      *   - abstract: leading NUL (Linux only) -> `@name`, with every NUL of the
      *     name shown as '@', the convention of ss(8) and netstat(8);
      *   - pathname: the path, up to its first NUL.
+     *
+     * @param isolate Owning isolate, used to build the string.
+     * @param s       The Sockaddr holding the AF_UNIX address.
+     *
+     * @return The rendered path, empty for an unnamed socket, or an empty
+     *         handle when the allocation fails.
+     */
+    datatype::HORString SockaddrUnixPath(Isolate *isolate, const Sockaddr *s);
+
+    /**
+     * @brief Render an AF_UNIX address in the display form of the Sockaddr type.
+     *
+     * Wraps the path produced by SockaddrUnixPath, naming an address with no
+     * path `unnamed`.
      *
      * @param isolate Owning isolate, used to format the string.
      * @param s       The Sockaddr holding the AF_UNIX address.
