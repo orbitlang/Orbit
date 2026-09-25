@@ -457,7 +457,6 @@ If `value` is already present the set is left unchanged.
     s.length()      // 1
 )DOC", 2, nullptr, false, false) {
     PCHECK_ENTRIES(params,
-                   PCHECK_DEF("self", false, InstanceType::SET),
                    PCHECK_DEF("value", false));
     PCHECK_CHECK(params);
 
@@ -479,7 +478,7 @@ RUNTIME_METHOD(set_clear, clear,
     s.clear()
     s.is_empty()    // true
 )DOC", 1, nullptr, false, false) {
-    PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::SET));
+    PCHECK_ENTRIES(params);
     PCHECK_CHECK(params);
 
     auto *self = (Set *) argv[0];
@@ -508,7 +507,6 @@ RUNTIME_METHOD(set_contains, contains,
     s.contains(2)    // false
 )DOC", 2, nullptr, false, false) {
     PCHECK_ENTRIES(params,
-                   PCHECK_DEF("self", false, InstanceType::SET),
                    PCHECK_DEF("value", false));
     PCHECK_CHECK(params);
 
@@ -544,7 +542,6 @@ Equivalent to `self - other` in set algebra.
     a.difference(b)    // Set{1, 3}
 )DOC", 2, nullptr, false, false) {
     PCHECK_ENTRIES(params,
-                   PCHECK_DEF("self", false, InstanceType::SET),
                    PCHECK_DEF("other", false, InstanceType::SET));
     PCHECK_CHECK(params);
 
@@ -572,7 +569,6 @@ RUNTIME_METHOD(set_difference_update, difference_update,
     a.contains(2)    // false
 )DOC", 2, nullptr, false, false) {
     PCHECK_ENTRIES(params,
-                   PCHECK_DEF("self", false, InstanceType::SET),
                    PCHECK_DEF("other", false, InstanceType::SET));
     PCHECK_CHECK(params);
 
@@ -603,7 +599,6 @@ absent.
     s.discard(1)    // false
 )DOC", 2, nullptr, false, false) {
     PCHECK_ENTRIES(params,
-                   PCHECK_DEF("self", false, InstanceType::SET),
                    PCHECK_DEF("value", false));
     PCHECK_CHECK(params);
 
@@ -639,7 +634,6 @@ Equivalent to `self & other` in set algebra.
     a.intersection(b)    // Set{2}
 )DOC", 2, nullptr, false, false) {
     PCHECK_ENTRIES(params,
-                   PCHECK_DEF("self", false, InstanceType::SET),
                    PCHECK_DEF("other", false, InstanceType::SET));
     PCHECK_CHECK(params);
 
@@ -668,7 +662,6 @@ RUNTIME_METHOD(set_intersection_update, intersection_update,
     a.contains(2)    // true
 )DOC", 2, nullptr, false, false) {
     PCHECK_ENTRIES(params,
-                   PCHECK_DEF("self", false, InstanceType::SET),
                    PCHECK_DEF("other", false, InstanceType::SET));
     PCHECK_CHECK(params);
 
@@ -696,7 +689,6 @@ RUNTIME_METHOD(set_is_disjoint, is_disjoint,
     a.is_disjoint(b)    // true
 )DOC", 2, nullptr, false, false) {
     PCHECK_ENTRIES(params,
-                   PCHECK_DEF("self", false, InstanceType::SET),
                    PCHECK_DEF("other", false, InstanceType::SET));
     PCHECK_CHECK(params);
 
@@ -717,7 +709,7 @@ RUNTIME_METHOD(set_is_empty, is_empty,
     s.add(1)
     s.is_empty()    // false
 )DOC", 1, nullptr, false, false) {
-    PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::SET));
+    PCHECK_ENTRIES(params);
     PCHECK_CHECK(params);
 
     const auto *self = (const Set *) argv[0];
@@ -743,7 +735,6 @@ RUNTIME_METHOD(set_is_subset, is_subset,
     a.is_subset(b)    // true
 )DOC", 2, nullptr, false, false) {
     PCHECK_ENTRIES(params,
-                   PCHECK_DEF("self", false, InstanceType::SET),
                    PCHECK_DEF("other", false, InstanceType::SET));
     PCHECK_CHECK(params);
 
@@ -768,7 +759,6 @@ RUNTIME_METHOD(set_is_superset, is_superset,
     a.is_superset(b)    // true
 )DOC", 2, nullptr, false, false) {
     PCHECK_ENTRIES(params,
-                   PCHECK_DEF("self", false, InstanceType::SET),
                    PCHECK_DEF("other", false, InstanceType::SET));
     PCHECK_CHECK(params);
 
@@ -789,7 +779,7 @@ RUNTIME_METHOD(set_length, length,
     s.add(2)
     s.length()    // 2
 )DOC", 1, nullptr, false, false) {
-    PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::SET));
+    PCHECK_ENTRIES(params);
     PCHECK_CHECK(params);
 
     const auto *self = (const Set *) argv[0];
@@ -821,7 +811,6 @@ silent removal.
     s.remove(1)    // panic — KeyError
 )DOC", 2, nullptr, false, false) {
     PCHECK_ENTRIES(params,
-                   PCHECK_DEF("self", false, InstanceType::SET),
                    PCHECK_DEF("value", false));
     PCHECK_CHECK(params);
 
@@ -865,7 +854,6 @@ Equivalent to `self ^ other` in set algebra.
     a.symmetric_difference(b)    // Set{1, 3}
 )DOC", 2, nullptr, false, false) {
     PCHECK_ENTRIES(params,
-                   PCHECK_DEF("self", false, InstanceType::SET),
                    PCHECK_DEF("other", false, InstanceType::SET));
     PCHECK_CHECK(params);
 
@@ -898,7 +886,6 @@ other.
     a.contains(3)    // true
 )DOC", 2, nullptr, false, false) {
     PCHECK_ENTRIES(params,
-                   PCHECK_DEF("self", false, InstanceType::SET),
                    PCHECK_DEF("other", false, InstanceType::SET));
     PCHECK_CHECK(params);
 
@@ -928,7 +915,6 @@ Equivalent to `self | other` in set algebra.
     a.union(b)    // Set{1, 2}
 )DOC", 2, nullptr, false, false) {
     PCHECK_ENTRIES(params,
-                   PCHECK_DEF("self", false, InstanceType::SET),
                    PCHECK_DEF("other", false, InstanceType::SET));
     PCHECK_CHECK(params);
 
@@ -956,7 +942,6 @@ RUNTIME_METHOD(set_update, update,
     a.length()    // 2
 )DOC", 2, nullptr, false, false) {
     PCHECK_ENTRIES(params,
-                   PCHECK_DEF("self", false, InstanceType::SET),
                    PCHECK_DEF("other", false, InstanceType::SET));
     PCHECK_CHECK(params);
 

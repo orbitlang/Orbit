@@ -415,7 +415,7 @@ RUNTIME_METHOD(number_abs, abs,
     (-7).abs()    // 7
     (3).abs()     // 3
 )DOC", 1, nullptr, false, false) {
-    PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::NUMBER));
+    PCHECK_ENTRIES(params);
     PCHECK_CHECK(params);
 
     const auto v = NumberVal(argv[0]);
@@ -441,7 +441,7 @@ Zero requires 0 bits.
     (255).bit_length()   // 8
     (-128).bit_length()  // 7
 )DOC", 1, nullptr, false, false) {
-    PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::NUMBER));
+    PCHECK_ENTRIES(params);
     PCHECK_CHECK(params);
 
     auto v = NumberVal(argv[0]);
@@ -481,7 +481,6 @@ RUNTIME_METHOD(number_clamp, clamp,
     (12).clamp(0, 10)   // 10
 )DOC", 3, nullptr, false, false) {
     PCHECK_ENTRIES(params,
-                   PCHECK_DEF("self", false, InstanceType::NUMBER),
                    PCHECK_DEF("lo", false, InstanceType::NUMBER),
                    PCHECK_DEF("hi", false, InstanceType::NUMBER));
     PCHECK_CHECK(params);
@@ -518,7 +517,6 @@ non-negative; negative inputs are treated as their absolute values.
     (-6).gcd(9)     // 3
 )DOC", 2, nullptr, false, false) {
     PCHECK_ENTRIES(params,
-                   PCHECK_DEF("self", false, InstanceType::NUMBER),
                    PCHECK_DEF("other", false, InstanceType::NUMBER));
     PCHECK_CHECK(params);
 
@@ -544,7 +542,7 @@ RUNTIME_METHOD(number_is_even, is_even,
     (4).is_even()    // true
     (7).is_even()    // false
 )DOC", 1, nullptr, false, false) {
-    PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::NUMBER));
+    PCHECK_ENTRIES(params);
     PCHECK_CHECK(params);
 
     return HOObject((OObject *) BOOL_TO_OBOOL((NumberVal(argv[0]) & 1) == 0));
@@ -562,7 +560,7 @@ RUNTIME_METHOD(number_is_odd, is_odd,
     (3).is_odd()    // true
     (8).is_odd()    // false
 )DOC", 1, nullptr, false, false) {
-    PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::NUMBER));
+    PCHECK_ENTRIES(params);
     PCHECK_CHECK(params);
 
     return HOObject((OObject *) BOOL_TO_OBOOL((NumberVal(argv[0]) & 1) != 0));
@@ -585,7 +583,6 @@ RUNTIME_METHOD(number_max, max,
     (5).max(2)    // 5
 )DOC", 2, nullptr, false, false) {
     PCHECK_ENTRIES(params,
-                   PCHECK_DEF("self", false, InstanceType::NUMBER),
                    PCHECK_DEF("other", false, InstanceType::NUMBER));
     PCHECK_CHECK(params);
 
@@ -616,7 +613,6 @@ RUNTIME_METHOD(number_min, min,
     (5).min(2)    // 2
 )DOC", 2, nullptr, false, false) {
     PCHECK_ENTRIES(params,
-                   PCHECK_DEF("self", false, InstanceType::NUMBER),
                    PCHECK_DEF("other", false, InstanceType::NUMBER));
     PCHECK_CHECK(params);
 
@@ -651,7 +647,6 @@ Uses fast binary exponentiation.  Negative exponents return 0
     (5).pow(-1)    // 0
 )DOC", 2, nullptr, false, false) {
     PCHECK_ENTRIES(params,
-                   PCHECK_DEF("self", false, InstanceType::NUMBER),
                    PCHECK_DEF("exp", false, InstanceType::NUMBER));
     PCHECK_CHECK(params);
 
@@ -699,7 +694,7 @@ Returns NaN when self is negative, following IEEE 754 semantics.
     (2).sqrt()     // 1.4142135623...
     (-1).sqrt()    // nan
 )DOC", 1, nullptr, false, false) {
-    PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::NUMBER));
+    PCHECK_ENTRIES(params);
     PCHECK_CHECK(params);
 
     const auto v = (DecimalUnderlying) NumberVal(argv[0]);

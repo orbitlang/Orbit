@@ -461,7 +461,7 @@ RUNTIME_METHOD(list_append, append,
     l.append(2)
     l.length()    // 2
 )DOC", 2, nullptr, false, false) {
-    PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::LIST));
+    PCHECK_ENTRIES(params);
     PCHECK_CHECK(params);
 
     auto *self = (List *) argv[0];
@@ -485,7 +485,7 @@ The backing buffer is retained for reuse; only the length is reset to zero.
     l.clear()
     l.length()    // 0
 )DOC", 1, nullptr, false, false) {
-    PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::LIST));
+    PCHECK_ENTRIES(params);
     PCHECK_CHECK(params);
 
     auto *self = (List *) argv[0];
@@ -513,7 +513,7 @@ Uses structural equality (==) for comparison.
     [1, 2, 3].contains(2)    // true
     [1, 2, 3].contains(9)    // false
 )DOC", 2, nullptr, false, false) {
-    PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::LIST));
+    PCHECK_ENTRIES(params);
     PCHECK_CHECK(params);
 
     auto *self = (List *) argv[0];
@@ -549,7 +549,7 @@ Uses structural equality (==) for comparison.
     [1, 2, 2, 3].count(2)    // 2
     [1, 2, 3].count(9)        // 0
 )DOC", 2, nullptr, false, false) {
-    PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::LIST));
+    PCHECK_ENTRIES(params);
     PCHECK_CHECK(params);
 
     auto *self = (List *) argv[0];
@@ -592,7 +592,6 @@ RUNTIME_METHOD(list_extend, extend,
     l.length()    // 4
 )DOC", 2, nullptr, false, false) {
     PCHECK_ENTRIES(params,
-                   PCHECK_DEF("self", false, InstanceType::LIST),
                    PCHECK_DEF("other", false, InstanceType::LIST, InstanceType::TUPLE)
     );
     PCHECK_CHECK(params);
@@ -621,7 +620,7 @@ Uses structural equality (==) for comparison.
     [10, 20, 30].index(20)    // 1
     [10, 20, 30].index(99)    // -1
 )DOC", 2, nullptr, false, false) {
-    PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::LIST));
+    PCHECK_ENTRIES(params);
     PCHECK_CHECK(params);
 
     auto *self = (List *) argv[0];
@@ -667,7 +666,6 @@ If `index` is beyond the end of the list the element is appended.
     l.get(1)    // "hello"
 )DOC", 3, nullptr, false, false) {
     PCHECK_ENTRIES(params,
-                   PCHECK_DEF("self", false, InstanceType::LIST),
                    PCHECK_DEF("index", false, InstanceType::NUMBER)
     );
     PCHECK_CHECK(params);
@@ -695,7 +693,7 @@ RUNTIME_METHOD(list_length, length,
     [1, 2, 3].length()    // 3
     [].length()            // 0
 )DOC", 1, nullptr, false, false) {
-    PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::LIST));
+    PCHECK_ENTRIES(params);
     PCHECK_CHECK(params);
 
     const auto *self = (const List *) argv[0];
@@ -720,7 +718,7 @@ RUNTIME_METHOD(list_prepend, prepend,
     l.prepend(1)
     l.get(0)    // 1
 )DOC", 2, nullptr, false, false) {
-    PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::LIST));
+    PCHECK_ENTRIES(params);
     PCHECK_CHECK(params);
 
     auto *self = (List *) argv[0];
@@ -750,7 +748,6 @@ If the index is out of range the list is left unchanged.
     l.length()    // 2
 )DOC", 2, nullptr, false, false) {
     PCHECK_ENTRIES(params,
-                   PCHECK_DEF("self", false, InstanceType::LIST),
                    PCHECK_DEF("index", false, InstanceType::NUMBER));
     PCHECK_CHECK(params);
 

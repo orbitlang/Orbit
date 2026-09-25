@@ -8,7 +8,7 @@
 #include <orbit/orbiter/datatype/oobject.h>
 
 namespace orbiter::datatype {
-#define PCHECK_ENTRIES(name, ...)       static constexpr Parameter name[] = {__VA_ARGS__, {{}, nullptr, false}}
+#define PCHECK_ENTRIES(name, ...)       static constexpr Parameter name[] = {__VA_ARGS__ __VA_OPT__(,) {{}, nullptr, false}}
 #define PCHECK_DEF(name, optional, ...)                                         \
     {[]() constexpr -> U32 {                                                    \
         U32 m = 0;                                                              \
@@ -16,12 +16,12 @@ namespace orbiter::datatype {
             m |= (1u << (U32)t);                                                \
                                                                                 \
         return m;                                                               \
-    }(), name, true, optional}
+    }(), name, optional}
 
-#define PCHECK_CHECK(name)                                          \
-    do {                                                            \
-        if(!orbiter::datatype::CheckParameter(name, argv, argc))    \
-            return {};                                              \
+#define PCHECK_CHECK(name)                                                  \
+    do {                                                                    \
+        if(!orbiter::datatype::CheckParameter(name, _func, argv, argc))     \
+            return {};                                                      \
     } while(0)
 
     struct Parameter {
@@ -29,11 +29,10 @@ namespace orbiter::datatype {
 
         const char *name;
 
-        bool instance;
         bool optional;
     };
 
-    bool CheckParameter(const Parameter *parameters, OObject **argv, U16 argc);
+    bool CheckParameter(const Parameter *parameters, Function *func, OObject **argv, U16 argc);
 }
 
 #endif // !ORBIT_ORBITER_DATATYPE_PCHECK_H_

@@ -251,7 +251,7 @@ lifetime of the channel.
     Chan().capacity()    // 0
     Chan(4).capacity()   // 4
 )DOC", 1, nullptr, false, false) {
-    PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::CHANNEL));
+    PCHECK_ENTRIES(params);
     PCHECK_CHECK(params);
 
     const auto *self = (Channel *) argv[0];
@@ -284,7 +284,7 @@ It is a programming error to close a channel twice.
     ch.try_recv()    // Result(1, true)
     ch.try_recv()    // Result(nil, false)
 )DOC", 1, nullptr, false, false) {
-    PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::CHANNEL));
+    PCHECK_ENTRIES(params);
     PCHECK_CHECK(params);
 
     auto *self = (Channel *) argv[0];
@@ -312,7 +312,7 @@ useful for diagnostics and best-effort logic, not for synchronisation.
     ch.close()
     ch.is_closed()   // true
 )DOC", 1, nullptr, false, false) {
-    PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::CHANNEL));
+    PCHECK_ENTRIES(params);
     PCHECK_CHECK(params);
 
     auto *self = (Channel *) argv[0];
@@ -336,7 +336,7 @@ For an unbuffered channel this is always 0 outside of a transient hand-off.
     ch.try_send(2)
     ch.length()      // 2
 )DOC", 1, nullptr, false, false) {
-    PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::CHANNEL));
+    PCHECK_ENTRIES(params);
     PCHECK_CHECK(params);
 
     auto *self = (Channel *) argv[0];
@@ -370,7 +370,6 @@ returns false instead of blocking.
     ch.try_send(2)   // false — buffer full
 )DOC", 2, nullptr, false, false) {
     PCHECK_ENTRIES(params,
-                   PCHECK_DEF("self", false, InstanceType::CHANNEL),
                    PCHECK_DEF("value", true));
     PCHECK_CHECK(params);
 
@@ -405,7 +404,7 @@ Use `is_closed()` to disambiguate the two `false` cases when needed.
     ch.try_send(1)
     ch.try_recv()    // Result(1, true)
 )DOC", 1, nullptr, false, false) {
-    PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::CHANNEL));
+    PCHECK_ENTRIES(params);
     PCHECK_CHECK(params);
 
     auto *self = (Channel *) argv[0];

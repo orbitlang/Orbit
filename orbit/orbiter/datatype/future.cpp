@@ -89,7 +89,7 @@ a future cannot transition back to PENDING.
     f.is_done()         // false
     f.is_done()         // true
 )DOC", 1, nullptr, false, false) {
-    PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::FUTURE));
+    PCHECK_ENTRIES(params);
     PCHECK_CHECK(params);
 
     const auto *self = (const Future *) argv[0];

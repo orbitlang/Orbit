@@ -214,7 +214,7 @@ RUNTIME_METHOD(rawptr_address, address,
 
 @see is_null
 )DOC", 1, nullptr, false, false) {
-    PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::RAWPTR));
+    PCHECK_ENTRIES(params);
     PCHECK_CHECK(params);
 
     const auto *self = (const RawPtr *) argv[0];
@@ -244,7 +244,6 @@ raw bytes.
 @see sub, offset
 )DOC", 2, "word", false, false) {
     PCHECK_ENTRIES(params,
-                   PCHECK_DEF("self", false, InstanceType::RAWPTR),
                    PCHECK_DEF("bytes", false, InstanceType::NUMBER),
                    PCHECK_DEF("word", true, InstanceType::BOOLEAN));
     PCHECK_CHECK(params);
@@ -274,7 +273,7 @@ pointers) is cancelled. Has no effect if already freed or null.
 
 @see alloc, address, is_null
 )DOC", 1, nullptr, false, false) {
-    PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::RAWPTR));
+    PCHECK_ENTRIES(params);
     PCHECK_CHECK(params);
 
     auto *self = (RawPtr *) argv[0];
@@ -299,7 +298,7 @@ RUNTIME_METHOD(rawptr_is_null, is_null,
 
 @see address
 )DOC", 1, nullptr, false, false) {
-    PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::RAWPTR));
+    PCHECK_ENTRIES(params);
     PCHECK_CHECK(params);
 
     const auto *self = (const RawPtr *) argv[0];
@@ -335,7 +334,6 @@ owner is collected, its views dangle.
 @see add, sub, address, read_ptr
 )DOC", 2, "word", false, false) {
     PCHECK_ENTRIES(params,
-                   PCHECK_DEF("self", false, InstanceType::RAWPTR),
                    PCHECK_DEF("bytes", false, InstanceType::NUMBER),
                    PCHECK_DEF("word", true, InstanceType::BOOLEAN));
     PCHECK_CHECK(params);
@@ -375,7 +373,6 @@ has no terminator to infer its length from.
 @see read_string, read_i8, read_i64
 )DOC", 2, nullptr, false, false) {
     PCHECK_ENTRIES(params,
-                   PCHECK_DEF("self", false, InstanceType::RAWPTR),
                    PCHECK_DEF("size", false, InstanceType::NUMBER)
     );
     PCHECK_CHECK(params);
@@ -417,7 +414,7 @@ RUNTIME_METHOD(rawptr_read_f64, read_f64,
 
 @see read_i64, write_f64
 )DOC", 1, nullptr, false, false) {
-    PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::RAWPTR));
+    PCHECK_ENTRIES(params);
     PCHECK_CHECK(params);
 
     const auto *self = (const RawPtr *) argv[0];
@@ -449,7 +446,7 @@ RUNTIME_METHOD(rawptr_read_i8, read_i8,
 
 @see read_i16, read_i32, read_i64, read_u8
 )DOC", 1, nullptr, false, false) {
-    PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::RAWPTR));
+    PCHECK_ENTRIES(params);
     PCHECK_CHECK(params);
 
     const auto *self = (const RawPtr *) argv[0];
@@ -475,7 +472,7 @@ RUNTIME_METHOD(rawptr_read_i16, read_i16,
 
 @see read_i8, read_i32, read_i64, read_u16
 )DOC", 1, nullptr, false, false) {
-    PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::RAWPTR));
+    PCHECK_ENTRIES(params);
     PCHECK_CHECK(params);
 
     const auto *self = (const RawPtr *) argv[0];
@@ -501,7 +498,7 @@ RUNTIME_METHOD(rawptr_read_i32, read_i32,
 
 @see read_i8, read_i16, read_i64, read_u32
 )DOC", 1, nullptr, false, false) {
-    PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::RAWPTR));
+    PCHECK_ENTRIES(params);
     PCHECK_CHECK(params);
 
     const auto *self = (const RawPtr *) argv[0];
@@ -533,7 +530,7 @@ RUNTIME_METHOD(rawptr_read_i64, read_i64,
 
 @see read_i8, read_i16, read_i32, read_u64
 )DOC", 1, nullptr, false, false) {
-    PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::RAWPTR));
+    PCHECK_ENTRIES(params);
     PCHECK_CHECK(params);
 
     const auto *self = (const RawPtr *) argv[0];
@@ -565,7 +562,7 @@ RUNTIME_METHOD(rawptr_read_ptr, read_ptr,
 
 @see offset, address
 )DOC", 1, nullptr, false, false) {
-    PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::RAWPTR));
+    PCHECK_ENTRIES(params);
     PCHECK_CHECK(params);
 
     const auto *self = (const RawPtr *) argv[0];
@@ -607,7 +604,6 @@ The bytes are copied into a new String; the pointer is not retained.
 @see read_bytes, read_ptr
 )DOC", 1, "length", false, false) {
     PCHECK_ENTRIES(params,
-                   PCHECK_DEF("self", false, InstanceType::RAWPTR),
                    PCHECK_DEF("length", true, InstanceType::NUMBER)
     );
     PCHECK_CHECK(params);
@@ -655,7 +651,7 @@ RUNTIME_METHOD(rawptr_read_u8, read_u8,
 
 @see read_u16, read_u32, read_u64, read_i8
 )DOC", 1, nullptr, false, false) {
-    PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::RAWPTR));
+    PCHECK_ENTRIES(params);
     PCHECK_CHECK(params);
 
     const auto *self = (const RawPtr *) argv[0];
@@ -681,7 +677,7 @@ RUNTIME_METHOD(rawptr_read_u16, read_u16,
 
 @see read_u8, read_u32, read_u64, read_i16
 )DOC", 1, nullptr, false, false) {
-    PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::RAWPTR));
+    PCHECK_ENTRIES(params);
     PCHECK_CHECK(params);
 
     const auto *self = (const RawPtr *) argv[0];
@@ -707,7 +703,7 @@ RUNTIME_METHOD(rawptr_read_u32, read_u32,
 
 @see read_u8, read_u16, read_u64, read_i32
 )DOC", 1, nullptr, false, false) {
-    PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::RAWPTR));
+    PCHECK_ENTRIES(params);
     PCHECK_CHECK(params);
 
     const auto *self = (const RawPtr *) argv[0];
@@ -739,7 +735,7 @@ RUNTIME_METHOD(rawptr_read_u64, read_u64,
 
 @see read_u8, read_u16, read_u32, read_i64
 )DOC", 1, nullptr, false, false) {
-    PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::RAWPTR));
+    PCHECK_ENTRIES(params);
     PCHECK_CHECK(params);
 
     const auto *self = (const RawPtr *) argv[0];
@@ -779,7 +775,6 @@ raw bytes.
 @see add, offset
 )DOC", 2, "word", false, false) {
     PCHECK_ENTRIES(params,
-                   PCHECK_DEF("self", false, InstanceType::RAWPTR),
                    PCHECK_DEF("bytes", false, InstanceType::NUMBER),
                    PCHECK_DEF("word", true, InstanceType::BOOLEAN));
     PCHECK_CHECK(params);
@@ -809,7 +804,6 @@ RUNTIME_METHOD(rawptr_write_f64, write_f64,
 @see write_i32, read_f64
 )DOC", 2, nullptr, false, false) {
     PCHECK_ENTRIES(params,
-                   PCHECK_DEF("self", false, InstanceType::RAWPTR),
                    PCHECK_DEF("value", false, InstanceType::DECIMAL));
     PCHECK_CHECK(params);
 
@@ -839,7 +833,6 @@ Only the lower 8 bits of `value` are written.
 @see write_i16, write_i32, write_i64, write_u8
 )DOC", 2, nullptr, false, false) {
     PCHECK_ENTRIES(params,
-                   PCHECK_DEF("self", false, InstanceType::RAWPTR),
                    PCHECK_DEF("value", false, InstanceType::NUMBER));
     PCHECK_CHECK(params);
 
@@ -872,7 +865,6 @@ Only the lower 16 bits of `value` are written.
 @see write_i8, write_i32, write_i64, write_u16
 )DOC", 2, nullptr, false, false) {
     PCHECK_ENTRIES(params,
-                   PCHECK_DEF("self", false, InstanceType::RAWPTR),
                    PCHECK_DEF("value", false, InstanceType::NUMBER));
     PCHECK_CHECK(params);
 
@@ -905,7 +897,6 @@ Only the lower 32 bits of `value` are written.
 @see write_f64, write_i8, write_i16, write_i64, read_i32
 )DOC", 2, nullptr, false, false) {
     PCHECK_ENTRIES(params,
-                   PCHECK_DEF("self", false, InstanceType::RAWPTR),
                    PCHECK_DEF("value", false, InstanceType::NUMBER));
     PCHECK_CHECK(params);
 
@@ -936,7 +927,6 @@ RUNTIME_METHOD(rawptr_write_i64, write_i64,
 @see write_i8, write_i16, write_i32, write_u64
 )DOC", 2, nullptr, false, false) {
     PCHECK_ENTRIES(params,
-                   PCHECK_DEF("self", false, InstanceType::RAWPTR),
                    PCHECK_DEF("value", false, InstanceType::NUMBER));
     PCHECK_CHECK(params);
 
@@ -969,7 +959,6 @@ Only the lower 8 bits of `value` are written.
 @see write_u16, write_u32, write_u64, write_i8
 )DOC", 2, nullptr, false, false) {
     PCHECK_ENTRIES(params,
-                   PCHECK_DEF("self", false, InstanceType::RAWPTR),
                    PCHECK_DEF("value", false, InstanceType::NUMBER));
     PCHECK_CHECK(params);
 
@@ -1002,7 +991,6 @@ Only the lower 16 bits of `value` are written.
 @see write_u8, write_u32, write_u64, write_i16
 )DOC", 2, nullptr, false, false) {
     PCHECK_ENTRIES(params,
-                   PCHECK_DEF("self", false, InstanceType::RAWPTR),
                    PCHECK_DEF("value", false, InstanceType::NUMBER));
     PCHECK_CHECK(params);
 
@@ -1035,7 +1023,6 @@ Only the lower 32 bits of `value` are written.
 @see write_u8, write_u16, write_u64, write_i32
 )DOC", 2, nullptr, false, false) {
     PCHECK_ENTRIES(params,
-                   PCHECK_DEF("self", false, InstanceType::RAWPTR),
                    PCHECK_DEF("value", false, InstanceType::NUMBER));
     PCHECK_CHECK(params);
 
@@ -1066,7 +1053,6 @@ RUNTIME_METHOD(rawptr_write_u64, write_u64,
 @see write_u8, write_u16, write_u32, write_i64
 )DOC", 2, nullptr, false, false) {
     PCHECK_ENTRIES(params,
-                   PCHECK_DEF("self", false, InstanceType::RAWPTR),
                    PCHECK_DEF("value", false, InstanceType::NUMBER));
     PCHECK_CHECK(params);
 

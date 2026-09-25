@@ -352,7 +352,6 @@ Uses structural equality (==) for comparison.
     (1, 2, 3).contains(9)    // false
 )DOC", 2, nullptr, false, false) {
     PCHECK_ENTRIES(params,
-                   PCHECK_DEF("self", false, InstanceType::TUPLE),
                    PCHECK_DEF("value", false)
     );
     PCHECK_CHECK(params);
@@ -381,7 +380,6 @@ Uses structural equality (==) for comparison.
     (1, 2, 3).count(9)        // 0
 )DOC", 2, nullptr, false, false) {
     PCHECK_ENTRIES(params,
-                   PCHECK_DEF("self", false, InstanceType::TUPLE),
                    PCHECK_DEF("value", false)
     );
     PCHECK_CHECK(params);
@@ -427,7 +425,6 @@ Uses structural equality (==) for comparison.
     (10, 20, 30).index(99)    // panic!
 )DOC", 2, nullptr, false, false) {
     PCHECK_ENTRIES(params,
-                   PCHECK_DEF("self", false, InstanceType::TUPLE),
                    PCHECK_DEF("value", false)
     );
     PCHECK_CHECK(params);
@@ -467,7 +464,7 @@ RUNTIME_METHOD(tuple_length, length,
     (1, 2, 3).length()    // 3
     ().length()            // 0
 )DOC", 1, nullptr, false, false) {
-    PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::TUPLE));
+    PCHECK_ENTRIES(params);
     PCHECK_CHECK(params);
 
     const auto *self = (const Tuple *) argv[0];

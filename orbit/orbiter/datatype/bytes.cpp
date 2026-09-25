@@ -736,7 +736,6 @@ RUNTIME_METHOD(bytes_append, append,
     b.length()      // 1
 )DOC", 2, nullptr, false, false) {
     PCHECK_ENTRIES(params,
-                   PCHECK_DEF("self", false, InstanceType::BYTES),
                    PCHECK_DEF("value", false, InstanceType::NUMBER));
     PCHECK_CHECK(params);
 
@@ -771,7 +770,7 @@ not affected.
     b.clear()
     b.length()      // 0
 )DOC", 1, nullptr, false, false) {
-    PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::BYTES));
+    PCHECK_ENTRIES(params);
     PCHECK_CHECK(params);
 
     auto *self = (Bytes *) argv[0];
@@ -809,7 +808,7 @@ frozen one.
     b.upper()           // OK — b is mutable
     a                   // still b"hello" (frozen)
 )DOC", 1, nullptr, false, false) {
-    PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::BYTES));
+    PCHECK_ENTRIES(params);
     PCHECK_CHECK(params);
 
     const auto *self = (const Bytes *) argv[0];
@@ -864,7 +863,7 @@ prefix space instead of growing the buffer further.
     b.lstrip()      // start=3, length=5, buffer still 8 bytes long
     b.compact()     // start=0, length=5, prefix reclaimed
 )DOC", 1, nullptr, false, false) {
-    PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::BYTES));
+    PCHECK_ENTRIES(params);
     PCHECK_CHECK(params);
 
     auto *self = (Bytes *) argv[0];
@@ -917,7 +916,6 @@ An empty needle is contained in every Bytes.
     b"banana".contains(b"ana")    // true
 )DOC", 2, nullptr, false, false) {
     PCHECK_ENTRIES(params,
-                   PCHECK_DEF("self", false, InstanceType::BYTES),
                    PCHECK_DEF("sub", false, InstanceType::BYTES));
     PCHECK_CHECK(params);
 
@@ -961,7 +959,6 @@ behaves like `memmove`, so `b.copy(b, 0, 1, n)` (shift right) and
     c.copy(c, 0, 2, 4)             // overlap shift right → b"ababcd"
 )DOC", 5, nullptr, false, false) {
     PCHECK_ENTRIES(params,
-                   PCHECK_DEF("self", false, InstanceType::BYTES),
                    PCHECK_DEF("src", false, InstanceType::BYTES),
                    PCHECK_DEF("src_offset", false, InstanceType::NUMBER),
                    PCHECK_DEF("dest_offset", false, InstanceType::NUMBER),
@@ -1042,7 +1039,6 @@ Returns 0 when `sub` is empty.
     b"aaaa".count(b"aa")      // 2  (non-overlapping)
 )DOC", 2, nullptr, false, false) {
     PCHECK_ENTRIES(params,
-                   PCHECK_DEF("self", false, InstanceType::BYTES),
                    PCHECK_DEF("sub", false, InstanceType::BYTES));
     PCHECK_CHECK(params);
 
@@ -1085,7 +1081,6 @@ RUNTIME_METHOD(bytes_ends_with, ends_with,
     b"hello.txt".ends_with(b".txt")    // true
 )DOC", 2, nullptr, false, false) {
     PCHECK_ENTRIES(params,
-                   PCHECK_DEF("self", false, InstanceType::BYTES),
                    PCHECK_DEF("suffix", false, InstanceType::BYTES));
     PCHECK_CHECK(params);
 
@@ -1128,7 +1123,6 @@ RUNTIME_METHOD(bytes_extend, extend,
     b.length()      // 4
 )DOC", 2, nullptr, false, false) {
     PCHECK_ENTRIES(params,
-                   PCHECK_DEF("self", false, InstanceType::BYTES),
                    PCHECK_DEF("other", false, InstanceType::BYTES));
     PCHECK_CHECK(params);
 
@@ -1160,7 +1154,6 @@ returns `start` (or -1 if `start` is past the end of self).
     b"hello".find(b"xy")     // -1
 )DOC", 2, "start", false, false) {
     PCHECK_ENTRIES(params,
-                   PCHECK_DEF("self", false, InstanceType::BYTES),
                    PCHECK_DEF("sub", false, InstanceType::BYTES),
                    PCHECK_DEF("start", true, InstanceType::NUMBER));
     PCHECK_CHECK(params);
@@ -1215,7 +1208,7 @@ returned Bytes raises a ValueError. The Bytes also becomes hashable
     let b = a.freeze()
     b.is_frozen()    // true
 )DOC", 1, nullptr, false, false) {
-    PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::BYTES));
+    PCHECK_ENTRIES(params);
     PCHECK_CHECK(params);
 
     auto *self = (Bytes *) argv[0];
@@ -1250,7 +1243,7 @@ Each byte produces exactly two hex digits; the result has length `2 * len(self)`
 @example
     b"\x48\x69".hex()    // "4869"
 )DOC", 1, nullptr, false, false) {
-    PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::BYTES));
+    PCHECK_ENTRIES(params);
     PCHECK_CHECK(params);
 
     const auto *self = (Bytes *) argv[0];
@@ -1280,7 +1273,7 @@ An empty Bytes is considered ASCII.
     b"hello".is_ascii()       // true
     b"\xc3\xa8".is_ascii()    // false  (UTF-8 'è')
 )DOC", 1, nullptr, false, false) {
-    PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::BYTES));
+    PCHECK_ENTRIES(params);
     PCHECK_CHECK(params);
 
     const auto *self = (Bytes *) argv[0];
@@ -1309,7 +1302,7 @@ RUNTIME_METHOD(bytes_is_frozen, is_frozen,
     let f = b.freeze()
     f.is_frozen()        // true
 )DOC", 1, nullptr, false, false) {
-    PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::BYTES));
+    PCHECK_ENTRIES(params);
     PCHECK_CHECK(params);
 
     return HOObject((OObject *) BOOL_TO_OBOOL(((const Bytes *) argv[0])->shared->IsFrozen()));
@@ -1326,7 +1319,7 @@ RUNTIME_METHOD(bytes_length, length,
 @example
     b"hello".length()    // 5
 )DOC", 1, nullptr, false, false) {
-    PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::BYTES));
+    PCHECK_ENTRIES(params);
     PCHECK_CHECK(params);
 
     const auto *self = (Bytes *) argv[0];
@@ -1357,7 +1350,7 @@ modifying self, call `copy()` first.
     b.lower()
     b               // b"hello"
 )DOC", 1, nullptr, false, false) {
-    PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::BYTES));
+    PCHECK_ENTRIES(params);
     PCHECK_CHECK(params);
 
     const auto *self = (Bytes *) argv[0];
@@ -1405,7 +1398,6 @@ When `chars` is omitted, the default whitespace set is used:
     b               // b"hello"
 )DOC", 1, "chars", false, false) {
     PCHECK_ENTRIES(params,
-                   PCHECK_DEF("self", false, InstanceType::BYTES),
                    PCHECK_DEF("chars", true, InstanceType::BYTES));
     PCHECK_CHECK(params);
 
@@ -1463,7 +1455,6 @@ sitting immediately after self — same semantics as `extend`.
     b               // b"XbXbXb"
 )DOC", 3, "max", false, false) {
     PCHECK_ENTRIES(params,
-                   PCHECK_DEF("self", false, InstanceType::BYTES),
                    PCHECK_DEF("old", false, InstanceType::BYTES),
                    PCHECK_DEF("new", false, InstanceType::BYTES),
                    PCHECK_DEF("max", true, InstanceType::NUMBER));
@@ -1507,7 +1498,6 @@ Searches the slice `self[0:end]`. Returns -1 if not found. An empty
     b"abc".rfind(b"z")       // -1
 )DOC", 2, "end", false, false) {
     PCHECK_ENTRIES(params,
-                   PCHECK_DEF("self", false, InstanceType::BYTES),
                    PCHECK_DEF("sub", false, InstanceType::BYTES),
                    PCHECK_DEF("end", true, InstanceType::NUMBER));
     PCHECK_CHECK(params);
@@ -1583,7 +1573,6 @@ When `chars` is omitted, the default whitespace set is used (see `lstrip`).
     b               // b"hello"
 )DOC", 1, "chars", false, false) {
     PCHECK_ENTRIES(params,
-                   PCHECK_DEF("self", false, InstanceType::BYTES),
                    PCHECK_DEF("chars", true, InstanceType::BYTES));
     PCHECK_CHECK(params);
 
@@ -1645,7 +1634,6 @@ Every piece is a **zero-copy slice** sharing self's SharedBuffer.
     b"  a  b  c ".split(max=1)   // [b"a", b"b  c "]
 )DOC", 1, "sep, max", false, false) {
     PCHECK_ENTRIES(params,
-                   PCHECK_DEF("self", false, InstanceType::BYTES),
                    PCHECK_DEF("sep", true, InstanceType::BYTES),
                    PCHECK_DEF("max", true, InstanceType::NUMBER));
     PCHECK_CHECK(params);
@@ -1736,7 +1724,6 @@ Every piece is a **zero-copy slice** sharing self's SharedBuffer.
     b"a\nb".splitlines(keepends=true)          // [b"a\n", b"b"]
 )DOC", 1, "keepends, universal", false, false) {
     PCHECK_ENTRIES(params,
-                   PCHECK_DEF("self", false, InstanceType::BYTES),
                    PCHECK_DEF("keepends", true, InstanceType::BOOLEAN),
                    PCHECK_DEF("universal", true, InstanceType::BOOLEAN));
     PCHECK_CHECK(params);
@@ -1779,7 +1766,6 @@ RUNTIME_METHOD(bytes_starts_with, starts_with,
     b"hello.txt".starts_with(b"hello")    // true
 )DOC", 2, nullptr, false, false) {
     PCHECK_ENTRIES(params,
-                   PCHECK_DEF("self", false, InstanceType::BYTES),
                    PCHECK_DEF("prefix", false, InstanceType::BYTES));
     PCHECK_CHECK(params);
 
@@ -1828,7 +1814,6 @@ When `chars` is omitted, the default whitespace set is used (see `lstrip`).
     b               // b"hello"
 )DOC", 1, "chars", false, false) {
     PCHECK_ENTRIES(params,
-                   PCHECK_DEF("self", false, InstanceType::BYTES),
                    PCHECK_DEF("chars", true, InstanceType::BYTES));
     PCHECK_CHECK(params);
 
@@ -1881,7 +1866,7 @@ modifying self, call `copy()` first.
     b.upper()
     b               // b"HELLO"
 )DOC", 1, nullptr, false, false) {
-    PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::BYTES));
+    PCHECK_ENTRIES(params);
     PCHECK_CHECK(params);
 
     const auto *self = (Bytes *) argv[0];

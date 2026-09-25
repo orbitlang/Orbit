@@ -127,7 +127,7 @@ error result raises a TypeError.
     Result.ok(42).unwrap()      // 42
     Result.error(42).unwrap()   // panic!
 )DOC", 1, nullptr, false, false) {
-    PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::RESULT));
+    PCHECK_ENTRIES(params);
     PCHECK_CHECK(params);
 
     const auto *self = (const Result *) argv[0];
@@ -162,7 +162,7 @@ an ok result raises a TypeError.
     Result.error(42).unwrap_err()   // 42
     Result.ok(42).unwrap_err()      // panic!
 )DOC", 1, nullptr, false, false) {
-    PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::RESULT));
+    PCHECK_ENTRIES(params);
     PCHECK_CHECK(params);
 
     const auto *self = (const Result *) argv[0];
@@ -198,7 +198,6 @@ provided `default` is returned instead.
     Result.error(42).unwrap_or(0)   // 0
 )DOC", 2, nullptr, false, false) {
     PCHECK_ENTRIES(params,
-                   PCHECK_DEF("self", false, InstanceType::RESULT),
                    PCHECK_DEF("default", false));
     PCHECK_CHECK(params);
 

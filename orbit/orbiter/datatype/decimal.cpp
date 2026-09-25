@@ -249,7 +249,7 @@ RUNTIME_METHOD(decimal_abs, abs,
     (-3.14).abs()   // 3.14
     (2.71).abs()    // 2.71
 )DOC", 1, nullptr, false, false) {
-    PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::DECIMAL));
+    PCHECK_ENTRIES(params);
     PCHECK_CHECK(params);
 
     auto n = DecimalNew(O_GET_ISOLATE(_func), fabsl(((Decimal *) argv[0])->value));
@@ -271,7 +271,7 @@ RUNTIME_METHOD(decimal_ceil, ceil,
     (2.1).ceil()    // 3
     (-2.9).ceil()   // -2
 )DOC", 1, nullptr, false, false) {
-    PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::DECIMAL));
+    PCHECK_ENTRIES(params);
     PCHECK_CHECK(params);
 
     auto n = IntNew(O_GET_ISOLATE(_func), (IntegerUnderlying) ceill(((Decimal *) argv[0])->value));
@@ -300,7 +300,6 @@ RUNTIME_METHOD(decimal_clamp, clamp,
     (12.0).clamp(0.0, 10.0)   // 10.0
 )DOC", 3, nullptr, false, false) {
     PCHECK_ENTRIES(params,
-                   PCHECK_DEF("self", false, InstanceType::DECIMAL),
                    PCHECK_DEF("lo", false, InstanceType::DECIMAL),
                    PCHECK_DEF("hi", false, InstanceType::DECIMAL));
     PCHECK_CHECK(params);
@@ -329,7 +328,7 @@ RUNTIME_METHOD(decimal_cos, cos,
 @example
     (0.0).cos()    // 1.0
 )DOC", 1, nullptr, false, false) {
-    PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::DECIMAL));
+    PCHECK_ENTRIES(params);
     PCHECK_CHECK(params);
 
     auto n = DecimalNew(O_GET_ISOLATE(_func), cosl(((Decimal *) argv[0])->value));
@@ -351,7 +350,7 @@ RUNTIME_METHOD(decimal_exp, exp,
     (0.0).exp()    // 1.0
     (1.0).exp()    // 2.718281828...
 )DOC", 1, nullptr, false, false) {
-    PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::DECIMAL));
+    PCHECK_ENTRIES(params);
     PCHECK_CHECK(params);
 
     auto n = DecimalNew(O_GET_ISOLATE(_func), expl(((Decimal *) argv[0])->value));
@@ -373,7 +372,7 @@ RUNTIME_METHOD(decimal_floor, floor,
     (2.9).floor()    // 2
     (-2.1).floor()   // -3
 )DOC", 1, nullptr, false, false) {
-    PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::DECIMAL));
+    PCHECK_ENTRIES(params);
     PCHECK_CHECK(params);
 
     auto n = IntNew(O_GET_ISOLATE(_func), (IntegerUnderlying) floorl(((Decimal *) argv[0])->value));
@@ -395,7 +394,7 @@ RUNTIME_METHOD(decimal_is_finite, is_finite,
     (3.14).is_finite()       // true
     (1.0 / 0.0).is_finite()  // false
 )DOC", 1, nullptr, false, false) {
-    PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::DECIMAL));
+    PCHECK_ENTRIES(params);
     PCHECK_CHECK(params);
 
     return HOObject((OObject *) BOOL_TO_OBOOL(std::isfinite(((Decimal *) argv[0])->value)));
@@ -413,7 +412,7 @@ RUNTIME_METHOD(decimal_is_inf, is_inf,
     (1.0 / 0.0).is_inf()    // true
     (1.0).is_inf()           // false
 )DOC", 1, nullptr, false, false) {
-    PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::DECIMAL));
+    PCHECK_ENTRIES(params);
     PCHECK_CHECK(params);
 
     return HOObject((OObject *) BOOL_TO_OBOOL(std::isinf(((Decimal *) argv[0])->value)));
@@ -431,7 +430,7 @@ RUNTIME_METHOD(decimal_is_nan, is_nan,
     (0.0 / 0.0).is_nan()    // true
     (1.0).is_nan()           // false
 )DOC", 1, nullptr, false, false) {
-    PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::DECIMAL));
+    PCHECK_ENTRIES(params);
     PCHECK_CHECK(params);
 
     return HOObject((OObject *) BOOL_TO_OBOOL(std::isnan(((Decimal *) argv[0])->value)));
@@ -451,7 +450,7 @@ Returns NaN for negative values and -infinity for 0.0, following IEEE 754 semant
     (1.0).ln()              // 0.0
     (2.718281828).ln()      // ~1.0
 )DOC", 1, nullptr, false, false) {
-    PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::DECIMAL));
+    PCHECK_ENTRIES(params);
     PCHECK_CHECK(params);
 
     auto n = DecimalNew(O_GET_ISOLATE(_func), logl(((Decimal *) argv[0])->value));
@@ -481,7 +480,6 @@ and NaN for negative self, following IEEE 754 semantics.
     (8.0).log(2.0)       // 3.0
 )DOC", 2, nullptr, false, false) {
     PCHECK_ENTRIES(params,
-                   PCHECK_DEF("self", false, InstanceType::DECIMAL),
                    PCHECK_DEF("base", false, InstanceType::DECIMAL));
     PCHECK_CHECK(params);
 
@@ -512,7 +510,6 @@ RUNTIME_METHOD(decimal_max, max,
     (7.0).max(2.0)    // 7.0
 )DOC", 2, nullptr, false, false) {
     PCHECK_ENTRIES(params,
-                   PCHECK_DEF("self", false, InstanceType::DECIMAL),
                    PCHECK_DEF("other", false, InstanceType::DECIMAL));
     PCHECK_CHECK(params);
 
@@ -543,7 +540,6 @@ RUNTIME_METHOD(decimal_min, min,
     (7.0).min(2.0)    // 2.0
 )DOC", 2, nullptr, false, false) {
     PCHECK_ENTRIES(params,
-                   PCHECK_DEF("self", false, InstanceType::DECIMAL),
                    PCHECK_DEF("other", false, InstanceType::DECIMAL));
     PCHECK_CHECK(params);
 
@@ -574,7 +570,6 @@ RUNTIME_METHOD(decimal_pow, pow,
     (9.0).pow(0.5)     // 3.0
 )DOC", 2, nullptr, false, false) {
     PCHECK_ENTRIES(params,
-                   PCHECK_DEF("self", false, InstanceType::DECIMAL),
                    PCHECK_DEF("exp", false, InstanceType::DECIMAL));
     PCHECK_CHECK(params);
 
@@ -600,7 +595,7 @@ RUNTIME_METHOD(decimal_round, round,
     (-2.5).round()   // -3
     (2.4).round()    // 2
 )DOC", 1, nullptr, false, false) {
-    PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::DECIMAL));
+    PCHECK_ENTRIES(params);
     PCHECK_CHECK(params);
 
     auto n = IntNew(O_GET_ISOLATE(_func), (IntegerUnderlying) roundl(((Decimal *) argv[0])->value));
@@ -622,7 +617,7 @@ RUNTIME_METHOD(decimal_sin, sin,
     (0.0).sin()           // 0.0
     (3.14159265).sin()    // ~0.0
 )DOC", 1, nullptr, false, false) {
-    PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::DECIMAL));
+    PCHECK_ENTRIES(params);
     PCHECK_CHECK(params);
 
     auto n = DecimalNew(O_GET_ISOLATE(_func), sinl(((Decimal *) argv[0])->value));
@@ -647,7 +642,7 @@ Returns NaN when self is negative, following IEEE 754 semantics.
     (2.0).sqrt()    // 1.4142135623...
     (-1.0).sqrt()   // nan
 )DOC", 1, nullptr, false, false) {
-    PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::DECIMAL));
+    PCHECK_ENTRIES(params);
     PCHECK_CHECK(params);
 
     auto n = DecimalNew(O_GET_ISOLATE(_func), sqrtl(((Decimal *) argv[0])->value));
@@ -670,7 +665,7 @@ Returns ±infinity at odd multiples of π/2, following IEEE 754 semantics.
 @example
     (0.0).tan()    // 0.0
 )DOC", 1, nullptr, false, false) {
-    PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::DECIMAL));
+    PCHECK_ENTRIES(params);
     PCHECK_CHECK(params);
 
     auto n = DecimalNew(O_GET_ISOLATE(_func), tanl(((Decimal *) argv[0])->value));

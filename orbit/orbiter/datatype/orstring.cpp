@@ -593,7 +593,6 @@ codepoints.
     "héllo".at(1)     // "é"
 )DOC", 2, nullptr, false, false) {
     PCHECK_ENTRIES(params,
-                   PCHECK_DEF("self", false, InstanceType::STRING),
                    PCHECK_DEF("index", false, InstanceType::NUMBER));
     PCHECK_CHECK(params);
 
@@ -653,7 +652,7 @@ byte-oriented APIs (FFI, I/O) that need the real buffer size.
     "hello".byte_length()    // 5  (same as length())
     "héllo".byte_length()    // 6  (é takes 2 bytes; length() is 5)
 )DOC", 1, nullptr, false, false) {
-    PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::STRING));
+    PCHECK_ENTRIES(params);
     PCHECK_CHECK(params);
 
     const auto *self = (ORString *) argv[0];
@@ -692,7 +691,6 @@ rejected rather than producing invalid UTF-8.
     "héllo".byte_substring(0, 2)    // ValueError: splits 'é'
 )DOC", 3, nullptr, false, false) {
     PCHECK_ENTRIES(params,
-                   PCHECK_DEF("self", false, InstanceType::STRING),
                    PCHECK_DEF("start", false, InstanceType::NUMBER),
                    PCHECK_DEF("end", false, InstanceType::NUMBER));
     PCHECK_CHECK(params);
@@ -766,7 +764,6 @@ zero-width regex match on a UTF-8 subject.
     "héllo".next_codepoint(2)    // 3  (offset was mid-é; snap to next boundary)
 )DOC", 2, nullptr, false, false) {
     PCHECK_ENTRIES(params,
-                   PCHECK_DEF("self", false, InstanceType::STRING),
                    PCHECK_DEF("offset", false, InstanceType::NUMBER));
     PCHECK_CHECK(params);
 
@@ -830,7 +827,6 @@ RUNTIME_METHOD(string_contains, contains,
     "hello".contains("xyz")    // false
 )DOC", 2, nullptr, false, false) {
     PCHECK_ENTRIES(params,
-                   PCHECK_DEF("self", false, InstanceType::STRING),
                    PCHECK_DEF("sub", false, InstanceType::STRING));
     PCHECK_CHECK(params);
 
@@ -857,7 +853,6 @@ Returns 0 when sub is empty.
     "hello".count("x")      // 0
 )DOC", 2, nullptr, false, false) {
     PCHECK_ENTRIES(params,
-                   PCHECK_DEF("self", false, InstanceType::STRING),
                    PCHECK_DEF("sub", false, InstanceType::STRING));
     PCHECK_CHECK(params);
 
@@ -904,7 +899,6 @@ RUNTIME_METHOD(string_ends_with, ends_with,
     "hello".ends_with("hel")    // false
 )DOC", 2, nullptr, false, false) {
     PCHECK_ENTRIES(params,
-                   PCHECK_DEF("self", false, InstanceType::STRING),
                    PCHECK_DEF("suffix", false, InstanceType::STRING));
     PCHECK_CHECK(params);
 
@@ -938,7 +932,6 @@ string starting at the first match, for ASCII and multi-byte strings alike.
     "hello".find("x")      // -1
 )DOC", 2, nullptr, false, false) {
     PCHECK_ENTRIES(params,
-                   PCHECK_DEF("self", false, InstanceType::STRING),
                    PCHECK_DEF("sub", false, InstanceType::STRING));
     PCHECK_CHECK(params);
 
@@ -970,7 +963,7 @@ RUNTIME_METHOD(string_is_ascii, is_ascii,
     "hello".is_ascii()    // true
     "héllo".is_ascii()    // false
 )DOC", 1, nullptr, false, false) {
-    PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::STRING));
+    PCHECK_ENTRIES(params);
     PCHECK_CHECK(params);
 
     return HOObject((OObject *) BOOL_TO_OBOOL(((ORString *) argv[0])->kind == StringKind::ASCII));
@@ -990,7 +983,7 @@ For ASCII strings this equals the byte length.
     "hello".length()    // 5
     "".length()         // 0
 )DOC", 1, nullptr, false, false) {
-    PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::STRING));
+    PCHECK_ENTRIES(params);
     PCHECK_CHECK(params);
 
     const auto *self = (ORString *) argv[0];
@@ -1016,7 +1009,7 @@ Non-ASCII bytes are passed through unchanged.
     "Hello World".lower()    // "hello world"
     "ABC123".lower()         // "abc123"
 )DOC", 1, nullptr, false, false) {
-    PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::STRING));
+    PCHECK_ENTRIES(params);
     PCHECK_CHECK(params);
 
     const auto *self = (ORString *) argv[0];
@@ -1063,7 +1056,6 @@ as a set of codepoints: leading codepoints of self that appear in
     "xxhello".lstrip("x")      // "hello"
 )DOC", 1, "chars", false, false) {
     PCHECK_ENTRIES(params,
-                   PCHECK_DEF("self", false, InstanceType::STRING),
                    PCHECK_DEF("chars", true, InstanceType::STRING));
     PCHECK_CHECK(params);
 
@@ -1118,7 +1110,6 @@ Returns self unchanged when old is empty.
     "ababab".replace("a", "X", 2)      // "XbXbab"
 )DOC", 3, "max", false, false) {
     PCHECK_ENTRIES(params,
-                   PCHECK_DEF("self", false, InstanceType::STRING),
                    PCHECK_DEF("old", false, InstanceType::STRING),
                    PCHECK_DEF("new", false, InstanceType::STRING),
                    PCHECK_DEF("max", true, InstanceType::NUMBER));
@@ -1199,7 +1190,6 @@ multi-byte strings alike.
     "hello".rfind("x")     // -1
 )DOC", 2, nullptr, false, false) {
     PCHECK_ENTRIES(params,
-                   PCHECK_DEF("self", false, InstanceType::STRING),
                    PCHECK_DEF("sub", false, InstanceType::STRING));
     PCHECK_CHECK(params);
 
@@ -1241,7 +1231,6 @@ as a set of codepoints: trailing codepoints of self that appear in
     "helloxx".rstrip("x")      // "hello"
 )DOC", 1, "chars", false, false) {
     PCHECK_ENTRIES(params,
-                   PCHECK_DEF("self", false, InstanceType::STRING),
                    PCHECK_DEF("chars", true, InstanceType::STRING));
     PCHECK_CHECK(params);
 
@@ -1306,7 +1295,6 @@ and preserves empty leading/trailing segments; "aaaa".split("aa") → ["", "", "
     "  a  b  c ".split(max=1)       // ["a", "b  c "]
 )DOC", 1, "sep, max", false, false) {
     PCHECK_ENTRIES(params,
-                   PCHECK_DEF("self", false, InstanceType::STRING),
                    PCHECK_DEF("sep", true, InstanceType::STRING, InstanceType::NIL),
                    PCHECK_DEF("max", true, InstanceType::NUMBER));
     PCHECK_CHECK(params);
@@ -1380,7 +1368,6 @@ returns an empty list.
     "a\r\nb".splitlines(keepends=false, universal=false)    // ["a\r", "b"]
 )DOC", 1, "keepends, universal", false, false) {
     PCHECK_ENTRIES(params,
-                   PCHECK_DEF("self", false, InstanceType::STRING),
                    PCHECK_DEF("keepends", true, InstanceType::BOOLEAN),
                    PCHECK_DEF("universal", true, InstanceType::BOOLEAN));
     PCHECK_CHECK(params);
@@ -1420,7 +1407,6 @@ RUNTIME_METHOD(string_starts_with, starts_with,
     "hello".starts_with("llo")    // false
 )DOC", 2, nullptr, false, false) {
     PCHECK_ENTRIES(params,
-                   PCHECK_DEF("self", false, InstanceType::STRING),
                    PCHECK_DEF("prefix", false, InstanceType::STRING));
     PCHECK_CHECK(params);
 
@@ -1449,7 +1435,7 @@ For String, `str()` is the identity: the receiver is returned unchanged
 @example
     "hello".str()    // "hello"
 )DOC", 1, nullptr, false, false) {
-    PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::STRING));
+    PCHECK_ENTRIES(params);
     PCHECK_CHECK(params);
 
     return HOObject(argv[0]);
@@ -1476,7 +1462,6 @@ as a set of codepoints (full Unicode-aware, multi-byte safe).
     "xxhellox".strip("x")      // "hello"
 )DOC", 1, "chars", false, false) {
     PCHECK_ENTRIES(params,
-                   PCHECK_DEF("self", false, InstanceType::STRING),
                    PCHECK_DEF("chars", true, InstanceType::STRING));
     PCHECK_CHECK(params);
 
@@ -1556,7 +1541,6 @@ fast and slow cases apart when it matters.
     "hello".substring(2, 2)     // ""
 )DOC", 3, nullptr, false, false) {
     PCHECK_ENTRIES(params,
-                   PCHECK_DEF("self", false, InstanceType::STRING),
                    PCHECK_DEF("start", false, InstanceType::NUMBER),
                    PCHECK_DEF("end", false, InstanceType::NUMBER));
     PCHECK_CHECK(params);
@@ -1629,7 +1613,7 @@ Non-ASCII bytes are passed through unchanged.
     "Hello World".upper()    // "HELLO WORLD"
     "abc123".upper()         // "ABC123"
 )DOC", 1, nullptr, false, false) {
-    PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::STRING));
+    PCHECK_ENTRIES(params);
     PCHECK_CHECK(params);
 
     const auto *self = (ORString *) argv[0];

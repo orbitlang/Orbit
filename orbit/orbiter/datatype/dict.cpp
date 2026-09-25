@@ -390,7 +390,7 @@ RUNTIME_METHOD(dict_clear, clear,
     d.clear()
     d.is_empty()    // true
 )DOC", 1, nullptr, false, false) {
-    PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::DICT));
+    PCHECK_ENTRIES(params);
     PCHECK_CHECK(params);
 
     auto *self = (Dict *) argv[0];
@@ -417,7 +417,7 @@ RUNTIME_METHOD(dict_delete, delete,
     d.delete("a")    // true
     d.delete("a")    // false (already gone)
 )DOC", 2, nullptr, false, false) {
-    PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::DICT));
+    PCHECK_ENTRIES(params);
     PCHECK_CHECK(params);
 
     auto *self = (Dict *) argv[0];
@@ -448,7 +448,7 @@ The order matches the insertion order of the dictionary.
     let d = { a: 1, b: 2 }
     d.entries()    // [("a", 1), ("b", 2)]
 )DOC", 1, nullptr, false, false) {
-    PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::DICT));
+    PCHECK_ENTRIES(params);
     PCHECK_CHECK(params);
 
     auto *self = (Dict *) argv[0];
@@ -493,7 +493,6 @@ RUNTIME_METHOD(dict_get, get,
     d.get("y", default=0)       // 0
 )DOC", 2, "default", false, false) {
     PCHECK_ENTRIES(params,
-                   PCHECK_DEF("self", false, InstanceType::DICT),
                    PCHECK_DEF("default", true));
     PCHECK_CHECK(params);
 
@@ -529,7 +528,6 @@ RUNTIME_METHOD(dict_has, has,
     d.has("b")    // false
 )DOC", 2, nullptr, false, false) {
     PCHECK_ENTRIES(params,
-                   PCHECK_DEF("self", false, InstanceType::DICT),
                    PCHECK_DEF("key", false)
     );
     PCHECK_CHECK(params);
@@ -560,7 +558,7 @@ RUNTIME_METHOD(dict_is_empty, is_empty,
     ({}).is_empty()         // true
     ({ a: 1 }).is_empty()   // false
 )DOC", 1, nullptr, false, false) {
-    PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::DICT));
+    PCHECK_ENTRIES(params);
     PCHECK_CHECK(params);
 
     const auto *self = (const Dict *) argv[0];
@@ -579,7 +577,7 @@ RUNTIME_METHOD(dict_keys, keys,
 @example
     { a: 1, b: 2 }.keys()    // ["a", "b"]
 )DOC", 1, nullptr, false, false) {
-    PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::DICT));
+    PCHECK_ENTRIES(params);
     PCHECK_CHECK(params);
 
     return DictKeys((Dict *) argv[0]);
@@ -597,7 +595,7 @@ RUNTIME_METHOD(dict_length, length,
     { a: 1, b: 2 }.length()    // 2
     ({}).length()               // 0
 )DOC", 1, nullptr, false, false) {
-    PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::DICT));
+    PCHECK_ENTRIES(params);
     PCHECK_CHECK(params);
 
     const auto *self = (const Dict *) argv[0];
@@ -628,7 +626,6 @@ Entries from other take precedence when the same key exists in both.
     { a: 1 }.merge({ a: 99, b: 2 }) // { a: 99, b: 2 }
 )DOC", 2, nullptr, false, false) {
     PCHECK_ENTRIES(params,
-                   PCHECK_DEF("self", false, InstanceType::DICT),
                    PCHECK_DEF("other", false, InstanceType::DICT)
     );
     PCHECK_CHECK(params);
@@ -688,7 +685,6 @@ created.
     d.get("x")    // 42
 )DOC", 3, nullptr, false, false) {
     PCHECK_ENTRIES(params,
-                   PCHECK_DEF("self", false, InstanceType::DICT),
                    PCHECK_DEF("key", false),
                    PCHECK_DEF("value", false)
     );
@@ -724,7 +720,6 @@ No-op when other is self.
     d.get("b")    // 2
 )DOC", 2, nullptr, false, false) {
     PCHECK_ENTRIES(params,
-                   PCHECK_DEF("self", false, InstanceType::DICT),
                    PCHECK_DEF("other", false, InstanceType::DICT)
     );
     PCHECK_CHECK(params);
@@ -771,7 +766,7 @@ RUNTIME_METHOD(dict_values, values,
 @example
     { a: 1, b: 2 }.values()    // [1, 2]
 )DOC", 1, nullptr, false, false) {
-    PCHECK_ENTRIES(params, PCHECK_DEF("self", false, InstanceType::DICT));
+    PCHECK_ENTRIES(params);
     PCHECK_CHECK(params);
 
     auto *self = (Dict *) argv[0];
