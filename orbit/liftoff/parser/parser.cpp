@@ -2729,7 +2729,7 @@ void Parser::IgnoreNewLineIF(TokenType type) {
 // PUBLIC
 // *********************************************************************************************************************
 
-ASTHandle<Module *> Parser::Parse() noexcept {
+ASTHandle<liftoff::parser::Module *> Parser::Parse() noexcept {
     auto module = MakeModule(this->isolate_, TKCUR_LOC);
     if (!module)
         return {};
