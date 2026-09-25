@@ -240,13 +240,20 @@ namespace orbiter::datatype {
     /**
      * @brief Add multiple properties (functions/methods) to a TypeInfo from a bulk definition
      *
+     * Every function is built against @p module, which is what lets a method,
+     * or a static, of a module-owned type reach the module's other exports at
+     * call time, through `_func->shared->module`, the way a module-level
+     * function reaches them.
+     *
      * @param type Pointer to the TypeInfo
      * @param bulk Pointer to the FunctionDef array containing bulk property definitions
+     * @param module Module instance the type is exported from, or nullptr for a
+     *        type that belongs to no module, as every primitive does
      * @param flags Additional flags about the properties
      *
      * @return true if properties were added successfully, false otherwise
      */
-    bool TIPropertyAdd(TypeInfo *type, const struct FunctionDef *bulk, PropertyFlag flags);
+    bool TIPropertyAdd(TypeInfo *type, const struct FunctionDef *bulk, struct Module *module, PropertyFlag flags);
 
     /**
      * @brief Add multiple (instance) properties to a TypeInfo from a bulk definition

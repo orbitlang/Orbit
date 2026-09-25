@@ -1119,7 +1119,7 @@ bool orbiter::datatype::RawPtrTypeSetup(TypeInfo *self) {
     ops.to_string = RawPtrToString;
     ops.hash = RawPtrHash;
 
-    return TIPropertyAdd(self, rawptr_methods, PropertyFlag::IS_PUBLIC);
+    return TIPropertyAdd(self, rawptr_methods, nullptr, PropertyFlag::IS_PUBLIC);
 }
 
 HOType orbiter::datatype::RawPtrTypeInit(Isolate *isolate) {

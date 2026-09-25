@@ -299,7 +299,7 @@ bool orbiter::datatype::ContextSetup(TypeInfo *self) {
 
     ops.equal = ContextEqual;
 
-    if (!TIPropertyAdd(self, context_methods, PropertyFlag::IS_PUBLIC))
+    if (!TIPropertyAdd(self, context_methods, nullptr, PropertyFlag::IS_PUBLIC))
         return false;
 
     const auto ctor = FunctionFromDef(self, context_create);

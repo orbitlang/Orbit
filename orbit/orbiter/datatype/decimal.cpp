@@ -715,7 +715,7 @@ bool orbiter::datatype::DecimalTypeSetup(TypeInfo *self) {
     ops.to_native = (ToNativeType) DecimalToNative;
     ops.hash = DecimalHash;
 
-    return TIPropertyAdd(self, decimal_methods, PropertyFlag::IS_PUBLIC);
+    return TIPropertyAdd(self, decimal_methods, nullptr, PropertyFlag::IS_PUBLIC);
 }
 
 HDecimal orbiter::datatype::DecimalNew(Isolate *isolate, const DecimalUnderlying number) {

@@ -837,7 +837,7 @@ bool orbiter::datatype::DictTypeSetup(TypeInfo *self) {
     ops.to_bool = DictToBool;
     ops.to_string = (ToStrFn) DictToString;
 
-    return TIPropertyAdd(self, dict_methods, PropertyFlag::IS_PUBLIC);
+    return TIPropertyAdd(self, dict_methods, nullptr, PropertyFlag::IS_PUBLIC);
 }
 
 HDict orbiter::datatype::DictNew(Isolate *isolate, const U32 size) {

@@ -228,7 +228,7 @@ bool orbiter::datatype::ResultTypeSetup(TypeInfo *self) {
     ops.to_bool = ResultToBool;
     ops.to_string = ResultToString;
 
-    return TIPropertyAdd(self, result_methods, PropertyFlag::IS_PUBLIC);
+    return TIPropertyAdd(self, result_methods, nullptr, PropertyFlag::IS_PUBLIC);
 }
 
 HOType orbiter::datatype::ResultTypeInit(Isolate *isolate) {

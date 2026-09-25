@@ -2039,7 +2039,7 @@ bool orbiter::datatype::BytesTypeSetup(TypeInfo *self) noexcept {
     // --- Runtime ---
     ops.hash = BytesOpHash;
 
-    if (!TIPropertyAdd(self, bytes_methods, PropertyFlag::IS_PUBLIC))
+    if (!TIPropertyAdd(self, bytes_methods, nullptr, PropertyFlag::IS_PUBLIC))
         return false;
 
     const auto ctor = FunctionFromDef(self, bytes_create);

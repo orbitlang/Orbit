@@ -2,8 +2,10 @@
 //
 // Licensed under the Apache License v2.0
 
-#ifndef ORBIT_ORBITER_MODULE_SOCKET_H_
-#define ORBIT_ORBITER_MODULE_SOCKET_H_
+#ifndef ORBIT_ORBITER_MODULE_NET_H_
+#define ORBIT_ORBITER_MODULE_NET_H_
+
+#include <gyro/tcp.h>
 
 #ifdef _ORBIT_PLATFORM_WINDOWS
 #else
@@ -19,6 +21,12 @@ namespace orbiter::module {
 
         sockaddr_storage addr;
         socklen_t length;
+    };
+
+    struct TCPHandle {
+        OROBJ_HEAD;
+
+        gyro_tcp_t *handle;
     };
 
     /**

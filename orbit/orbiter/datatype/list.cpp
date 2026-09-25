@@ -902,7 +902,7 @@ bool orbiter::datatype::ListTypeSetup(TypeInfo *self) {
     ops.to_bool = ListToBool;
     ops.to_string = (ToStrFn) ListToString;
 
-    return TIPropertyAdd(self, list_methods, PropertyFlag::IS_PUBLIC);
+    return TIPropertyAdd(self, list_methods, nullptr, PropertyFlag::IS_PUBLIC);
 }
 
 HList orbiter::datatype::ListNew(Isolate *isolate, const MSize capacity) {

@@ -468,7 +468,7 @@ bool orbiter::datatype::ChannelTypeSetup(TypeInfo *self) {
     ops.to_bool = (ToBoolFn) ChannelToBool;
     ops.to_string = (ToStrFn) ChannelToString;
 
-    if (!TIPropertyAdd(self, channel_methods, PropertyFlag::IS_PUBLIC))
+    if (!TIPropertyAdd(self, channel_methods, nullptr, PropertyFlag::IS_PUBLIC))
         return false;
 
     const auto ctor = FunctionFromDef(self, channel_create);

@@ -517,7 +517,7 @@ bool orbiter::datatype::TupleTypeSetup(TypeInfo *self) {
     ops.to_string = (ToStrFn) TupleToString;
     ops.hash = TupleHash;
 
-    return TIPropertyAdd(self, tuple_methods, PropertyFlag::IS_PUBLIC);
+    return TIPropertyAdd(self, tuple_methods, nullptr, PropertyFlag::IS_PUBLIC);
 }
 
 HOType orbiter::datatype::TupleTypeInit(Isolate *isolate) {

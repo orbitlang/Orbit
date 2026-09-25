@@ -123,11 +123,11 @@ bool orbiter::datatype::FutureTypeSetup(TypeInfo *self) {
 
     auto &ops = ((TypeInfoOps *) self)->ops;
 
-    ops.equal     = FutureEqual;
-    ops.to_bool   = FutureToBool;
+    ops.equal = FutureEqual;
+    ops.to_bool = FutureToBool;
     ops.to_string = FutureToString;
 
-    return TIPropertyAdd(self, future_methods, PropertyFlag::IS_PUBLIC);
+    return TIPropertyAdd(self, future_methods, nullptr, PropertyFlag::IS_PUBLIC);
 }
 
 HFuture orbiter::datatype::FutureNew(Isolate *isolate) {

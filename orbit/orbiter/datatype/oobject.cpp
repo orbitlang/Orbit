@@ -99,11 +99,11 @@ bool orbiter::datatype::TIPropertyAdd(TypeInfo *type, OObject *name, OObject *va
     return true;
 }
 
-bool orbiter::datatype::TIPropertyAdd(TypeInfo *type, const FunctionDef *bulk, PropertyFlag flags) {
+bool orbiter::datatype::TIPropertyAdd(TypeInfo *type, const FunctionDef *bulk, Module *module, PropertyFlag flags) {
     flags &= ~PropertyFlag::IN_OBJECT; // Clear IN_OBJECT flag since it's not applicable in this context
 
     for (auto *cursor = bulk; cursor->name != nullptr; cursor++) {
-        auto fn = FunctionNew(type->isolate, nullptr, type, cursor);
+        auto fn = FunctionNew(type->isolate, module, type, cursor);
         if (!fn)
             return false;
 

@@ -16,6 +16,9 @@
 #include <cstddef>
 #include <cstring>
 
+#include <orbit/orbiter/evloop.h>
+#include <orbit/orbiter/runtime.h>
+
 #include <orbit/orbiter/datatype/atom.h>
 #include <orbit/orbiter/datatype/byteview.h>
 #include <orbit/orbiter/datatype/error.h>
@@ -28,7 +31,7 @@
 #include <orbit/orbiter/datatype/tuple.h>
 
 #include <orbit/orbiter/module/modules.h>
-#include <orbit/orbiter/module/socket.h>
+#include <orbit/orbiter/module/net.h>
 
 using namespace orbiter::datatype;
 using namespace orbiter::module;
@@ -168,9 +171,63 @@ void orbiter::module::SocketSetGaiError(Isolate *isolate, const int code, const 
              context);
 }
 
+/// Look up one of the module's exported types by name. The module exports them
+/// itself, so a missing entry is a bug in ModuleNetInit rather than a runtime
+/// condition.
+static TypeInfo *NetExportedType(const Module *module, const char *name) {
+    const auto *prop = TIFindLocalProperty(O_GET_TYPE(module), name);
+
+    assert(prop != nullptr);
+
+    return (TypeInfo *) prop->value;
+}
+
+/// Check that @p obj really is one of this module's Sockaddr objects before its
+/// bytes are handed to the operating system.
+static Sockaddr *NetCheckSockaddr(orbiter::Isolate *isolate, const Module *module, OObject *obj) {
+    auto *type = NetExportedType(module, "Sockaddr");
+
+    if (O_GET_TYPE(obj) != type) {
+        ErrorSetWithObjType(isolate,
+                            TypeError::Details[TypeError::ID],
+                            "expected a '%s' address, got '%s'",
+                            type->name,
+                            obj);
+
+        return nullptr;
+    }
+
+    return (Sockaddr *) obj;
+}
+
+/// Read an optional timeout argument, in milliseconds.
+static bool NetCheckTimeout(orbiter::Isolate *isolate, OObject *obj, IntegerUnderlying *out) {
+    *out = 0;
+
+    if (O_IS_SENTINEL(obj))
+        return true;
+
+    if (!NumberExtract(obj, *out))
+        return false;
+
+    if (*out < 0) {
+        ErrorSet(isolate,
+                 ValueError::Details[ValueError::ID],
+                 nullptr,
+                 "timeout must be non-negative, got %lld",
+                 (long long) *out);
+
+        return false;
+    }
+
+    return true;
+}
+
 // *********************************************************************************************************************
 // TYPE OPS — CONVERSION
 // *********************************************************************************************************************
+
+// *** SOCKADDR ***
 
 static OObject *SockaddrToString(orbiter::Isolate *isolate, const OObject *self) {
     char ip_string[NI_MAXHOST];
@@ -212,9 +269,48 @@ static OObject *SockaddrToString(orbiter::Isolate *isolate, const OObject *self)
                                       ORSTRING_TO_CSTR(family->id)).get();
 }
 
+// *** TCP HANDLE ***
+
+/// A handle reclaimed with its socket still open hands it back to the loop,
+/// which cancels whatever was pending on it and closes it. Closing is
+/// thread-safe in gyro, so it is safe from wherever the collector runs.
+static bool TCPHandleDtor(TCPHandle *self) {
+    if (self->handle != nullptr) {
+        gyro_handle_close(GYRO_HANDLE(self->handle), nullptr);
+
+        self->handle = nullptr;
+    }
+
+    return true;
+}
+
+/// Shared tail of the operations that hand back the handle they were given:
+/// closes it when the operation failed, since a half-open socket is of no use
+/// to anyone, and publishes it otherwise.
+static bool TCPHandleResume(orbiter::Fiber *fiber) {
+    const auto handle = std::move(fiber->io.object);
+
+    auto *self = (TCPHandle *) handle.get();
+
+    if (fiber->io.status != GYRO_COMPLETED) {
+        TCPHandleDtor(self);
+
+        orbiter::EVLRaiseError(fiber, fiber->io.status);
+
+        return false;
+    }
+
+    fiber->SetRRValue(handle.get());
+    fiber->AddIP();
+
+    return true;
+}
+
 // *********************************************************************************************************************
 // RUNTIME METHODS
 // *********************************************************************************************************************
+
+// *** SOCKADDR ***
 
 RUNTIME_METHOD(sockaddr_unpack, unpack,
                R"DOC(
@@ -320,6 +416,8 @@ so its port comes back as nil; an unnamed socket has an empty path.
 
     return HOObject(std::move(tuple));
 }
+
+// *** TCP HANDLE ***
 
 // *********************************************************************************************************************
 // EXPORTED FUNCTIONS
@@ -475,6 +573,110 @@ rejected rather than looked up.
     O_GC_TRACK_RETURN(isolate, (OObject *) saddr, false);
 }
 
+RUNTIME_FUNCTION(tcp_connect, connect,
+                 R"DOC(
+@brief Open a TCP connection to `addr`.
+
+The fiber is parked until the connection is established, so the scheduler
+thread stays free for other fibers; only this fiber waits. A connection over
+the loopback interface is often established at once, and then nothing is
+parked at all.
+
+A handle returned by this call is connected and ready to read and write. It
+owns its socket: close it when you are done with it, or let it be collected,
+which closes it for you.
+
+@param addr       The peer to reach, as a Sockaddr.
+@param timeout=0  Milliseconds to wait, 0 to wait as long as the system does.
+                  A connection is not established any sooner by giving up on
+                  it earlier, so this says how long the caller is prepared to
+                  wait, not what the network will do.
+
+@return A connected TCPHandle.
+
+@panic OOMError   When memory allocation fails.
+@panic TypeError  When a parameter has an invalid type.
+@panic ValueError When `timeout` is negative.
+@panic OSError    When the connection fails, with the reason the system gave:
+                  refused, unreachable, timed out.
+
+@example
+    h := TCPHandle.connect(parse("127.0.0.1", 8080))
+    h := TCPHandle.connect(addr, timeout=5000)
+)DOC", 1, "timeout", false, false) {
+    PCHECK_ENTRIES(params,
+                   PCHECK_DEF("addr", false, InstanceType::OBJECT),
+                   PCHECK_DEF("timeout", true, InstanceType::NUMBER));
+    PCHECK_CHECK(params);
+
+    auto *isolate = O_GET_ISOLATE(_func);
+    const auto *module = _func->shared->module;
+
+    const auto *addr = NetCheckSockaddr(isolate, module, argv[0]);
+    if (addr == nullptr)
+        return {};
+
+    IntegerUnderlying timeout;
+    if (!NetCheckTimeout(isolate, argv[1], &timeout))
+        return {};
+
+    auto *fiber = orbiter::Fiber::Current();
+    auto *orbiter = orbiter::Orbiter::GetInstance();
+
+    auto *handle = MakeObject<TCPHandle>(NetExportedType(module, "TCPHandle"), 0);
+    if (handle == nullptr)
+        return {};
+
+    handle->handle = nullptr;
+
+    const auto result = HOObject((OObject *) handle);
+
+    isolate->gc->Track((OObject *) handle, false);
+
+    handle->handle = gyro_tcp_new(orbiter->GetEventLoop());
+    if (handle->handle == nullptr) {
+        ErrorSet(isolate,
+                 OSError::Details[OSError::ID],
+                 nullptr,
+                 OSError::Details[OSError::NO_MEMORY],
+                 "connect");
+
+        return {};
+    }
+
+    fiber->PrepareForEventLoop(TCPHandleResume);
+    fiber->io.object = result;
+
+    const auto rc = gyro_tcp_connect(handle->handle,
+                                     (const sockaddr *) &addr->addr,
+                                     addr->length,
+                                     timeout,
+                                     orbiter::ResumeFromEventLoop,
+                                     fiber,
+                                     nullptr);
+    if (rc == GYRO_COMPLETED) {
+        fiber->AbortEventLoop();
+
+        return result;
+    }
+
+    if (rc < 0) {
+        fiber->AbortEventLoop();
+
+        orbiter::EVLRaiseError(fiber, rc);
+
+        return {};
+    }
+
+    return HOObject(kOddBallNIL);
+}
+
+constexpr FunctionDef tcphandle_methods[] = {
+    tcp_connect,
+
+    FUNCTIONDEF_SENTINEL
+};
+
 constexpr FunctionDef sockaddr_methods[] = {
     sockaddr_unpack,
 
@@ -485,16 +687,19 @@ constexpr FunctionDef sockaddr_methods[] = {
 // MODULE TABLE
 // *********************************************************************************************************************
 
-constexpr ModuleEntry socket_entries[] = {
+constexpr ModuleEntry net_entries[] = {
     ORBIT_MODULE_EXPORT_ALIAS("Sockaddr", nullptr),
+    ORBIT_MODULE_EXPORT_ALIAS("TCPHandle", nullptr),
     ORBIT_MODULE_EXPORT_FUNCTION(socket_parse),
 
     ORBIT_MODULE_SENTINEL
 };
 
-static bool ModuleSocketInit(Module *self) {
+static bool ModuleNetInit(Module *self) {
     auto *isolate = O_GET_ISOLATE(self);
     const auto *type = O_GET_TYPE(self);
+
+    // Sockaddr
 
     const auto tp_handle = MakeType(isolate, "Sockaddr", InstanceType::OBJECT,
                                     sizeof(Sockaddr) - sizeof(OObject), 1,
@@ -504,26 +709,42 @@ static bool ModuleSocketInit(Module *self) {
 
     ((TypeInfoOps *) tp_handle.get())->ops.to_string = SockaddrToString;
 
-    if (!TIPropertyAdd(tp_handle.get(), sockaddr_methods, PropertyFlag::IS_PUBLIC))
+    if (!TIPropertyAdd(tp_handle.get(), sockaddr_methods, self, PropertyFlag::IS_PUBLIC))
         return false;
 
     if (!ModuleSetLocalProperty(type, nullptr, (OObject *) tp_handle.get()))
         return false;
 
+    // TCPHandle
+
+    const auto tp_tcp = MakeType(isolate, "TCPHandle", InstanceType::OBJECT,
+                                 sizeof(TCPHandle) - sizeof(OObject), 1,
+                                 0);
+    if (!tp_tcp)
+        return false;
+
+    tp_tcp->dtor = (DtorFn) TCPHandleDtor;
+
+    if (!TIPropertyAdd(tp_tcp.get(), tcphandle_methods, self, PropertyFlag::IS_PUBLIC))
+        return false;
+
+    if (!ModuleSetLocalProperty(type, nullptr, (OObject *) tp_tcp.get()))
+        return false;
+
     return true;
 }
 
-ModuleInit ModuleSocket = {
-    "::orbit::net::socket",
-    "@brief Socket addresses."
+ModuleInit ModuleNet = {
+    "::orbit::net",
+    "@brief Sockets and socket addresses."
     "\n\n"
     "Builds the addresses the socket modules take and return. An address is an "
     "endpoint, the host together with its port, kept in the form the operating "
     "system expects so that nothing is lost in translation.",
     "1.0.0",
-    socket_entries,
-    ModuleSocketInit,
+    net_entries,
+    ModuleNetInit,
     nullptr
 };
 
-const ModuleInit *orbiter::module::module_net_socket_ = &ModuleSocket;
+const ModuleInit *orbiter::module::module_net_ = &ModuleNet;

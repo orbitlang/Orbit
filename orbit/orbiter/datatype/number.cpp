@@ -760,7 +760,7 @@ bool orbiter::datatype::NumberTypeSetup(TypeInfo *self) {
     ops.to_native = (ToNativeType) NumberToNative;
     ops.hash = NumberHash;
 
-    return TIPropertyAdd(self, number_methods, PropertyFlag::IS_PUBLIC);
+    return TIPropertyAdd(self, number_methods, nullptr, PropertyFlag::IS_PUBLIC);
 }
 
 HNumber orbiter::datatype::IntNew(Isolate *isolate, const IntegerUnderlying value) {

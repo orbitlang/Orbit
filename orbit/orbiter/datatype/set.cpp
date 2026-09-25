@@ -1115,7 +1115,7 @@ bool orbiter::datatype::SetTypeSetup(TypeInfo *self) {
     ops.bit_or = SetOpBitOr; // a | b   (union)
     ops.bit_xor = SetOpBitXor; // a ^ b   (symmetric difference)
 
-    if (!TIPropertyAdd(self, set_methods, PropertyFlag::IS_PUBLIC))
+    if (!TIPropertyAdd(self, set_methods, nullptr, PropertyFlag::IS_PUBLIC))
         return false;
 
     const auto ctor = FunctionFromDef(self, set_create);

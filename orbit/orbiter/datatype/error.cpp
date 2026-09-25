@@ -158,7 +158,7 @@ bool orbiter::datatype::ErrorTypeSetup(TypeInfo *self) {
     if (!TIPropertyAdd(self, error_props))
         return false;
 
-    const auto ok = TIPropertyAdd(self, error_methods, PropertyFlag::IS_PUBLIC);
+    const auto ok = TIPropertyAdd(self, error_methods, nullptr, PropertyFlag::IS_PUBLIC);
     if (ok) {
         const auto ctor = FunctionFromDef(self, error_create);
         if (!ctor)

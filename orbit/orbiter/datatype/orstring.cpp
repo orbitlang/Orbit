@@ -1688,7 +1688,7 @@ bool orbiter::datatype::ORStringTypeSetup(TypeInfo *self) {
     ops.to_native = (ToNativeType) StrToNative;
     ops.hash = StrHashOp;
 
-    return TIPropertyAdd(self, string_methods, PropertyFlag::IS_PUBLIC);
+    return TIPropertyAdd(self, string_methods, nullptr, PropertyFlag::IS_PUBLIC);
 }
 
 int orbiter::datatype::ORStringCompare(const ORString *left, const ORString *right) {
