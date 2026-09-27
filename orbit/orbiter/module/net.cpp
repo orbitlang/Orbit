@@ -13,6 +13,7 @@
 
 #include <algorithm>
 #include <cassert>
+#include <climits>
 #include <cstddef>
 #include <cstring>
 
@@ -39,6 +40,116 @@ using namespace orbiter::module;
 // *********************************************************************************************************************
 // INTERNAL
 // *********************************************************************************************************************
+
+/// Connections the kernel may hold for a listening socket before it starts refusing them.
+constexpr auto kTCPDefaultBacklog = 128;
+
+/// Read an optional timeout argument, in milliseconds.
+static bool NetCheckTimeout(orbiter::Isolate *isolate, OObject *obj, IntegerUnderlying *out) {
+    *out = 0;
+
+    if (O_IS_SENTINEL(obj))
+        return true;
+
+    if (!NumberExtract(obj, *out))
+        return false;
+
+    if (*out < 0) {
+        ErrorSet(isolate,
+                 ValueError::Details[ValueError::ID],
+                 nullptr,
+                 "timeout must be non-negative, got %lld",
+                 (long long) *out);
+
+        return false;
+    }
+
+    return true;
+}
+
+static bool TCPHandleDtor(TCPHandle *self) {
+    if (self->handle != nullptr) {
+        gyro_handle_close(GYRO_HANDLE(self->handle), nullptr);
+
+        self->handle = nullptr;
+    }
+
+    return true;
+}
+
+/// Look up one of the module's exported types by name. The module exports them
+/// itself, so a missing entry is a bug in ModuleNetInit rather than a runtime
+/// condition.
+static TypeInfo *NetExportedType(const Module *module, const char *name) {
+    const auto *prop = TIFindLocalProperty(O_GET_TYPE(module), name);
+
+    assert(prop != nullptr);
+
+    return (TypeInfo *) prop->value;
+}
+
+/// Wrap a raw address in one of this module's Sockaddr objects.
+static HOObject NetSockaddrNew(const orbiter::Isolate *isolate, const Module *module, const sockaddr_storage *addr,
+                               const socklen_t length) {
+    auto *saddr = MakeObject<Sockaddr>(NetExportedType(module, "Sockaddr"), 0);
+    if (saddr == nullptr)
+        return {};
+
+    saddr->addr = *addr;
+    saddr->length = length;
+
+    O_GC_TRACK_RETURN(isolate, (OObject*)saddr, false);
+}
+
+static gyro_socket_t NetHandleSocket(orbiter::Isolate *isolate, const TCPHandle *self, const char *context) {
+    if (self->handle != nullptr) {
+        const auto socket = gyro_tcp_fileno(self->handle);
+
+        if (socket != GYRO_INVALID_SOCKET)
+            return socket;
+    }
+
+    ErrorSet(isolate,
+             OSError::Details[OSError::ID],
+             nullptr,
+             OSError::Details[OSError::BAD_FD],
+             context);
+
+    return GYRO_INVALID_SOCKET;
+}
+
+/// The gyro handle behind @p self, or nullptr with an OSError set when it has
+/// already been closed.
+static gyro_tcp_t *NetHandleRequire(orbiter::Isolate *isolate, const TCPHandle *self, const char *context) {
+    if (self->handle != nullptr)
+        return self->handle;
+
+    ErrorSet(isolate,
+             OSError::Details[OSError::ID],
+             nullptr,
+             OSError::Details[OSError::BAD_FD],
+             context);
+
+    return nullptr;
+}
+
+/// Check that @p obj really is one of this module's Sockaddr objects before its
+/// bytes are handed to the operating system.
+static Sockaddr *NetCheckSockaddr(orbiter::Isolate *isolate, const Module *module, OObject *obj) {
+    auto *type = NetExportedType(module, "Sockaddr");
+
+    if (O_GET_TYPE(obj) != type) {
+        ErrorSetWithObjType(isolate,
+                            TypeError::Details[TypeError::ID],
+                            "expected a '%s' address, got '%s'",
+                            type->name,
+                            obj);
+
+        return nullptr;
+    }
+
+    return (Sockaddr *) obj;
+}
 
 bool orbiter::module::SocketAtomToInetFamily(Isolate *isolate, const char *atom, int *out_family) {
     if (strcmp(atom, "INET") == 0) {
@@ -171,58 +282,6 @@ void orbiter::module::SocketSetGaiError(Isolate *isolate, const int code, const 
              context);
 }
 
-/// Look up one of the module's exported types by name. The module exports them
-/// itself, so a missing entry is a bug in ModuleNetInit rather than a runtime
-/// condition.
-static TypeInfo *NetExportedType(const Module *module, const char *name) {
-    const auto *prop = TIFindLocalProperty(O_GET_TYPE(module), name);
-
-    assert(prop != nullptr);
-
-    return (TypeInfo *) prop->value;
-}
-
-/// Check that @p obj really is one of this module's Sockaddr objects before its
-/// bytes are handed to the operating system.
-static Sockaddr *NetCheckSockaddr(orbiter::Isolate *isolate, const Module *module, OObject *obj) {
-    auto *type = NetExportedType(module, "Sockaddr");
-
-    if (O_GET_TYPE(obj) != type) {
-        ErrorSetWithObjType(isolate,
-                            TypeError::Details[TypeError::ID],
-                            "expected a '%s' address, got '%s'",
-                            type->name,
-                            obj);
-
-        return nullptr;
-    }
-
-    return (Sockaddr *) obj;
-}
-
-/// Read an optional timeout argument, in milliseconds.
-static bool NetCheckTimeout(orbiter::Isolate *isolate, OObject *obj, IntegerUnderlying *out) {
-    *out = 0;
-
-    if (O_IS_SENTINEL(obj))
-        return true;
-
-    if (!NumberExtract(obj, *out))
-        return false;
-
-    if (*out < 0) {
-        ErrorSet(isolate,
-                 ValueError::Details[ValueError::ID],
-                 nullptr,
-                 "timeout must be non-negative, got %lld",
-                 (long long) *out);
-
-        return false;
-    }
-
-    return true;
-}
-
 // *********************************************************************************************************************
 // TYPE OPS — CONVERSION
 // *********************************************************************************************************************
@@ -270,41 +329,6 @@ static OObject *SockaddrToString(orbiter::Isolate *isolate, const OObject *self)
 }
 
 // *** TCP HANDLE ***
-
-/// A handle reclaimed with its socket still open hands it back to the loop,
-/// which cancels whatever was pending on it and closes it. Closing is
-/// thread-safe in gyro, so it is safe from wherever the collector runs.
-static bool TCPHandleDtor(TCPHandle *self) {
-    if (self->handle != nullptr) {
-        gyro_handle_close(GYRO_HANDLE(self->handle), nullptr);
-
-        self->handle = nullptr;
-    }
-
-    return true;
-}
-
-/// Shared tail of the operations that hand back the handle they were given:
-/// closes it when the operation failed, since a half-open socket is of no use
-/// to anyone, and publishes it otherwise.
-static bool TCPHandleResume(orbiter::Fiber *fiber) {
-    const auto handle = std::move(fiber->io.object);
-
-    auto *self = (TCPHandle *) handle.get();
-
-    if (fiber->io.status != GYRO_COMPLETED) {
-        TCPHandleDtor(self);
-
-        orbiter::EVLRaiseError(fiber, fiber->io.status);
-
-        return false;
-    }
-
-    fiber->SetRRValue(handle.get());
-    fiber->AddIP();
-
-    return true;
-}
 
 // *********************************************************************************************************************
 // RUNTIME METHODS
@@ -417,7 +441,412 @@ so its port comes back as nil; an unnamed socket has an empty path.
     return HOObject(std::move(tuple));
 }
 
+constexpr FunctionDef sockaddr_methods[] = {
+    sockaddr_unpack,
+
+    FUNCTIONDEF_SENTINEL
+};
+
 // *** TCP HANDLE ***
+
+RUNTIME_METHOD(tcp_bind, bind,
+               R"DOC(
+@brief Bind the socket to a local address.
+
+The system answers at once, so nothing is parked. Bind to port 0 to let it pick
+a free port, and read back which one with `local_addr()`; bind to the wildcard
+address of the family to take every interface.
+
+@param addr     The local address, as a Sockaddr. Its family must be the one
+                the handle was opened for.
+@param flags=0  Zero, or TCP_REUSEADDR to allow binding an address still held
+                by the connections of a previous run.
+
+@panic OSError When the handle is closed, or the address cannot be bound: it is
+               in use, or not one of this host's, or the port is privileged.
+
+@example
+    h := TCPHandle.open(@INET)
+    h.bind(parse("127.0.0.1", 8080), flags=TCP_REUSEADDR)
+)DOC", 2, "flags", false, false) {
+    PCHECK_ENTRIES(params,
+                   PCHECK_DEF("addr", false, InstanceType::OBJECT),
+                   PCHECK_DEF("flags", true, InstanceType::NUMBER));
+    PCHECK_CHECK(params);
+
+    auto *isolate = O_GET_ISOLATE(_func);
+    const auto *module = _func->shared->module;
+
+    const auto *self = (const TCPHandle *) argv[0];
+
+    const auto *addr = NetCheckSockaddr(isolate, module, argv[1]);
+    if (addr == nullptr)
+        return {};
+
+    IntegerUnderlying flags = 0;
+    if (!O_IS_SENTINEL(argv[2]) && !NumberExtract(argv[2], flags))
+        return {};
+
+    auto *handle = NetHandleRequire(isolate, self, "bind");
+    if (handle == nullptr)
+        return {};
+
+    const auto rc = gyro_tcp_bind(handle,
+                                  (const sockaddr *) &addr->addr,
+                                  addr->length,
+                                  (unsigned int) flags);
+    if (rc < 0) {
+        orbiter::EVLRaiseError(orbiter::Fiber::Current(), rc);
+
+        return {};
+    }
+
+    return HOObject(kOddBallNIL);
+}
+
+RUNTIME_METHOD(tcp_connect, connect,
+               R"DOC(
+@brief Connect the socket to a peer.
+
+The fiber is parked until the connection is established, so the scheduler
+thread stays free for other fibers; only this fiber waits. A connection over
+the loopback interface is often established at once, and then nothing is parked
+at all.
+
+@param addr       The peer to reach, as a Sockaddr.
+@param timeout=0  Milliseconds to wait, 0 to wait as long as the system does.
+
+@panic OSError When the handle is closed, or the connection fails with the
+               reason the system gave: refused, unreachable, timed out. The
+               socket is left open, so it can be closed or tried again.
+
+@example
+    h := TCPHandle.open(@INET)
+    h.connect(parse("127.0.0.1", 8080))
+    h.connect(addr, timeout=5000)
+)DOC", 2, "timeout", false, false) {
+    PCHECK_ENTRIES(params,
+                   PCHECK_DEF("addr", false, InstanceType::OBJECT),
+                   PCHECK_DEF("timeout", true, InstanceType::NUMBER));
+    PCHECK_CHECK(params);
+
+    auto *isolate = O_GET_ISOLATE(_func);
+    const auto *module = _func->shared->module;
+
+    auto *self = (TCPHandle *) argv[0];
+
+    const auto *addr = NetCheckSockaddr(isolate, module, argv[1]);
+    if (addr == nullptr)
+        return {};
+
+    IntegerUnderlying timeout;
+    if (!NetCheckTimeout(isolate, argv[2], &timeout))
+        return {};
+
+    auto *handle = NetHandleRequire(isolate, self, "connect");
+    if (handle == nullptr)
+        return {};
+
+    auto *fiber = orbiter::Fiber::Current();
+
+    fiber->PrepareForEventLoop(orbiter::EVLDoNothingAddIP);
+    fiber->io.object = HOObject((OObject *) self);
+
+    const auto rc = gyro_tcp_connect(handle,
+                                     (const sockaddr *) &addr->addr,
+                                     addr->length,
+                                     timeout,
+                                     orbiter::ResumeFromEventLoop,
+                                     fiber,
+                                     nullptr);
+
+    // Established inside the call, which is the usual outcome over loopback: no
+    // callback will follow, so the fiber carries on.
+    if (rc == GYRO_COMPLETED) {
+        fiber->AbortEventLoop();
+
+        return HOObject(kOddBallNIL);
+    }
+
+    if (rc < 0) {
+        fiber->AbortEventLoop();
+
+        orbiter::EVLRaiseError(fiber, rc);
+
+        return {};
+    }
+
+    return HOObject(kOddBallNIL);
+}
+
+RUNTIME_METHOD(tcp_fileno, fileno,
+               R"DOC(
+@brief Return the socket the handle is built on.
+
+For what this module does not wrap: a socket option it has no call for, or a
+question only the system can answer about the socket.
+
+DO NOT read from it, write to it, or close it. The event loop owns the
+readiness of that socket and the operations queued against it: reading behind
+its back takes bytes belonging to a queued read, and closing it hands the
+number back to the system while the loop is still watching it, which is how an
+unrelated file ends up being watched in its place. Use `close()` instead.
+
+@return The socket, as the number the system knows it by.
+
+@panic OSError When the handle is closed, or its socket was never opened.
+
+@example
+    h := TCPHandle.listen(parse("127.0.0.1", 0))
+    h.fileno()        // 7
+)DOC", 1, nullptr, false, false) {
+    PCHECK_ENTRIES(params);
+    PCHECK_CHECK(params);
+
+    auto *isolate = O_GET_ISOLATE(_func);
+
+    const auto *self = (const TCPHandle *) argv[0];
+
+    const auto socket = NetHandleSocket(isolate, self, "fileno");
+    if (socket == GYRO_INVALID_SOCKET)
+        return {};
+
+    return HOObject(IntNew(isolate, socket));
+}
+
+RUNTIME_METHOD(tcp_listen, listen,
+               R"DOC(
+@brief Start accepting connections on the bound socket.
+
+Only marks the socket as listening, which the system answers at once;
+connections are taken one at a time with `accept()`.
+
+Binding first is what chooses the address to listen on. Listening on a socket
+that was never bound is allowed, and the system binds it for you to an arbitrary
+port on every interface, which `local_addr()` then reports.
+
+@param backlog=128  Connections the kernel may hold before refusing more.
+
+@panic ValueError When `backlog` is negative or larger than the system allows.
+@panic OSError    When the handle is closed, or the socket cannot listen.
+
+@example
+    h := TCPHandle.open(@INET)
+    h.bind(parse("127.0.0.1", 8080))
+    h.listen()
+)DOC", 1, "backlog", false, false) {
+    PCHECK_ENTRIES(params,
+                   PCHECK_DEF("backlog", true, InstanceType::NUMBER));
+    PCHECK_CHECK(params);
+
+    auto *isolate = O_GET_ISOLATE(_func);
+
+    const auto *self = (const TCPHandle *) argv[0];
+
+    IntegerUnderlying backlog = kTCPDefaultBacklog;
+    if (!O_IS_SENTINEL(argv[1])) {
+        if (!NumberExtract(argv[1], backlog))
+            return {};
+
+        if (backlog < 0 || backlog > INT_MAX) {
+            ErrorSet(isolate,
+                     ValueError::Details[ValueError::ID],
+                     nullptr,
+                     "backlog must be in 0..%d, got %lld",
+                     INT_MAX,
+                     (long long) backlog);
+
+            return {};
+        }
+    }
+
+    const auto *handle = NetHandleRequire(isolate, self, "listen");
+    if (handle == nullptr)
+        return {};
+
+    const auto rc = gyro_tcp_listen(handle, (int) backlog);
+    if (rc < 0) {
+        orbiter::EVLRaiseError(orbiter::Fiber::Current(), rc);
+
+        return {};
+    }
+
+    return HOObject(kOddBallNIL);
+}
+
+RUNTIME_METHOD(tcp_local_addr, local_addr,
+               R"DOC(
+@brief Return the local address the socket is bound to.
+
+Answers for a listener as well as for a connection, and is the way to learn
+which port the system picked when the socket was bound to port 0. The address
+is read from the socket itself, so it reflects what the system actually did
+rather than what was asked for.
+
+@return The local Sockaddr.
+
+@panic OSError  When the handle is closed, or the address cannot be read.
+
+@example
+    h := TCPHandle.listen(parse("127.0.0.1", 0))
+    h.local_addr().unpack()        // ("127.0.0.1", 54321, @INET)
+)DOC", 1, nullptr, false, false) {
+    PCHECK_ENTRIES(params);
+    PCHECK_CHECK(params);
+
+    auto *isolate = O_GET_ISOLATE(_func);
+    const auto *module = _func->shared->module;
+
+    const auto *self = (const TCPHandle *) argv[0];
+
+    const auto socket = NetHandleSocket(isolate, self, "local_addr");
+    if (socket == GYRO_INVALID_SOCKET)
+        return {};
+
+    sockaddr_storage storage{};
+    socklen_t length = sizeof(storage);
+
+    if (getsockname(socket, (sockaddr *) &storage, &length) != 0) {
+        ErrorSetFromErrno(isolate, "getsockname");
+
+        return {};
+    }
+
+    return NetSockaddrNew(isolate, module, &storage, length);
+}
+
+RUNTIME_FUNCTION(tcp_open, open,
+                 R"DOC(
+@brief Create a TCP socket of the given family.
+
+The socket is open and configured but does nothing yet: this is the moment to
+set the options a system only honours before a socket is bound or connected,
+reaching it through `fileno()`. Then bind it, or connect it.
+
+The event loop has already set what it needs on that socket: non-blocking mode,
+close-on-exec, and no SIGPIPE where that exists. Non-blocking is not
+negotiable; clearing it stalls the loop on the first operation that has to wait.
+
+@param family Address family the socket is opened for: @INET or @INET6. Binding
+              or connecting an address of another family afterwards is refused
+              by the system.
+
+@return A new TCPHandle.
+
+@panic TypeError  When a parameter has an invalid type.
+@panic ValueError When `family` is not an address family TCP speaks.
+@panic OSError    When the socket cannot be opened, out of descriptors for
+                  instance.
+
+@example
+    h := TCPHandle.open(@INET)
+    h.bind(parse("127.0.0.1", 0))
+    h.listen()
+)DOC", 1, nullptr, false, false) {
+    PCHECK_ENTRIES(params,
+                   PCHECK_DEF("family", false, InstanceType::ATOM));
+    PCHECK_CHECK(params);
+
+    auto *isolate = O_GET_ISOLATE(_func);
+    const auto *module = _func->shared->module;
+
+    int family;
+    if (!SocketAtomToInetFamily(isolate, (Atom *) argv[0], &family))
+        return {};
+
+    if (family != AF_INET && family != AF_INET6) {
+        ErrorSet(isolate,
+                 ValueError::Details[ValueError::ID],
+                 nullptr,
+                 "a TCP socket is @INET or @INET6, not @%s",
+                 ORSTRING_TO_CSTR(((Atom *) argv[0])->id));
+
+        return {};
+    }
+
+    const auto *orbiter = orbiter::Orbiter::GetInstance();
+
+    auto *handle = MakeObject<TCPHandle>(NetExportedType(module, "TCPHandle"), 0);
+    if (handle == nullptr)
+        return {};
+
+    handle->handle = nullptr;
+
+    const auto result = HOObject((OObject *) handle);
+
+    isolate->gc->Track((OObject *) handle, false);
+
+    handle->handle = gyro_tcp_new(orbiter->GetEventLoop());
+    if (handle->handle == nullptr) {
+        ErrorSet(isolate,
+                 OSError::Details[OSError::ID],
+                 nullptr,
+                 OSError::Details[OSError::NO_MEMORY],
+                 "open");
+
+        return {};
+    }
+
+    const auto rc = gyro_tcp_open(handle->handle, family);
+    if (rc < 0) {
+        orbiter::EVLRaiseError(orbiter::Fiber::Current(), rc);
+
+        return {};
+    }
+
+    return result;
+}
+
+RUNTIME_METHOD(tcp_peer_addr, peer_addr,
+               R"DOC(
+@brief Return the address of the peer at the other end of the connection.
+
+Only a connected handle has a peer: asking a listener, which has none, is an
+error rather than an empty answer.
+
+@return The remote Sockaddr.
+
+@panic OSError  When the handle is closed, or is not connected.
+
+@example
+    c := TCPHandle.connect(parse("127.0.0.1", 8080))
+    c.peer_addr().unpack()        // ("127.0.0.1", 8080, @INET)
+)DOC", 1, nullptr, false, false) {
+    PCHECK_ENTRIES(params);
+    PCHECK_CHECK(params);
+
+    auto *isolate = O_GET_ISOLATE(_func);
+    const auto *module = _func->shared->module;
+
+    const auto *self = (const TCPHandle *) argv[0];
+
+    const auto socket = NetHandleSocket(isolate, self, "peer_addr");
+    if (socket == GYRO_INVALID_SOCKET)
+        return {};
+
+    sockaddr_storage storage{};
+    socklen_t length = sizeof(storage);
+
+    if (getpeername(socket, (sockaddr *) &storage, &length) != 0) {
+        ErrorSetFromErrno(isolate, "getpeername");
+
+        return {};
+    }
+
+    return NetSockaddrNew(isolate, module, &storage, length);
+}
+
+constexpr FunctionDef tcphandle_methods[] = {
+    tcp_bind,
+    tcp_connect,
+    tcp_fileno,
+    tcp_listen,
+    tcp_local_addr,
+    tcp_open,
+    tcp_peer_addr,
+
+    FUNCTIONDEF_SENTINEL
+};
 
 // *********************************************************************************************************************
 // EXPORTED FUNCTIONS
@@ -573,124 +1002,16 @@ rejected rather than looked up.
     O_GC_TRACK_RETURN(isolate, (OObject *) saddr, false);
 }
 
-RUNTIME_FUNCTION(tcp_connect, connect,
-                 R"DOC(
-@brief Open a TCP connection to `addr`.
-
-The fiber is parked until the connection is established, so the scheduler
-thread stays free for other fibers; only this fiber waits. A connection over
-the loopback interface is often established at once, and then nothing is
-parked at all.
-
-A handle returned by this call is connected and ready to read and write. It
-owns its socket: close it when you are done with it, or let it be collected,
-which closes it for you.
-
-@param addr       The peer to reach, as a Sockaddr.
-@param timeout=0  Milliseconds to wait, 0 to wait as long as the system does.
-                  A connection is not established any sooner by giving up on
-                  it earlier, so this says how long the caller is prepared to
-                  wait, not what the network will do.
-
-@return A connected TCPHandle.
-
-@panic OOMError   When memory allocation fails.
-@panic TypeError  When a parameter has an invalid type.
-@panic ValueError When `timeout` is negative.
-@panic OSError    When the connection fails, with the reason the system gave:
-                  refused, unreachable, timed out.
-
-@example
-    h := TCPHandle.connect(parse("127.0.0.1", 8080))
-    h := TCPHandle.connect(addr, timeout=5000)
-)DOC", 1, "timeout", false, false) {
-    PCHECK_ENTRIES(params,
-                   PCHECK_DEF("addr", false, InstanceType::OBJECT),
-                   PCHECK_DEF("timeout", true, InstanceType::NUMBER));
-    PCHECK_CHECK(params);
-
-    auto *isolate = O_GET_ISOLATE(_func);
-    const auto *module = _func->shared->module;
-
-    const auto *addr = NetCheckSockaddr(isolate, module, argv[0]);
-    if (addr == nullptr)
-        return {};
-
-    IntegerUnderlying timeout;
-    if (!NetCheckTimeout(isolate, argv[1], &timeout))
-        return {};
-
-    auto *fiber = orbiter::Fiber::Current();
-    auto *orbiter = orbiter::Orbiter::GetInstance();
-
-    auto *handle = MakeObject<TCPHandle>(NetExportedType(module, "TCPHandle"), 0);
-    if (handle == nullptr)
-        return {};
-
-    handle->handle = nullptr;
-
-    const auto result = HOObject((OObject *) handle);
-
-    isolate->gc->Track((OObject *) handle, false);
-
-    handle->handle = gyro_tcp_new(orbiter->GetEventLoop());
-    if (handle->handle == nullptr) {
-        ErrorSet(isolate,
-                 OSError::Details[OSError::ID],
-                 nullptr,
-                 OSError::Details[OSError::NO_MEMORY],
-                 "connect");
-
-        return {};
-    }
-
-    fiber->PrepareForEventLoop(TCPHandleResume);
-    fiber->io.object = result;
-
-    const auto rc = gyro_tcp_connect(handle->handle,
-                                     (const sockaddr *) &addr->addr,
-                                     addr->length,
-                                     timeout,
-                                     orbiter::ResumeFromEventLoop,
-                                     fiber,
-                                     nullptr);
-    if (rc == GYRO_COMPLETED) {
-        fiber->AbortEventLoop();
-
-        return result;
-    }
-
-    if (rc < 0) {
-        fiber->AbortEventLoop();
-
-        orbiter::EVLRaiseError(fiber, rc);
-
-        return {};
-    }
-
-    return HOObject(kOddBallNIL);
-}
-
-constexpr FunctionDef tcphandle_methods[] = {
-    tcp_connect,
-
-    FUNCTIONDEF_SENTINEL
-};
-
-constexpr FunctionDef sockaddr_methods[] = {
-    sockaddr_unpack,
-
-    FUNCTIONDEF_SENTINEL
-};
-
 // *********************************************************************************************************************
 // MODULE TABLE
 // *********************************************************************************************************************
 
-constexpr ModuleEntry net_entries[] = {
+const ModuleEntry net_entries[] = {
+    ORBIT_MODULE_EXPORT_FUNCTION(socket_parse),
+
     ORBIT_MODULE_EXPORT_ALIAS("Sockaddr", nullptr),
     ORBIT_MODULE_EXPORT_ALIAS("TCPHandle", nullptr),
-    ORBIT_MODULE_EXPORT_FUNCTION(socket_parse),
+    ORBIT_MODULE_EXPORT_ALIAS("TCP_REUSEADDR", O_TO_SMI(GYRO_TCP_REUSEADDR)),
 
     ORBIT_MODULE_SENTINEL
 };
@@ -718,7 +1039,7 @@ static bool ModuleNetInit(Module *self) {
     // TCPHandle
 
     const auto tp_tcp = MakeType(isolate, "TCPHandle", InstanceType::OBJECT,
-                                 sizeof(TCPHandle) - sizeof(OObject), 1,
+                                 sizeof(TCPHandle) - sizeof(OObject), 7,
                                  0);
     if (!tp_tcp)
         return false;
