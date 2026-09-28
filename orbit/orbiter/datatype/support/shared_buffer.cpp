@@ -5,6 +5,9 @@
 #include <cassert>
 #include <shared_mutex>
 
+#include <orbit/orbiter/datatype/error.h>
+#include <orbit/orbiter/datatype/errors.h>
+
 #include <orbit/orbiter/memory/iallocator.h>
 
 #include <orbit/orbiter/datatype/support/shared_buffer.h>
@@ -43,6 +46,15 @@ bool support::SharedBufferEnlarge(Isolate *isolate, SharedBuffer *sb, const MSiz
 
 bool support::SharedBufferEnlargeLocked(Isolate *isolate, SharedBuffer *sb, const MSize new_capacity) noexcept {
     assert(!sb->frozen && "SharedBufferEnlarge cannot grow a frozen buffer; detach first");
+
+    if (sb->pin.load(std::memory_order_acquire) > 0) {
+        ErrorSet(isolate,
+                 ValueError::Details[ValueError::Reason::ID],
+                 nullptr,
+                 ValueError::Details[ValueError::Reason::IO_BUSY]);
+
+        return false;
+    }
 
     if (new_capacity <= sb->capacity)
         return true;
@@ -105,8 +117,9 @@ support::SharedBuffer *support::SharedBufferNew(Isolate *isolate, const MSize ca
         }
     }
 
-    new(&sb->counter) std::atomic_uint(1);
     new(&sb->rwlock) sync::AsyncRWLock();
+    new(&sb->counter) std::atomic_uint(1);
+    new(&sb->pin) std::atomic_uint(0);
 
     return sb;
 }

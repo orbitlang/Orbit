@@ -301,13 +301,15 @@ namespace orbiter::datatype {
 
             PARAMETER,
             MISSING_PARAMETER,
+            IO_BUSY
         };
 
         static constexpr const char *Details[] = {
             (const char *) "ValueError",
 
             (const char *) "unexpected '%s' value for '%s' parameter(%d)",
-            (const char *) "missing required parameter '%s' at position %d"
+            (const char *) "missing required parameter '%s' at position %d",
+            (const char *) "cannot resize a Bytes while an I/O operation is using it"
         };
     };
 

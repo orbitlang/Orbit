@@ -54,6 +54,11 @@ namespace orbiter::datatype::support {
         /// The struct is destroyed when this drops to zero.
         std::atomic_uint counter;
 
+        /// Number of pending I/O operations writing into `buffer` through a raw
+        /// pointer. While non-zero, `buffer` must not move: Enlarge refuses to run.
+        /// Contents may still be read and written; only the storage is fixed.
+        std::atomic_uint pin;
+
         /// Monotonic frozen flag. Once true, never returns to false.
         /// Frozen buffers reject all mutation; owners must detach first.
         bool frozen;
@@ -68,6 +73,11 @@ namespace orbiter::datatype::support {
             return this->frozen;
         }
 
+        /// True while at least one I/O operation holds a pin on `buffer`.
+        [[nodiscard]] bool IsPinned() const noexcept {
+            return this->pin.load(std::memory_order_acquire) > 0;
+        }
+
         /// True when this buffer can be mutated in place — i.e. it is not
         /// frozen. The reference counter is intentionally NOT consulted:
         /// shared, non-frozen buffers are mutated in place and the change
@@ -76,6 +86,27 @@ namespace orbiter::datatype::support {
         /// (allocate a private SharedBuffer and copy) before writing.
         [[nodiscard]] bool IsWritable() const noexcept {
             return !this->IsFrozen();
+        }
+
+        /**
+         * @brief Fix `buffer` in memory for the duration of an I/O operation.
+         *
+         * Must be called with the unique side of `rwlock` held, so that no
+         * Enlarge can slip in between reading `buffer` and pinning it. Every
+         * Pin must be matched by exactly one Unpin, on success and failure alike.
+         */
+        void Pin() noexcept {
+            this->pin.fetch_add(1, std::memory_order_release);
+        }
+
+        /**
+         * @brief Release a pin taken with Pin, once the I/O operation is over.
+         *
+         * Needs no lock. When the last pin is dropped, Enlarge may move `buffer` again.
+         */
+        void Unpin() noexcept {
+            const auto fetch = this->pin.fetch_sub(1, std::memory_order_release);
+            assert(fetch>0);
         }
     };
 

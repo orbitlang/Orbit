@@ -57,6 +57,8 @@ namespace orbiter::datatype {
     class BytesWriteGuard {
         std::unique_lock<sync::AsyncRWLock> lock_;
 
+        Bytes *bytes_;
+
         unsigned char *data_;
 
     public:
@@ -98,8 +100,30 @@ namespace orbiter::datatype {
             return this->data_;
         }
 
+        /**
+         * @brief Pin the SharedBuffer behind the guarded view, so `Data()` stays
+         *        valid after the guard is released.
+         *
+         * Call it while the guard still holds the lock, i.e. before Release or
+         * destruction: that is what makes the pin race-free against Enlarge.
+         * Meant for writes that outlive the guard, such as an asynchronous read.
+         */
+        void PinBuffer() const noexcept {
+            this->bytes_->shared->Pin();
+        }
+
         void Release() noexcept {
             this->lock_.unlock();
+        }
+
+        /**
+         * @brief Drop a pin taken with PinBuffer, while the guard is still alive.
+         *
+         * Once the guard is gone, release the pin through `SharedBuffer::Unpin`
+         * directly (e.g. from the on_resume of the operation).
+         */
+        void UnpinBuffer() const noexcept {
+            this->bytes_->shared->Unpin();
         }
     };
 

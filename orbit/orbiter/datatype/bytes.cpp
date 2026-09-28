@@ -2229,7 +2229,8 @@ MSSize orbiter::datatype::BytesFind(const Bytes *haystack, const Bytes *needle, 
                            needle->shared->buffer + needle->start, needle->length);
 }
 
-BytesWriteGuard::BytesWriteGuard(Bytes *bytes, const MSize offset, const MSize length) noexcept : data_(nullptr) {
+BytesWriteGuard::BytesWriteGuard(Bytes *bytes, const MSize offset, const MSize length) noexcept : bytes_(bytes),
+    data_(nullptr) {
     assert(bytes != nullptr);
 
     auto *isolate = O_GET_ISOLATE(bytes);
