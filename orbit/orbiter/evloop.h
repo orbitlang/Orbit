@@ -36,6 +36,25 @@ namespace orbiter {
     bool EVLReturnFilledBytes(Fiber *fiber);
 
     /**
+     * @brief on_resume for operations that write into a caller-owned, pinned Bytes (e.g. readinto).
+     *
+     * First releases the pin on the SharedBuffer of the Bytes held in `io.object`,
+     * whatever the outcome. Then, on GYRO_COMPLETED or GYRO_EOF, it publishes
+     * `io.transferred` in RR as an Int (0 at end of stream) and advances IP past the
+     * CALL; on any other status it raises the corresponding OSError. The length of
+     * the Bytes is never changed.
+     *
+     * The native must pass the Bytes as `io_object` to PrepareForEventLoop and pin
+     * its buffer (BytesWriteGuard::PinBuffer) only when the operation is left
+     * pending, so that this callback's Unpin is balanced.
+     *
+     * @param fiber The fiber being resumed; `io.object` must be a pinned Bytes.
+     *
+     * @return True if the result was published, false if an error was raised.
+     */
+    bool EVLReturnTransferred(Fiber *fiber);
+
+    /**
      * @brief Completion callback shared by every operation submitted with a fiber as user data.
      *
      * Runs on the loop thread: it only records the outcome in FiberIO and hands the

@@ -851,7 +851,9 @@ data comes in, so the scheduler thread stays free for other fibers; when data
 is already waiting, nothing is parked at all.
 
 An empty Bytes means the peer shut the connection down cleanly: no more bytes
-are coming, and it is the only way to learn it.
+are coming, and it is the only way to learn it. Asking for 0 bytes is the one
+exception: it answers with an empty Bytes without touching the connection, so
+it says nothing about the peer.
 
 @param n          Maximum number of bytes to read.
 @param timeout=0  Milliseconds to wait for data, 0 to wait indefinitely.
@@ -865,7 +867,9 @@ are coming, and it is the only way to learn it.
                   by the peer, or timed out.
 
 @example
-    c := TCPHandle.open(@INET).connect(parse("127.0.0.1", 8080))
+    c := TCPHandle.open(@INET)
+    c.connect(parse("127.0.0.1", 8080))
+
     data := c.read(4096)
     chunk := c.read(1024, timeout=5000)
 )DOC", 2, "timeout", false, false) {
@@ -896,19 +900,29 @@ are coming, and it is the only way to learn it.
     if (!NetCheckTimeout(isolate, argv[2], &timeout))
         return {};
 
+    auto *handle = NetHandleRequire(isolate, self, "read");
+    if (handle == nullptr)
+        return {};
+
     const auto out = BytesNew(isolate, n, false);
     if (!out)
         return {};
 
+    // Nothing was asked for, so nothing is read.
+    if (n == 0)
+        return HOObject((OObject *) out.get());
+
     auto *fiber = orbiter::Fiber::Current();
 
+    // The buffer needs no pin: this Bytes was just created here and no Orbit
+    // code can name it yet, so nothing can resize it while the loop writes.
     fiber->PrepareForEventLoop(orbiter::EVLReturnFilledBytes, (OObject *) out.get());
 
     fiber->io.buf.base = (char *) out->shared->buffer;
     fiber->io.buf.len = n;
 
     size_t transferred = 0;
-    const auto rc = gyro_tcp_read(self->handle,
+    const auto rc = gyro_tcp_read(handle,
                                   &fiber->io.buf,
                                   1,
                                   timeout,
@@ -935,6 +949,139 @@ are coming, and it is the only way to learn it.
     return HOObject(kOddBallNIL);
 }
 
+RUNTIME_METHOD(tcp_readinto, readinto,
+R"DOC(
+@brief Read up to length bytes from the connection into buffer at the given offset.
+
+The destination buffer must already be at least `offset + length` bytes long,
+`readinto` does NOT grow it. The read is short by design: it returns as soon
+as at least one byte is there, and never waits for `length` of them; bytes
+beyond what was actually read are left untouched. A return of 0 means the peer
+shut the connection down cleanly: no more bytes are coming. Asking for 0 bytes
+is the one exception: it returns 0 without touching the connection, so it says
+nothing about the peer.
+
+When nothing has arrived yet, the fiber is parked until data comes in, so the
+scheduler thread stays free for other fibers; when data is already waiting,
+nothing is parked at all. While the fiber is parked the buffer is written in
+place by the event loop: its contents can still be read or changed, but any
+attempt to resize it (e.g. `append`) panics with ValueError until the read
+completes.
+
+@param buffer     The mutable Bytes to write into.
+@param offset     Position in buffer where the first byte lands (>= 0).
+@param length     Maximum number of bytes to read (>= 0).
+@param timeout=0  Milliseconds to wait for data, 0 to wait indefinitely.
+
+@return The number of bytes actually read; 0 on end of stream.
+
+@panic TypeError  When a parameter has an invalid type.
+@panic ValueError When buffer is frozen, when offset, length or timeout is
+                  negative, or when offset + length exceeds the current size
+                  of buffer.
+@panic OSError    When the read fails with the reason the system gave: reset
+                  by the peer, or timed out.
+
+@see read
+
+@example
+    c := TCPHandle.open(@INET)
+    c.connect(parse("127.0.0.1", 8080))
+
+    buf := Bytes(len=1024)
+    n   := c.readinto(buf, 0, 1024)    # 0..n holds the bytes that were just read
+    n   = c.readinto(buf, 0, 1024, timeout=5000)
+)DOC", 4, "timeout", false, false) {
+    PCHECK_ENTRIES(params,
+                   PCHECK_DEF("buffer", false, InstanceType::BYTES),
+                   PCHECK_DEF("offset", false, InstanceType::NUMBER),
+                   PCHECK_DEF("length", false, InstanceType::NUMBER),
+                   PCHECK_DEF("timeout", true, InstanceType::NUMBER));
+    PCHECK_CHECK(params);
+
+    const auto *self = (const TCPHandle *) argv[0];
+
+    auto *isolate = O_GET_ISOLATE(_func);
+
+    IntegerUnderlying r_offset;
+    if (!NumberExtract(argv[2], r_offset))
+        return {};
+
+    if (r_offset < 0) {
+        ErrorSet(isolate,
+                 ValueError::Details[ValueError::Reason::ID],
+                 nullptr,
+                 "offset cannot be negative"
+        );
+
+        return {};
+    }
+
+    IntegerUnderlying r_length;
+    if (!NumberExtract(argv[3], r_length))
+        return {};
+
+    if (r_length < 0) {
+        ErrorSet(isolate,
+                 ValueError::Details[ValueError::Reason::ID],
+                 nullptr,
+                 "read length cannot be negative"
+        );
+
+        return {};
+    }
+
+    IntegerUnderlying timeout;
+    if (!NetCheckTimeout(isolate, argv[4], &timeout))
+        return {};
+
+    auto *handle = NetHandleRequire(isolate, self, "readinto");
+    if (handle == nullptr)
+        return {};
+
+    const auto buffer = BytesWriteGuard((Bytes *) argv[1], r_offset, r_length);
+    if (!buffer)
+        return {};
+
+    // Nothing was asked for, so nothing is read.
+    if (r_length == 0)
+        return HOObject((OObject *) O_TO_SMI(0));
+
+    auto *fiber = orbiter::Fiber::Current();
+
+    fiber->PrepareForEventLoop(orbiter::EVLReturnTransferred, argv[1]);
+
+    fiber->io.buf.base = (char *) buffer.Data();
+    fiber->io.buf.len = r_length;
+
+    size_t transferred = 0;
+    const auto rc = gyro_tcp_read(handle,
+                                  &fiber->io.buf,
+                                  1,
+                                  timeout,
+                                  orbiter::ResumeFromEventLoop,
+                                  fiber,
+                                  nullptr,
+                                  &transferred);
+    if (rc < 0 && rc != GYRO_EOF) {
+        fiber->AbortEventLoop();
+
+        orbiter::EVLRaiseError(fiber, rc);
+
+        return {};
+    }
+
+    if (rc == GYRO_COMPLETED || rc == GYRO_EOF) {
+        fiber->AbortEventLoop();
+
+        return HOObject((OObject *) O_TO_SMI(transferred));
+    }
+
+    buffer.PinBuffer();
+
+    return HOObject(kOddBallNIL);
+}
+
 constexpr FunctionDef tcphandle_methods[] = {
     tcp_bind,
     tcp_connect,
@@ -944,6 +1091,7 @@ constexpr FunctionDef tcphandle_methods[] = {
     tcp_open,
     tcp_peer_addr,
     tcp_read,
+    tcp_readinto,
 
     FUNCTIONDEF_SENTINEL
 };
@@ -1139,7 +1287,7 @@ static bool ModuleNetInit(Module *self) {
     // TCPHandle
 
     const auto tp_tcp = MakeType(isolate, "TCPHandle", InstanceType::OBJECT,
-                                 sizeof(TCPHandle) - sizeof(OObject), 8,
+                                 sizeof(TCPHandle) - sizeof(OObject), 9,
                                  0);
     if (!tp_tcp)
         return false;

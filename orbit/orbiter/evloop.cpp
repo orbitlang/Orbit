@@ -43,6 +43,25 @@ bool orbiter::EVLReturnFilledBytes(Fiber *fiber) {
     return true;
 }
 
+bool orbiter::EVLReturnTransferred(Fiber *fiber) {
+    const auto buffer = (Bytes *) fiber->io.object.get();
+
+    assert(O_IS_TYPE(buffer, InstanceType::BYTES));
+
+    buffer->shared->Unpin();
+
+    if (fiber->io.status != GYRO_COMPLETED && fiber->io.status != GYRO_EOF) {
+        EVLRaiseError(fiber, fiber->io.status);
+
+        return false;
+    }
+
+    fiber->SetRRValue(O_TO_SMI(fiber->io.transferred));
+    fiber->AddIP();
+
+    return true;
+}
+
 gyro_cb_status_t orbiter::ResumeFromEventLoop(gyro_handle_t *, const int status, const size_t transferred,
                                               void *data) noexcept {
     auto *fiber = (Fiber *) data;

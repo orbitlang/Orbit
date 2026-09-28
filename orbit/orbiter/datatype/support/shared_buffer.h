@@ -105,8 +105,8 @@ namespace orbiter::datatype::support {
          * Needs no lock. When the last pin is dropped, Enlarge may move `buffer` again.
          */
         void Unpin() noexcept {
-            const auto fetch = this->pin.fetch_sub(1, std::memory_order_release);
-            assert(fetch>0);
+            [[maybe_unused]] const auto fetch = this->pin.fetch_sub(1, std::memory_order_release);
+            assert(fetch > 0);
         }
     };
 
