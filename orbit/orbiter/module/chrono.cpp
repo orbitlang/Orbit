@@ -130,7 +130,7 @@ slot again.
     auto *orbiter = orbiter::Orbiter::GetInstance();
     auto *fiber = orbiter::Fiber::Current();
 
-    fiber->PrepareForEventLoop(SleepResume);
+    fiber->PrepareForEventLoop(SleepResume, nullptr);
     fiber->io.udata = start;
 
     const auto rc = gyro_timer_start(orbiter->GetEventLoop(),

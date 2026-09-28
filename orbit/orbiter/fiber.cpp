@@ -178,10 +178,14 @@ void Fiber::PopState() noexcept {
     this->vm.regs.SP.reg = frame_base - kStackPrologueOffset;
 }
 
-void Fiber::PrepareForEventLoop(const ResumeFn on_resume) noexcept {
-    this->io.object.reset();
+void Fiber::PrepareForEventLoop(const ResumeFn on_resume, datatype::OObject *io_object) noexcept {
+    this->io.object = datatype::HOObject(io_object);
     this->io.on_resume = on_resume;
+
     this->io.status = 0;
+
+    this->io.buf.base = nullptr;
+    this->io.buf.len = 0;
 
     this->io.transferred = 0;
     this->io.udata = 0;

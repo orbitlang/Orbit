@@ -21,6 +21,7 @@
 #include <orbit/orbiter/runtime.h>
 
 #include <orbit/orbiter/datatype/atom.h>
+#include <orbit/orbiter/datatype/bytes.h>
 #include <orbit/orbiter/datatype/byteview.h>
 #include <orbit/orbiter/datatype/error.h>
 #include <orbit/orbiter/datatype/errors.h>
@@ -462,6 +463,8 @@ address of the family to take every interface.
 @param flags=0  Zero, or TCP_REUSEADDR to allow binding an address still held
                 by the connections of a previous run.
 
+@return Self, so that `listen()` or `connect()` can be chained.
+
 @panic OSError When the handle is closed, or the address cannot be bound: it is
                in use, or not one of this host's, or the port is privileged.
 
@@ -501,7 +504,7 @@ address of the family to take every interface.
         return {};
     }
 
-    return HOObject(kOddBallNIL);
+    return HOObject((OObject *) self);
 }
 
 RUNTIME_METHOD(tcp_connect, connect,
@@ -516,13 +519,14 @@ at all.
 @param addr       The peer to reach, as a Sockaddr.
 @param timeout=0  Milliseconds to wait, 0 to wait as long as the system does.
 
+@return Self, once the connection is established.
+
 @panic OSError When the handle is closed, or the connection fails with the
                reason the system gave: refused, unreachable, timed out. The
                socket is left open, so it can be closed or tried again.
 
 @example
     h := TCPHandle.open(@INET)
-    h.connect(parse("127.0.0.1", 8080))
     h.connect(addr, timeout=5000)
 )DOC", 2, "timeout", false, false) {
     PCHECK_ENTRIES(params,
@@ -549,8 +553,7 @@ at all.
 
     auto *fiber = orbiter::Fiber::Current();
 
-    fiber->PrepareForEventLoop(orbiter::EVLDoNothingAddIP);
-    fiber->io.object = HOObject((OObject *) self);
+    fiber->PrepareForEventLoop(orbiter::EVLDoNothingAddIP, (OObject *) self);
 
     const auto rc = gyro_tcp_connect(handle,
                                      (const sockaddr *) &addr->addr,
@@ -565,7 +568,7 @@ at all.
     if (rc == GYRO_COMPLETED) {
         fiber->AbortEventLoop();
 
-        return HOObject(kOddBallNIL);
+        return HOObject((OObject *) self);
     }
 
     if (rc < 0) {
@@ -576,7 +579,7 @@ at all.
         return {};
     }
 
-    return HOObject(kOddBallNIL);
+    return HOObject((OObject *) self);
 }
 
 RUNTIME_METHOD(tcp_fileno, fileno,
@@ -597,7 +600,7 @@ unrelated file ends up being watched in its place. Use `close()` instead.
 @panic OSError When the handle is closed, or its socket was never opened.
 
 @example
-    h := TCPHandle.listen(parse("127.0.0.1", 0))
+    h := TCPHandle.open(@INET).bind(parse("127.0.0.1", 0)).listen()
     h.fileno()        // 7
 )DOC", 1, nullptr, false, false) {
     PCHECK_ENTRIES(params);
@@ -627,13 +630,14 @@ port on every interface, which `local_addr()` then reports.
 
 @param backlog=128  Connections the kernel may hold before refusing more.
 
+@return Self.
+
 @panic ValueError When `backlog` is negative or larger than the system allows.
 @panic OSError    When the handle is closed, or the socket cannot listen.
 
 @example
-    h := TCPHandle.open(@INET)
-    h.bind(parse("127.0.0.1", 8080))
-    h.listen()
+    srv := TCPHandle.open(@INET).bind(parse("127.0.0.1", 8080)).listen()
+    srv.local_addr().unpack()        // ("127.0.0.1", 8080, @INET)
 )DOC", 1, "backlog", false, false) {
     PCHECK_ENTRIES(params,
                    PCHECK_DEF("backlog", true, InstanceType::NUMBER));
@@ -671,7 +675,7 @@ port on every interface, which `local_addr()` then reports.
         return {};
     }
 
-    return HOObject(kOddBallNIL);
+    return HOObject((OObject *) self);
 }
 
 RUNTIME_METHOD(tcp_local_addr, local_addr,
@@ -688,7 +692,7 @@ rather than what was asked for.
 @panic OSError  When the handle is closed, or the address cannot be read.
 
 @example
-    h := TCPHandle.listen(parse("127.0.0.1", 0))
+    h := TCPHandle.open(@INET).bind(parse("127.0.0.1", 0)).listen()
     h.local_addr().unpack()        // ("127.0.0.1", 54321, @INET)
 )DOC", 1, nullptr, false, false) {
     PCHECK_ENTRIES(params);
@@ -809,7 +813,7 @@ error rather than an empty answer.
 @panic OSError  When the handle is closed, or is not connected.
 
 @example
-    c := TCPHandle.connect(parse("127.0.0.1", 8080))
+    c := TCPHandle.open(@INET).connect(parse("127.0.0.1", 8080))
     c.peer_addr().unpack()        // ("127.0.0.1", 8080, @INET)
 )DOC", 1, nullptr, false, false) {
     PCHECK_ENTRIES(params);
@@ -836,6 +840,101 @@ error rather than an empty answer.
     return NetSockaddrNew(isolate, module, &storage, length);
 }
 
+RUNTIME_METHOD(tcp_read, read,
+               R"DOC(
+@brief Read whatever has arrived on the connection, up to `n` bytes.
+
+The read is short by design: it returns as soon as at least one byte is there,
+and never waits for `n` of them. Reading an exact amount means reading again
+until it is reached. When nothing has arrived yet, the fiber is parked until
+data comes in, so the scheduler thread stays free for other fibers; when data
+is already waiting, nothing is parked at all.
+
+An empty Bytes means the peer shut the connection down cleanly: no more bytes
+are coming, and it is the only way to learn it.
+
+@param n          Maximum number of bytes to read.
+@param timeout=0  Milliseconds to wait for data, 0 to wait indefinitely.
+
+@return A new Bytes with the bytes read, between 1 and `n` long, or empty at
+        end of stream.
+
+@panic TypeError  When a parameter has an invalid type.
+@panic ValueError When `n` or `timeout` is negative.
+@panic OSError    When the read fails with the reason the system gave: reset
+                  by the peer, or timed out.
+
+@example
+    c := TCPHandle.open(@INET).connect(parse("127.0.0.1", 8080))
+    data := c.read(4096)
+    chunk := c.read(1024, timeout=5000)
+)DOC", 2, "timeout", false, false) {
+    PCHECK_ENTRIES(params,
+                   PCHECK_DEF("n", false, InstanceType::NUMBER),
+                   PCHECK_DEF("timeout", true, InstanceType::NUMBER));
+    PCHECK_CHECK(params);
+
+    const auto *self = (const TCPHandle *) argv[0];
+
+    auto *isolate = O_GET_ISOLATE(_func);
+
+    IntegerUnderlying n;
+    if (!NumberExtract(argv[1], n))
+        return {};
+
+    if (n < 0) {
+        ErrorSet(isolate,
+                 ValueError::Details[ValueError::Reason::ID],
+                 nullptr,
+                 "read length cannot be negative"
+        );
+
+        return {};
+    }
+
+    IntegerUnderlying timeout;
+    if (!NetCheckTimeout(isolate, argv[2], &timeout))
+        return {};
+
+    const auto out = BytesNew(isolate, n, false);
+    if (!out)
+        return {};
+
+    auto *fiber = orbiter::Fiber::Current();
+
+    fiber->PrepareForEventLoop(orbiter::EVLReturnFilledBytes, (OObject *) out.get());
+
+    fiber->io.buf.base = (char *) out->shared->buffer;
+    fiber->io.buf.len = n;
+
+    size_t transferred = 0;
+    const auto rc = gyro_tcp_read(self->handle,
+                                  &fiber->io.buf,
+                                  1,
+                                  timeout,
+                                  orbiter::ResumeFromEventLoop,
+                                  fiber,
+                                  nullptr,
+                                  &transferred);
+    if (rc < 0 && rc != GYRO_EOF) {
+        fiber->AbortEventLoop();
+
+        orbiter::EVLRaiseError(fiber, rc);
+
+        return {};
+    }
+
+    if (rc == GYRO_COMPLETED || rc == GYRO_EOF) {
+        fiber->AbortEventLoop();
+
+        out->length = transferred;
+
+        return HOObject((OObject *) out.get());
+    }
+
+    return HOObject(kOddBallNIL);
+}
+
 constexpr FunctionDef tcphandle_methods[] = {
     tcp_bind,
     tcp_connect,
@@ -844,6 +943,7 @@ constexpr FunctionDef tcphandle_methods[] = {
     tcp_local_addr,
     tcp_open,
     tcp_peer_addr,
+    tcp_read,
 
     FUNCTIONDEF_SENTINEL
 };
@@ -1039,7 +1139,7 @@ static bool ModuleNetInit(Module *self) {
     // TCPHandle
 
     const auto tp_tcp = MakeType(isolate, "TCPHandle", InstanceType::OBJECT,
-                                 sizeof(TCPHandle) - sizeof(OObject), 7,
+                                 sizeof(TCPHandle) - sizeof(OObject), 8,
                                  0);
     if (!tp_tcp)
         return false;
@@ -1055,7 +1155,7 @@ static bool ModuleNetInit(Module *self) {
     return true;
 }
 
-ModuleInit ModuleNet = {
+static ModuleInit ModuleNet = {
     "::orbit::net",
     "@brief Sockets and socket addresses."
     "\n\n"

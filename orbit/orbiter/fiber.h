@@ -19,6 +19,8 @@
 #include <orbit/orbiter/panic.h>
 #include <orbit/orbiter/vm.h>
 
+#include "gyro/buf.h"
+
 namespace orbiter {
     struct FiberContext {
         datatype::Context *context;
@@ -37,6 +39,8 @@ namespace orbiter {
         datatype::HOObject object;
 
         ResumeFn on_resume;
+
+        gyro_buf_t buf;
 
         I32 status;
 
@@ -209,13 +213,27 @@ namespace orbiter {
         /**
          * @brief Marks the fiber as suspended on the event loop.
          *
+         * Resets the per-operation state in `io` (status, buffer, transferred bytes, udata),
+         * stores the resume callback and the object tied to the operation, and moves the
+         * fiber to FiberState::SUSPENDED_IO.
+         *
          * Must be called BEFORE submitting the operation to the loop: the completion
          * callback may run on the loop thread as soon as the submit returns, and it
-         * expects the fiber to be already parked. `on_resume` runs on the mutator
-         * that picks the fiber up again, before eval, and is responsible for
-         * publishing the outcome (return value in RR, or a panic) and for advancing IP.
+         * expects the fiber to be already parked. If the submit fails synchronously,
+         * undo this call with AbortEventLoop.
+         *
+         * @param on_resume Optional callback run on the mutator that picks the fiber up again,
+         *                  before eval. It is responsible for publishing the outcome (return
+         *                  value in RR, or a panic) and for advancing IP past the CALL.
+         *                  If nullptr, nothing is run and IP is left untouched, so the fiber
+         *                  resumes by executing the same CALL again.
+         * @param io_object Optional object the operation works on (e.g. the buffer a read fills
+         *                  or the handle it targets). It is held in `io.object` (replaced by the
+         *                  next call, released by AbortEventLoop), so the GC cannot reclaim it
+         *                  while the loop still uses it, and `on_resume` can retrieve it from there.
+         *                  Pass nullptr when the operation needs no object.
          */
-        void PrepareForEventLoop(ResumeFn on_resume) noexcept;
+        void PrepareForEventLoop(ResumeFn on_resume, datatype::OObject *io_object) noexcept;
 
         /**
          * @brief Handles a fiber-level exception by recording the provided error object.

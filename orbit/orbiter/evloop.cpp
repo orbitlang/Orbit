@@ -5,6 +5,7 @@
 #include <orbit/orbiter/fiber.h>
 #include <orbit/orbiter/runtime.h>
 
+#include <orbit/orbiter/datatype/bytes.h>
 #include <orbit/orbiter/datatype/error.h>
 #include <orbit/orbiter/datatype/errors.h>
 
@@ -20,7 +21,24 @@ bool orbiter::EVLDoNothingAddIP(Fiber *fiber) {
         return false;
     }
 
-    fiber->vm.regs.IP.reg += sizeof(MachineWord);
+    fiber->AddIP();
+
+    return true;
+}
+
+bool orbiter::EVLReturnFilledBytes(Fiber *fiber) {
+    if (fiber->io.status != GYRO_COMPLETED && fiber->io.status != GYRO_EOF) {
+        EVLRaiseError(fiber, fiber->io.status);
+
+        return false;
+    }
+
+    assert(O_IS_TYPE(fiber->io.object.get(), InstanceType::BYTES));
+
+    ((Bytes *) fiber->io.object.get())->length = fiber->io.transferred;
+
+    fiber->SetRRValue(fiber->io.object.get());
+    fiber->AddIP();
 
     return true;
 }

@@ -19,6 +19,23 @@ namespace orbiter {
     bool EVLDoNothingAddIP(Fiber *fiber);
 
     /**
+     * @brief on_resume for operations that fill a Bytes buffer (e.g. a read).
+     *
+     * On GYRO_COMPLETED or GYRO_EOF it sets the length of the Bytes held in `io.object`
+     * to `io.transferred` (0 at end of stream), publishes that same object in RR as the
+     * return value of the native, and advances IP past the CALL. On any other status, it
+     * raises the corresponding OSError and leaves the object untouched.
+     *
+     * The native must pass the Bytes as `io_object` to PrepareForEventLoop, and point
+     * `io.buf` at its buffer, so that `io.transferred` never exceeds its capacity.
+     *
+     * @param fiber The fiber being resumed; `io.object` must be a Bytes.
+     *
+     * @return True if the result was published, false if an error was raised.
+     */
+    bool EVLReturnFilledBytes(Fiber *fiber);
+
+    /**
      * @brief Completion callback shared by every operation submitted with a fiber as user data.
      *
      * Runs on the loop thread: it only records the outcome in FiberIO and hands the
