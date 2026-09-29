@@ -68,14 +68,25 @@ static bool NetCheckTimeout(orbiter::Isolate *isolate, OObject *obj, IntegerUnde
     return true;
 }
 
+/// Hand the gyro handle back to the loop and clear it, so that every later call
+/// reports a closed handle. Returns the gyro status: on failure the handle is
+/// left in place, because a close that never reached the loop has to be retried
+/// if the socket is not to be lost.
+static int NetHandleClose(TCPHandle *self) {
+    if (self->handle == nullptr)
+        return GYRO_COMPLETED;
+
+    const auto rc = gyro_handle_close(GYRO_HANDLE(self->handle), nullptr);
+    if (rc < 0)
+        return rc;
+
+    self->handle = nullptr;
+
+    return GYRO_COMPLETED;
+}
+
 static bool TCPHandleDtor(TCPHandle *self) {
-    if (self->handle != nullptr) {
-        gyro_handle_close(GYRO_HANDLE(self->handle), nullptr);
-
-        self->handle = nullptr;
-    }
-
-    return true;
+    return NetHandleClose(self) == GYRO_COMPLETED;
 }
 
 /// Look up one of the module's exported types by name. The module exports them
@@ -329,8 +340,6 @@ static OObject *SockaddrToString(orbiter::Isolate *isolate, const OObject *self)
                                       ORSTRING_TO_CSTR(family->id)).get();
 }
 
-// *** TCP HANDLE ***
-
 // *********************************************************************************************************************
 // RUNTIME METHODS
 // *********************************************************************************************************************
@@ -450,6 +459,107 @@ constexpr FunctionDef sockaddr_methods[] = {
 
 // *** TCP HANDLE ***
 
+RUNTIME_METHOD(tcp_accept, accept,
+               R"DOC(
+@brief Take the next connection that has arrived.
+
+The fiber is parked until a client connects, so the scheduler thread stays free
+for other fibers; only this fiber waits. A connection already waiting is taken
+inside the call, and then nothing is parked at all.
+
+Listening comes first: accepting on a socket that is not listening is an error
+the system reports, not a wait that never ends.
+
+The connection comes back as a handle of its own, with its own socket, and the
+listener is left untouched and goes on accepting. That holds for a failed accept
+too, so a server can report the reason and ask for the next connection.
+
+@param timeout=0  Milliseconds to wait for a connection, 0 to wait for as long
+                  as it takes.
+
+@return A new TCPHandle, already connected to the client.
+
+@panic OSError  When the handle is closed, when the socket is not listening, or
+                when no connection arrived within `timeout`.
+
+@example
+    srv := TCPHandle.open(@INET).bind(parse("127.0.0.1", 8080)).listen()
+
+    loop {
+        conn := srv.accept()
+        io.print(conn.peer_addr().unpack())
+    }
+)DOC", 1, "timeout", false, false) {
+    PCHECK_ENTRIES(params,
+                   PCHECK_DEF("timeout", true, InstanceType::NUMBER));
+    PCHECK_CHECK(params);
+
+    auto *isolate = O_GET_ISOLATE(_func);
+    const auto *module = _func->shared->module;
+
+    const auto *self = (const TCPHandle *) argv[0];
+
+    IntegerUnderlying timeout;
+    if (!NetCheckTimeout(isolate, argv[1], &timeout))
+        return {};
+
+    auto *handle = NetHandleRequire(isolate, self, "accept");
+    if (handle == nullptr)
+        return {};
+
+    const auto *orbiter = orbiter::Orbiter::GetInstance();
+
+    // gyro fills a handle the caller brings, rather than handing one back, because
+    // a completion port needs the socket to exist before the accept is posted.
+    auto *client = MakeObject<TCPHandle>(NetExportedType(module, "TCPHandle"), 0);
+    if (client == nullptr)
+        return {};
+
+    client->handle = nullptr;
+
+    const auto result = HOObject((OObject *) client);
+
+    isolate->gc->Track((OObject *) client, false);
+
+    client->handle = gyro_tcp_new(orbiter->GetEventLoop());
+    if (client->handle == nullptr) {
+        ErrorSet(isolate,
+                 OSError::Details[OSError::ID],
+                 nullptr,
+                 OSError::Details[OSError::NO_MEMORY],
+                 "accept");
+
+        return {};
+    }
+
+    auto *fiber = orbiter::Fiber::Current();
+
+    fiber->PrepareForEventLoop(orbiter::EVLReturnIOObject, (OObject *) client);
+
+    const auto rc = gyro_tcp_accept(handle,
+                                    client->handle,
+                                    timeout,
+                                    orbiter::ResumeFromEventLoop,
+                                    fiber,
+                                    nullptr);
+
+    if (rc == GYRO_COMPLETED) {
+        fiber->AbortEventLoop();
+
+        return result;
+    }
+
+    if (rc < 0) {
+        fiber->AbortEventLoop();
+
+        orbiter::EVLRaiseError(fiber, rc);
+
+        return {};
+    }
+
+    return HOObject(kOddBallNIL);
+}
+
 RUNTIME_METHOD(tcp_bind, bind,
                R"DOC(
 @brief Bind the socket to a local address.
@@ -505,6 +615,45 @@ address of the family to take every interface.
     }
 
     return HOObject((OObject *) self);
+}
+
+RUNTIME_METHOD(tcp_close, close,
+               R"DOC(
+@brief Close the socket and give the handle back to the event loop.
+
+Returns at once. Operations still in flight are cancelled on the loop's next
+turn, and the fibers waiting on them raise rather than return; the socket goes
+away once they have all reported. For the peer this ends the connection in both
+directions, so close when there is nothing left to send and nothing left to
+receive.
+
+Idempotent: closing a handle that is already closed does nothing. Every other
+method raises on a closed handle, which is what makes it safe to close as soon
+as the socket is done with, `defer` being the usual way.
+
+Closing a handle while another fiber is still submitting on it is a bug in the
+program, and what comes of it is undefined.
+
+@panic OSError When the event loop could not take the close. The handle is left
+               open in that case, so the call can be tried again.
+
+@example
+    conn := srv.accept()
+    defer conn.close()
+)DOC", 1, nullptr, false, false) {
+    PCHECK_ENTRIES(params);
+    PCHECK_CHECK(params);
+
+    auto *self = (TCPHandle *) argv[0];
+
+    const auto rc = NetHandleClose(self);
+    if (rc < 0) {
+        orbiter::EVLRaiseError(orbiter::Fiber::Current(), rc);
+
+        return {};
+    }
+
+    return HOObject(kOddBallNIL);
 }
 
 RUNTIME_METHOD(tcp_connect, connect,
@@ -952,7 +1101,7 @@ it says nothing about the peer.
 }
 
 RUNTIME_METHOD(tcp_recv_into, recv_into,
-R"DOC(
+               R"DOC(
 @brief Receive up to length bytes from the connection into buffer at the given offset.
 
 The destination buffer must already be at least `offset + length` bytes long,
@@ -1246,7 +1395,9 @@ so leave a buffer alone until the send returns.
 }
 
 constexpr FunctionDef tcphandle_methods[] = {
+    tcp_accept,
     tcp_bind,
+    tcp_close,
     tcp_connect,
     tcp_fileno,
     tcp_listen,
@@ -1451,7 +1602,7 @@ static bool ModuleNetInit(Module *self) {
     // TCPHandle
 
     const auto tp_tcp = MakeType(isolate, "TCPHandle", InstanceType::OBJECT,
-                                 sizeof(TCPHandle) - sizeof(OObject), 10,
+                                 sizeof(TCPHandle) - sizeof(OObject), 12,
                                  0);
     if (!tp_tcp)
         return false;

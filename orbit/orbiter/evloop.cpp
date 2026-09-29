@@ -43,6 +43,19 @@ bool orbiter::EVLReturnFilledBytes(Fiber *fiber) {
     return true;
 }
 
+bool orbiter::EVLReturnIOObject(Fiber *fiber) {
+    if (fiber->io.status != GYRO_COMPLETED) {
+        EVLRaiseError(fiber, fiber->io.status);
+
+        return false;
+    }
+
+    fiber->SetRRValue(fiber->io.object.get());
+    fiber->AddIP();
+
+    return true;
+}
+
 bool orbiter::EVLReturnTransferred(Fiber *fiber) {
     const auto buffer = (Bytes *) fiber->io.object.get();
 

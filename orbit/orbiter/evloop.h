@@ -36,6 +36,24 @@ namespace orbiter {
     bool EVLReturnFilledBytes(Fiber *fiber);
 
     /**
+     * @brief on_resume for operations that produce the object held in `io.object` (e.g. an accept).
+     *
+     * On GYRO_COMPLETED it publishes that object in RR as the return value of the
+     * native and advances IP past the CALL, leaving the object exactly as the
+     * operation left it. On any other status it raises the corresponding OSError.
+     * An accept has no end of stream: GYRO_EOF is not one of its outcomes.
+     *
+     * The native must allocate the object, track it, and pass it as `io_object`
+     * to PrepareForEventLoop, which is what keeps it reachable for the GC while
+     * the operation is in flight.
+     *
+     * @param fiber The fiber being resumed; `io.object` must be the object to return.
+     *
+     * @return True if the result was published, false if an error was raised.
+     */
+    bool EVLReturnIOObject(Fiber *fiber);
+
+    /**
      * @brief on_resume for operations that write into a caller-owned, pinned Bytes (e.g. readinto).
      *
      * First releases the pin on the SharedBuffer of the Bytes held in `io.object`,
