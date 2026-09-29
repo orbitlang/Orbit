@@ -62,6 +62,26 @@ bool orbiter::EVLReturnTransferred(Fiber *fiber) {
     return true;
 }
 
+bool orbiter::EVLReturnWritten(Fiber *fiber) {
+    auto *source = fiber->io.object.get();
+
+    // Only a Bytes was pinned: a String cannot move, so there was nothing to
+    // hold in place and there is nothing to release.
+    if (O_IS_TYPE(source, InstanceType::BYTES))
+        ((Bytes *) source)->shared->Unpin();
+
+    if (fiber->io.status != GYRO_COMPLETED) {
+        EVLRaiseError(fiber, fiber->io.status);
+
+        return false;
+    }
+
+    fiber->SetRRValue(O_TO_SMI(fiber->io.transferred));
+    fiber->AddIP();
+
+    return true;
+}
+
 gyro_cb_status_t orbiter::ResumeFromEventLoop(gyro_handle_t *, const int status, const size_t transferred,
                                               void *data) noexcept {
     auto *fiber = (Fiber *) data;

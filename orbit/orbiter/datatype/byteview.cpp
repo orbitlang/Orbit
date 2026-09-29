@@ -2,6 +2,8 @@
 //
 // Licensed under the Apache License v2.0
 
+#include <cassert>
+
 #include <orbit/orbiter/datatype/bytes.h>
 #include <orbit/orbiter/datatype/error.h>
 #include <orbit/orbiter/datatype/errors.h>
@@ -11,7 +13,8 @@
 
 using namespace orbiter::datatype;
 
-ByteView::ByteView(Isolate *isolate, const OObject *obj) noexcept : data_(nullptr), size_(0), valid_(false) {
+ByteView::ByteView(Isolate *isolate, const OObject *obj) noexcept : object_(obj), data_(nullptr), size_(0),
+                                                                        valid_(false) {
     if (O_IS_OBJECT(obj)) {
         if (O_IS_TYPE(obj, InstanceType::STRING)) {
             // Strings are immutable: the buffer never moves, no lock needed.
@@ -49,4 +52,19 @@ ByteView::ByteView(Isolate *isolate, const OObject *obj) noexcept : data_(nullpt
                         "expected a Bytes or String, got '%s'",
                         nullptr,
                         obj);
+}
+
+bool ByteView::PinBuffer() const noexcept {
+    if (!this->valid_ || !O_IS_TYPE(this->object_, InstanceType::BYTES))
+        return false;
+
+    ((const Bytes *) this->object_)->shared->Pin();
+
+    return true;
+}
+
+void ByteView::UnpinBuffer() const noexcept {
+    assert(this->valid_ && O_IS_TYPE(this->object_, InstanceType::BYTES));
+
+    ((const Bytes *) this->object_)->shared->Unpin();
 }

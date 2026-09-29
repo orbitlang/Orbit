@@ -50,6 +50,9 @@ namespace orbiter::datatype {
         /// inert) for String and frozen Bytes.
         std::shared_lock<sync::AsyncRWLock> lock_;
 
+        /// The object being viewed, kept for the pin helpers below.
+        const OObject *object_;
+
         const unsigned char *data_;
 
         MSize size_;
@@ -97,6 +100,30 @@ namespace orbiter::datatype {
         [[nodiscard]] MSize Size() const noexcept {
             return this->size_;
         }
+
+        /**
+         * @brief Fix the buffer behind the view in memory, so `Data()` stays
+         *        valid after the view is released.
+         *
+         * Call it while the view still holds its lock, i.e. before Release or
+         * destruction: that is what makes the pin race-free against Enlarge.
+         * Meant for reads that outlive the view, such as an asynchronous write.
+         *
+         * Only a Bytes owns a buffer that can move. A String, whose bytes are
+         * immutable and never reallocated, has nothing to pin.
+         *
+         * @return true when a pin was taken, which must be matched by exactly
+         *         one Unpin; false when there was nothing to pin.
+         */
+        [[nodiscard]] bool PinBuffer() const noexcept;
+
+        /**
+         * @brief Drop a pin taken with PinBuffer, while the view is still alive.
+         *
+         * Once the view is gone, release the pin through `SharedBuffer::Unpin`
+         * directly (e.g. from the on_resume of the operation).
+         */
+        void UnpinBuffer() const noexcept;
 
         /// Drop the read lock (if any) early. After this the data pointer must
         /// no longer be dereferenced for a non-frozen Bytes.

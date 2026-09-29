@@ -1082,6 +1082,167 @@ completes.
     return HOObject(kOddBallNIL);
 }
 
+RUNTIME_METHOD(tcp_write, write,
+               R"DOC(
+@brief Send bytes over the connection.
+
+Everything is sent, however many system calls that takes: a partial write is
+not an outcome here. The loop sends the remainder on its own and reports only
+once the last byte has gone, so there is no retry loop to write.
+
+When the connection cannot take it all at once the fiber is parked until it
+has gone, so the scheduler thread stays free for other fibers; when it fits in
+the system's buffers, nothing is parked at all.
+
+While the fiber is parked the source is read by the event loop. Resizing it
+(e.g. `append`) panics with ValueError until the write completes, and changing
+the bytes it already holds sends whatever is there when the loop reaches them,
+so leave a buffer alone until the write returns.
+
+@param buffer      The Bytes or String to send.
+@param offset=0    Position in buffer of the first byte to send (>= 0).
+@param length=nil  Number of bytes to send, counted from offset. Omitted means
+                   all the way to the end of buffer.
+@param timeout=0   Milliseconds before the write is given up on, 0 to wait as
+                   long as the system does.
+
+@return The number of bytes sent, which on success is `length`.
+
+@panic TypeError  When a parameter has an invalid type.
+@panic ValueError When offset, length or timeout is negative, or when
+                  offset + length exceeds the size of buffer.
+@panic OSError    When the write fails with the reason the system gave: the
+                  peer is gone, or it timed out. The bytes that did leave are
+                  lost to the caller, so a stream cannot be resumed after one.
+
+@see read, readinto
+
+@example
+    c := TCPHandle.open(@INET)
+    c.connect(parse("127.0.0.1", 8080))
+
+    c.write(b"GET / HTTP/1.0\r\n\r\n")
+    c.write(buf, offset=0, length=512, timeout=5000)
+)DOC", 2, "offset,length,timeout", false, false) {
+    PCHECK_ENTRIES(params,
+                   PCHECK_DEF("buffer", false, InstanceType::BYTES, InstanceType::STRING),
+                   PCHECK_DEF("offset", true, InstanceType::NUMBER),
+                   PCHECK_DEF("length", true, InstanceType::NUMBER),
+                   PCHECK_DEF("timeout", true, InstanceType::NUMBER));
+    PCHECK_CHECK(params);
+
+    const auto *self = (const TCPHandle *) argv[0];
+
+    auto *isolate = O_GET_ISOLATE(_func);
+
+    IntegerUnderlying w_offset = 0;
+    if (!O_IS_SENTINEL(argv[2])) {
+        if (!NumberExtract(argv[2], w_offset))
+            return {};
+
+        if (w_offset < 0) {
+            ErrorSet(isolate,
+                     ValueError::Details[ValueError::Reason::ID],
+                     nullptr,
+                     "offset cannot be negative");
+
+            return {};
+        }
+    }
+
+    IntegerUnderlying timeout;
+    if (!NetCheckTimeout(isolate, argv[4], &timeout))
+        return {};
+
+    auto *handle = NetHandleRequire(isolate, self, "write");
+    if (handle == nullptr)
+        return {};
+
+    // Holds the read lock of the source for as long as the view lives, so a
+    // concurrent enlarge cannot move the buffer before it has been pinned.
+    const ByteView source(isolate, argv[1]);
+    if (!source)
+        return {};
+
+    const auto size = (IntegerUnderlying) source.Size();
+
+    if (w_offset > size) {
+        ErrorSet(isolate,
+                 ValueError::Details[ValueError::Reason::ID],
+                 nullptr,
+                 "write range out of bounds: offset %lld of %lld bytes",
+                 (long long) w_offset,
+                 (long long) size);
+
+        return {};
+    }
+
+    // Omitted means everything left from the offset.
+    IntegerUnderlying w_length = size - w_offset;
+    if (!O_IS_SENTINEL(argv[3])) {
+        if (!NumberExtract(argv[3], w_length))
+            return {};
+
+        if (w_length < 0) {
+            ErrorSet(isolate,
+                     ValueError::Details[ValueError::Reason::ID],
+                     nullptr,
+                     "write length cannot be negative");
+
+            return {};
+        }
+
+        if (w_length > size - w_offset) {
+            ErrorSet(isolate,
+                     ValueError::Details[ValueError::Reason::ID],
+                     nullptr,
+                     "write range out of bounds: %lld bytes from offset %lld of %lld",
+                     (long long) w_length,
+                     (long long) w_offset,
+                     (long long) size);
+
+            return {};
+        }
+    }
+
+    if (w_length == 0)
+        return HOObject((OObject *) O_TO_SMI(0));
+
+    auto *fiber = orbiter::Fiber::Current();
+
+    fiber->PrepareForEventLoop(orbiter::EVLReturnWritten, argv[1]);
+
+    fiber->io.buf.base = (char *) source.Data() + w_offset;
+    fiber->io.buf.len = w_length;
+
+    size_t transferred = 0;
+    const auto rc = gyro_tcp_write(handle,
+                                   &fiber->io.buf,
+                                   1,
+                                   timeout,
+                                   orbiter::ResumeFromEventLoop,
+                                   fiber,
+                                   nullptr,
+                                   &transferred);
+    if (rc < 0) {
+        fiber->AbortEventLoop();
+
+        orbiter::EVLRaiseError(fiber, rc);
+
+        return {};
+    }
+
+    if (rc == GYRO_COMPLETED) {
+        fiber->AbortEventLoop();
+
+        return HOObject((OObject *) O_TO_SMI(transferred));
+    }
+
+    (void) source.PinBuffer();
+
+    return HOObject(kOddBallNIL);
+}
+
 constexpr FunctionDef tcphandle_methods[] = {
     tcp_bind,
     tcp_connect,
@@ -1092,6 +1253,7 @@ constexpr FunctionDef tcphandle_methods[] = {
     tcp_peer_addr,
     tcp_read,
     tcp_readinto,
+    tcp_write,
 
     FUNCTIONDEF_SENTINEL
 };
@@ -1287,7 +1449,7 @@ static bool ModuleNetInit(Module *self) {
     // TCPHandle
 
     const auto tp_tcp = MakeType(isolate, "TCPHandle", InstanceType::OBJECT,
-                                 sizeof(TCPHandle) - sizeof(OObject), 9,
+                                 sizeof(TCPHandle) - sizeof(OObject), 10,
                                  0);
     if (!tp_tcp)
         return false;
