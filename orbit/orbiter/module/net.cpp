@@ -1620,11 +1620,17 @@ static bool ModuleNetInit(Module *self) {
 
 static ModuleInit ModuleNet = {
     "::orbit::net",
-    "@brief Sockets and socket addresses."
+    "@brief Raw sockets and the addresses every transport shares."
     "\n\n"
-    "Builds the addresses the socket modules take and return. An address is an "
-    "endpoint, the host together with its port, kept in the form the operating "
-    "system expects so that nothing is lost in translation.",
+    "The engine's half of the network: one handle type per transport, each "
+    "method a single system operation with the fiber suspension it needs, plus "
+    "the addresses they all take and return. An address is an endpoint, the "
+    "host together with its port, kept in the form the operating system expects "
+    "so that nothing is lost in translation."
+    "\n\n"
+    "This is the layer the standard library is built on, not the one to write "
+    "programs against: it folds nothing and assumes nothing, so every step is "
+    "separate and every refusal is the system's own. Use the 'net' module.",
     "1.0.0",
     net_entries,
     ModuleNetInit,

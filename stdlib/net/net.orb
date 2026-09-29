@@ -1,0 +1,68 @@
+# This source file is part of the Orbit project.
+#
+# Licensed under the Apache License v2.0
+
+/*!
+@brief Networking: the entry point for the network, and what every transport shares.
+
+The front door of the `net` subsystem. What lives here belongs to no transport
+in particular: `parse`, which builds the Sockaddr that every socket call takes
+whatever it ends up carrying, and the shorthands for the ordinary cases.
+
+@example
+    import "net"
+    import "io"
+
+    l := net.listen(net.parse("127.0.0.1", 8080))
+    defer l.close()
+
+    loop {
+        conn := l.accept()
+        io.print(conn.read(1024))
+        conn.close()
+    }
+*/
+
+pub import
+    parse
+    from "::orbit::net"
+
+import "net/tcp"
+
+/**
+@brief Open a TCP listener on `addr` and start accepting connections.
+
+Both steps of building a listener in one call: the socket is opened for the
+family of `addr`, bound there and set to accept. Use it whenever the socket
+itself needs no preparation, and build a `tcp.TCPListener` by hand when it
+does, since only the two-step form leaves a moment in which the socket is open
+and not yet bound.
+
+@param addr             Where to listen, as a Sockaddr. Use port 0 to let the
+                        system choose one, and read it back from `local_addr`.
+@param backlog=128      Connections the kernel may hold before it starts
+                        refusing them.
+@param reuse_addr=true  Allow binding an address still held by the connections
+                        of a previous run, which is what lets a server restart
+                        at once.
+
+@return A listening `tcp.TCPListener`.
+
+@panic TypeError  When `addr` is not a Sockaddr.
+@panic ValueError When `addr` belongs to a family TCP does not speak, or
+                  `backlog` is out of range.
+@panic OSError    When the socket cannot be opened, or the address cannot be
+                  bound: it is in use, or not one of this host's, or the port
+                  is privileged.
+
+@example
+    l := net.listen(net.parse("0.0.0.0", 8080))
+    l := net.listen(net.parse("127.0.0.1", 0), backlog=512)
+    io.print(l.local_addr().unpack())      // ("127.0.0.1", 49182, @INET)
+*/
+pub func listen(addr, backlog=128, reuse_addr=true) {
+    l := new tcp.TCPListener(addr)
+    l.listen(backlog=backlog, reuse_addr=reuse_addr)
+
+    return l
+}

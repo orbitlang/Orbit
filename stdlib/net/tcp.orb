@@ -1,0 +1,513 @@
+# This source file is part of the Orbit project.
+#
+# Licensed under the Apache License v2.0
+
+/*!
+@brief TCP sockets: a listener that takes connections, and the connection itself.
+
+Two classes over one native handle. `TCPListener` waits for clients,
+`TCPStream` is a client once it has arrived, and the role is decided by the
+class holding the handle rather than by the handle itself.
+
+Both are built in two steps, which is what keeps them configurable: the
+constructor opens the socket, and a second call commits it to the network.
+Between the two the descriptor exists and is still untouched by the system,
+which is the only moment a kernel honors options such as binding to an
+interface, IPV6_V6ONLY or buffer sizes. Reach them through `fileno`.
+
+When none of that is needed, `net.listen` does both steps in one call.
+
+Every operation that has to wait parks the fiber on the event loop instead of
+blocking its scheduler thread, so a server built on these classes serves many
+connections from one thread without threads of its own.
+*/
+
+import TCPHandle, TCP_REUSEADDR from "::orbit::net"
+
+import OSError from "error"
+import Readable, Writeable from "io/traits"
+import Socket from "net/traits"
+
+/**
+@brief A TCP socket that accepts incoming connections.
+
+Built in two steps. `new TCPListener(addr)` opens a socket of the address's
+family and remembers where it is meant to go; `listen()` binds it there and
+starts accepting. Between the two the socket is open and unbound, which is the
+moment for any option a kernel only honors before a bind.
+
+The descriptor exists from construction, so the `defer` that closes it belongs
+right after `new`, not after `listen`.
+
+@see TCPStream, Socket
+
+@example
+    l := new TCPListener(net.parse("127.0.0.1", 0))
+    defer l.close()
+
+    l.listen(backlog=128)
+    io.print(l.local_addr().unpack())    // ("127.0.0.1", 49182, @INET)
+
+    loop {
+        conn := l.accept()
+        io.print(conn.local_addr().unpack())
+        conn.close()
+    }
+*/
+pub class TCPListener impl Socket {
+    var handle
+    var l_addr
+
+    # @OPEN -> @LISTENING -> @CLOSED, in that order and no other. It tells the
+    # address we asked for apart from the one the system settled on, and keeps
+    # accept off a socket that is not accepting. A closed listener is left to
+    # the handle, which reports the bad descriptor better than we could.
+    var state = @OPEN
+
+    /**
+    @brief Open a socket for the family of `addr`, to listen there later.
+
+    Nothing reaches the network yet: the address is only read for its family,
+    and is handed to the system by `listen`. Building a listener therefore
+    never blocks and never fails for a reason outside this process, such as an
+    address already in use, which is what `listen` reports instead.
+
+    @param addr The address to listen on, as a Sockaddr. Use port 0 to let the
+                system choose one, and read it back from `local_addr` once
+                `listen` has run.
+
+    @panic TypeError  When `addr` is not a Sockaddr.
+    @panic ValueError When `addr` belongs to a family TCP does not speak.
+    @panic OSError    When the socket cannot be opened, out of descriptors for
+                      instance.
+
+    @example
+        new TCPListener(net.parse("0.0.0.0", 8080))     // every interface
+        new TCPListener(net.parse("127.0.0.1", 0))      // loopback, any port
+    */
+    pub init(addr) {
+        host, port, family := addr.unpack()
+
+        self.handle = TCPHandle.open(family)
+
+        self.l_addr = addr
+    }
+
+    /**
+    @brief Take the next connection that has arrived.
+
+    The fiber is parked until a client connects, so the scheduler thread stays
+    free for other fibers; only this fiber waits. A connection already waiting
+    is taken inside the call and nothing is parked at all.
+
+    The listener goes on accepting afterwards, and after a failure too, so a
+    server can report the reason and ask for the next connection.
+
+    @param timeout=0 Milliseconds to wait for a connection, 0 to wait for as
+                     long as it takes.
+
+    @return A TCPStream for the connection, ready to read and write.
+
+    @panic OSError  When the listener is not listening yet, when it is closed,
+                    or when no connection arrived within `timeout`. Closing the
+                    listener from another fiber also ends a waiting accept this
+                    way.
+
+    @see listen, close
+
+    @example
+        conn := l.accept()               // waits as long as it takes
+        conn := l.accept(timeout=5000)   // OSError after five seconds
+    */
+    pub func accept(timeout=0) {
+        if self.state == @OPEN {
+            panic OSError("listener is not listening, call listen() first")
+        }
+
+        remote := self.handle.accept(timeout=timeout)
+
+        return new TCPStream(remote)
+    }
+
+    /**
+    @brief Close the listener and stop accepting.
+
+    Returns at once. An accept another fiber is waiting on is cancelled and
+    raises there, which is how a server is asked to stop. Idempotent, so
+    closing a listener that is already closed does nothing, and every other
+    method raises on one.
+
+    @panic OSError When the event loop could not take the close. The listener
+                   is left open in that case, so the call can be tried again.
+
+    @see accept
+    */
+    pub func close() {
+        self.handle.close()
+
+        self.state = @CLOSED
+    }
+
+    /**
+    @brief Return the descriptor the system knows this listener by.
+
+    The window between `new` and `listen` is where this is worth using: a
+    socket that is open and not yet bound is the only one a kernel will accept
+    certain options on.
+
+    @return The descriptor, as the number the system knows it by.
+
+    @panic OSError When the listener is closed.
+
+    @see close, listen
+
+    @example
+        l := new TCPListener(net.parse("0.0.0.0", 8080))
+        set_an_option(l.fileno())        // before listen, while it is unbound
+        l.listen()
+    */
+    pub func fileno() {
+        return self.handle.fileno()
+    }
+
+    /**
+    @brief Bind to the address given at construction and start accepting.
+
+    Both steps happen here, because there is nothing useful to do between them
+    and folding the two removes a state in which the listener is bound but deaf.
+    The system answers at once, so nothing is parked.
+
+    This is where the failures that depend on the rest of the machine show up:
+    the address is in use, the port is privileged, the address is not one of
+    this host's.
+
+    @param backlog=128      Connections the kernel may hold before it starts
+                            refusing them.
+    @param reuse_addr=true  Allow binding an address still held by the
+                            connections of a previous run, which is what lets a
+                            server restart at once instead of waiting out the
+                            old connections.
+
+    @panic ValueError When `backlog` is negative or larger than the system
+                      allows.
+    @panic OSError    When the listener is closed, when it is already
+                      listening, or when the address cannot be bound.
+
+    @see accept, local_addr
+
+    @example
+        l.listen()                                   // 128 pending, address reused
+        l.listen(backlog=512, reuse_addr=false)
+    */
+    pub func listen(backlog=128, reuse_addr=true) {
+        if self.state == @LISTENING {
+            panic OSError("listener is already listening")
+        }
+
+        flags := 0
+        if reuse_addr {
+            flags = TCP_REUSEADDR
+        }
+
+        self.handle.bind(self.l_addr, flags=flags)
+        self.handle.listen(backlog=backlog)
+
+        self.state = @LISTENING
+    }
+
+    /**
+    @brief Return the address the listener occupies.
+
+    Before `listen` this is the address it was built for, since the system has
+    not been told about it yet. Afterwards it is what the system actually did,
+    which is the difference that matters when the port was 0: only the second
+    answer names the port that was chosen.
+
+    @return The local address, as a Sockaddr.
+
+    @panic OSError  When the listener is closed.
+
+    @see listen
+
+    @example
+        l := new TCPListener(net.parse("127.0.0.1", 0))
+        io.print(l.local_addr().unpack())    // ("127.0.0.1", 0, @INET)
+        l.listen()
+        io.print(l.local_addr().unpack())    // ("127.0.0.1", 49182, @INET)
+    */
+    pub func local_addr() {
+        if self.state == @OPEN {
+            return self.l_addr
+        }
+
+        return self.handle.local_addr()
+    }
+}
+
+/**
+@brief One established TCP connection.
+
+Reads and writes bytes over a connection somebody else opened: `accept` on a
+listener hands one over. It implements `Readable` and `Writeable`, so it drops
+straight into anything built on those traits, `bufio.BufferedReader` above all.
+
+The same transfers are spelled twice. `read`, `readinto` and `write` are the
+trait vocabulary and wait for as long as it takes; `recv`, `recv_into` and
+`send` are the same operations with a deadline, for code that talks to the
+network knowingly and does not want to wait forever.
+
+Reads are short by design: one read returns what has arrived, not what was
+asked for, and an empty result means the peer is done sending. Writes are not
+short: `write` returns once every byte has left, or raises.
+
+@see TCPListener, Socket, Readable, Writeable
+
+@example
+    conn := l.accept()
+    defer conn.close()
+
+    line := new bufio.BufferedReader(conn).readline(-1)
+    conn.write(b"echo: " + line)
+*/
+pub class TCPStream impl Socket + Readable + Writeable {
+    var handle
+
+    /**
+    @brief Wrap a connected handle.
+
+    Not the usual way in: a stream comes from `TCPListener.accept`, which
+    builds it. Use this directly only with a handle prepared by hand through
+    the native `::orbit::net` module.
+
+    @param handle A connected TCPHandle, which the stream owns from here on.
+    */
+    pub init(handle) {
+        self.handle = handle
+    }
+
+    /**
+    @brief Close the connection.
+
+    Returns at once, and for the peer this is the end of the connection in both
+    directions. Reads and writes another fiber is waiting on are cancelled and
+    raise there. Idempotent, so closing a stream that is already closed does
+    nothing, and every other method raises on one.
+
+    @panic OSError When the event loop could not take the close. The stream is
+                   left open in that case, so the call can be tried again.
+    */
+    pub func close() {
+        self.handle.close()
+    }
+
+    /**
+    @brief Return the descriptor the system knows this connection by.
+
+    @return The descriptor, as the number the system knows it by.
+
+    @panic OSError When the stream is closed.
+
+    @see close
+    */
+    pub func fileno() {
+        return self.handle.fileno()
+    }
+
+    /**
+    @brief Do nothing, successfully.
+
+    A connection has no buffer of its own: `write` has already handed every
+    byte to the system by the time it returns. The method is here because
+    `Writeable` asks for it, so that a stream can stand in for a sink that does
+    buffer.
+
+    @see write
+    */
+    pub func flush() {
+        # Do nothing
+        return nil
+    }
+
+    /**
+    @brief Return the local address of this end of the connection.
+
+    @return The local address, as a Sockaddr.
+
+    @panic OSError  When the stream is closed.
+    */
+    pub func local_addr() {
+        return self.handle.local_addr()
+    }
+
+    /**
+    @brief Read up to `length` bytes, waiting for as long as it takes.
+
+    Returns what has arrived rather than what was asked for: a shorter result
+    is the normal case, not a truncated one, and getting an exact number of
+    bytes is `bufio.BufferedReader`'s job. An empty result means the peer has
+    stopped sending, which is a value and not an error.
+
+    @param length Most bytes to return. 0 returns an empty result without
+                  touching the connection.
+
+    @return A new Bytes with what arrived, empty at end of stream.
+
+    @panic ValueError When `length` is negative.
+    @panic OSError    When the stream is closed, or the connection fails.
+
+    @see recv, readinto
+
+    @example
+        data := conn.read(4096)
+        if data.length() == 0 {          // the peer is done sending
+            conn.close()
+        }
+    */
+    pub func read(length) {
+        return self.handle.recv(length)
+    }
+
+    /**
+    @brief Read into a buffer you own, waiting for as long as it takes.
+
+    The same read as `read`, without the allocation: what arrives is written
+    into `buffer` and only the count comes back. The buffer keeps its own
+    length, so the bytes past the count are whatever was there before.
+
+    The buffer cannot be resized while the read is in flight; another fiber
+    trying to grow it raises rather than move it under the system.
+
+    @param buffer Destination Bytes, which must hold `offset + length` bytes.
+    @param offset Where in `buffer` to start writing.
+    @param length Most bytes to read. 0 returns 0 without touching the
+                  connection.
+
+    @return The number of bytes written into `buffer`, 0 at end of stream.
+
+    @panic ValueError When `offset` or `length` is negative, or the range falls
+                      outside `buffer`.
+    @panic OSError    When the stream is closed, or the connection fails.
+
+    @see recv_into, read
+
+    @example
+        buf := Bytes(len=4096)
+        n := conn.readinto(buf, 0, 4096)
+    */
+    pub func readinto(buffer, offset, length) {
+        return self.handle.recv_into(buffer, offset, length)
+    }
+
+    /**
+    @brief Read up to `length` bytes, giving up after `timeout`.
+
+    `read` with a deadline, and the same short-read and end-of-stream rules.
+    A deadline that arrives is a failure, not an empty result: waiting in vain
+    and hearing that the peer is done are different answers and stay different.
+
+    @param length    Most bytes to return. 0 returns an empty result without
+                     touching the connection.
+    @param timeout=0 Milliseconds to wait for the first byte, 0 to wait for as
+                     long as it takes.
+
+    @return A new Bytes with what arrived, empty at end of stream.
+
+    @panic ValueError When `length` or `timeout` is negative.
+    @panic OSError    When the stream is closed, when nothing arrived within
+                      `timeout`, or when the connection fails.
+
+    @see read, recv_into, send
+
+    @example
+        conn.recv(4096)                 // waits as long as it takes
+        conn.recv(4096, timeout=2000)   // OSError after two seconds
+    */
+    pub func recv(length, timeout=0) {
+        return self.handle.recv(length, timeout=timeout)
+    }
+
+    /**
+    @brief Read into a buffer you own, giving up after `timeout`.
+
+    `readinto` with a deadline. Everything else, the count, the untouched tail
+    of the buffer, the 0 at end of stream, is the same.
+
+    @param buffer    Destination Bytes, which must hold `offset + length` bytes.
+    @param offset    Where in `buffer` to start writing.
+    @param length    Most bytes to read. 0 returns 0 without touching the
+                     connection.
+    @param timeout=0 Milliseconds to wait for the first byte, 0 to wait for as
+                     long as it takes.
+
+    @return The number of bytes written into `buffer`, 0 at end of stream.
+
+    @panic ValueError When `offset`, `length` or `timeout` is negative, or the
+                      range falls outside `buffer`.
+    @panic OSError    When the stream is closed, when nothing arrived within
+                      `timeout`, or when the connection fails.
+
+    @see readinto, recv
+
+    @example
+        buf := Bytes(len=4096)
+        n := conn.recv_into(buf, 0, 4096, timeout=2000)
+    */
+    pub func recv_into(buffer, offset, length, timeout=0) {
+        return self.handle.recv_into(buffer, offset, length, timeout=timeout)
+    }
+
+    /**
+    @brief Send every byte of `buffer`.
+
+    All of it or none of the outcome: the call returns once the last byte has
+    left, and otherwise raises. A partial send is not something the caller has
+    to handle, so there is no loop to write around this.
+
+    Leaving does not mean arriving. The bytes have been handed to the system,
+    which will deliver them or, later, tell a read that the connection broke.
+
+    A deadline that arrives raises like any other failure, and how much of the
+    buffer had already gone out is not reported, so a stream cannot be picked
+    up again after one: close it.
+
+    @param buffer    The bytes to send, as Bytes or a String.
+    @param timeout=0 Milliseconds to wait for the whole buffer to leave, 0 to
+                     wait for as long as it takes.
+
+    @return The number of bytes sent, which is the whole buffer.
+
+    @panic ValueError When `timeout` is negative.
+    @panic OSError    When the stream is closed, when the buffer had not left
+                      within `timeout`, or when the connection fails before
+                      every byte could be sent.
+
+    @see write, recv
+
+    @example
+        conn.send(b"pong")                 // 4
+        conn.send(payload, timeout=5000)
+    */
+    pub func send(buffer, timeout=0) {
+        return self.handle.send(buffer, timeout=timeout)
+    }
+
+    /**
+    @brief Send every byte of `buffer`.
+
+    The `Writeable` spelling of `send`, and the same operation, minus the
+    deadline that the trait has no room for: use this one in code that works
+    with any sink, and `send` when there has to be a timeout.
+
+    @param buffer The bytes to send, as Bytes or a String.
+
+    @return The number of bytes sent, which is the whole buffer.
+
+    @panic OSError When the stream is closed, or the connection fails before
+                   every byte could be sent.
+
+    @see send, flush
+    */
+    pub func write(buffer) {
+        return self.handle.send(buffer)
+    }
+}

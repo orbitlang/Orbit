@@ -1,0 +1,63 @@
+# This source file is part of the Orbit project.
+#
+# Licensed under the Apache License v2.0
+
+/*!
+@brief The contract every socket honors, whatever transport it speaks.
+
+A socket is a `Closable` that also knows where it sits in the network: the
+address it occupies locally, and the descriptor the system knows it by. That is
+all any two sockets have in common, so it is all this asks for.
+
+What a socket carries is said elsewhere, by whoever can honor it. A connection
+is a stream of bytes, so it adds `Readable` and `Writeable` from `io/traits`;
+something that only waits for connections carries nothing, and something that
+exchanges whole messages is not a stream and must not be made to look like one.
+Each picks up the traits it can keep, and this one underneath them all.
+*/
+
+import Closable from "io/traits"
+
+/**
+@brief A resource bound to a network address, with a system descriptor behind it.
+
+Extends `Closable` because every socket holds a resource the system wants back.
+Closing is idempotent, so a socket can be handed to `defer` the moment it
+exists, before it is bound or connected to anything.
+
+Deliberately small. `fileno` and `local_addr` are the two questions that have
+an answer for any socket at all; a peer address, a backlog, a message boundary
+do not, and belong to the class that has one rather than up here.
+
+@see Closable
+*/
+pub trait Socket impl Closable {
+    /**
+    @brief Return the descriptor the system knows this socket by.
+
+    For what the socket API does not wrap: an option no method covers, or a
+    question only the system can answer.
+
+    Do not read from it, write to it, or close it. The event loop owns the
+    readiness of that descriptor and the operations queued against it, and
+    going behind its back takes bytes that belong to a queued read, or hands
+    the number back to the system while the loop is still watching it. Use
+    `close` for closing.
+
+    @return The descriptor, as the number the system knows it by.
+
+    @panic OSError When the socket is closed, or has no descriptor yet.
+
+    @see close
+    */
+    func fileno()
+
+    /**
+    @brief Return the local address the socket occupies.
+
+    @return The local address, as a Sockaddr.
+
+    @panic OSError  When the socket is closed.
+    */
+    func local_addr()
+}
