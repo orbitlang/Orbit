@@ -840,12 +840,12 @@ error rather than an empty answer.
     return NetSockaddrNew(isolate, module, &storage, length);
 }
 
-RUNTIME_METHOD(tcp_read, read,
+RUNTIME_METHOD(tcp_recv, recv,
                R"DOC(
-@brief Read whatever has arrived on the connection, up to `n` bytes.
+@brief Receive whatever has arrived on the connection, up to `n` bytes.
 
-The read is short by design: it returns as soon as at least one byte is there,
-and never waits for `n` of them. Reading an exact amount means reading again
+The receive is short by design: it returns as soon as at least one byte is there,
+and never waits for `n` of them. Getting an exact amount means receiving again
 until it is reached. When nothing has arrived yet, the fiber is parked until
 data comes in, so the scheduler thread stays free for other fibers; when data
 is already waiting, nothing is parked at all.
@@ -855,23 +855,25 @@ are coming, and it is the only way to learn it. Asking for 0 bytes is the one
 exception: it answers with an empty Bytes without touching the connection, so
 it says nothing about the peer.
 
-@param n          Maximum number of bytes to read.
+@param n          Maximum number of bytes to receive.
 @param timeout=0  Milliseconds to wait for data, 0 to wait indefinitely.
 
-@return A new Bytes with the bytes read, between 1 and `n` long, or empty at
-        end of stream.
+@return A new Bytes with the bytes received, between 1 and `n` long, or empty
+        at end of stream.
 
 @panic TypeError  When a parameter has an invalid type.
 @panic ValueError When `n` or `timeout` is negative.
-@panic OSError    When the read fails with the reason the system gave: reset
-                  by the peer, or timed out.
+@panic OSError    When the receive fails with the reason the system gave:
+                  reset by the peer, or timed out.
+
+@see recv_into, send
 
 @example
     c := TCPHandle.open(@INET)
     c.connect(parse("127.0.0.1", 8080))
 
-    data := c.read(4096)
-    chunk := c.read(1024, timeout=5000)
+    data := c.recv(4096)
+    chunk := c.recv(1024, timeout=5000)
 )DOC", 2, "timeout", false, false) {
     PCHECK_ENTRIES(params,
                    PCHECK_DEF("n", false, InstanceType::NUMBER),
@@ -890,7 +892,7 @@ it says nothing about the peer.
         ErrorSet(isolate,
                  ValueError::Details[ValueError::Reason::ID],
                  nullptr,
-                 "read length cannot be negative"
+                 "receive length cannot be negative"
         );
 
         return {};
@@ -900,7 +902,7 @@ it says nothing about the peer.
     if (!NetCheckTimeout(isolate, argv[2], &timeout))
         return {};
 
-    auto *handle = NetHandleRequire(isolate, self, "read");
+    auto *handle = NetHandleRequire(isolate, self, "recv");
     if (handle == nullptr)
         return {};
 
@@ -949,13 +951,13 @@ it says nothing about the peer.
     return HOObject(kOddBallNIL);
 }
 
-RUNTIME_METHOD(tcp_readinto, readinto,
+RUNTIME_METHOD(tcp_recv_into, recv_into,
 R"DOC(
-@brief Read up to length bytes from the connection into buffer at the given offset.
+@brief Receive up to length bytes from the connection into buffer at the given offset.
 
 The destination buffer must already be at least `offset + length` bytes long,
-`readinto` does NOT grow it. The read is short by design: it returns as soon
-as at least one byte is there, and never waits for `length` of them; bytes
+`recv_into` does NOT grow it. The receive is short by design: it returns as
+soon as at least one byte is there, and never waits for `length` of them; bytes
 beyond what was actually read are left untouched. A return of 0 means the peer
 shut the connection down cleanly: no more bytes are coming. Asking for 0 bytes
 is the one exception: it returns 0 without touching the connection, so it says
@@ -970,27 +972,27 @@ completes.
 
 @param buffer     The mutable Bytes to write into.
 @param offset     Position in buffer where the first byte lands (>= 0).
-@param length     Maximum number of bytes to read (>= 0).
+@param length     Maximum number of bytes to receive (>= 0).
 @param timeout=0  Milliseconds to wait for data, 0 to wait indefinitely.
 
-@return The number of bytes actually read; 0 on end of stream.
+@return The number of bytes actually received; 0 on end of stream.
 
 @panic TypeError  When a parameter has an invalid type.
 @panic ValueError When buffer is frozen, when offset, length or timeout is
                   negative, or when offset + length exceeds the current size
                   of buffer.
-@panic OSError    When the read fails with the reason the system gave: reset
-                  by the peer, or timed out.
+@panic OSError    When the receive fails with the reason the system gave:
+                  reset by the peer, or timed out.
 
-@see read
+@see recv, send
 
 @example
     c := TCPHandle.open(@INET)
     c.connect(parse("127.0.0.1", 8080))
 
     buf := Bytes(len=1024)
-    n   := c.readinto(buf, 0, 1024)    # 0..n holds the bytes that were just read
-    n   = c.readinto(buf, 0, 1024, timeout=5000)
+    n   := c.recv_into(buf, 0, 1024)    # 0..n holds the bytes just received
+    n   = c.recv_into(buf, 0, 1024, timeout=5000)
 )DOC", 4, "timeout", false, false) {
     PCHECK_ENTRIES(params,
                    PCHECK_DEF("buffer", false, InstanceType::BYTES),
@@ -1025,7 +1027,7 @@ completes.
         ErrorSet(isolate,
                  ValueError::Details[ValueError::Reason::ID],
                  nullptr,
-                 "read length cannot be negative"
+                 "receive length cannot be negative"
         );
 
         return {};
@@ -1035,7 +1037,7 @@ completes.
     if (!NetCheckTimeout(isolate, argv[4], &timeout))
         return {};
 
-    auto *handle = NetHandleRequire(isolate, self, "readinto");
+    auto *handle = NetHandleRequire(isolate, self, "recv_into");
     if (handle == nullptr)
         return {};
 
@@ -1082,11 +1084,11 @@ completes.
     return HOObject(kOddBallNIL);
 }
 
-RUNTIME_METHOD(tcp_write, write,
+RUNTIME_METHOD(tcp_send, send,
                R"DOC(
 @brief Send bytes over the connection.
 
-Everything is sent, however many system calls that takes: a partial write is
+Everything is sent, however many system calls that takes: a partial send is
 not an outcome here. The loop sends the remainder on its own and reports only
 once the last byte has gone, so there is no retry loop to write.
 
@@ -1095,15 +1097,15 @@ has gone, so the scheduler thread stays free for other fibers; when it fits in
 the system's buffers, nothing is parked at all.
 
 While the fiber is parked the source is read by the event loop. Resizing it
-(e.g. `append`) panics with ValueError until the write completes, and changing
+(e.g. `append`) panics with ValueError until the send completes, and changing
 the bytes it already holds sends whatever is there when the loop reaches them,
-so leave a buffer alone until the write returns.
+so leave a buffer alone until the send returns.
 
 @param buffer      The Bytes or String to send.
 @param offset=0    Position in buffer of the first byte to send (>= 0).
 @param length=nil  Number of bytes to send, counted from offset. Omitted means
                    all the way to the end of buffer.
-@param timeout=0   Milliseconds before the write is given up on, 0 to wait as
+@param timeout=0   Milliseconds before the send is given up on, 0 to wait as
                    long as the system does.
 
 @return The number of bytes sent, which on success is `length`.
@@ -1111,18 +1113,18 @@ so leave a buffer alone until the write returns.
 @panic TypeError  When a parameter has an invalid type.
 @panic ValueError When offset, length or timeout is negative, or when
                   offset + length exceeds the size of buffer.
-@panic OSError    When the write fails with the reason the system gave: the
+@panic OSError    When the send fails with the reason the system gave: the
                   peer is gone, or it timed out. The bytes that did leave are
                   lost to the caller, so a stream cannot be resumed after one.
 
-@see read, readinto
+@see recv, recv_into
 
 @example
     c := TCPHandle.open(@INET)
     c.connect(parse("127.0.0.1", 8080))
 
-    c.write(b"GET / HTTP/1.0\r\n\r\n")
-    c.write(buf, offset=0, length=512, timeout=5000)
+    c.send(b"GET / HTTP/1.0\r\n\r\n")
+    c.send(buf, offset=0, length=512, timeout=5000)
 )DOC", 2, "offset,length,timeout", false, false) {
     PCHECK_ENTRIES(params,
                    PCHECK_DEF("buffer", false, InstanceType::BYTES, InstanceType::STRING),
@@ -1154,7 +1156,7 @@ so leave a buffer alone until the write returns.
     if (!NetCheckTimeout(isolate, argv[4], &timeout))
         return {};
 
-    auto *handle = NetHandleRequire(isolate, self, "write");
+    auto *handle = NetHandleRequire(isolate, self, "send");
     if (handle == nullptr)
         return {};
 
@@ -1170,7 +1172,7 @@ so leave a buffer alone until the write returns.
         ErrorSet(isolate,
                  ValueError::Details[ValueError::Reason::ID],
                  nullptr,
-                 "write range out of bounds: offset %lld of %lld bytes",
+                 "send range out of bounds: offset %lld of %lld bytes",
                  (long long) w_offset,
                  (long long) size);
 
@@ -1187,7 +1189,7 @@ so leave a buffer alone until the write returns.
             ErrorSet(isolate,
                      ValueError::Details[ValueError::Reason::ID],
                      nullptr,
-                     "write length cannot be negative");
+                     "send length cannot be negative");
 
             return {};
         }
@@ -1196,7 +1198,7 @@ so leave a buffer alone until the write returns.
             ErrorSet(isolate,
                      ValueError::Details[ValueError::Reason::ID],
                      nullptr,
-                     "write range out of bounds: %lld bytes from offset %lld of %lld",
+                     "send range out of bounds: %lld bytes from offset %lld of %lld",
                      (long long) w_length,
                      (long long) w_offset,
                      (long long) size);
@@ -1251,9 +1253,9 @@ constexpr FunctionDef tcphandle_methods[] = {
     tcp_local_addr,
     tcp_open,
     tcp_peer_addr,
-    tcp_read,
-    tcp_readinto,
-    tcp_write,
+    tcp_recv,
+    tcp_recv_into,
+    tcp_send,
 
     FUNCTIONDEF_SENTINEL
 };
