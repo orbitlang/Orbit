@@ -930,28 +930,37 @@ ASTHandle<ASTNode *> Parser::ParseVarDecl(const Position &start, const AccessMod
     this->Eat(true);
 
     do {
-        if (!this->Match(TokenType::IDENTIFIER))
-            throw ParserException(16);
-
-        auto id_str = ORStringNew(this->isolate_, this->tkcur_.buffer, this->tkcur_.length);
-        if (!id_str)
-            throw DatatypeException();
-
-        if (access != AccessModifier::PRIVATE)
-            this->exports.push_back(id_str);
-
-        const auto sym = this->sym_t_->Declare(id_str.get(), SymbolType::VARIABLE, location, TKCUR_LOC.start.offset);
-        if (sym == nullptr)
-            throw SymbolTableException();
-
-        if (constant)
-            sym->flags |= SymbolFlags::CONST;
-
-        sym->access = access;
-
         auto identifier = MakeIdentifier(this->isolate_, TKCUR_LOC);
-        identifier->symbol = sym;
-        identifier->value = id_str.release();
+
+        if (!this->Match(TokenType::BLANK)) {
+            if (!this->Match(TokenType::IDENTIFIER))
+                throw ParserException(16);
+
+            auto id_str = ORStringNew(this->isolate_, this->tkcur_.buffer, this->tkcur_.length);
+            if (!id_str)
+                throw DatatypeException();
+
+            if (access != AccessModifier::PRIVATE)
+                this->exports.push_back(id_str);
+
+            const auto sym = this->sym_t_->
+                    Declare(id_str.get(), SymbolType::VARIABLE, location, TKCUR_LOC.start.offset);
+            if (sym == nullptr)
+                throw SymbolTableException();
+
+            if (constant)
+                sym->flags |= SymbolFlags::CONST;
+
+            sym->access = access;
+
+            identifier->symbol = sym;
+            identifier->value = id_str.release();
+        } else {
+            identifier->kind = TokenType::BLANK;
+
+            identifier->symbol = nullptr;
+            identifier->value = nullptr;
+        }
 
         identifiers.emplace_back(std::move(identifier));
 
@@ -984,8 +993,12 @@ ASTHandle<ASTNode *> Parser::ParseVarDecl(const Position &start, const AccessMod
             throw ParserException(24);
     }
 
-    for (auto &identifier: identifiers)
-        ((Identifier *) identifier.get())->symbol->flags |= SymbolFlags::INITIALIZED;
+    for (auto &identifier: identifiers) {
+        const auto *id = (Identifier *) identifier.get();
+
+        if (id->symbol != nullptr)
+            id->symbol->flags |= SymbolFlags::INITIALIZED;
+    }
 
     if (identifiers.size() == 1)
         decl->name = identifiers.front().release();
@@ -1609,35 +1622,41 @@ ASTHandle<ASTNode *> Parser::ParseFuncCall(ASTHandle<ASTNode *> &left) {
 }
 
 ASTHandle<ASTNode *> Parser::ParseIdentifier() {
-    auto id_name = ORStringNew(this->isolate_, this->tkcur_.buffer, this->tkcur_.length);
-    if (!id_name)
-        throw DatatypeException();
-
-    Symbol *sym = nullptr;
-
     auto id = MakeIdentifier(this->isolate_, TKCUR_LOC);
 
     id->kind = TokenType::IDENTIFIER;
 
-    if (this->Match(TokenType::SUPER)) {
-        if (!this->context_->CheckExt(ContextType::CLASS) && !this->context_->CheckExt(ContextType::TRAIT))
-            throw ParserException(79);
+    if (!this->Match(TokenType::BLANK)) {
+        auto id_name = ORStringNew(this->isolate_, this->tkcur_.buffer, this->tkcur_.length);
+        if (!id_name)
+            throw DatatypeException();
 
-        sym = this->sym_t_->LookupInsert("self", TKCUR_START.offset);
+        Symbol *sym = nullptr;
 
-        id->kind = TokenType::SUPER;
-    } else if (this->Match(TokenType::SELF)) {
-        sym = this->sym_t_->LookupInsert(id_name.get(), TKCUR_START.offset);
+        if (this->Match(TokenType::SUPER)) {
+            if (!this->context_->CheckExt(ContextType::CLASS) && !this->context_->CheckExt(ContextType::TRAIT))
+                throw ParserException(79);
 
-        id->kind = TokenType::SELF;
-    } else
-        sym = this->sym_t_->LookupInsert(id_name.get(), TKCUR_START.offset);
+            sym = this->sym_t_->LookupInsert("self", TKCUR_START.offset);
 
-    if (!sym)
-        throw SymbolTableException();
+            id->kind = TokenType::SUPER;
+        } else if (this->Match(TokenType::SELF)) {
+            sym = this->sym_t_->LookupInsert(id_name.get(), TKCUR_START.offset);
 
-    id->symbol = sym;
-    id->value = id_name.release();
+            id->kind = TokenType::SELF;
+        } else
+            sym = this->sym_t_->LookupInsert(id_name.get(), TKCUR_START.offset);
+
+        if (!sym)
+            throw SymbolTableException();
+
+        id->symbol = sym;
+        id->value = id_name.release();
+    } else {
+        id->kind = TokenType::BLANK;
+        id->symbol = nullptr;
+        id->value = nullptr;
+    }
 
     this->Eat(false);
 
@@ -2231,6 +2250,9 @@ ASTHandle<ASTNode *> Parser::ParseWalrus(ASTHandle<ASTNode *> &left) {
             if (cursor->node_type != NodeType::IDENTIFIER)
                 throw ParserException(23);
 
+            if (id->kind == TokenType::BLANK)
+                continue;
+
             sym = this->sym_t_->Declare(id->value, SymbolType::VARIABLE, location, id->loc.start.offset);
             if (sym == nullptr)
                 throw SymbolTableException();
@@ -2255,12 +2277,14 @@ ASTHandle<ASTNode *> Parser::ParseWalrus(ASTHandle<ASTNode *> &left) {
     decl->inl = true;
 
     if (node_type == NodeType::VAR_DECLARATION) {
-        sym = this->sym_t_->Declare(((Identifier *) decl->name)->value, SymbolType::VARIABLE, location,
-                                    decl->name->loc.start.offset);
-        if (sym == nullptr)
-            throw SymbolTableException();
+        auto *id = (Identifier *) decl->name;
+        if (id->kind != TokenType::BLANK) {
+            sym = this->sym_t_->Declare(id->value, SymbolType::VARIABLE, location, decl->name->loc.start.offset);
+            if (sym == nullptr)
+                throw SymbolTableException();
 
-        ((Identifier *) decl->name)->symbol = sym;
+            id->symbol = sym;
+        }
     }
 
     return decl;
@@ -2549,6 +2573,7 @@ Parser::NudMeth Parser::LookupNUD(TokenType token) noexcept {
             return &Parser::ParsePrefix;
 
         // Identifiers and self
+        case TokenType::BLANK:
         case TokenType::IDENTIFIER:
         case TokenType::SELF:
         case TokenType::SUPER:

@@ -13,6 +13,11 @@
 using namespace liftoff;
 using namespace liftoff::ir;
 
+static bool IsBlankTarget(const parser::ASTNode *node) {
+    return node->node_type == parser::NodeType::IDENTIFIER
+           && ((const parser::Identifier *) node)->kind == scanner::TokenType::BLANK;
+}
+
 // Node types that must NOT be echoed as the value of a module in interactive
 // mode, even though they are parsed as expression-statements (`is_expr`)
 static bool IsNeverEcho(const parser::NodeType tp) {
@@ -377,7 +382,7 @@ Instruction *IRBuilder::CreateCall(const parser::Call *node, Instruction *f_src)
     }
 
     const auto call = (CallInstr *) this->builder_.CreateCallDetached(opcode, f_src, node->args.size(), mode);
-    
+
     if (nargs != nullptr)
         call->SetNargs(this->builder_.CreateMove(nargs));
 
@@ -418,13 +423,16 @@ Instruction *IRBuilder::ExpandStoreTuple(const parser::ListExpression *tuple, In
 
     auto index = 0;
     for (const auto &itm: tuple->elements) {
-        const auto *sym = ((parser::Identifier *) itm.get())->symbol;
+        const auto *id = (parser::Identifier *) itm.get();
 
-        auto *t_idx = this->builder_.LoadImmediate(index);
+        // Ignore BLANK
+        if (id->kind != scanner::TokenType::BLANK) {
+            auto *t_idx = this->builder_.LoadImmediate(index);
 
-        auto *value = this->builder_.CreateIndexLoad(src, t_idx);
+            auto *value = this->builder_.CreateIndexLoad(src, t_idx);
 
-        last = this->StoreVariable(sym, value, decl);
+            last = this->StoreVariable(id->symbol, value, decl);
+        }
 
         index += 1;
     }
@@ -679,39 +687,45 @@ Instruction *IRBuilder::visitAssignment(parser::Assignment *node) {
                                       node->node_type == parser::NodeType::VAR_DECLARATIONS);
     }
 
-    const auto *sym = ((parser::Identifier *) node->name)->symbol;
+    const auto *id = (parser::Identifier *) node->name;
+    if (id->kind != scanner::TokenType::BLANK) {
+        const auto *sym = id->symbol;
 
-    if (sym->decl_scope->type == ScopeType::CLASS || sym->decl_scope->type == ScopeType::TRAIT) {
-        if (ENUMBITMASK_ISTRUE(sym->flags, SymbolFlags::CONST)) {
+        if (sym->decl_scope->type == ScopeType::CLASS || sym->decl_scope->type == ScopeType::TRAIT) {
+            if (ENUMBITMASK_ISTRUE(sym->flags, SymbolFlags::CONST)) {
+                value = this->visit(node->value);
+
+                return this->StoreVariable(sym, value, node->node_type == parser::NodeType::VAR_DECLARATION);
+            }
+
+            if (sym->type == SymbolType::VARIABLE && sym->decl_scope->type != ScopeType::TRAIT) {
+                auto v_flags = orbiter::VariableFlags::VARIABLE;
+
+                if (sym->access == AccessModifier::PUBLIC)
+                    v_flags |= orbiter::VariableFlags::PUBLIC;
+                else if (sym->access == AccessModifier::PROTECTED)
+                    v_flags |= orbiter::VariableFlags::PROTECTED;
+
+                this->builder_.context->ExportSymbol(sym, v_flags);
+
+                this->ct_active_->properties.emplace_back(node);
+
+                this->builder_.context->local_slots += 1;
+
+                return value;
+            }
+
+            assert(false);
+        }
+
+        if (node->value != nullptr)
             value = this->visit(node->value);
 
-            return this->StoreVariable(sym, value, node->node_type == parser::NodeType::VAR_DECLARATION);
-        }
-
-        if (sym->type == SymbolType::VARIABLE && sym->decl_scope->type != ScopeType::TRAIT) {
-            auto v_flags = orbiter::VariableFlags::VARIABLE;
-
-            if (sym->access == AccessModifier::PUBLIC)
-                v_flags |= orbiter::VariableFlags::PUBLIC;
-            else if (sym->access == AccessModifier::PROTECTED)
-                v_flags |= orbiter::VariableFlags::PROTECTED;
-
-            this->builder_.context->ExportSymbol(sym, v_flags);
-
-            this->ct_active_->properties.emplace_back(node);
-
-            this->builder_.context->local_slots += 1;
-
-            return value;
-        }
-
-        assert(false);
+        return this->StoreVariable(sym, value, node->node_type == parser::NodeType::VAR_DECLARATION);
     }
 
     if (node->value != nullptr)
         value = this->visit(node->value);
-
-    return this->StoreVariable(sym, value, node->node_type == parser::NodeType::VAR_DECLARATION);
 }
 
 Instruction *IRBuilder::visitBinary(const parser::Binary *node) {
@@ -1128,6 +1142,10 @@ Instruction *IRBuilder::visitFunction(const parser::Function *node) {
 }
 
 Instruction *IRBuilder::visitIdentifier(const parser::Identifier *node) {
+    if (node->kind == scanner::TokenType::BLANK) {
+        assert(false); // FIXME: exception here
+    }
+
     const auto *sym = node->symbol;
     assert(sym != nullptr);
 
@@ -1996,14 +2014,17 @@ void IRBuilder::VisitForInLoop(const parser::Loop *node) {
 
     this->builder_.CreateBranch(orbiter::OPCode::JEXH, guard.Load(), nullptr, jb.end);
 
+
     if (node->init->node_type == parser::NodeType::IDENTIFIER) {
-        const auto id = (parser::Identifier *) node->init;
+        const auto *id = (parser::Identifier *) node->init;
 
-        this->StoreVariable(id->symbol, gen_value, false);
+        if (!IsBlankTarget(id))
+            this->StoreVariable(id->symbol, gen_value, false);
     } else if (node->init->node_type == parser::NodeType::VAR_DECLARATION) {
-        const auto id = (parser::Identifier *) ((parser::Assignment *) node->init)->name;
+        const auto *id = (parser::Identifier *) ((parser::Assignment *) node->init)->name;
 
-        this->StoreVariable(id->symbol, gen_value, false);
+        if (!IsBlankTarget(id))
+            this->StoreVariable(id->symbol, gen_value, false);
     } else if (node->init->node_type == parser::NodeType::VAR_DECLARATIONS)
         this->ExpandStoreTuple((parser::ListExpression *) ((parser::Assignment *) node->init)->name, gen_value, false);
 
