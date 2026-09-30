@@ -86,7 +86,7 @@ pub class TCPListener impl Socket {
         new TCPListener(net.parse("127.0.0.1", 0))      // loopback, any port
     */
     pub init(addr) {
-        host, port, family := addr.unpack()
+        _, _, family := addr.unpack()
 
         self.handle = TCPHandle.open(family)
 
