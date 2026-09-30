@@ -1451,15 +1451,8 @@ CATCH_FINALLY:
                 const auto flags = (PushIfFlags) (instr & 0xFu);
 
                 if (flags == PushIfFlags::METHOD) {
-                    if (!O_IS_OBJECT(target) || !O_IS_TYPE(target, InstanceType::FUNCTION)) {
-                        ErrorSetWithObjType(fiber->isolate,
-                                            TypeError::Details[TypeError::Reason::ID],
-                                            TypeError::Details[TypeError::Reason::NON_CALLABLE],
-                                            nullptr,
-                                            target);
-
+                    if (ResolveCallable(fiber->isolate, (Function *)target) == nullptr)
                         goto ERROR;
-                    }
 
                     if (!((Function *) target)->shared->IsMethod()) {
                         DISPATCH;
