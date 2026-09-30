@@ -356,8 +356,9 @@ lies — see §6). The runner locates the build tree through `ORBIT_BUILD_DIR`
 (set automatically by `ctest`; otherwise it picks the first of `build/dev`,
 `build/debug`, `build/release`, `cmake-build-debug` that contains a built
 `Orbit`). `.cpp` probes are compiled on the fly against the source root, the
-build tree's generated headers and `lib/stratum`, and linked to
-`<build>/lib/libOrbiter`.
+build tree's generated headers, `lib/stratum` and gyro (its own headers plus
+the ones its build generates, since `runtime.h` reaches `<gyro/gyro.h>`), and
+linked to `<build>/lib/libOrbiter`.
 
 ---
 

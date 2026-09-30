@@ -1,10 +1,54 @@
 # ir — bug report
 
 **Component:** `orbit/liftoff/ir` (instruction.h, linearscan.cpp, irbuilder.cpp) · **ID prefix:** `IR`
-**PoCs:** [`poc/ir/`](poc/ir/) · **Last reviewed:** 2026-07-17
+**PoCs:** [`poc/ir/`](poc/ir/) · **Last reviewed:** 2026-09-30
 **Status:** OPEN · PARTIAL · FIXED · WONTFIX — see [GUIDE.md](GUIDE.md).
 
 > Imported 2026-06-15 from `orbit/liftoff/ir/KNOWN_ISSUES.md` (ISSUE-001 → IR-001).
+
+---
+
+## IR-007 — A blank (`_`) used as a value asserts instead of reporting an error
+**Severity:** Medium (debug: abort; release: null dereference) · **Status:** OPEN · **Location:** `orbit/liftoff/ir/irbuilder.cpp` (`visitIdentifier`)
+
+`_` is a discard: it names no storage, so it can only ever appear as the target
+of a declaration or an assignment. Reading it is meaningless, and the parser
+accepts it anyway, because `ParseIdentifier` builds a BLANK identifier without
+knowing whether the caller wants a target or a value. The IR builder is where
+that is caught, and today it catches it with an assert:
+
+```cpp
+Instruction *IRBuilder::visitIdentifier(const parser::Identifier *node) {
+    if (node->kind != scanner::TokenType::IDENTIFIER) {
+        assert(false); // TODO: exception here
+    }
+```
+
+In a debug build the program aborts with no diagnostic beyond the assert text.
+In a release build `NDEBUG` removes the assert, execution falls through, and
+the `node->symbol` that follows is the `nullptr` the parser stored for a blank.
+
+```orb
+io.print(_)      // Assertion failed: (false), visitIdentifier
+y := _           // same
+_ + 1            // same
+```
+
+**Blocked by [COMP-001](compiler.md).** This is not a defect in the check, which
+is in the right place and detects the right thing: the compiler has no way to
+raise a diagnostic at all, which is what COMP-001 records. The assert is a
+deliberate placeholder for the exception that belongs there. When the compiler
+gains error propagation, this becomes a message along the lines of *"`_`
+discards a value and cannot be read"*, with the offending location, and closes.
+
+**PoC:** none filed; a PoC would assert-abort rather than produce output, and
+the three lines above reproduce it directly *(confirmed live)*.
+
+**Fix:** replace the assert with the compiler's error path once COMP-001 lands,
+reporting the identifier's own `loc`. Note that the condition should name the
+case it rejects (`node->kind == scanner::TokenType::BLANK`) rather than
+excluding everything that is not `IDENTIFIER`: `ParseIdentifier` also sets
+`SELF` and `SUPER` on nodes that reach this visitor legitimately.
 
 ---
 

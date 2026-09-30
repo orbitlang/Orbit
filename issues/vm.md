@@ -1,8 +1,69 @@
 # vm — bug report
 
 **Component:** `orbit/orbiter` (interpreter: trap/panic unwind, register file) · **ID prefix:** `VM`
-**PoCs:** [`poc/vm/`](poc/vm/) · **Last reviewed:** 2026-07-08
+**PoCs:** [`poc/vm/`](poc/vm/) · **Last reviewed:** 2026-09-29
 **Status:** OPEN · PARTIAL · FIXED · WONTFIX — see [GUIDE.md](GUIDE.md).
+
+---
+
+## VM-002 — A trapped panic in argument position overwrites the enclosing call's arguments
+**Severity:** High (silent wrong arguments; writes below the argument region when the inner call has more arguments than the outer has pushed) · **Status:** OPEN · **Location:** `orbit/orbiter/vm.cpp` (`UnwindStack`, catch branch) / `orbit/liftoff/codegen.cpp` (argument push sequence)
+
+When a `trap` expression is passed **as an argument to a call** and the trapped
+expression **panics**, the panicking call's own arguments end up in the slots
+the enclosing call has already pushed. The outer callee runs with values it was
+never passed.
+
+```orb
+func boom2(x, y) { panic Error(@X, "no") }
+func show(a, b, c, d) { io.print(a, b, c, d) }
+
+show("A", "B", trap boom2(10, 20), "D")    // a=10  b=20  c=error  d="D"
+```
+
+The damage scales with the arity of the trapped call, and is positional rather
+than a clean overwrite (`seen4` prints `a|b|d`):
+
+| trapped call | expected | observed |
+|---|---|---|
+| `trap boom1(11)` | `A\|B\|D` | `B\|11\|D` |
+| `trap boom2(10, 20)` | `A\|B\|D` | `10\|20\|D` |
+| `trap boom3(1, 2, 3)` | `A\|B\|D` | `2\|3\|D` |
+
+The last row is the reason for the severity: two arguments had been pushed and
+three were written over them, so one write landed **below** the enclosing call's
+argument region, into whatever the frame keeps there. The PoC survives it, which
+is luck, not safety.
+
+Three controls narrow it down, and all three are green:
+
+- the identical shape with a call that **returns normally** (`trap sum2(10, 20)`)
+  binds every argument correctly, so this is the catch edge and not the
+  argument-push sequence by itself;
+- `trap` over a non-call, and a plain nested call in the same position, are both
+  correct;
+- `trap` in **assignment** position (`r = trap boom2(10, 20)`, the form every
+  existing suite uses) is correct, which is why `ortest/calls/01_argument_passing.orb`
+  has never caught it: it only ever traps into a variable.
+
+**Hypothesis** (not confirmed against the bytecode): on the catch edge SP is not
+restored to the enclosing call's argument cursor, so the inner call's pushes are
+laid down from the wrong base. Same family as VM-001, which was the previous
+SP-restoration defect on this path; the fix there deliberately stopped touching
+SP at all, and an argument cursor belonging to a call that is still being built
+is a case that fix does not cover.
+
+**PoC:** [`poc/vm/trap-argpos-clobber.orb`](poc/vm/trap-argpos-clobber.orb)
+*(confirmed live — 3 of 8 checks fail; it is expected to fail until this is
+fixed, per GUIDE §11)*. Found while writing `ortest/net/`, where every refusal
+check had the shape `check_error(name, trap sock.recv(-1), kind, substr)` and
+the failing test printed a corrupted label; all 41 sites there were rewritten to
+hoist the `trap` into a variable first.
+
+**Fix:** restore SP on the catch edge to the cursor of the call currently being
+assembled, not to the frame's base, so the arguments already pushed for it stay
+reserved. Then drop the hoisting workaround in `ortest/net/` and let those
+suites use `trap` inline again.
 
 ---
 

@@ -22,10 +22,12 @@ are resolved.
 | [sbuffer.md](sbuffer.md) | `orbit/liftoff/scanner/sbuffer` | 0/3 |
 | [utf8-stringbuilder.md](utf8-stringbuilder.md) | `orbit/orbiter/datatype/stringbuilder` (UTF-8 codec) | 1/4 |
 | [parser.md](parser.md) | `orbit/liftoff/parser` (parser.cpp, context.h, ast.h) | 13/25 |
-| [ir.md](ir.md) | `orbit/liftoff/ir` (linearscan, intervalspiller, irbuilder, instruction) | 0/6 |
+| [ir.md](ir.md) | `orbit/liftoff/ir` (linearscan, intervalspiller, irbuilder, instruction) | 1/7 |
 | [compiler.md](compiler.md) | `orbit/liftoff/compiler.cpp` (compile driver) | 1/1 |
 | [ctbuilder.md](ctbuilder.md) | `orbit/orbiter/datatype/ctbuilder.cpp` (class types, blueprint, hook dispatch) | 0/1 |
-| [vm.md](vm.md) | `orbit/orbiter` (interpreter: trap unwind, registers) | 0/1 |
+| [function.md](function.md) | `orbit/orbiter/datatype/function.cpp` (Function objects, `FuncShared` lifetime) | 1/1 |
+| [oobject.md](oobject.md) | `orbit/orbiter/datatype/oobject.cpp` (object/type core, type lifecycle) | 1/1 |
+| [vm.md](vm.md) | `orbit/orbiter` (interpreter: trap unwind, registers) | 1/2 |
 | [number.md](number.md) | `orbit/orbiter/datatype/number.cpp` (integer literals & representation) | 2/2 |
 
 ## Top priorities (High severity, quick wins)
@@ -38,12 +40,15 @@ are resolved.
 - ~~**IR-005** — instantiating a class three levels deep in an inheritance chain hangs the interpreter~~ *(FIXED 2026-07-22, `super` resolves from the enclosing class, not the receiver's runtime type)*
 - ~~**IR-006** — two calls passing rest/named/keyword arguments collide on R10/R11/R12 (crash or silently wrong rest list)~~ *(FIXED 2026-07-24, the value is copied into the protocol register right before the call instead of the producer being pinned to it)*
 - **COMP-001** — any syntax error in file mode asserts in `Compile` instead of reporting (release: UB on empty AST)
+- **IR-007** — a blank (`_`) read as a value asserts instead of reporting (release: null deref); blocked by COMP-001
+- **VM-002** — a trapped panic in argument position overwrites the enclosing call's arguments (and writes below the region when the inner call has more)
 - ~~**VM-001** — spill slots clobbered after a trapped panic (SP rewound to end of exception block)~~ *(FIXED 2026-07-08)*
 - ~~**SCAN-001** — `"#..."` string literals mis-lexed (hash counting on non-raw strings)~~ *(FIXED 2026-06-13)*
 - ~~**SCAN-002** — empty `#` comment swallows the newline + next line of code~~ *(FIXED 2026-06-13)*
 - ~~**SCAN-003** — octal escapes with zero digits decode wrong (`\100` → 1)~~ *(FIXED 2026-06-13, incl. overflow check)*
 - ~~**UTF8-001** — `\u` escapes produce invalid UTF-8 for most Cyrillic / Latin-Ext-A~~ *(FIXED 2026-06-13)*
 - **IBUF-001** — `GetCurrentLine` OOB read + `size_t` underflow → crash (latent, no callers yet)
+- **OBJ-001** — no TypeInfo destructor: a collected type leaks its name, property table and `aux.data` (`aux.dtor` is never called), and pins every property value forever
 
 ## Reviewed so far
 
@@ -53,3 +58,7 @@ are resolved.
 - 2026-07-17: allocator restructured (CallerSaveSpiller pre-pass + IntervalSpiller extraction + LinearScan contention hardening); IR-003 verified FIXED — full PoC suite 20/20, `ortest/regalloc_01..05` all green.
 - 2026-07-17: class/inheritance machinery (`LoadFromObjectProp`, `ctbuilder.cpp`); IR-004 and CTB-001 filed and FIXED, IR-005 filed OPEN. New `ortest/oop/` topic (4 suites) covers hooks, inheritance resolution, accessor/method namespace separation and type-object receivers.
 - 2026-08-31: `orbit/liftoff/parser` — verified & closed PARSE-003/004/005/007/008/011/012/016/018/020 (parser open 23→13). 003/004/005/007/012/018/020 confirmed live against `bin/Orbit` with new `poc/parser/parse-*.orb` (gate 9/9); 008/011/016 by inspection. `pub import` confirmed valid (PARSE-020).
+- 2026-09-23: `orbit/orbiter/datatype/function.cpp` (Function / `FuncShared` lifetime) — new component; FUNC-001 filed (strong module/owner_type backpointers close a refcount cycle the collector cannot break).
+- 2026-09-23: `orbit/orbiter/datatype/oobject.cpp` (type lifecycle) — new component; OBJ-001 filed (no type destructor, `aux.dtor` never invoked) while reviewing the module/function rework that moved native module functions into the module instance slots.
+- 2026-09-29: `orbit/orbiter` (trap unwind) — VM-002 filed, confirmed live with [`poc/vm/trap-argpos-clobber.orb`](poc/vm/trap-argpos-clobber.orb). Found while writing the `ortest/net/` suites, whose refusal checks all had the shape `check_error(name, trap expr, ...)`. **The PoC gate is 32/33 until this is fixed**, per GUIDE §11 (an OPEN finding's PoC documents the target behavior).
+- 2026-09-30: `orbit/liftoff/ir` (irbuilder, blank targets) — IR-007 filed while verifying the new `_` support. Destructuring, single-target discards and `for var _ in` all verified green; reading `_` as a value is the remaining hole and waits on COMP-001, since the compiler has no diagnostic path to report it with.

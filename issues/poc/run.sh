@@ -40,6 +40,23 @@ fi
 ORBIT="$ORBIT_BUILD_DIR/bin/Orbit"
 export ORBIT_PATH="$ROOT/stdlib"
 
+# .cpp probes include orbiter headers, which reach <gyro/gyro.h>. Two roots are
+# needed, as for orbit itself: gyro's own headers, and the ones its build
+# generates (export.h, version.h).
+if [ -z "${GYRO_INCLUDE:-}" ]; then
+    for d in "$(sed -n 's/^FETCHCONTENT_SOURCE_DIR_GYRO:PATH=//p' "$ORBIT_BUILD_DIR/CMakeCache.txt" 2>/dev/null)" \
+             "$ROOT/../gyro" \
+             "$ORBIT_BUILD_DIR/_deps/gyro-src"; do
+        if [ -n "$d" ] && [ -f "$d/gyro/include/gyro/gyro.h" ]; then
+            GYRO_INCLUDE="$d/gyro/include"; break
+        fi
+    done
+fi
+
+if [ -z "${GYRO_BUILD_INCLUDE:-}" ] && [ -f "$ORBIT_BUILD_DIR/_deps/gyro-build/gyro/include/gyro/export.h" ]; then
+    GYRO_BUILD_INCLUDE="$ORBIT_BUILD_DIR/_deps/gyro-build/gyro/include"
+fi
+
 # A reproducer for a hang must not hang the suite: cap every run. Override with
 # POC_TIMEOUT=<seconds> for a slow machine. `timeout` exits 124 on expiry.
 POC_TIMEOUT="${POC_TIMEOUT:-30}"
@@ -88,9 +105,10 @@ run_cpp() {
     local f="$1" rel="$2"
     local bin="/tmp/poc_$(basename "$f" .cpp)"
     # Headers: the source root (#include <orbit/...>), the build tree (generated
-    # version.h) and stratum. Stratum is folded into libOrbiter, so only
-    # -lOrbiter is needed.
-    if ! clang++ -std=c++17 -I "$ROOT" -I "$ORBIT_BUILD_DIR/include" -I "$ROOT/lib/stratum" "$f" \
+    # version.h), stratum and gyro (runtime.h includes <gyro/gyro.h>). Stratum
+    # and gyro are folded into libOrbiter, so only -lOrbiter is needed.
+    if ! clang++ -std=c++17 -I "$ROOT" -I "$ORBIT_BUILD_DIR/include" -I "$ROOT/lib/stratum" \
+            ${GYRO_INCLUDE:+-I "$GYRO_INCLUDE"} ${GYRO_BUILD_INCLUDE:+-I "$GYRO_BUILD_INCLUDE"} "$f" \
             -L "$ORBIT_BUILD_DIR/lib" -lOrbiter -Wl,-rpath,"$ORBIT_BUILD_DIR/lib" -o "$bin" \
             2>/tmp/poc_build.log; then
         bad_line "$rel" "build failed: $(grep -i error /tmp/poc_build.log | head -1)"; return

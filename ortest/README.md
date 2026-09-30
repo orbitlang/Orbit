@@ -45,8 +45,16 @@ layout, trait C3/MRO), `calls/` (argument passing: defaults, named, rest/spread,
 kwargs, methods, currying), `gc/` (the `gc` module: forced collection and
 instance reclaim), `typehooks/` (str/eq user hooks), `operators/` (language operators, e.g.
 `01_is` for the `is` type test), `generators/` (yield/resume: params, locals
-and a held heap object surviving a GC between two yields). Add a new subsystem
-as a new subfolder — the runner picks it up automatically.
+and a held heap object surviving a GC between two yields), `net/` (sockets:
+address parsing, the raw `TCPHandle`, and the stdlib `TCPListener`/`TCPStream`).
+Add a new subsystem as a new subfolder — the runner picks it up automatically.
+
+A suite that opens sockets binds to `127.0.0.1` port **0** and reads the port
+back with `local_addr()`; a fixed port fails on whichever machine happens to be
+using it. It also drives both ends from **one fiber**, in the order the kernel
+already buffers: connect first (the backlog holds it), then accept; send first
+(it has left the sender when it returns), then receive. That keeps a network
+suite deterministic without a sleep anywhere in it.
 
 ## Writing a suite
 
