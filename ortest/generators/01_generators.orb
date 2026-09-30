@@ -1,0 +1,128 @@
+# Generators suite 01 -- yield / resume across the full save-restore cycle.
+#
+# A generator snapshots the VM frame on `yield` (registers, params, operand
+# stack) into its own buffer, and restores it on the next step. Consumed with
+# `for var x in gen(...)`, this suite pins down that round-trip where the
+# byte/element accounting actually matters:
+#
+#   - params must survive across multiple yields (params region restore);
+#   - locals live on the operand stack, so a yield in the middle of a body
+#     saves/restores a non-empty stack (`stack_size`);
+#   - a heap object held in a suspended generator's frame must survive a GC
+#     that runs between two yields (GeneratorTrace + the write barrier must
+#     keep it alive).
+#
+# Regression guard for the units bugs in the frame snapshot: register dump and
+# param/stack region sizes are in BYTES (`* sizeof(void*)`), and the stack is
+# restored from the stack region (not the params region).
+#
+# EXPECT: contains: ALL TESTS PASSED
+
+import "io"
+import "gc"
+
+var fails = 0
+
+func check(name, got, expected) {
+    if got == expected {
+        io.print("OK   ", name)
+    } else {
+        io.print("FAIL ", name, "-- got:", got, "expected:", expected)
+        fails += 1
+    }
+}
+
+# ---------------------------------------------------------------------------
+# Plain loop generator: every yield is produced in order
+# ---------------------------------------------------------------------------
+func count(n) {
+    loop i := 0; i < n; i++ {
+        yield i
+    }
+}
+
+sum := 0
+seen := 0
+for var x in count(5) {
+    sum += x
+    seen += 1
+}
+check("count(5) sum", sum, 10)
+check("count(5) count", seen, 5)
+
+# ---------------------------------------------------------------------------
+# Params survive across yields (params region restore)
+# ---------------------------------------------------------------------------
+func pair(a, b) {
+    yield a
+    yield b
+    yield a + b
+}
+
+psum := 0
+for var v in pair(7, 5) {
+    psum += v
+}
+check("pair(7,5) sum", psum, 24)
+
+# ---------------------------------------------------------------------------
+# Locals live across yields -> non-empty operand stack snapshot
+# ---------------------------------------------------------------------------
+func accum(n) {
+    acc := 0
+    loop i := 1; i <= n; i++ {
+        acc += i
+        yield acc
+    }
+}
+
+asum := 0
+for var v in accum(4) {
+    asum += v
+}
+check("accum(4) sum", asum, 20)
+
+# ---------------------------------------------------------------------------
+# GC between two yields: a heap object reachable ONLY through the suspended
+# generator's frame must survive (GeneratorTrace + write barrier)
+# ---------------------------------------------------------------------------
+func holder() {
+    data := [100, 200, 300]
+    yield data[0]
+    yield data[1]
+    yield data[2]
+}
+
+hsum := 0
+for var v in holder() {
+    gc.collect()
+    hsum += v
+}
+check("held list survives gc", hsum, 600)
+
+# ---------------------------------------------------------------------------
+# Fibonacci: many yields with two accumulator locals across the stack
+# ---------------------------------------------------------------------------
+func fib(n) {
+    a := 0
+    b := 1
+    t := 0
+    loop i := 0; i < n; i++ {
+        yield a
+        t = a + b
+        a = b
+        b = t
+    }
+}
+
+fsum := 0
+for var f in fib(10) {
+    fsum += f
+}
+check("fib(10) sum", fsum, 88)
+
+if fails == 0 {
+    io.print("ALL TESTS PASSED")
+} else {
+    io.print(fails, "TEST(S) FAILED")
+}
