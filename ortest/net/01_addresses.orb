@@ -1,0 +1,128 @@
+# Net suite 01 -- socket addresses: parsing literals and reading them back.
+#
+# `net.parse` is the only way to build a Sockaddr, and `unpack` the only way to
+# read one, so the two together are the whole observable surface of an address.
+# This suite pins down the round trip and the refusals:
+#
+#   - a literal parses to exactly the host, port and family it names, and the
+#     host comes back in the system's normal form (so "0:0:0:0:0:0:0:1" reads
+#     back as "::1");
+#   - the family is an assertion, not a hint: parse is @INET unless told
+#     otherwise, and an address of the wrong shape is refused rather than
+#     reinterpreted;
+#   - nothing here resolves names or touches the network, so a hostname is an
+#     error and never a lookup.
+#
+# The raw sockaddr is private to the engine, which is why every check goes
+# through unpack: what the platform stores is its business, what comes back out
+# is the contract.
+#
+# EXPECT: contains: ALL TESTS PASSED
+
+import "io"
+import "net"
+
+var fails = 0
+
+# A trapped expression is only safe to build in assignment position: `trap`
+# inside an argument list overwrites the arguments already pushed for the
+# enclosing call, so every refusal below is captured here first.
+var r = nil
+
+func check(name, got, expected) {
+    if got == expected {
+        io.print("OK   ", name)
+    } else {
+        io.print("FAIL ", name, "-- got:", got, "expected:", expected)
+        fails += 1
+    }
+}
+
+# A trapped expression is falsy when it holds an error: check the kind and that
+# the reason says why, without pinning the exact wording.
+func check_error(name, res, want_kind, want_substr) {
+    if res {
+        io.print("FAIL ", name, "-- expected a panic, got:", res.unwrap())
+        fails += 1
+        return
+    }
+
+    err := res.unwrap_err()
+
+    if err.kind == want_kind && err.reason.find(want_substr) >= 0 {
+        io.print("OK   ", name)
+    } else {
+        io.print("FAIL ", name, "-- got:", err.kind, err.reason,
+                 "expected:", want_kind, want_substr)
+        fails += 1
+    }
+}
+
+# ---------------------------------------------------------------------------
+# IPv4: the default family
+# ---------------------------------------------------------------------------
+check("v4 round trip", net.parse("127.0.0.1", 8080).unpack(), ("127.0.0.1", 8080, @INET))
+check("v4 explicit family", net.parse("10.0.0.1", 53, family=@INET).unpack(), ("10.0.0.1", 53, @INET))
+check("v4 wildcard", net.parse("0.0.0.0", 80).unpack(), ("0.0.0.0", 80, @INET))
+check("v4 broadcast", net.parse("255.255.255.255", 9).unpack(), ("255.255.255.255", 9, @INET))
+
+# ---------------------------------------------------------------------------
+# IPv6: never inferred, always asked for
+# ---------------------------------------------------------------------------
+check("v6 loopback", net.parse("::1", 8080, family=@INET6).unpack(), ("::1", 8080, @INET6))
+check("v6 wildcard", net.parse("::", 443, family=@INET6).unpack(), ("::", 443, @INET6))
+
+# the long form is a spelling of the same address: it comes back normalised
+check("v6 normalised", net.parse("0:0:0:0:0:0:0:1", 1, family=@INET6).unpack(), ("::1", 1, @INET6))
+check("v6 compressed run", net.parse("2001:db8:0:0:0:0:0:1", 1, family=@INET6).unpack(),
+      ("2001:db8::1", 1, @INET6))
+
+# ---------------------------------------------------------------------------
+# Ports: the whole range, ends included
+# ---------------------------------------------------------------------------
+check("port zero", net.parse("127.0.0.1", 0).unpack(), ("127.0.0.1", 0, @INET))
+check("port max", net.parse("127.0.0.1", 65535).unpack(), ("127.0.0.1", 65535, @INET))
+
+r = trap net.parse("127.0.0.1", -1)
+check_error("port negative", r, @ValueError, "0..65535")
+r = trap net.parse("127.0.0.1", 65536)
+check_error("port over max", r, @ValueError, "0..65535")
+
+# ---------------------------------------------------------------------------
+# Refusals: a literal is a literal
+# ---------------------------------------------------------------------------
+r = trap net.parse("example.org", 80)
+check_error("hostname refused", r, @ValueError, "invalid IPv4")
+r = trap net.parse("300.1.2.3", 80)
+check_error("malformed v4", r, @ValueError, "invalid IPv4")
+r = trap net.parse("", 80)
+check_error("empty host", r, @ValueError, "invalid IPv4")
+
+# an address of the other family is not quietly reinterpreted
+r = trap net.parse("::1", 80)
+check_error("v6 literal as v4", r, @ValueError, "invalid IPv4")
+r = trap net.parse("127.0.0.1", 80, family=@INET6)
+check_error("v4 literal as v6", r, @ValueError, "invalid IPv6")
+
+# ---------------------------------------------------------------------------
+# Families parse does not speak
+# ---------------------------------------------------------------------------
+r = trap net.parse("/tmp/sock", 0, family=@UNIX)
+check_error("unix has no literal", r, @ValueError, "does not parse")
+r = trap net.parse("127.0.0.1", 80, family=@Nonsense)
+check_error("unknown family", r, @ValueError, "unknown address family")
+
+# ---------------------------------------------------------------------------
+# Types
+# ---------------------------------------------------------------------------
+check("host accepts bytes", net.parse(b"127.0.0.1", 80).unpack(), ("127.0.0.1", 80, @INET))
+r = trap net.parse(42, 80)
+check_error("host must be text", r, @TypeError, "host")
+r = trap net.parse("127.0.0.1", "80")
+check_error("port must be a number", r, @TypeError, "port")
+
+if fails == 0 {
+    io.print("ALL TESTS PASSED")
+} else {
+    io.print(fails, "TEST(S) FAILED")
+}

@@ -1,0 +1,231 @@
+# Net suite 02 -- TCPHandle, the raw socket the engine exposes.
+#
+# `::orbit::net` mirrors gyro one call at a time: open, bind, listen, connect,
+# accept, recv, send, close. Nothing is folded, so every intermediate state is
+# reachable, and this suite walks a whole connection through them in one fiber.
+#
+# The order is what makes it deterministic without sleeping: the connect is
+# posted before anyone accepts, the kernel holds it in the backlog, and the
+# accept that follows finds it already there. Same for the bytes: a send has
+# left the sender by the time it returns, so the recv after it cannot race.
+#
+# What is pinned down here:
+#
+#   - the two ends agree about each other (peer_addr of one is local_addr of
+#     the other, and the descriptors are distinct);
+#   - a zero-length transfer is a no-op and NOT an end of stream, which is the
+#     distinction a short-circuit is there to keep;
+#   - end of stream is an empty result, never a panic;
+#   - a closed handle answers every call with a bad descriptor, and closing
+#     twice is not an error.
+#
+# Ports are always 0, read back with local_addr: a suite that picks its own
+# port fails on the machine that happens to be using it.
+#
+# EXPECT: contains: ALL TESTS PASSED
+
+import "io"
+import "net"
+import "::orbit::net" as raw
+
+var fails = 0
+
+# A trapped expression is only safe to build in assignment position: `trap`
+# inside an argument list overwrites the arguments already pushed for the
+# enclosing call, so every refusal below is captured here first.
+var r = nil
+
+func check(name, got, expected) {
+    if got == expected {
+        io.print("OK   ", name)
+    } else {
+        io.print("FAIL ", name, "-- got:", got, "expected:", expected)
+        fails += 1
+    }
+}
+
+func check_true(name, got) {
+    check(name, got, true)
+}
+
+# Some refusals come straight from the operating system, and the sentence it
+# gives differs between them (EINVAL here, EAFNOSUPPORT there). Check that the
+# call was refused, and as what, without pinning words we do not own.
+func check_refused(name, res, want_kind) {
+    if res {
+        io.print("FAIL ", name, "-- expected a panic, got:", res.unwrap())
+        fails += 1
+        return
+    }
+
+    check(name, res.unwrap_err().kind, want_kind)
+}
+
+func check_error(name, res, want_kind, want_substr) {
+    if res {
+        io.print("FAIL ", name, "-- expected a panic, got:", res.unwrap())
+        fails += 1
+        return
+    }
+
+    err := res.unwrap_err()
+
+    if err.kind == want_kind && err.reason.find(want_substr) >= 0 {
+        io.print("OK   ", name)
+    } else {
+        io.print("FAIL ", name, "-- got:", err.kind, err.reason,
+                 "expected:", want_kind, want_substr)
+        fails += 1
+    }
+}
+
+# ---------------------------------------------------------------------------
+# Opening: a descriptor exists, and nothing else has happened yet
+# ---------------------------------------------------------------------------
+unbound := raw.TCPHandle.open(@INET)
+check_true("open yields a descriptor", unbound.fileno() >= 0)
+
+# an unbound socket has no address of its own yet
+host_u, port_u, _ := unbound.local_addr().unpack()
+check("unbound host", host_u, "0.0.0.0")
+check("unbound port", port_u, 0)
+
+# and no peer either
+r = trap unbound.peer_addr()
+check_error("unbound has no peer", r, @OSError, "getpeername")
+
+# accepting on a socket nobody asked to listen is refused by the system
+r = trap unbound.accept(timeout=200)
+check_refused("accept before listen", r, @OSError)
+unbound.close()
+
+# the family is an assertion the system enforces, not a hint
+mismatch := raw.TCPHandle.open(@INET)
+r = trap mismatch.bind(net.parse("::1", 0, family=@INET6))
+check_refused("v6 address on a v4 socket", r, @OSError)
+mismatch.close()
+
+# ---------------------------------------------------------------------------
+# Binding and listening
+# ---------------------------------------------------------------------------
+srv := raw.TCPHandle.open(@INET)
+srv.bind(net.parse("127.0.0.1", 0), flags=raw.TCP_REUSEADDR)
+
+host_b, port_b, family_b := srv.local_addr().unpack()
+check("bound host", host_b, "127.0.0.1")
+check_true("bound port chosen by the system", port_b > 0)
+check("bound family", family_b, @INET)
+
+srv.listen(backlog=8)
+check("listen keeps the address", srv.local_addr().unpack(), (host_b, port_b, family_b))
+
+r = trap srv.listen(backlog=-1)
+check_error("backlog cannot be negative", r, @ValueError, "backlog")
+
+# listening without binding is legal: the system binds for us
+implicit := raw.TCPHandle.open(@INET)
+implicit.listen()
+host_i, port_i, _ := implicit.local_addr().unpack()
+check("implicit bind takes every interface", host_i, "0.0.0.0")
+check_true("implicit bind picks a port", port_i > 0)
+implicit.close()
+
+# ---------------------------------------------------------------------------
+# Connect, then accept what the backlog is already holding
+# ---------------------------------------------------------------------------
+cli := raw.TCPHandle.open(@INET)
+cli.connect(srv.local_addr(), timeout=5000)
+
+conn := srv.accept(timeout=5000)
+
+check_true("accepted socket is its own descriptor", conn.fileno() != srv.fileno())
+check_true("client and server are different descriptors", conn.fileno() != cli.fileno())
+
+# the two ends describe each other the same way round
+check("server sees the client", conn.peer_addr().unpack(), cli.local_addr().unpack())
+check("client sees the server", cli.peer_addr().unpack(), conn.local_addr().unpack())
+check("the connection landed on the listening port", conn.local_addr().unpack(), srv.local_addr().unpack())
+
+# ---------------------------------------------------------------------------
+# Sending and receiving
+# ---------------------------------------------------------------------------
+check("send reports the whole buffer", cli.send(b"ping"), 4)
+check("recv returns what arrived", conn.recv(64, timeout=5000), b"ping")
+
+# a String is a legal source too
+check("send accepts a string", cli.send("hello"), 5)
+check("recv reads it back", conn.recv(64, timeout=5000), b"hello")
+
+# a slice of the buffer, by name: defaults in Orbit are keyword-only
+check("send sends a slice", cli.send(b"abcdefgh", offset=2, length=3), 3)
+check("recv sees only the slice", conn.recv(64, timeout=5000), b"cde")
+
+# recv_into leaves the rest of the destination alone
+buf := Bytes(len=8)
+check("send for recv_into", cli.send(b"XY"), 2)
+check("recv_into reports the count", conn.recv_into(buf, 2, 6, timeout=5000), 2)
+check("recv_into wrote at the offset", buf[2:4], b"XY")
+check("recv_into left the head alone", buf[0:2], Bytes(len=2))
+
+# ---------------------------------------------------------------------------
+# Zero-length transfers are no-ops, not an end of stream
+# ---------------------------------------------------------------------------
+check("recv of nothing", conn.recv(0), b"")
+check("recv_into of nothing", conn.recv_into(buf, 0, 0), 0)
+check("send of nothing", cli.send(b""), 0)
+
+# ---------------------------------------------------------------------------
+# Refusals on the transfer calls
+# ---------------------------------------------------------------------------
+r = trap conn.recv(-1)
+check_error("negative recv", r, @ValueError, "negative")
+r = trap conn.recv(4, timeout=-1)
+check_error("negative timeout", r, @ValueError, "timeout")
+r = trap cli.send(b"abc", offset=1, length=99)
+check_error("send past the end", r, @ValueError, "out of bounds")
+r = trap cli.send(b"abc", length=-1)
+check_error("negative send length", r, @ValueError, "negative")
+
+# ---------------------------------------------------------------------------
+# End of stream: a value, not a failure
+# ---------------------------------------------------------------------------
+cli.close()
+check("recv at end of stream", conn.recv(16, timeout=5000), b"")
+check("recv_into at end of stream", conn.recv_into(buf, 0, 8, timeout=5000), 0)
+
+# ---------------------------------------------------------------------------
+# Closing
+# ---------------------------------------------------------------------------
+check("close returns nothing", conn.close(), nil)
+check("close again is a no-op", conn.close(), nil)
+
+r = trap conn.fileno()
+check_error("fileno after close", r, @OSError, "fileno")
+r = trap conn.local_addr()
+check_error("local_addr after close", r, @OSError, "local_addr")
+r = trap conn.peer_addr()
+check_error("peer_addr after close", r, @OSError, "peer_addr")
+r = trap conn.recv(4)
+check_error("recv after close", r, @OSError, "recv")
+r = trap conn.recv_into(buf, 0, 4)
+check_error("recv_into after close", r, @OSError, "recv_into")
+r = trap conn.send(b"x")
+check_error("send after close", r, @OSError, "send")
+r = trap conn.accept()
+check_error("accept after close", r, @OSError, "accept")
+r = trap conn.bind(net.parse("127.0.0.1", 0))
+check_error("bind after close", r, @OSError, "bind")
+r = trap conn.listen()
+check_error("listen after close", r, @OSError, "listen")
+r = trap conn.connect(net.parse("127.0.0.1", 1))
+check_error("connect after close", r, @OSError, "connect")
+
+srv.close()
+r = trap srv.accept(timeout=100)
+check_error("accept on a closed listener", r, @OSError, "accept")
+
+if fails == 0 {
+    io.print("ALL TESTS PASSED")
+} else {
+    io.print(fails, "TEST(S) FAILED")
+}

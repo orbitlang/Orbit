@@ -1,0 +1,199 @@
+# Net suite 03 -- the stdlib classes: TCPListener and TCPStream.
+#
+# The engine exposes one socket per transport; stdlib turns it into two classes,
+# one per role. This suite covers what those classes add on top of the raw
+# handle, which is policy rather than plumbing:
+#
+#   - a listener is built in two steps on purpose, so there is a moment in which
+#     the socket is open and still unbound (where setsockopt is honoured). The
+#     states are @OPEN -> @LISTENING -> @CLOSED and nothing else: accepting
+#     before listening, or listening twice, is refused here rather than being
+#     left to the kernel's EINVAL;
+#   - local_addr answers differently on either side of listen, which is the
+#     whole point of binding to port 0: before, the address we asked for; after,
+#     the one the system settled on;
+#   - a stream spells every transfer twice. read/readinto/write come from the io
+#     traits and wait indefinitely; recv/recv_into/send are the same operations
+#     with a deadline. The pairs must agree, or code that swaps one for the
+#     other silently changes behaviour.
+#
+# Single fiber and port 0 throughout, as in suite 02: the connect is posted
+# first, the backlog holds it, the accept that follows finds it already there.
+#
+# EXPECT: contains: ALL TESTS PASSED
+
+import "io"
+import "net"
+import "net/tcp"
+import "::orbit::net" as raw
+
+var fails = 0
+
+# A trapped expression is only safe to build in assignment position: `trap`
+# inside an argument list overwrites the arguments already pushed for the
+# enclosing call, so every refusal below is captured here first.
+var r = nil
+
+func check(name, got, expected) {
+    if got == expected {
+        io.print("OK   ", name)
+    } else {
+        io.print("FAIL ", name, "-- got:", got, "expected:", expected)
+        fails += 1
+    }
+}
+
+func check_true(name, got) {
+    check(name, got, true)
+}
+
+func check_error(name, res, want_kind, want_substr) {
+    if res {
+        io.print("FAIL ", name, "-- expected a panic, got:", res.unwrap())
+        fails += 1
+        return
+    }
+
+    err := res.unwrap_err()
+
+    if err.kind == want_kind && err.reason.find(want_substr) >= 0 {
+        io.print("OK   ", name)
+    } else {
+        io.print("FAIL ", name, "-- got:", err.kind, err.reason,
+                 "expected:", want_kind, want_substr)
+        fails += 1
+    }
+}
+
+# ---------------------------------------------------------------------------
+# The two steps of a listener, and the state between them
+# ---------------------------------------------------------------------------
+wanted := net.parse("127.0.0.1", 0)
+pending := new tcp.TCPListener(wanted)
+
+# before listen the address is the one we asked for, port 0 and all
+check("address before listen", pending.local_addr().unpack(), ("127.0.0.1", 0, @INET))
+check_true("the descriptor already exists", pending.fileno() >= 0)
+
+# and the socket is not accepting anything yet
+r = trap pending.accept(timeout=200)
+check_error("accept before listen", r, @OSError, "not listening")
+
+pending.listen(backlog=8)
+
+# after listen it is what the system settled on: same host, a port of its choosing
+host_l, port_l, family_l := pending.local_addr().unpack()
+check("address after listen keeps the host", host_l, "127.0.0.1")
+check("address after listen keeps the family", family_l, @INET)
+check_true("the system chose a port", port_l > 0)
+
+# the second listen is refused by us, with a sentence that says which state we are in
+r = trap pending.listen()
+check_error("listen twice", r, @OSError, "already listening")
+
+# and the refusal leaves the listener working
+check("still listening after the refusal", pending.local_addr().unpack(), (host_l, port_l, family_l))
+
+pending.close()
+
+# a closed listener is handed to the socket, which names the real problem
+r = trap pending.accept(timeout=100)
+check_error("accept once closed", r, @OSError, "bad file descriptor")
+r = trap pending.listen()
+check_error("listen once closed", r, @OSError, "bad file descriptor")
+check("close is idempotent", pending.close(), nil)
+
+# ---------------------------------------------------------------------------
+# net.listen does both steps at once
+# ---------------------------------------------------------------------------
+srv := net.listen(net.parse("127.0.0.1", 0))
+
+host_s, port_s, _ := srv.local_addr().unpack()
+check("net.listen binds the host", host_s, "127.0.0.1")
+check_true("net.listen reports the chosen port", port_s > 0)
+r = trap srv.listen()
+check("net.listen leaves it listening", r.unwrap_err().reason.find("already listening") >= 0, true)
+
+# ---------------------------------------------------------------------------
+# A connection, and the stream that wraps it
+# ---------------------------------------------------------------------------
+cli_handle := raw.TCPHandle.open(@INET)
+cli_handle.connect(srv.local_addr(), timeout=5000)
+cli := new tcp.TCPStream(cli_handle)
+
+conn := srv.accept(timeout=5000)
+
+check_true("the stream has its own descriptor", conn.fileno() != srv.fileno())
+check("the stream landed on the listening port", conn.local_addr().unpack(), srv.local_addr().unpack())
+
+# ---------------------------------------------------------------------------
+# The trait vocabulary: read / readinto / write
+# ---------------------------------------------------------------------------
+check("write reports the whole buffer", cli.write(b"ping"), 4)
+check("read returns what arrived", conn.read(64), b"ping")
+
+check("write accepts a string", cli.write("hello"), 5)
+
+buf := Bytes(len=8)
+check("readinto reports the count", conn.readinto(buf, 1, 7), 5)
+check("readinto wrote at the offset", buf[1:6], b"hello")
+check("readinto left the head alone", buf[0:1], Bytes(len=1))
+
+check("flush does nothing, successfully", conn.flush(), nil)
+
+# ---------------------------------------------------------------------------
+# The socket vocabulary: recv / recv_into / send, same answers plus a deadline
+# ---------------------------------------------------------------------------
+check("send reports the whole buffer", cli.send(b"pong"), 4)
+check("recv returns what arrived", conn.recv(64, timeout=5000), b"pong")
+
+check("send takes a deadline", cli.send(b"again", timeout=5000), 5)
+check("recv_into takes one too", conn.recv_into(buf, 0, 8, timeout=5000), 5)
+check("recv_into wrote from the start", buf[0:5], b"again")
+
+# zero-length transfers are no-ops on this side as well
+check("read of nothing", conn.read(0), b"")
+check("readinto of nothing", conn.readinto(buf, 0, 0), 0)
+check("recv of nothing", conn.recv(0), b"")
+
+# ---------------------------------------------------------------------------
+# Refusals carried up from the socket
+# ---------------------------------------------------------------------------
+r = trap conn.read(-1)
+check_error("negative read", r, @ValueError, "negative")
+r = trap conn.recv(4, timeout=-1)
+check_error("negative recv timeout", r, @ValueError, "timeout")
+r = trap conn.send(b"x", timeout=-1)
+check_error("negative send timeout", r, @ValueError, "timeout")
+
+# ---------------------------------------------------------------------------
+# End of stream is a value on both spellings
+# ---------------------------------------------------------------------------
+cli.close()
+check("read at end of stream", conn.read(16), b"")
+check("readinto at end of stream", conn.readinto(buf, 0, 8), 0)
+check("recv at end of stream", conn.recv(16, timeout=5000), b"")
+
+# ---------------------------------------------------------------------------
+# Closing a stream
+# ---------------------------------------------------------------------------
+check("close returns nothing", conn.close(), nil)
+check("close is idempotent", conn.close(), nil)
+
+r = trap conn.read(4)
+check_error("read after close", r, @OSError, "recv")
+r = trap conn.write(b"x")
+check_error("write after close", r, @OSError, "send")
+r = trap conn.fileno()
+check_error("fileno after close", r, @OSError, "fileno")
+r = trap conn.local_addr()
+check_error("local_addr after close", r, @OSError, "local_addr")
+check("flush after close is still harmless", conn.flush(), nil)
+
+srv.close()
+
+if fails == 0 {
+    io.print("ALL TESTS PASSED")
+} else {
+    io.print(fails, "TEST(S) FAILED")
+}
