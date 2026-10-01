@@ -5,17 +5,13 @@
 #ifndef ORBIT_LIFTOFF_IR_BUILDER_H_
 #define ORBIT_LIFTOFF_IR_BUILDER_H_
 
+#include <orbit/orbiter/frame.h>
+
 #include <orbit/orbiter/memory/iallocator.h>
 
 #include <orbit/liftoff/ir/irchandle.h>
 
 namespace liftoff::ir {
-    /**
-     * This constant is paired with the one in vm.cpp, and they must always have the same size.
-     * The vm.cpp value is in bytes while this one is in slots, where: slots * sizeof(void*) = bytes
-     */
-    constexpr auto kStackPrologueOffset = 4 + 3; // FiberContext + SP + BP + IP
-
     /**
      * @brief Builder class for constructing Intermediate Representation (IR) instructions and basic blocks.
      *

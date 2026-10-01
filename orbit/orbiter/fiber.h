@@ -8,6 +8,8 @@
 #include <atomic>
 #include <cassert>
 
+#include <gyro/buf.h>
+
 #include <orbit/orbiter/datatype/context.h>
 #include <orbit/orbiter/datatype/function.h>
 #include <orbit/orbiter/datatype/module.h>
@@ -16,19 +18,11 @@
 #include <orbit/orbiter/import/module_entry.h>
 
 #include <orbit/orbiter/defer.h>
+#include <orbit/orbiter/frame.h>
 #include <orbit/orbiter/panic.h>
 #include <orbit/orbiter/vm.h>
 
-#include "gyro/buf.h"
-
 namespace orbiter {
-    struct FiberContext {
-        datatype::Context *context;
-        datatype::Module *module;
-        datatype::Code *code;
-        datatype::OObject *func;
-    };
-
     using ResumeFn = bool (*)(Fiber *fiber);
 
     /**
@@ -48,7 +42,6 @@ namespace orbiter {
         U64 udata;
     };
 
-    constexpr auto kStackPrologueOffset = sizeof(FiberContext) + (sizeof(void *) * 3); // Context | SP | BP | IP
     constexpr auto kPreemptTick = 32;
 
     enum class FiberState : U8 {

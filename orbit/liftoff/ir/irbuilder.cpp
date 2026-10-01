@@ -445,7 +445,7 @@ Instruction *IRBuilder::LoadParameter(const Symbol *symbol) {
 
     const auto params_count = (I16) this->sym_t_->scope->GetParameterCount();
     const auto sym_offset = symbol->location == StorageLocation::CLOSURE ? symbol->stack_offset : symbol->offset;
-    const auto p_offset = (params_count - sym_offset) + kStackPrologueOffset;
+    const auto p_offset = (params_count - sym_offset) + orbiter::kStackPrologueSlots;
 
     assert(p_offset > 0);
 
@@ -603,7 +603,7 @@ Instruction *IRBuilder::StoreVariable(const Symbol *symbol, Instruction *value, 
         assert(symbol->location == StorageLocation::STACK);
 
         const auto params_count = (I16) this->sym_t_->scope->GetParameterCount();
-        const auto p_offset = (params_count - offset) + kStackPrologueOffset;
+        const auto p_offset = (params_count - offset) + orbiter::kStackPrologueSlots;
 
         assert(p_offset > 0);
 
