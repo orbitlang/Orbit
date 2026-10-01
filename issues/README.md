@@ -22,12 +22,12 @@ are resolved.
 | [sbuffer.md](sbuffer.md) | `orbit/liftoff/scanner/sbuffer` | 0/3 |
 | [utf8-stringbuilder.md](utf8-stringbuilder.md) | `orbit/orbiter/datatype/stringbuilder` (UTF-8 codec) | 1/4 |
 | [parser.md](parser.md) | `orbit/liftoff/parser` (parser.cpp, context.h, ast.h) | 13/25 |
-| [ir.md](ir.md) | `orbit/liftoff/ir` (linearscan, intervalspiller, irbuilder, instruction) | 1/7 |
+| [ir.md](ir.md) | `orbit/liftoff/ir` (linearscan, intervalspiller, irbuilder, instruction) | 2/8 |
 | [compiler.md](compiler.md) | `orbit/liftoff/compiler.cpp` (compile driver) | 1/1 |
 | [ctbuilder.md](ctbuilder.md) | `orbit/orbiter/datatype/ctbuilder.cpp` (class types, blueprint, hook dispatch) | 0/1 |
 | [function.md](function.md) | `orbit/orbiter/datatype/function.cpp` (Function objects, `FuncShared` lifetime) | 1/1 |
 | [oobject.md](oobject.md) | `orbit/orbiter/datatype/oobject.cpp` (object/type core, type lifecycle) | 1/1 |
-| [vm.md](vm.md) | `orbit/orbiter` (interpreter: trap unwind, registers) | 1/2 |
+| [vm.md](vm.md) | `orbit/orbiter` (interpreter: trap unwind, registers) | 1/3 |
 | [number.md](number.md) | `orbit/orbiter/datatype/number.cpp` (integer literals & representation) | 2/2 |
 
 ## Top priorities (High severity, quick wins)
@@ -41,7 +41,9 @@ are resolved.
 - ~~**IR-006** — two calls passing rest/named/keyword arguments collide on R10/R11/R12 (crash or silently wrong rest list)~~ *(FIXED 2026-07-24, the value is copied into the protocol register right before the call instead of the producer being pinned to it)*
 - **COMP-001** — any syntax error in file mode asserts in `Compile` instead of reporting (release: UB on empty AST)
 - **IR-007** — a blank (`_`) read as a value asserts instead of reporting (release: null deref); blocked by COMP-001
-- **VM-002** — a trapped panic in argument position overwrites the enclosing call's arguments (and writes below the region when the inner call has more)
+- ~~**VM-002** — a deferred control transfer in argument position overwrites the enclosing call's arguments~~ *(FIXED 2026-10-01, the call frame prologue now records the SP to restore instead of every exit path counting slots to pop)*
+- **VM-003** — `break` out of a `try` block is silently ignored, the loop runs to completion
+- **IR-008** — `continue` out of a `try` block asserts in `GetJBlockBegin` at compile time
 - ~~**VM-001** — spill slots clobbered after a trapped panic (SP rewound to end of exception block)~~ *(FIXED 2026-07-08)*
 - ~~**SCAN-001** — `"#..."` string literals mis-lexed (hash counting on non-raw strings)~~ *(FIXED 2026-06-13)*
 - ~~**SCAN-002** — empty `#` comment swallows the newline + next line of code~~ *(FIXED 2026-06-13)*
@@ -62,3 +64,5 @@ are resolved.
 - 2026-09-23: `orbit/orbiter/datatype/oobject.cpp` (type lifecycle) — new component; OBJ-001 filed (no type destructor, `aux.dtor` never invoked) while reviewing the module/function rework that moved native module functions into the module instance slots.
 - 2026-09-29: `orbit/orbiter` (trap unwind) — VM-002 filed, confirmed live with [`poc/vm/trap-argpos-clobber.orb`](poc/vm/trap-argpos-clobber.orb). Found while writing the `ortest/net/` suites, whose refusal checks all had the shape `check_error(name, trap expr, ...)`. **The PoC gate is 32/33 until this is fixed**, per GUIDE §11 (an OPEN finding's PoC documents the target behavior).
 - 2026-09-30: `orbit/liftoff/ir` (irbuilder, blank targets) — IR-007 filed while verifying the new `_` support. Destructuring, single-target discards and `for var _ in` all verified green; reading `_` as a value is the remaining hole and waits on COMP-001, since the compiler has no diagnostic path to report it with.
+- 2026-09-30: `orbit/orbiter` (exception stack) — `ExceptionContext` gained an explicit `SP`, which closes the trapped-panic half of VM-002 (PoC's `trap` checks all green); the `return`-through-`finally` half is still open, so VM-002 is PARTIAL and its PoC now covers both. Confirmed by building HEAD and the working tree and running the same reproducers: VM-003 (`break` out of a `try`) and IR-008 (`continue` out of a `try`) predate that work and are filed as their own findings. The now-unwritten `ret_pops` field is noted under VM-002.
+- 2026-10-01: `orbit/orbiter` (call frames) — the frame prologue now carries the stack pointer to restore (`Context | SP | BP | IP`), sourced from `ArgumentBinder::ArgsBaseSP()`, and `Return` no longer pops by count. VM-002 FIXED as a result, both halves, with the PoC green and `ortest` 19/19. Two latent discrepancies surfaced on the way and are now documented on `ArgsBaseSP`: the binder pushes slots it does not count (rest list, kwargs dict), and drops the receiver of a method-mode call whose callee is not a method. VM-003 and IR-008 (`break` and `continue` out of a `try`) are untouched and still open.

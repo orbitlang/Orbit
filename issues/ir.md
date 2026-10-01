@@ -8,6 +8,43 @@
 
 ---
 
+## IR-008 — `continue` out of a `try` block asserts at compile time
+**Severity:** Medium (compile-time abort on valid source; release: returns nullptr into codegen) · **Status:** OPEN · **Location:** `orbit/liftoff/ir/jblock.cpp:72` (`GetJBlockBegin`)
+
+```orb
+for var i in [1, 2, 3, 4, 5] {
+    try {
+        if i == 3 { continue }
+    } catch e {
+    }
+}
+```
+
+```
+Assertion failed: (false), function GetJBlockBegin, file jblock.cpp, line 72.
+```
+
+`irbuilder` walks the jblock chain looking for the loop to continue, and when it
+crosses a `TCF` block it calls `GetJBlockBegin(b_target)`. That function only
+answers for `LOOP`, `FOR_IN` and `LABEL`, and asserts on everything else; the
+block it is handed here is not one of the three. In a release build the assert
+is gone and the `nullptr` it returns flows into the emission of the `TSPA`
+operand.
+
+The `break` spelling of the same construct compiles and is wrong at runtime
+instead: see [VM-003](vm.md). **Not a regression** from the concurrent
+`ExceptionContext` work: verified against both revisions, identical.
+
+**PoC:** none filed; it aborts rather than producing output, and the six lines
+above reproduce it directly *(confirmed live)*.
+
+**Fix:** resolve the continue target from the loop block rather than from the
+`TCF` block that interrupts the walk, so `GetJBlockBegin` is asked about a block
+that has a beginning. Fix alongside VM-003, since the two are the two halves of
+"leave a loop from inside a try".
+
+---
+
 ## IR-007 — A blank (`_`) used as a value asserts instead of reporting an error
 **Severity:** Medium (debug: abort; release: null dereference) · **Status:** OPEN · **Location:** `orbit/liftoff/ir/irbuilder.cpp` (`visitIdentifier`)
 

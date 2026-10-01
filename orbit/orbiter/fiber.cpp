@@ -34,7 +34,7 @@ Fiber::~Fiber() {
     }
 }
 
-bool Fiber::PushState() noexcept {
+bool Fiber::PushState(const PtrSize restorable_sp) noexcept {
     auto *stack = this->vm.stack.stack + this->vm.regs.SP.reg;
 
     if (!this->vm.stack.Check(this->isolate, this->vm.regs.SP.reg, kStackPrologueOffset))
@@ -48,8 +48,13 @@ bool Fiber::PushState() noexcept {
     // so that the GC does not treat them as objects, which would inevitably lead to a crash.
     assert((this->vm.regs.IP.reg & 0x01) == 0);
     assert((this->vm.regs.BP.reg & 0x01) == 0);
+    assert((restorable_sp & 0x01) == 0);
 
     stack += sizeof(FiberContext);
+
+    *((PtrSize *) stack) = restorable_sp | 0x01;
+
+    stack += sizeof(PtrSize);
 
     *((PtrSize *) stack) = this->vm.regs.BP.reg | 0x01;
 
@@ -111,6 +116,30 @@ void Fiber::SetCurrent(Fiber *fiber) noexcept {
     thl_fiber = fiber;
 }
 
+FiberContext *Fiber::PopStateNoCtxRestore() noexcept {
+    auto *stack = this->vm.stack.stack + this->vm.regs.BP.reg;
+
+    stack -= sizeof(PtrSize);
+
+    this->vm.regs.IP.reg = *((PtrSize *) stack);
+
+    stack -= sizeof(PtrSize);
+
+    this->vm.regs.BP.reg = *((PtrSize *) stack);
+
+    stack -= sizeof(PtrSize);
+
+    this->vm.regs.SP.reg = *((PtrSize *) stack);
+
+    this->vm.regs.IP.reg &= ~0x01;
+    this->vm.regs.BP.reg &= ~0x01;
+    this->vm.regs.SP.reg &= ~0x01;
+
+    stack -= sizeof(FiberContext);
+
+    return (FiberContext *) stack;
+}
+
 datatype::HOObject Fiber::GetDiscardPanic() noexcept {
     if (*this->panic.r_current_ == nullptr)
         return {};
@@ -155,27 +184,9 @@ void Fiber::DiscardPanic() noexcept {
 }
 
 void Fiber::PopState() noexcept {
-    // BP marks the top of the prologue saved by PushState
-    const auto frame_base = this->vm.regs.BP.reg;
-
-    auto *stack = this->vm.stack.stack + frame_base;
-
-    stack -= sizeof(PtrSize);
-
-    this->vm.regs.IP.reg = *((PtrSize *) stack);
-
-    stack -= sizeof(PtrSize);
-
-    this->vm.regs.BP.reg = *((PtrSize *) stack);
-
-    this->vm.regs.IP.reg &= ~0x01;
-    this->vm.regs.BP.reg &= ~0x01;
-
-    stack -= sizeof(FiberContext);
+    const auto *stack = (unsigned char *) this->PopStateNoCtxRestore();
 
     memory::MemoryCopy(&this->context, stack, sizeof(FiberContext));
-
-    this->vm.regs.SP.reg = frame_base - kStackPrologueOffset;
 }
 
 void Fiber::PrepareForEventLoop(const ResumeFn on_resume, datatype::OObject *io_object) noexcept {

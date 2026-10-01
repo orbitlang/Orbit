@@ -183,6 +183,11 @@ CallResult ArgumentBinder::Bind(Fiber *fiber, Function *&func, const U16 p_count
     if (ENUMBITMASK_ISTRUE(mode, CallMode::METHOD) && !this->NormalizeMethod())
         return CallResult::ERROR;
 
+    // The bottom of the region the CALLEE owns, fixed before anything pushes:
+    // NormalizeMethod may already have dropped a receiver the caller keeps, and
+    // every later push happens above this point.
+    this->base_sp = fiber->vm.regs.SP.reg - (this->stack_args * sizeof(void *));
+
     if (!this->EnsureStack()) {
         ErrorSet(fiber->isolate,
                  MemoryError::Details[MemoryError::Reason::ID],

@@ -48,7 +48,7 @@ namespace orbiter {
         U64 udata;
     };
 
-    constexpr auto kStackPrologueOffset = sizeof(FiberContext) + (sizeof(void *) * 2);
+    constexpr auto kStackPrologueOffset = sizeof(FiberContext) + (sizeof(void *) * 3); // Context | SP | BP | IP
     constexpr auto kPreemptTick = 32;
 
     enum class FiberState : U8 {
@@ -118,7 +118,7 @@ namespace orbiter {
          * @return True if the state was successfully saved; false if there was
          *         insufficient stack space or another error occurred.
          */
-        bool PushState() noexcept;
+        bool PushState(PtrSize restorable_sp) noexcept;
 
         /**
          * @brief Returns the current thread-local Fiber instance.
@@ -140,6 +140,27 @@ namespace orbiter {
          *         could not be created or initialized successfully.
          */
         static Fiber *New(Isolate *isolate, MSize stack_size, MSize stack_limit) noexcept;
+
+        /**
+         * @brief Restores the registers saved in the frame prologue, leaving the context alone.
+         *
+         * Reads back the three words PushState wrote: the instruction pointer, the
+         * caller's base pointer, and the stack pointer to restore. That last one is
+         * what the caller recorded as the bottom of the argument region it built, so
+         * returning through here reclaims those arguments without anyone having to
+         * count them.
+         *
+         * The saved FiberContext is handed back rather than installed, because not
+         * every caller wants it: PopState copies it in, while UnwindStack walks one
+         * frame at a time and only adopts the context of the frame whose handler it
+         * is looking for.
+         *
+         * This is the only place that knows the prologue's layout, PushState aside.
+         *
+         * @return A pointer to the FiberContext saved in this frame. It lives on the
+         *         VM stack below the new SP, so it is only valid until the next push.
+         */
+        FiberContext *PopStateNoCtxRestore() noexcept;
 
         /**
          * @brief Retrieves and discards the current panic state of the Fiber.

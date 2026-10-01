@@ -20,6 +20,7 @@ namespace orbiter {
         PtrSize key;
 
         PtrSize argc;
+        PtrSize restorable_SP;
 
         PtrSize r10;
         PtrSize r11;

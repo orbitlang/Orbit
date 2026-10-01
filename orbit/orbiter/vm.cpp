@@ -97,7 +97,7 @@ bool ExecDefer(Fiber *fiber) {
 
         // Store current context
         regs->IP.reg -= sizeof(MachineWord); // Must re-execute the same opcode; PushState saves the next one
-        if (!fiber->PushState())
+        if (!fiber->PushState(defer->restorable_SP))
             return false;
 
         fiber->SetContext(func);
@@ -116,17 +116,17 @@ bool ExecDefer(Fiber *fiber) {
     }
 }
 
-static bool Call(Fiber *fiber, Function *func, const U16 total_args) {
+static bool Call(Fiber *fiber, Function *func, const ArgumentBinder &binder) {
     auto *regs = &fiber->vm.regs;
 
     if (!func->shared->IsInterpreted()) {
-        CallNative(func, regs, &fiber->vm.stack, total_args);
+        CallNative(func, regs, &fiber->vm.stack, binder.StackArgs());
 
         return false;
     }
 
     if (func->shared->IsAsync()) {
-        const auto size = total_args * sizeof(void *);
+        const auto size = binder.StackArgsBytes();
 
         regs->RR.reg = (PtrSize) Orbiter::GetInstance()->EvalAsync(func,
                                                                    (fiber->vm.stack.stack + regs->SP.reg) - size,
@@ -137,7 +137,7 @@ static bool Call(Fiber *fiber, Function *func, const U16 total_args) {
         return false;
     }
 
-    if (!fiber->PushState())
+    if (!fiber->PushState(binder.ArgsBaseSP()))
         return false;
 
     // Load new context
@@ -265,18 +265,7 @@ bool UnwindStack(Fiber *fiber, const PtrSize barrier) {
             break;
 
         // Load previous frame
-        regs->BP.reg -= sizeof(void *);
-
-        regs->IP.reg = *(PtrSize *) (stack->stack + regs->BP.reg);
-        regs->IP.reg &= ~0x01;
-
-        regs->BP.reg -= sizeof(void *);
-        regs->SP.reg = regs->BP.reg;
-
-        regs->BP.reg = *(PtrSize *) (stack->stack + regs->BP.reg);
-        regs->BP.reg &= ~0x01;
-
-        regs->SP.reg -= sizeof(FiberContext);
+        const auto *p_ctx = fiber->PopStateNoCtxRestore();
 
         if (context == &fiber->context) {
             if (context->func != nullptr && O_IS_TYPE(context->func, InstanceType::GENERATOR)) {
@@ -285,7 +274,7 @@ bool UnwindStack(Fiber *fiber, const PtrSize barrier) {
             }
         }
 
-        context = (FiberContext *) (stack->stack + regs->SP.reg);
+        context = p_ctx;
 
         // Is there at least one exception handler?
         if (except != nullptr && except->key == regs->BP.reg) {
@@ -346,6 +335,7 @@ bool VMGetIter(const Fiber *fiber, OObject *object, PtrSize *dst) {
 int CallGenerator(Fiber *fiber, Generator *gen, const U16 total_args, const CallMode mode, const bool exhausted_error) {
     auto *regs = &fiber->vm.regs;
     const auto *stack = &fiber->vm.stack;
+    const auto SP = regs->SP.reg;
 
     if (total_args != 0 || mode != CallMode::FASTCALL) {
         ErrorSet(fiber->isolate,
@@ -383,11 +373,7 @@ int CallGenerator(Fiber *fiber, Generator *gen, const U16 total_args, const Call
     regs->SP.reg += params_length;
 
     // Store current context
-    stratum::util::MemoryCopy(stack->stack + regs->SP.reg, &fiber->context.context, sizeof(FiberContext));
-    regs->SP.reg += sizeof(FiberContext);
-
-    fiber->vm.Push(regs->BP.reg); // Store BP
-    fiber->vm.Push(regs->IP.reg + sizeof(MachineWord)); // Store IP
+    fiber->PushState(SP);
 
     const auto BP = regs->SP.reg;
 
@@ -499,12 +485,13 @@ OObject *LoadFromObjectProp(const Fiber *fiber, const Function *func, OObject *o
 }
 
 void CallNative(Function *func, Registers *regs, const VMStack *stack, const U16 argc) {
-    auto **args = (OObject **) (stack->stack + (regs->SP.reg - (argc * sizeof(void *))));
+    const auto offset = argc * sizeof(void *);
+    auto **args = (OObject **) (stack->stack + (regs->SP.reg - offset));
 
     const auto result = func->shared->func(func, args, args[argc], args[argc + 1], argc);
 
     regs->RR.reg = (PtrSize) result.get();
-    regs->SP.reg -= (argc * sizeof(void *));
+    regs->SP.reg -= offset;
 }
 
 void ExecuteCleanupForPC(const Fiber *fiber) {
@@ -550,17 +537,13 @@ void Return(Fiber *fiber, const U32 pops, const PtrSize barrier) {
     auto *regs = &fiber->vm.regs;
     auto *func = fiber->context.func;
 
-    if (regs->BP.reg > 0)
+    if (regs->BP.reg > 0) {
         ExecuteCleanupForPC(fiber);
 
-    if (regs->BP.reg > 0) {
         fiber->PopState();
 
         if (regs->BP.reg < barrier)
             return;
-
-        // Cleanup parameters
-        regs->SP.reg -= pops * sizeof(void *);
 
         if (O_IS_TYPE(func, InstanceType::GENERATOR)) {
             ((Generator *) func)->state = GeneratorState::EXHAUSTED;
@@ -571,7 +554,6 @@ void Return(Fiber *fiber, const U32 pops, const PtrSize barrier) {
     }
 
     // Module
-    regs->SP.reg = regs->BP.reg;
     regs->IP.reg = (PtrSize) fiber->context.code->m_end;
 }
 
@@ -585,27 +567,13 @@ void SaveGenerator(Fiber *fiber) {
     gen->stack_size = regs->SP.reg - regs->BP.reg;
     stratum::util::MemoryCopy(gen->stack, stack->stack + regs->BP.reg, gen->stack_size);
 
-    regs->SP.reg = regs->BP.reg - sizeof(void *);
+    // Dump the current registers into the generator
+    stratum::util::MemoryCopy(gen->regs_dump, regs, kGeneralPurposeRegistersCount * sizeof(void *));
 
     // Save the IP and advance it to the next instruction
     gen->IP = regs->IP.reg + sizeof(MachineWord);
 
-    // Restore the caller's IP (saved before entering the generator) and advance to the next instruction
-    regs->IP.reg = *((PtrSize *) (stack->stack + regs->SP.reg));
-
-    // Restore BP
-    regs->SP.reg -= sizeof(void *);
-    regs->BP.reg = *((PtrSize *) (stack->stack + regs->SP.reg));
-
-    // Restore the previous fiber context saved on the stack
-    regs->SP.reg -= sizeof(FiberContext);
-    stratum::util::MemoryCopy(&fiber->context.context, stack->stack + regs->SP.reg, sizeof(FiberContext));
-
-    // Remove the generator parameters from the stack (params region size in bytes)
-    regs->SP.reg -= (unsigned char *) gen->stack - (unsigned char *) gen->params;
-
-    // Dump the current registers into the generator
-    stratum::util::MemoryCopy(gen->regs_dump, regs, kGeneralPurposeRegistersCount * sizeof(void *));
+    fiber->PopState();
 
     // The bulk dumps above (stack + registers) bypass the write barrier: an old
     // generator may now hold references to young objects. Re-establish the
@@ -614,7 +582,7 @@ void SaveGenerator(Fiber *fiber) {
         if (O_IS_OBJECT(*cursor))
             memory::GC::WriteBarrier((OObject *) gen, *cursor);
 
-    for (auto i = 0; i < gen->stack_size; i += sizeof(void *)) {
+    for (U32 i = 0; i < gen->stack_size; i += sizeof(void *)) {
         auto *param = *(OObject **) ((unsigned char *) gen->stack + i);
         if (O_IS_OBJECT(param))
             memory::GC::WriteBarrier((OObject *) gen, param);
@@ -1100,7 +1068,6 @@ CATCH_FINALLY:
             TARGET_OP(CALL) {
                 const auto flags = FETCH_F_DST(CallMode, instr);
                 const auto p_count = FETCH_IMM(instr);
-                const auto SP = regs->SP.reg;
 
                 auto func = (Function *) ACCESS_REG_SRC(instr);
 
@@ -1140,17 +1107,20 @@ CATCH_FINALLY:
                 }
 
                 if (func->shared->IsGenerator()) {
-                    const auto param_size = (REG_SP - SP) + p_count * sizeof(void *);
+                    // The whole argument region, not the bound count: the binder pushes
+                    // slots it does not count (the rest list, the kwargs dict).
+                    const auto param_size = REG_SP - binder.ArgsBaseSP();
+
                     REG_RR = (PtrSize) GeneratorNew(fiber, func, param_size).get();
 
                     // Release the stack; the call is complete, and the parameters have been copied,
                     // ready for later execution
-                    REG_SP = SP - (p_count * sizeof(void *));
+                    REG_SP = binder.ArgsBaseSP();
 
                     DISPATCH;
                 }
 
-                if (Call(fiber, func, binder.StackArgs())) {
+                if (Call(fiber, func, binder)) {
                     CHECK_PREEMPT;
 
                     goto BEGIN;
@@ -1240,6 +1210,7 @@ CATCH_FINALLY:
                 defer->func = func;
 
                 defer->argc = binder.StackArgs();
+                defer->restorable_SP = binder.ArgsBaseSP();
 
                 defer->r10 = regs->r10.reg;
                 defer->r11 = regs->r11.reg;
@@ -1262,7 +1233,7 @@ CATCH_FINALLY:
                 if (!stack->Check(fiber->isolate, regs->SP.reg, sproc->stack_size + kStackPrologueOffset))
                     goto ERROR;
 
-                if (!fiber->PushState())
+                if (!fiber->PushState(regs->SP.reg))
                     goto ERROR;
 
                 // Load new context
@@ -1451,7 +1422,7 @@ CATCH_FINALLY:
                 const auto flags = (PushIfFlags) (instr & 0xFu);
 
                 if (flags == PushIfFlags::METHOD) {
-                    if (ResolveCallable(fiber->isolate, (Function *)target) == nullptr)
+                    if (ResolveCallable(fiber->isolate, (Function *) target) == nullptr)
                         goto ERROR;
 
                     if (!((Function *) target)->shared->IsMethod()) {

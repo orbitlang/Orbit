@@ -6,8 +6,86 @@
 
 ---
 
-## VM-002 — A trapped panic in argument position overwrites the enclosing call's arguments
-**Severity:** High (silent wrong arguments; writes below the argument region when the inner call has more arguments than the outer has pushed) · **Status:** OPEN · **Location:** `orbit/orbiter/vm.cpp` (`UnwindStack`, catch branch) / `orbit/liftoff/codegen.cpp` (argument push sequence)
+## VM-003 — `break` out of a `try` block is silently ignored
+**Severity:** High (silent wrong control flow, no diagnostic) · **Status:** OPEN · **Location:** `orbit/orbiter/vm.cpp` (`TARGET_OP(TEND)`, the `PendingAction` branch)
+
+A `break` whose loop is outside the enclosing `try` does not leave the loop. It
+raises nothing and prints nothing: the loop simply runs to completion.
+
+```orb
+var n = 0
+for var i in [1, 2, 3, 4, 5] {
+    try {
+        if i == 3 { break }
+        n += 1
+    } catch e {
+        n += 100
+    }
+}
+// n == 4, expected 2
+```
+
+The machinery is in place and only the last step misses. `irbuilder` emits a
+`TSPA` with `PendingAction::BREAK` and packs the target block's offset into the
+operand (`GetJBlockEnd`), `TEND` reads the pending action and does
+`JMP_TO(target)` with `target = ctx->ret_pops`. That jump lands somewhere that
+resumes the loop instead of leaving it.
+
+**Not a regression** from the `ExceptionContext::SP` work: verified by building
+both revisions and running the reproducer above, which prints `n = 4` on each.
+Note, however, that the writes to `ret_pops` are now commented out (see the
+**Dead field** note under [VM-002](#vm-002--a-deferred-control-transfer-in-argument-position-overwrites-the-enclosing-calls-arguments)),
+so whoever fixes this has to restore a way to carry the target offset first: the
+value `TEND` reads today is whatever the stack slot last held.
+
+**PoC:** none filed; the ten lines above reproduce it directly *(confirmed
+live)*. A PoC belongs here once the fix lands, together with the `continue`
+half tracked as [IR-008](ir.md).
+
+**Fix:** carry the `TSPA` operand through to `TEND` again (a field of its own
+rather than the overloaded `ret_pops`), and confirm the offset it jumps to is
+the loop's exit block. See also IR-008: the `continue` spelling of the same
+construct does not even compile.
+
+---
+
+## VM-002 — A deferred control transfer in argument position overwrites the enclosing call's arguments
+**Severity:** High (silent wrong arguments; writes below the argument region when the inner call has more arguments than the outer has pushed) · **Status:** FIXED (2026-10-01) · **Location:** `orbit/orbiter/fiber.cpp` (`PushState`, `PopStateNoCtxRestore`)
+
+**Fix verified (regression PoC `poc/vm/trap-argpos-clobber.orb` — prints `ALL
+TESTS PASSED`; `ortest` 19/19).** Both halves went away at once, and neither was
+fixed where it was reported: the cure was to stop deriving the stack pointer on
+the way out of a frame and start recording it on the way in.
+
+The call frame prologue gained a fourth word. `PushState` now takes the bottom
+of the argument region and saves it alongside BP and IP (`Context | SP | BP |
+IP`), and `PopStateNoCtxRestore` reads it back. Returning from a frame therefore
+restores SP to exactly where the caller was before it pushed anything, on every
+exit path there is, and no path has to carry a count any more:
+
+- the **trapped panic** half: `UnwindStack` walks frames through that same
+  function, so the catch edge lands on the right SP without touching it;
+- the **`return` through a `finally`** half: the deferred `RET` at
+  `TARGET_OP(TEND)` calls `Return`, which calls `PopState`, which now restores
+  the recorded SP. The `pops` it is handed is ignored, which is just as well:
+  the original code read `ctx->ret_pops` *after* `ReleaseExceptionContext` had
+  zeroed the context, so it had always been passing 0. That read-after-clear was
+  the true root cause of this half, and it is now moot.
+
+The value saved is `ArgumentBinder::ArgsBaseSP()`, fixed inside `Bind` right
+after receiver normalization and before the binder pushes anything itself. It is
+deliberately not derived from the bound argument count: the binder pushes slots
+it does not count (the rest list, the kwargs dict) and drops the receiver of a
+method-mode call whose callee is not a method, because that slot belongs to the
+caller. Both discrepancies were found by this work and are what made a
+count-based cleanup unfixable in general.
+
+The `pops` parameter of `Return`, the 16-bit POP VALUES field of `RET`, the
+RETURN operand of `TSPA` and `visitReturn`'s `pops_slot` are all dead as a
+result, and `ExceptionContext::ret_pops` now carries only the BREAK/CONTINUE
+jump target (see [VM-003](#vm-003--break-out-of-a-try-block-is-silently-ignored)).
+
+<details><summary>Original report (trapped panics)</summary>
 
 When a `trap` expression is passed **as an argument to a call** and the trapped
 expression **panics**, the panicking call's own arguments end up in the slots
@@ -64,6 +142,8 @@ hoist the `trap` into a variable first.
 assembled, not to the frame's base, so the arguments already pushed for it stay
 reserved. Then drop the hoisting workaround in `ortest/net/` and let those
 suites use `trap` inline again.
+
+</details>
 
 ---
 

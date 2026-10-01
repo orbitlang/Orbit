@@ -22,6 +22,8 @@ namespace orbiter {
         datatype::List *rest = nullptr;
         datatype::Dict *kwargs = nullptr;
 
+        MSize base_sp = 0;
+
         U16 stack_args = 0;
 
         bool call_mode_is_kwarg = false;
@@ -59,7 +61,7 @@ namespace orbiter {
             return this->StackTop(this->stack_args);
         }
 
-        bool EnsureStack() const;
+        [[nodiscard]] bool EnsureStack() const;
 
         bool ExpandDefaultArgs();
 
@@ -95,6 +97,27 @@ namespace orbiter {
          *         CallResult::ERROR with the error set on the fiber.
          */
         datatype::CallResult Bind(Fiber *fiber, datatype::Function *&func, U16 p_count, CallMode mode);
+
+        /**
+         * @brief The stack offset where the callee's argument region begins.
+         *
+         * Fixed once, after the receiver has been normalized and before the binder
+         * pushes anything of its own, so none of what follows can move it: defaults,
+         * currying, the rest list and the kwargs dict are all laid down above this
+         * point.
+         *
+         * This is the value SP goes back to when the call returns, and it is NOT
+         * derivable from StackArgs(). The binder pushes slots it deliberately does
+         * not count, the rest list and the kwargs dict among them, and it drops the
+         * receiver of a method-mode call whose callee turns out not to be a method,
+         * because that slot belongs to the caller. A count reconstructs neither.
+         *
+         * @return The offset into the VM stack, in bytes, of the bottom of the
+         *         argument region.
+         */
+        [[nodiscard]] MSize ArgsBaseSP() const noexcept {
+            return this->base_sp;
+        }
 
         /**
          * @brief Calculates the total size, in bytes, of the argument region on the stack.

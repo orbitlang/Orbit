@@ -126,8 +126,8 @@ HGenerator orbiter::datatype::GeneratorNew(const Fiber *fiber, Function *base, c
     memory::IsolateAllocator allocator(fiber->isolate);
 
     auto *buffer = allocator.alloc<OObject *>(param_size
-                                              + (base->shared->code->stack_size + kGeneralPurposeRegistersCount)
-                                              * sizeof(void *));
+                                              + ((base->shared->code->stack_size + kGeneralPurposeRegistersCount)
+                                                 * sizeof(void *)));
     if (buffer == nullptr)
         return {};
 

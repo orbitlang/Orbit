@@ -1,0 +1,124 @@
+# PoC trap-argpos-clobber — VM-002: a `trap` whose expression PANICS, used as
+# an argument inside a call, corrupts the arguments the enclosing call has
+# already pushed. The panicking call's own arguments end up in those slots, so
+# the outer callee is handed values it was never passed.
+#
+#   show(a, b, c, d)               # show("A", "B", trap boom2(10, 20), "D")
+#   -> a=10  b=20  c=error  d="D"  # expected a="A" b="B"
+#
+# Only the panicking path is affected: the very same shape with a call that
+# returns normally binds every argument correctly, and `trap` in assignment
+# position (the form every other suite uses) is correct too. With more inner
+# arguments than the outer call has pushed so far, the write goes below the
+# argument region entirely, which is why this is filed as High rather than as a
+# wrong-value bug.
+#
+# `trap` is not the only way in: a `return` that crosses a `finally` defers its
+# RET through the same ExceptionContext, and corrupts the enclosing call the
+# same way. That half is still open (see VM-002), which is what the last block
+# below pins down.
+#
+# Same family as VM-001: SP on the catch edge of a trapped panic.
+#
+# A runtime test: prints "ALL TESTS PASSED" only when every check matches.
+# EXPECT: contains: ALL TESTS PASSED
+
+import "io"
+
+var fails = 0
+
+func check(name, got, expected) {
+    if got == expected {
+        io.print("OK   ", name)
+    } else {
+        fails += 1
+        io.print("FAIL ", name, " got=", got, " expected=", expected)
+    }
+}
+
+func boom1(x) { panic Error(@X, "no") }
+func ret2(x, y) {
+    try {
+        return x + y
+    } finally {
+    }
+}
+func ret5(a, b, c, d, e) {
+    try {
+        return a + b + c + d + e
+    } finally {
+    }
+}
+func boom2(x, y) { panic Error(@X, "no") }
+func boom3(x, y, z) { panic Error(@X, "no") }
+func sum2(x, y) { return x + y }
+
+# Collect the four arguments as they actually arrive, so a shifted or
+# overwritten slot is visible as a value rather than as a crash.
+func seen4(a, b, c, d) {
+    return tostr(a) + "|" + tostr(b) + "|" + tostr(d)
+}
+
+# Every seen4(...) is built into a holder first: a `trap` in argument position
+# is exactly the bug under test, so calling check(...) around one directly
+# would corrupt check's own arguments and garble the labels.
+var got = ""
+
+# ---------------------------------------------------------------------------
+# Baseline: the same shape, with expressions that do not panic
+# ---------------------------------------------------------------------------
+got = seen4("A", "B", sum2(10, 20), "D")
+check("plain nested call", got, "A|B|D")
+
+got = seen4("A", "B", trap sum2(10, 20), "D")
+check("trap over a call that returns", got, "A|B|D")
+
+got = seen4("A", "B", trap sum2, "D")
+check("trap over a non-call", got, "A|B|D")
+
+# ---------------------------------------------------------------------------
+# The bug: the trapped expression panics
+# ---------------------------------------------------------------------------
+got = seen4("A", "B", trap boom1(11), "D")
+check("trapped panic, 1 inner argument", got, "A|B|D")
+
+got = seen4("A", "B", trap boom2(10, 20), "D")
+check("trapped panic, 2 inner arguments", got, "A|B|D")
+
+got = seen4("A", "B", trap boom3(1, 2, 3), "D")
+check("trapped panic, 3 inner arguments", got, "A|B|D")
+
+# Nothing precedes the trap, so there is nothing to overwrite: this one already
+# passes. It is here so that a fix which merely shifts the offset by one cannot
+# look green.
+got = seen4(trap boom3(7, 8, 9), "B", "C", "D")
+check("trapped panic, nothing pushed before", got, "error<Error>|B|D")
+
+# ---------------------------------------------------------------------------
+# The safe form, for contrast: trap in assignment position
+# ---------------------------------------------------------------------------
+var r = nil
+r = trap boom2(10, 20)
+got = seen4("A", "B", r, "D")
+check("trapped panic, hoisted out of the call", got, "A|B|D")
+
+# ---------------------------------------------------------------------------
+# The same defect without `trap`: a return that crosses a `finally`
+# ---------------------------------------------------------------------------
+got = seen4("A", "B", ret2(10, 20), "D")
+check("return through finally, 2 parameters", got, "A|B|D")
+
+got = seen4("A", "B", ret5(1, 2, 3, 4, 5), "D")
+check("return through finally, 5 parameters", got, "A|B|D")
+
+# Standalone it is correct, exactly as the trapped call is. Hoisted for the
+# same reason as everything else here: the call corrupts whatever it sits in.
+var v = 0
+v = ret5(1, 2, 3, 4, 5)
+check("return through finally, standalone", v, 15)
+
+if fails == 0 {
+    io.print("ALL TESTS PASSED")
+} else {
+    io.print(fails, "TEST(S) FAILED")
+}

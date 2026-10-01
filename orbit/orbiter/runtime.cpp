@@ -533,7 +533,7 @@ bool Orbiter::EvalSync(Function *func, OObject **argv, const U16 argc, OObject *
     // call.
     fiber->vm.regs.IP.reg -= sizeof(MachineWord);
 
-    fiber->PushState();
+    fiber->PushState(binder.ArgsBaseSP());
 
     fiber->SetContext(func);
 
