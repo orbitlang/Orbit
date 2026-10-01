@@ -533,7 +533,7 @@ void ReleaseExceptionContext(Registers *regs) {
     memory::MemoryZero(ctx, sizeof(ExceptionContext));
 }
 
-void Return(Fiber *fiber, const U32 pops, const PtrSize barrier) {
+void Return(Fiber *fiber, const PtrSize barrier) {
     auto *regs = &fiber->vm.regs;
     auto *func = fiber->context.func;
 
@@ -1001,11 +1001,9 @@ CATCH_FINALLY:
                 goto ERROR;
             }
             TARGET_OP(RET) {
-                const auto pops = instr & 0xFFFF;
-
                 REG_RR = ACCESS_REG_SRC(instr);
 
-                Return(fiber, pops, barrier);
+                Return(fiber, barrier);
 
                 if (regs->BP.reg < barrier)
                     return (OObject *) REG_RR;
@@ -2000,7 +1998,7 @@ CATCH_FINALLY:
 
                     ReleaseExceptionContext(regs);
 
-                    Return(fiber, ctx->ret_pops, barrier);
+                    Return(fiber, barrier);
 
                     if (regs->BP.reg < barrier)
                         return (OObject *) REG_RR;
