@@ -204,12 +204,8 @@ unsigned char *Codegen::EmitOpcodes(const BasicBlock *block, unsigned char *m_co
                 break;
             case orbiter::OPCode::PANIC:
             case orbiter::OPCode::RET:
-            case orbiter::OPCode::YLD:
-                *(orbiter::MachineWord *) m_code = EMIT_SO(instr->opcode,
-                                                           ((Instruction*)instr->operands[0].value)->assigned_reg,
-                                                           ((ReturnInstruction*)instr)->slots);
-                break;
             case orbiter::OPCode::RETSUB:
+            case orbiter::OPCode::YLD:
                 *(orbiter::MachineWord *) m_code = EMIT_SO(instr->opcode,
                                                            ((Instruction*)instr->operands[0].value)->assigned_reg,
                                                            0);
@@ -459,11 +455,13 @@ unsigned char *Codegen::EmitOpcodes(const BasicBlock *block, unsigned char *m_co
                 const auto *src = (const Instruction *) instr->operands[0].value;
                 const auto *jmp = (const BasicBlock *) (const Instruction *) instr->operands[1].value;
 
+                // A pending RETURN carries only its value: the deferred RET no longer
+                // needs a slot count, so the operand field is unused.
                 if (action == orbiter::PendingAction::RETURN) {
                     *(orbiter::MachineWord *) m_code = EMIT_TSPA(instr->opcode,
                                                                  (U8)action,
                                                                  src != nullptr ? src->assigned_reg : 0,
-                                                                 ((PendingActionInstruction *) instr)->pops);
+                                                                 0);
 
                     break;
                 }

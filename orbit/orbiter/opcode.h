@@ -150,7 +150,7 @@ namespace orbiter {
         NOT, // Logical NOT (!value)
 
         PANIC, // Start panic               OPCODE | 4 RESERVED | 4 SRC | 16 RESERVED
-        RET, // Return instruction          OPCODE | 4 RESERVED | 4 SRC | 16 POP VALUES
+        RET, // Return instruction          OPCODE | 4 RESERVED | 4 SRC | 16 RESERVED
         RETSUB, // Return from code object  OPCODE | 4 RESERVED | 4 SRC | 16 RESERVED
         YLD, // Yield instruction           OPCODE | 4 RESERVED | 4 SRC | 16 RESERVED
 

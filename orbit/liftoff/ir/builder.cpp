@@ -236,10 +236,10 @@ Instruction *Builder::CreateSubscrStore(const SubscrInstruction *load, Instructi
                                                       value);
 }
 
-Instruction *Builder::CreateReturn(Instruction *s_reg, const U16 slots) {
+Instruction *Builder::CreateReturn(Instruction *s_reg) {
     auto *tcf = this->context->GetActiveContextIf(JBlockType::TCF);
     if (tcf != nullptr) {
-        auto *ret = this->CreatePendingReturn(s_reg, slots);
+        auto *ret = this->CreatePendingReturn(s_reg);
 
         this->CreateJump(((JBlockBranch *) tcf)->end);
 
@@ -257,7 +257,7 @@ Instruction *Builder::CreateReturn(Instruction *s_reg, const U16 slots) {
 
             this->context->current_->AddInstructionBefore(s_reg, execdefer);
 
-            return this->CreateInstruction<ReturnInstruction>(s_reg, slots);
+            return this->CreateInstruction<ReturnInstruction>(s_reg);
         }
 
         const auto l_instr = this->FindAndCreateAppropriateLoad(s_reg);
@@ -276,21 +276,21 @@ Instruction *Builder::CreateReturn(Instruction *s_reg, const U16 slots) {
 
             s_reg = this->LoadFromStackOffset(kBaseStackPointerReg, tmp_ret, true);
 
-            return this->CreateInstruction<ReturnInstruction>(s_reg, slots);
+            return this->CreateInstruction<ReturnInstruction>(s_reg);
         }
 
         this->CreateUnaryOp(OPCode::EXECDEFER);
 
         this->AddInstruction(l_instr);
 
-        return this->CreateInstruction<ReturnInstruction>(l_instr, slots);
+        return this->CreateInstruction<ReturnInstruction>(l_instr);
     }
 
-    return this->CreateInstruction<ReturnInstruction>(s_reg, slots);
+    return this->CreateInstruction<ReturnInstruction>(s_reg);
 }
 
-Instruction *Builder::CreateReturn(const U16 slots) {
-    return this->CreateReturn(this->LoadNilValue(), slots);
+Instruction *Builder::CreateReturn() {
+    return this->CreateReturn(this->LoadNilValue());
 }
 
 Instruction *Builder::CreateReturnSub(Instruction *s_reg) {

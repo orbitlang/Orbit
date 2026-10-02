@@ -227,14 +227,13 @@ namespace liftoff::ir {
             this->SetOperand(1, (Object *) jmp);
         }
 
-        explicit PendingActionInstruction(Instruction *value, const U16 pops) noexcept : PhysInstruction(
-            orbiter::OPCode::TSPA, 2), action(orbiter::PendingAction::RETURN), pops(pops) {
+        explicit PendingActionInstruction(Instruction *value) noexcept : PhysInstruction(
+            orbiter::OPCode::TSPA, 2), action(orbiter::PendingAction::RETURN) {
             this->SetOperand(0, value);
         }
 
     public:
         orbiter::PendingAction action;
-        U16 pops = 0;
     };
 
     class TCFInstr final : public PhysInstruction {
@@ -372,13 +371,9 @@ namespace liftoff::ir {
         friend Builder;
 
     protected:
-        explicit ReturnInstruction(Instruction *instr, const U16 slots) : PhysInstruction(orbiter::OPCode::RET, 1),
-                                                                          slots(slots) {
+        explicit ReturnInstruction(Instruction *instr) : PhysInstruction(orbiter::OPCode::RET, 1) {
             this->SetOperand(0, instr);
         }
-
-    public:
-        U16 slots = 0;
     };
 
     class ReturnSubInstruction final : PhysInstruction {

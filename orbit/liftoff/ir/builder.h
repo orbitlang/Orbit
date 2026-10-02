@@ -201,8 +201,8 @@ namespace liftoff::ir {
             return this->CreateInstruction<PendingActionInstruction>(target, action);
         }
 
-        Instruction *CreatePendingReturn(Instruction *src, const U16 pops) {
-            return this->CreateInstruction<PendingActionInstruction>(src, pops);
+        Instruction *CreatePendingReturn(Instruction *src) {
+            return this->CreateInstruction<PendingActionInstruction>(src);
         }
 
         Instruction *CreateStoreVariable(orbiter::OPCode opcode, I16 offset, U8 flags, Instruction *value);
@@ -211,9 +211,9 @@ namespace liftoff::ir {
 
         Instruction *CreateSubscrStore(const SubscrInstruction *load, Instruction *value);
 
-        Instruction *CreateReturn(Instruction *s_reg, U16 slots);
+        Instruction *CreateReturn(Instruction *s_reg);
 
-        Instruction *CreateReturn(U16 slots);
+        Instruction *CreateReturn();
 
         Instruction *CreateReturnSub(Instruction *s_reg);
 

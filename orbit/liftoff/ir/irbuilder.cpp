@@ -1113,17 +1113,13 @@ Instruction *IRBuilder::visitFunction(const parser::Function *node) {
         this->builder_.LoadClosureObject(kBaseStackPointerReg, (I16) local_vars_count);
     }
 
-    const auto cleanup_count = node->params.size();
-
     if (node->body == nullptr)
         this->BuildMethodEmptyBody(node);
     else
         this->visit(node->body);
 
-    if (this->builder_.CheckIfLastInstructionIs(orbiter::OPCode::RET))
-        ((ReturnInstruction *) this->builder_.context->current_->instr.tail)->slots = cleanup_count;
-    else
-        this->builder_.CreateReturn(cleanup_count);
+    if (!this->builder_.CheckIfLastInstructionIs(orbiter::OPCode::RET))
+        this->builder_.CreateReturn();
 
     this->builder_.LeaveContext();
 
@@ -1435,12 +1431,8 @@ Instruction *IRBuilder::visitParameter(parser::Parameter *node) {
 
 Instruction *IRBuilder::visitReturn(const parser::Unary *unary) {
     auto *value = unary->value != nullptr ? this->visit(unary->value) : this->builder_.LoadNilValue();
-    auto pops_slot = 0;
 
-    if (this->sym_t_->scope->type == ScopeType::FUNCTION)
-        pops_slot = this->sym_t_->scope->GetParameterCount();
-
-    return this->builder_.CreateReturn(value, pops_slot);
+    return this->builder_.CreateReturn(value);
 }
 
 Instruction *IRBuilder::visitSelector(const parser::Selector *node) {
@@ -2067,9 +2059,9 @@ IRCHandle IRBuilder::Generate(const parser::ASTHandle<parser::Module *> &module)
             const auto *last = !module->statements.empty() ? module->statements.back().get() : nullptr;
 
             if (last_value != nullptr && last != nullptr && last->is_expr && !IsNeverEcho(last->node_type))
-                this->builder_.CreateReturn(last_value, 0);
+                this->builder_.CreateReturn(last_value);
             else
-                this->builder_.CreateReturn(0);
+                this->builder_.CreateReturn();
         }
 
         // This call ensures any checks performed by LeaveContext are honored
