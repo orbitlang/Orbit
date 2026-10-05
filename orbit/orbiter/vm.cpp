@@ -280,8 +280,8 @@ bool UnwindStack(Fiber *fiber, const PtrSize barrier) {
         if (except != nullptr && except->key == regs->BP.reg) {
             stratum::util::MemoryCopy(&fiber->context.context, context, sizeof(FiberContext));
 
-            if (except->coffset != 0)
-                regs->IP.reg = (PtrSize) fiber->context.code->m_code + except->coffset;
+            if (except->catch_off != 0)
+                regs->IP.reg = (PtrSize) fiber->context.code->m_code + except->catch_off;
 
             return true;
         }
@@ -528,7 +528,7 @@ void ReleaseExceptionContext(Registers *regs) {
 
     assert(ctx!=nullptr);
 
-    regs->CP.reg = (PtrSize) ctx->prev;
+    regs->CP.reg = (PtrSize) ctx->info.prev();
 
     memory::MemoryZero(ctx, sizeof(ExceptionContext));
 }
@@ -1863,7 +1863,7 @@ CATCH_FINALLY:
                     ec->ret_value = (PtrSize) fiber->GetDiscardPanic().release();
 
                     // Mark catch handler as consumed
-                    ec->coffset = 0;
+                    ec->catch_off = 0;
 
                     JMP_TO(offset);
 
@@ -1959,23 +1959,13 @@ CATCH_FINALLY:
                 DISPATCH;
             }
             TARGET_OP(TBGIN) {
-                const auto coffset = (instr & 0x3FFFFu);
+                const auto catch_off = (instr & 0x3FFFFu);
                 const auto slot = ((instr >> 18) & 0x3Fu) * sizeof(void *);
 
-                const auto ctx = (ExceptionContext *) (stack->stack + (regs->BP.reg + slot));
-
-                ctx->_sentinel_ = kExceptionContextTag;
-                ctx->prev = (ExceptionContext *) regs->CP.reg;
-
-                ctx->ret_pops = 0;
-                ctx->action = (U32) PendingAction::NONE;
-
-                ctx->coffset = coffset;
-                ctx->foffset = 0;
-
-                ctx->ret_value = 0;
-
-                ctx->key = regs->BP.reg;
+                const auto location = stack->stack + (regs->BP.reg + slot);
+                const auto ctx = new(location)ExceptionContext((ExceptionContext *) regs->CP.reg,
+                                                               regs->BP.reg,
+                                                               catch_off);
 
                 regs->CP.reg = (PtrSize) ctx;
 
@@ -1984,13 +1974,15 @@ CATCH_FINALLY:
             TARGET_OP(TEND) {
                 const auto ctx = (ExceptionContext *) regs->CP.reg;
 
-                if (fiber->panic.current_ != nullptr) {
+                if (fiber->IsPanicking()) {
                     ReleaseExceptionContext(regs);
 
                     goto ERROR;
                 }
 
-                if (ctx->action == (U32) PendingAction::RETURN) {
+                const auto action = (PendingAction) ctx->info.action();
+
+                if (action == PendingAction::RETURN) {
                     if (ExecDefer(fiber))
                         goto BEGIN;
 
@@ -2006,18 +1998,17 @@ CATCH_FINALLY:
                     goto BEGIN;
                 }
 
-                if (ctx->action != (U32) PendingAction::NONE) {
-                    U32 target = ctx->ret_pops;
-                    U32 action = ctx->action;
+                if (action != PendingAction::NONE) {
+                    const U32 target = ctx->jump_target;
 
                     ReleaseExceptionContext(regs);
 
                     auto *outer = (ExceptionContext *) regs->CP.reg;
                     if (outer != nullptr && outer->key == regs->BP.reg) {
-                        outer->action = action;
-                        outer->ret_pops = target;
+                        outer->info.SetAction((U32) action);
+                        outer->jump_target = target;
 
-                        JMP_TO(outer->foffset);
+                        JMP_TO(outer->finally_off);
 
                         goto BEGIN;
                     }
@@ -2034,7 +2025,7 @@ CATCH_FINALLY:
                 const auto offset = instr & 0xFFFFFFu;
                 auto *ec = (ExceptionContext *) regs->CP.reg;
 
-                ec->foffset = offset;
+                ec->finally_off = offset;
 
                 DISPATCH;
             }
@@ -2045,14 +2036,12 @@ CATCH_FINALLY:
                 src = ((instr >> 18) & 0xF);
 
                 auto ctx = (ExceptionContext *) regs->CP.reg;
-                ctx->action = (U32) action;
-                ctx->ret_pops = offset;
+
+                ctx->info.SetAction((U32) action);
+                ctx->jump_target = offset;
 
                 if (action == PendingAction::RETURN)
                     ctx->ret_value = REG_N(src);
-
-                if (action != PendingAction::NONE)
-                    ctx->ret_pops = offset;
 
                 DISPATCH;
             }
@@ -2076,16 +2065,16 @@ ERROR:
             if (except->key == regs->BP.reg) {
                 ExecuteCleanupForPC(fiber);
 
-                if (except->coffset != 0) {
-                    JMP_TO(except->coffset);
-                    except->coffset = 0;
+                if (except->catch_off != 0) {
+                    JMP_TO(except->catch_off);
+                    except->catch_off = 0;
 
                     goto CATCH_FINALLY;
                 }
 
-                if (except->foffset != 0) {
-                    JMP_TO(except->foffset);
-                    except->foffset = 0;
+                if (except->finally_off != 0) {
+                    JMP_TO(except->finally_off);
+                    except->finally_off = 0;
 
                     goto CATCH_FINALLY;
                 }
