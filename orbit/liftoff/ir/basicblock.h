@@ -150,7 +150,12 @@ namespace liftoff::ir {
             instr->basic_block = this;
 
             instr->next = this->instr.head;
-            this->instr.head->prev = instr;
+            instr->prev = nullptr;
+
+            if (this->instr.head != nullptr)
+                this->instr.head->prev = instr;
+            else
+                this->instr.tail = instr;
 
             this->instr.head = instr;
 

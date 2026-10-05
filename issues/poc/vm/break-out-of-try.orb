@@ -1,0 +1,86 @@
+# PoC break-out-of-try — VM-003: an unlabelled `break` whose loop sits outside
+# the enclosing `try` did not leave the loop. It raised nothing and printed
+# nothing: the loop simply ran to completion.
+#
+# Root cause was in the compiler, not the VM. FindLabeledBlock resolved an
+# unlabelled target to "the innermost jump block that is not SYNC", which for a
+# break inside a try is the TCF block. Two things followed: GetJBlockEnd happily
+# returned the END OF THE TRY as the jump target, and the walk looking for
+# interposed try blocks terminated immediately, so no TSPA was ever emitted and
+# the pending-action machinery in the VM never ran.
+#
+# The `continue` spelling of the same defect was tracked as IR-008: it asserted
+# in GetJBlockBegin instead, which accepts only LOOP, FOR_IN and LABEL.
+#
+# A runtime test: prints "ALL TESTS PASSED" only when every check matches.
+# EXPECT: contains: ALL TESTS PASSED
+
+import "io"
+
+var fails = 0
+
+func check(name, got, expected) {
+    if got == expected {
+        io.print("OK   ", name)
+    } else {
+        fails += 1
+        io.print("FAIL ", name, " got=", got, " expected=", expected)
+    }
+}
+
+func with_break() {
+    var n = 0
+    for var i in [1, 2, 3, 4, 5] {
+        try {
+            if i == 3 {
+                break
+            }
+            n += 1
+        } catch e {
+            n += 100
+        }
+    }
+    return n
+}
+
+func with_continue() {
+    var n = 0
+    for var i in [1, 2, 3, 4, 5] {
+        try {
+            if i == 3 {
+                continue
+            }
+            n += 1
+        } catch e {
+            n += 100
+        }
+    }
+    return n
+}
+
+# the finally must still run for every iteration that was entered
+func with_finally() {
+    var n = 0
+    var f = 0
+    for var i in [1, 2, 3, 4, 5] {
+        try {
+            if i == 3 {
+                break
+            }
+            n += 1
+        } finally {
+            f += 1
+        }
+    }
+    return tostr(n) + "," + tostr(f)
+}
+
+check("break leaves the loop", with_break(), 2)
+check("continue skips one iteration", with_continue(), 4)
+check("the finally runs on the way out", with_finally(), "2,3")
+
+if fails == 0 {
+    io.print("ALL TESTS PASSED")
+} else {
+    io.print(fails, "TEST(S) FAILED")
+}

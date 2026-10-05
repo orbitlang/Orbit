@@ -1,15 +1,101 @@
 # ir — bug report
 
 **Component:** `orbit/liftoff/ir` (instruction.h, linearscan.cpp, irbuilder.cpp) · **ID prefix:** `IR`
-**PoCs:** [`poc/ir/`](poc/ir/) · **Last reviewed:** 2026-09-30
+**PoCs:** [`poc/ir/`](poc/ir/) · **Last reviewed:** 2026-10-05
 **Status:** OPEN · PARTIAL · FIXED · WONTFIX — see [GUIDE.md](GUIDE.md).
 
 > Imported 2026-06-15 from `orbit/liftoff/ir/KNOWN_ISSUES.md` (ISSUE-001 → IR-001).
 
 ---
 
+## IR-009 — `BasicBlock::AddInstructionFirst` dereferenced a null head on an empty block
+**Severity:** High (compile-time crash on valid source; release: null write) · **Status:** FIXED (2026-10-05) · **Location:** `orbit/liftoff/ir/basicblock.h:149` (`AddInstructionFirst`)
+
+**Fix verified (regression PoC `poc/ir/ir-009-addfirst-empty-block.orb` — prints
+`COMPILED`; mutation-tested by restoring the old line, which segfaults the new
+`ortest/exceptions/01_abrupt_exit.orb`).** The helper now handles the empty
+block the way its two siblings already did, and sets `instr.tail` when the
+block had none:
+
+```cpp
+instr->next = this->instr.head;
+instr->prev = nullptr;
+
+if (this->instr.head != nullptr)
+    this->instr.head->prev = instr;
+else
+    this->instr.tail = instr;
+
+this->instr.head = instr;
+```
+
+<details><summary>Original report</summary>
+
+```cpp
+void AddInstructionFirst(Instruction *instr) noexcept {
+    instr->basic_block = this;
+
+    instr->next = this->instr.head;
+    this->instr.head->prev = instr;   // <- null when the block is empty
+
+    this->instr.head = instr;
+    ...
+}
+```
+
+`AllocStackSlots` calls it to place an `ALLOCA` at the top of the function's
+entry block, and that block is still empty when the function's first statement
+is a construct that needs stack slots. A `try` needs them for its
+`ExceptionContext`, so nine lines are enough:
+
+```orb
+func m() {
+    loop {
+        try { } finally { }
+        break
+    }
+    return 1
+}
+```
+
+```
+EXC_BAD_ACCESS (code=1, address=0x48)
+BasicBlock::AddInstructionFirst(...) at basicblock.h:153
+```
+
+No jump, no panic and no abrupt exit are involved: the same source with a
+single declaration before the loop compiles and runs, which is why this stayed
+hidden. In a release build the assert-free path writes through the null pointer.
+
+**Sibling of [IR-002](#ir-002--trap-new-x-asserts-in-addinstructionbefore-compile-time-crash).**
+Commit `de39847` ("fix(ir): handle edge cases for instruction insertion in
+`BasicBlock`", 2026-07-13) added the `tail` update to `AddInstructionAfter` and
+replaced `AddInstructionBefore`'s `assert(instr->prev != nullptr)` with a proper
+`head` update. It left the third insertion helper untouched, and
+`basicblock.h` was not modified again until this fix.
+
+**Found** while validating `break`/`continue` out of a `try` (VM-003): the
+reproducer that exposed it contains no jump at all, so it is unrelated to that
+work beyond having been reached through it.
+
+</details>
+
+---
+
 ## IR-008 — `continue` out of a `try` block asserts at compile time
-**Severity:** Medium (compile-time abort on valid source; release: returns nullptr into codegen) · **Status:** OPEN · **Location:** `orbit/liftoff/ir/jblock.cpp:72` (`GetJBlockBegin`)
+**Severity:** Medium (compile-time abort on valid source; release: returns nullptr into codegen) · **Status:** FIXED (2026-10-05) · **Location:** `orbit/liftoff/ir/jblock.cpp:94` (`FindLabeledBlock`)
+
+**Fix verified (`ortest/exceptions/01_abrupt_exit.orb` and
+`poc/vm/break-out-of-try.orb`, both green).** Same one-line cause and same fix
+as [VM-003](vm.md): `FindLabeledBlock` resolved an unlabelled target to the
+innermost jump block that was not `SYNC`, which for a `continue` inside a `try`
+is the TCF block, and `GetJBlockBegin` accepts only `LOOP`, `FOR_IN` and
+`LABEL`. The unlabelled case now returns only a `LOOP` or a `FOR_IN`, so the
+block handed to `GetJBlockBegin` always has a beginning. This finding and
+VM-003 were the two halves of one defect, seen through a rejecting assert and
+through a tolerant lookup.
+
+<details><summary>Original report</summary>
 
 ```orb
 for var i in [1, 2, 3, 4, 5] {
@@ -42,6 +128,8 @@ above reproduce it directly *(confirmed live)*.
 `TCF` block that interrupts the walk, so `GetJBlockBegin` is asked about a block
 that has a beginning. Fix alongside VM-003, since the two are the two halves of
 "leave a loop from inside a try".
+
+</details>
 
 ---
 

@@ -2005,12 +2005,21 @@ CATCH_FINALLY:
 
                     auto *outer = (ExceptionContext *) regs->CP.reg;
                     if (outer != nullptr && outer->key == regs->BP.reg) {
+                        // Read before overwriting: an action already pending on the
+                        // outer context means its finally is the block we are running
+                        // inside, so jumping back to it would restart it forever.
+                        const auto outer_pending = (PendingAction) outer->info.action();
+
                         outer->info.SetAction((U32) action);
                         outer->jump_target = target;
 
-                        JMP_TO(outer->finally_off);
+                        if (outer_pending == PendingAction::NONE) {
+                            JMP_TO(outer->finally_off);
 
-                        goto BEGIN;
+                            goto BEGIN;
+                        }
+
+                        DISPATCH;
                     }
 
                     JMP_TO(target);

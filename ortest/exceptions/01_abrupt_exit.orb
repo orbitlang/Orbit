@@ -1,0 +1,336 @@
+# Exceptions suite 01 -- leaving a try/catch/finally abruptly.
+#
+# `break`, `continue` and `return` cannot simply jump out of a try block: the
+# finally has to run first, and the exception context has to be popped. The
+# compiler therefore turns such a jump into a TSPA that records the pending
+# action on the context plus a jump to the finally, and TEND performs the
+# action once the finally has completed.
+#
+# This suite pins down that round trip:
+#
+#   - an unlabelled break or continue targets the enclosing LOOP, not the try
+#     block that happens to be the innermost jump block (the whole chain of
+#     interposed try blocks has to be walked);
+#   - every finally on the way out runs, exactly once each, in order;
+#   - the same works from inside a catch, with a label, and through two nested
+#     try blocks;
+#   - when a finally itself completes abruptly while another action is already
+#     pending, the new action REPLACES the pending one (the Java rule). The
+#     actions are packed two-per-context, so an implementation that OR-ed them
+#     together would silently produce a third one: BREAK | CONTINUE == RETURN.
+#
+# Regression guard for: VM-003 (break out of a try ran the loop to completion,
+# because the unlabelled target resolved to the try block), IR-008 (continue
+# out of a try asserted in GetJBlockBegin for the same reason) and IR-009
+# (a try as the first statement of a loop crashed codegen on an empty entry
+# block).
+#
+# EXPECT: contains: ALL TESTS PASSED
+
+import "io"
+import ValueError from "error"
+
+var fails = 0
+
+func check(name, got, expected) {
+    if got == expected {
+        io.print("OK   ", name)
+    } else {
+        io.print("FAIL ", name, "-- got:", got, "expected:", expected)
+        fails += 1
+    }
+}
+
+# ---------------------------------------------------------------------------
+# break and continue out of a try
+# ---------------------------------------------------------------------------
+func break_try() {
+    var n = 0
+    for var i in [1, 2, 3, 4, 5] {
+        try {
+            if i == 3 {
+                break
+            }
+            n += 1
+        } catch e {
+            n += 100
+        }
+    }
+    return n
+}
+
+func continue_try() {
+    var n = 0
+    for var i in [1, 2, 3, 4, 5] {
+        try {
+            if i == 3 {
+                continue
+            }
+            n += 1
+        } catch e {
+            n += 100
+        }
+    }
+    return n
+}
+
+check("break out of try/catch", break_try(), 2)
+check("continue out of try/catch", continue_try(), 4)
+
+# ---------------------------------------------------------------------------
+# the finally runs on the way out, once per iteration entered
+# ---------------------------------------------------------------------------
+func break_finally() {
+    var n = 0
+    var f = 0
+    for var i in [1, 2, 3, 4, 5] {
+        try {
+            if i == 3 {
+                break
+            }
+            n += 1
+        } finally {
+            f += 1
+        }
+    }
+    return tostr(n) + "," + tostr(f)
+}
+
+func continue_finally() {
+    var n = 0
+    var f = 0
+    for var i in [1, 2, 3, 4, 5] {
+        try {
+            if i == 3 {
+                continue
+            }
+            n += 1
+        } finally {
+            f += 1
+        }
+    }
+    return tostr(n) + "," + tostr(f)
+}
+
+# break at i=3: three iterations entered, so three finallys
+check("break out of try/finally", break_finally(), "2,3")
+# continue at i=3: all five iterations entered
+check("continue out of try/finally", continue_finally(), "4,5")
+
+# ---------------------------------------------------------------------------
+# two nested try blocks: both finallys run, innermost first
+# ---------------------------------------------------------------------------
+func nested_break() {
+    var n = 0
+    var inner = 0
+    var outer = 0
+    for var i in [1, 2, 3, 4, 5] {
+        try {
+            try {
+                if i == 3 {
+                    break
+                }
+                n += 1
+            } finally {
+                inner += 1
+            }
+        } finally {
+            outer += 1
+        }
+    }
+    return tostr(n) + "," + tostr(inner) + "," + tostr(outer)
+}
+
+check("break crossing two finallys", nested_break(), "2,3,3")
+
+# ---------------------------------------------------------------------------
+# from inside a catch block
+# ---------------------------------------------------------------------------
+func break_from_catch() {
+    var n = 0
+    for var i in [1, 2, 3, 4, 5] {
+        try {
+            if i == 3 {
+                panic ValueError("stop")
+            }
+            n += 1
+        } catch e {
+            break
+        }
+    }
+    return n
+}
+
+func continue_from_catch() {
+    var n = 0
+    for var i in [1, 2, 3, 4, 5] {
+        try {
+            if i == 3 {
+                panic ValueError("skip")
+            }
+            n += 1
+        } catch e {
+            continue
+        }
+    }
+    return n
+}
+
+check("break from a catch block", break_from_catch(), 2)
+check("continue from a catch block", continue_from_catch(), 4)
+
+# ---------------------------------------------------------------------------
+# labelled jumps, which have to cross a try AND an inner loop
+# ---------------------------------------------------------------------------
+func labelled_break() {
+    var n = 0
+    outer: for var i in [1, 2, 3] {
+        for var j in [1, 2, 3] {
+            try {
+                if i == 2 && j == 2 {
+                    break outer
+                }
+                n += 1
+            } finally {
+            }
+        }
+    }
+    return n
+}
+
+func labelled_continue() {
+    var n = 0
+    outer: for var i in [1, 2, 3] {
+        for var j in [1, 2, 3] {
+            try {
+                if j == 2 {
+                    continue outer
+                }
+                n += 1
+            } finally {
+            }
+        }
+    }
+    return n
+}
+
+# i=1 gives 3, i=2 gives 1 before the labelled break fires
+check("labelled break across a try", labelled_break(), 4)
+# one iteration of j per i, then the labelled continue
+check("labelled continue across a try", labelled_continue(), 3)
+
+# ---------------------------------------------------------------------------
+# the loop is INSIDE the try: the jump crosses no try at all, and the finally
+# still runs when the try is left normally afterwards
+# ---------------------------------------------------------------------------
+func loop_inside_try() {
+    var n = 0
+    try {
+        for var i in [1, 2, 3, 4, 5] {
+            if i == 3 {
+                break
+            }
+            n += 1
+        }
+    } finally {
+        n += 100
+    }
+    return n
+}
+
+check("loop inside the try", loop_inside_try(), 102)
+
+# ---------------------------------------------------------------------------
+# a try as the very first statement of a loop body, with nothing before it in
+# the function: codegen has to place the context's ALLOCA into an entry block
+# that is still empty (IR-009)
+# ---------------------------------------------------------------------------
+func try_first_in_loop() {
+    loop {
+        try {
+        } finally {
+        }
+        break
+    }
+    return "compiled"
+}
+
+check("try first in a loop body", try_first_in_loop(), "compiled")
+
+# ---------------------------------------------------------------------------
+# a finally that completes abruptly while an action is already pending: the
+# new action replaces the pending one
+# ---------------------------------------------------------------------------
+func break_beats_return() {
+    loop {
+        try {
+            return "returned"
+        } finally {
+            break
+        }
+    }
+    return "broke"
+}
+
+func return_beats_break() {
+    loop {
+        try {
+            break
+        } finally {
+            return "returned"
+        }
+    }
+    return "broke"
+}
+
+# the same, with the replacing action raised from a try nested in the finally,
+# which is the shape that used to re-enter the outer finally forever
+func nested_break_beats_return() {
+    loop {
+        try {
+            return "returned"
+        } finally {
+            try {
+                break
+            } finally {
+            }
+        }
+    }
+    return "broke"
+}
+
+check("break in a finally replaces a pending return", break_beats_return(), "broke")
+check("return in a finally replaces a pending break", return_beats_break(), "returned")
+check("nested break in a finally replaces a pending return", nested_break_beats_return(), "broke")
+
+# ---------------------------------------------------------------------------
+# and the plain forms still behave, so none of the above is special-casing
+# ---------------------------------------------------------------------------
+func plain_finally() {
+    var f = 0
+    try {
+        f += 1
+    } finally {
+        f += 10
+    }
+    return f
+}
+
+func plain_catch() {
+    var n = 0
+    try {
+        panic ValueError("x")
+    } catch e {
+        n = 1
+    }
+    return n
+}
+
+check("try/finally with no abrupt exit", plain_finally(), 11)
+check("try/catch catches a panic", plain_catch(), 1)
+
+if fails == 0 {
+    io.print("ALL TESTS PASSED")
+} else {
+    io.print(fails, "TEST(S) FAILED")
+}

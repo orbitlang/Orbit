@@ -96,7 +96,8 @@ JBlock *liftoff::ir::FindLabeledBlock(JBlock *chain, const ORString *label) {
 
     while (cursor != nullptr) {
         if (label == nullptr) {
-            if (cursor->type != JBlockType::SYNC)
+            if (cursor->type == JBlockType::LOOP
+                || cursor->type == JBlockType::FOR_IN)
                 return cursor;
         } else {
             const ORString *block_label = nullptr;

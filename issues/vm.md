@@ -1,13 +1,57 @@
 # vm — bug report
 
 **Component:** `orbit/orbiter` (interpreter: trap/panic unwind, register file) · **ID prefix:** `VM`
-**PoCs:** [`poc/vm/`](poc/vm/) · **Last reviewed:** 2026-09-29
+**PoCs:** [`poc/vm/`](poc/vm/) · **Last reviewed:** 2026-10-05
 **Status:** OPEN · PARTIAL · FIXED · WONTFIX — see [GUIDE.md](GUIDE.md).
 
 ---
 
 ## VM-003 — `break` out of a `try` block is silently ignored
-**Severity:** High (silent wrong control flow, no diagnostic) · **Status:** OPEN · **Location:** `orbit/orbiter/vm.cpp` (`TARGET_OP(TEND)`, the `PendingAction` branch)
+**Severity:** High (silent wrong control flow, no diagnostic) · **Status:** FIXED (2026-10-05) · **Location:** `orbit/liftoff/ir/jblock.cpp:94` (`FindLabeledBlock`), `orbit/orbiter/vm.cpp` (`TARGET_OP(TEND)`)
+
+**Fix verified (regression PoC `poc/vm/break-out-of-try.orb` and the new
+`ortest/exceptions/01_abrupt_exit.orb`, both green; each fix mutation-tested by
+restoring the old line and watching the suite fail).**
+
+The cause was in the compiler, not in the VM, and the original report's reading
+of it was wrong: the machinery was not "in place with only the last step
+missing", it was never invoked. `FindLabeledBlock` resolved an unlabelled target
+to the innermost jump block that was not `SYNC`, which for a jump inside a `try`
+is the TCF block. Two consequences followed, and together they account for the
+symptom exactly:
+
+- `GetJBlockEnd` accepts a TCF block and returns the **end of the try**, so the
+  `break` left the try and the loop carried on to the next iteration;
+- the walk in `visitJump` looking for interposed try blocks is
+  `for (cursor = j_chain; cursor != b_target; ...)`, and with `b_target` already
+  the head of the chain its body never ran. **No `TSPA` was emitted at all**, so
+  the pending-action path in `TEND` was dead code for this shape.
+
+The unlabelled case now returns only a `LOOP` or a `FOR_IN`, which is the rule
+the labelled branch of the same function already used.
+
+Two further defects surfaced once the jumps started reaching the VM, both fixed
+in the same pass:
+
+- **the propagation in `TEND` re-entered its own finally.** When an inner try
+  completed abruptly and the outer context already carried an action, the outer
+  context's finally is the block being executed, and `JMP_TO(outer->finally_off)`
+  restarted it forever. The action pending on the outer context is now read
+  before being overwritten, and the jump is taken only when there was none.
+- **`ExPtrContainer::SetAction` accumulated instead of replacing.** The actions
+  are packed two bits per context, so OR-ing two of them produces a third
+  (`BREAK | CONTINUE == RETURN`). Reachable precisely once a finally can complete
+  abruptly while another action is pending.
+
+The resulting semantics, pinned down by the suite: an abrupt completion inside a
+finally **replaces** the pending one, as in Java. `break` in a finally over a
+pending `return` breaks; `return` in a finally over a pending `break` returns.
+
+[IR-008](ir.md) was the `continue` spelling of the same root cause and is closed
+with it. [IR-009](ir.md) was found while validating this and is unrelated: the
+reproducer that exposed it contains no jump.
+
+<details><summary>Original report</summary>
 
 A `break` whose loop is outside the enclosing `try` does not leave the loop. It
 raises nothing and prints nothing: the loop simply runs to completion.
@@ -46,6 +90,8 @@ half tracked as [IR-008](ir.md).
 rather than the overloaded `ret_pops`), and confirm the offset it jumps to is
 the loop's exit block. See also IR-008: the `continue` spelling of the same
 construct does not even compile.
+
+</details>
 
 ---
 

@@ -1,0 +1,48 @@
+# PoC ir-009-addfirst-empty-block — IR-009: BasicBlock::AddInstructionFirst
+# dereferenced instr.head unconditionally, so adding the first instruction to an
+# EMPTY basic block wrote through a null pointer (and never set instr.tail).
+#
+# AllocStackSlots reaches it when it has to place an ALLOCA at the top of the
+# function's entry block, and that block is still empty: a `try` needs stack
+# slots for its ExceptionContext, so a try inside a loop that is the first
+# statement of a function is enough. No jump, no panic, no abrupt exit is
+# involved; one declaration before the loop makes it go away, which is why it
+# stayed hidden.
+#
+# Sibling of IR-002: the same commit that gave AddInstructionAfter its tail
+# update and replaced AddInstructionBefore's assert with a head update left this
+# third insertion helper unguarded.
+#
+# EXPECT: contains: COMPILED
+import "io"
+
+func first_in_loop() {
+    loop {
+        try {
+        } finally {
+        }
+
+        break
+    }
+
+    return 1
+}
+
+# A method body, which allocates its slots in a different context
+class Holder {
+    pub func run() {
+        loop {
+            try {
+            } finally {
+            }
+
+            break
+        }
+
+        return 2
+    }
+}
+
+io.print("first_in_loop ->", first_in_loop())
+io.print("method        ->", (new Holder()).run())
+io.print("COMPILED")
