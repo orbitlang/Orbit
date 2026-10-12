@@ -606,7 +606,6 @@ address of the family to take every interface.
 
     const auto rc = gyro_tcp_bind(handle,
                                   (const sockaddr *) &addr->addr,
-                                  addr->length,
                                   (unsigned int) flags);
     if (rc < 0) {
         orbiter::EVLRaiseError(orbiter::Fiber::Current(), rc);
@@ -706,7 +705,6 @@ at all.
 
     const auto rc = gyro_tcp_connect(handle,
                                      (const sockaddr *) &addr->addr,
-                                     addr->length,
                                      timeout,
                                      orbiter::ResumeFromEventLoop,
                                      fiber,
