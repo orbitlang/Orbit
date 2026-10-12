@@ -90,6 +90,10 @@ static bool TCPHandleDtor(TCPHandle *self) {
     return NetHandleClose(self) == GYRO_COMPLETED;
 }
 
+static bool UDPHandleDtor(UDPHandle *self) {
+    return NetHandleClose(self) == GYRO_COMPLETED;
+}
+
 /// Look up one of the module's exported types by name. The module exports them
 /// itself, so a missing entry is a bug in ModuleNetInit rather than a runtime
 /// condition.
@@ -122,7 +126,9 @@ static gyro_socket_t NetHandleSocket(orbiter::Isolate *isolate, const T *self, c
         gyro_socket_t socket = GYRO_INVALID_SOCKET;
 
         if (O_GET_TYPE(self)->dtor == (DtorFn) TCPHandleDtor)
-            socket = gyro_tcp_fileno(self->handle);
+            socket = gyro_tcp_fileno((const gyro_tcp_t *) self->handle);
+        else if (O_GET_TYPE(self)->dtor == (DtorFn) UDPHandleDtor)
+            socket = gyro_udp_fileno((const gyro_udp_t *) self->handle);
         else
             assert(false);
 
@@ -1419,6 +1425,171 @@ constexpr FunctionDef tcphandle_methods[] = {
     FUNCTIONDEF_SENTINEL
 };
 
+// *** UDP HANDLE ***
+
+RUNTIME_METHOD(udp_close, close,
+               R"DOC(
+@brief Close the socket and give the handle back to the event loop.
+
+Returns at once. Operations still in flight are cancelled on the loop's next
+turn, and the fibers waiting on them raise rather than return; the socket goes
+away once they have all reported. There is no peer to tell: datagrams that have
+arrived and were never received are discarded with the socket.
+
+Idempotent: closing a handle that is already closed does nothing. Every other
+method raises on a closed handle, which is what makes it safe to close as soon
+as the socket is done with, `defer` being the usual way.
+
+Closing a handle while another fiber is still submitting on it is a bug in the
+program, and what comes of it is undefined.
+
+@panic OSError When the event loop could not take the close. The handle is left
+               open in that case, so the call can be tried again.
+
+@example
+    h := UDPHandle.open(@INET)
+    defer h.close()
+)DOC", 1, nullptr, false, false) {
+    PCHECK_ENTRIES(params);
+    PCHECK_CHECK(params);
+
+    auto *self = (UDPHandle *) argv[0];
+
+    const auto rc = NetHandleClose(self);
+    if (rc < 0) {
+        orbiter::EVLRaiseError(orbiter::Fiber::Current(), rc);
+
+        return {};
+    }
+
+    return HOObject(kOddBallNIL);
+}
+
+RUNTIME_METHOD(udp_fileno, fileno,
+               R"DOC(
+@brief Return the socket the handle is built on.
+
+For what this module does not wrap: joining a multicast group, allowing
+broadcast, the time to live, or any other socket option it has no call for.
+
+DO NOT read from it, write to it, or close it. The event loop owns the
+readiness of that socket and the operations queued against it: receiving behind
+its back takes a datagram belonging to a queued receive, and closing it hands
+the number back to the system while the loop is still watching it, which is how
+an unrelated file ends up being watched in its place. Use `close()` instead.
+
+@return The socket, as the number the system knows it by.
+
+@panic OSError When the handle is closed.
+
+@example
+    h := UDPHandle.open(@INET)
+    h.fileno()        // 7
+)DOC", 1, nullptr, false, false) {
+    PCHECK_ENTRIES(params);
+    PCHECK_CHECK(params);
+
+    auto *isolate = O_GET_ISOLATE(_func);
+
+    const auto *self = (const UDPHandle *) argv[0];
+
+    const auto socket = NetHandleSocket(isolate, self, "fileno");
+    if (socket == GYRO_INVALID_SOCKET)
+        return {};
+
+    return HOObject(IntNew(isolate, socket));
+}
+
+RUNTIME_FUNCTION(udp_open, open,
+                 R"DOC(
+@brief Create a UDP socket of the given family.
+
+The socket is open and configured but does nothing yet: this is the moment to
+set the options a system only honours before a socket is bound, such as reusing
+a port, allowing broadcast, joining a multicast group or restricting an @INET6
+socket to IPv6, reaching it through `fileno()`.
+
+The event loop has already set what it needs on that socket: non-blocking mode,
+close-on-exec, and no SIGPIPE where that exists. Non-blocking is not
+negotiable; clearing it stalls the loop on the first operation that has to wait.
+
+@param family Address family the socket is opened for: @INET or @INET6. Binding
+              to, or sending to, an address of another family afterwards is
+              refused.
+
+@return A new UDPHandle.
+
+@panic TypeError  When a parameter has an invalid type.
+@panic ValueError When `family` is not an address family UDP speaks.
+@panic OSError    When the socket cannot be opened, out of descriptors for
+                  instance.
+
+@example
+    h := UDPHandle.open(@INET6)
+    h.fileno()
+)DOC", 1, nullptr, false, false) {
+    PCHECK_ENTRIES(params,
+                   PCHECK_DEF("family", false, InstanceType::ATOM));
+    PCHECK_CHECK(params);
+
+    auto *isolate = O_GET_ISOLATE(_func);
+    const auto *module = _func->shared->module;
+
+    int family;
+    if (!SocketAtomToInetFamily(isolate, (Atom *) argv[0], &family))
+        return {};
+
+    if (family != AF_INET && family != AF_INET6) {
+        ErrorSet(isolate,
+                 ValueError::Details[ValueError::ID],
+                 nullptr,
+                 "a UDP socket is @INET or @INET6, not @%s",
+                 ORSTRING_TO_CSTR(((Atom *) argv[0])->id));
+
+        return {};
+    }
+
+    const auto *orbiter = orbiter::Orbiter::GetInstance();
+
+    auto *handle = MakeObject<UDPHandle>(NetExportedType(module, "UDPHandle"), 0);
+    if (handle == nullptr)
+        return {};
+
+    handle->handle = nullptr;
+
+    const auto result = HOObject((OObject *) handle);
+
+    isolate->gc->Track((OObject *) handle, false);
+
+    handle->handle = gyro_udp_new(orbiter->GetEventLoop());
+    if (handle->handle == nullptr) {
+        ErrorSet(isolate,
+                 OSError::Details[OSError::ID],
+                 nullptr,
+                 OSError::Details[OSError::NO_MEMORY],
+                 "open");
+
+        return {};
+    }
+
+    const auto rc = gyro_udp_open(handle->handle, family);
+    if (rc < 0) {
+        orbiter::EVLRaiseError(orbiter::Fiber::Current(), rc);
+
+        return {};
+    }
+
+    return result;
+}
+
+constexpr FunctionDef udphandle_methods[] = {
+    udp_close,
+    udp_fileno,
+    udp_open,
+
+    FUNCTIONDEF_SENTINEL
+};
+
 // *********************************************************************************************************************
 // EXPORTED FUNCTIONS
 // *********************************************************************************************************************
@@ -1582,6 +1753,8 @@ const ModuleEntry net_entries[] = {
 
     ORBIT_MODULE_EXPORT_ALIAS("Sockaddr", nullptr),
     ORBIT_MODULE_EXPORT_ALIAS("TCPHandle", nullptr),
+    ORBIT_MODULE_EXPORT_ALIAS("UDPHandle", nullptr),
+
     ORBIT_MODULE_EXPORT_ALIAS("TCP_REUSEADDR", O_TO_SMI(GYRO_TCP_REUSEADDR)),
 
     ORBIT_MODULE_SENTINEL
@@ -1621,6 +1794,22 @@ static bool ModuleNetInit(Module *self) {
         return false;
 
     if (!ModuleSetLocalProperty(type, nullptr, (OObject *) tp_tcp.get()))
+        return false;
+
+    // UDPHandle
+
+    const auto tp_udp = MakeType(isolate, "UDPHandle", InstanceType::OBJECT,
+                                 sizeof(UDPHandle) - sizeof(OObject), 3,
+                                 0);
+    if (!tp_udp)
+        return false;
+
+    tp_udp->dtor = (DtorFn) UDPHandleDtor;
+
+    if (!TIPropertyAdd(tp_udp.get(), udphandle_methods, self, PropertyFlag::IS_PUBLIC))
+        return false;
+
+    if (!ModuleSetLocalProperty(type, nullptr, (OObject *) tp_udp.get()))
         return false;
 
     return true;

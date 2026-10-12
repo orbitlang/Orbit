@@ -6,6 +6,7 @@
 #define ORBIT_ORBITER_MODULE_NET_H_
 
 #include <gyro/tcp.h>
+#include <gyro/udp.h>
 
 #ifdef _ORBIT_PLATFORM_WINDOWS
 #else
@@ -27,6 +28,12 @@ namespace orbiter::module {
         OROBJ_HEAD;
 
         gyro_tcp_t *handle;
+    };
+
+    struct UDPHandle {
+        OROBJ_HEAD;
+
+        gyro_udp_t *handle;
     };
 
     /**
