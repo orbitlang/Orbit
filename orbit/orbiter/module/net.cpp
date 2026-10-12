@@ -72,7 +72,8 @@ static bool NetCheckTimeout(orbiter::Isolate *isolate, OObject *obj, IntegerUnde
 /// reports a closed handle. Returns the gyro status: on failure the handle is
 /// left in place, because a close that never reached the loop has to be retried
 /// if the socket is not to be lost.
-static int NetHandleClose(TCPHandle *self) {
+template<typename T>
+static int NetHandleClose(T *self) {
     if (self->handle == nullptr)
         return GYRO_COMPLETED;
 
@@ -113,9 +114,17 @@ static HOObject NetSockaddrNew(const orbiter::Isolate *isolate, const Module *mo
     O_GC_TRACK_RETURN(isolate, (OObject*)saddr, false);
 }
 
-static gyro_socket_t NetHandleSocket(orbiter::Isolate *isolate, const TCPHandle *self, const char *context) {
+/// The socket behind @p self, or GYRO_INVALID_SOCKET with an OSError set when
+/// the handle has been closed or its socket was never opened.
+template<typename T>
+static gyro_socket_t NetHandleSocket(orbiter::Isolate *isolate, const T *self, const char *context) {
     if (self->handle != nullptr) {
-        const auto socket = gyro_tcp_fileno(self->handle);
+        gyro_socket_t socket = GYRO_INVALID_SOCKET;
+
+        if (O_GET_TYPE(self)->dtor == (DtorFn) TCPHandleDtor)
+            socket = gyro_tcp_fileno(self->handle);
+        else
+            assert(false);
 
         if (socket != GYRO_INVALID_SOCKET)
             return socket;
@@ -132,7 +141,8 @@ static gyro_socket_t NetHandleSocket(orbiter::Isolate *isolate, const TCPHandle 
 
 /// The gyro handle behind @p self, or nullptr with an OSError set when it has
 /// already been closed.
-static gyro_tcp_t *NetHandleRequire(orbiter::Isolate *isolate, const TCPHandle *self, const char *context) {
+template<typename T>
+static auto NetHandleRequire(orbiter::Isolate *isolate, const T *self, const char *context) -> decltype(self->handle) {
     if (self->handle != nullptr)
         return self->handle;
 
