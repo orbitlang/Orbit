@@ -1427,6 +1427,68 @@ constexpr FunctionDef tcphandle_methods[] = {
 
 // *** UDP HANDLE ***
 
+RUNTIME_METHOD(udp_bind, bind,
+               R"DOC(
+@brief Bind the socket to a local address.
+
+Needed to receive anything: a socket nobody can address receives nothing. A
+socket that only sends can skip it, and the system picks a port on the first
+send.
+
+The system answers at once, so nothing is parked. Bind to port 0 to let it pick
+a free port, and read back which one with `local_addr()`; bind to the wildcard
+address of the family to receive on every interface.
+
+@param addr     The local address, as a Sockaddr. Its family must be the one
+                the handle was opened for.
+@param flags=0  Zero, or UDP_REUSEADDR to let other sockets bind the same
+                address.
+
+@return Self, so that `connect()` can be chained.
+
+@panic TypeError When `addr` is not a Sockaddr.
+@panic OSError   When the handle is closed, or the address cannot be bound: it
+                 is in use, or not one of this host's, or the port is
+                 privileged.
+
+@example
+    h := UDPHandle.open(@INET)
+    h.bind(parse("127.0.0.1", 5353), flags=UDP_REUSEADDR)
+)DOC", 2, "flags", false, false) {
+    PCHECK_ENTRIES(params,
+                   PCHECK_DEF("addr", false, InstanceType::OBJECT),
+                   PCHECK_DEF("flags", true, InstanceType::NUMBER));
+    PCHECK_CHECK(params);
+
+    auto *isolate = O_GET_ISOLATE(_func);
+    const auto *module = _func->shared->module;
+
+    const auto *self = (const UDPHandle *) argv[0];
+
+    const auto *addr = NetCheckSockaddr(isolate, module, argv[1]);
+    if (addr == nullptr)
+        return {};
+
+    IntegerUnderlying flags = 0;
+    if (!O_IS_SENTINEL(argv[2]) && !NumberExtract(argv[2], flags))
+        return {};
+
+    auto *handle = NetHandleRequire(isolate, self, "bind");
+    if (handle == nullptr)
+        return {};
+
+    const auto rc = gyro_udp_bind(handle,
+                                  (const sockaddr *) &addr->addr,
+                                  (unsigned int) flags);
+    if (rc < 0) {
+        orbiter::EVLRaiseError(orbiter::Fiber::Current(), rc);
+
+        return {};
+    }
+
+    return HOObject((OObject *) self);
+}
+
 RUNTIME_METHOD(udp_close, close,
                R"DOC(
 @brief Close the socket and give the handle back to the event loop.
@@ -1465,6 +1527,64 @@ program, and what comes of it is undefined.
     return HOObject(kOddBallNIL);
 }
 
+RUNTIME_METHOD(udp_connect, connect,
+               R"DOC(
+@brief Fix the peer this socket talks to.
+
+Nothing is negotiated and nothing travels: UDP has no handshake, so unlike its
+TCP namesake this answers at once and parks nothing. What it changes is three
+things on the socket: a send may omit the destination, datagrams from anybody
+else are dropped before they are received, and the errors the network reports
+about this peer start being delivered, so a receive can fail with "connection
+refused" where before it would have waited for ever. Such an error belongs to
+the socket rather than to an operation, and whichever runs next reports it: it
+may just as well be a send.
+
+May be called again to point the socket at a different peer. There is no way
+back to an unconnected socket: the systems disagree on how to dissolve the
+association, so this module does not offer it.
+
+@param addr The peer to talk to, as a Sockaddr. Its family must be the one the
+            handle was opened for.
+
+@return Self.
+
+@panic TypeError When `addr` is not a Sockaddr.
+@panic OSError   When the handle is closed, or the system refuses the peer:
+                 an address of another family, or one no route leads to.
+
+@example
+    h := UDPHandle.open(@INET)
+    h.connect(parse("127.0.0.1", 5353))
+    h.peer_addr().unpack()        // ("127.0.0.1", 5353, @INET)
+)DOC", 2, nullptr, false, false) {
+    PCHECK_ENTRIES(params,
+                   PCHECK_DEF("addr", false, InstanceType::OBJECT));
+    PCHECK_CHECK(params);
+
+    auto *isolate = O_GET_ISOLATE(_func);
+    const auto *module = _func->shared->module;
+
+    const auto *self = (const UDPHandle *) argv[0];
+
+    const auto *addr = NetCheckSockaddr(isolate, module, argv[1]);
+    if (addr == nullptr)
+        return {};
+
+    auto *handle = NetHandleRequire(isolate, self, "connect");
+    if (handle == nullptr)
+        return {};
+
+    const auto rc = gyro_udp_connect(handle, (const sockaddr *) &addr->addr);
+    if (rc < 0) {
+        orbiter::EVLRaiseError(orbiter::Fiber::Current(), rc);
+
+        return {};
+    }
+
+    return HOObject((OObject *) self);
+}
+
 RUNTIME_METHOD(udp_fileno, fileno,
                R"DOC(
 @brief Return the socket the handle is built on.
@@ -1498,6 +1618,48 @@ an unrelated file ends up being watched in its place. Use `close()` instead.
         return {};
 
     return HOObject(IntNew(isolate, socket));
+}
+
+RUNTIME_METHOD(udp_local_addr, local_addr,
+               R"DOC(
+@brief Return the local address the socket is bound to.
+
+The way to learn which port the system picked, whether the socket was bound to
+port 0 or never bound and given one on its first send. The address is read from
+the socket itself, so it reflects what the system actually did rather than what
+was asked for. A socket that is neither bound nor has sent anything yet reports
+the wildcard address of its family and port 0.
+
+@return The local Sockaddr.
+
+@panic OSError When the handle is closed, or the address cannot be read.
+
+@example
+    h := UDPHandle.open(@INET).bind(parse("127.0.0.1", 0))
+    h.local_addr().unpack()        // ("127.0.0.1", 54321, @INET)
+)DOC", 1, nullptr, false, false) {
+    PCHECK_ENTRIES(params);
+    PCHECK_CHECK(params);
+
+    auto *isolate = O_GET_ISOLATE(_func);
+    const auto *module = _func->shared->module;
+
+    const auto *self = (const UDPHandle *) argv[0];
+
+    const auto socket = NetHandleSocket(isolate, self, "local_addr");
+    if (socket == GYRO_INVALID_SOCKET)
+        return {};
+
+    sockaddr_storage storage{};
+    socklen_t length = sizeof(storage);
+
+    if (getsockname(socket, (sockaddr *) &storage, &length) != 0) {
+        ErrorSetFromErrno(isolate, "getsockname");
+
+        return {};
+    }
+
+    return NetSockaddrNew(isolate, module, &storage, length);
 }
 
 RUNTIME_FUNCTION(udp_open, open,
@@ -1582,10 +1744,55 @@ negotiable; clearing it stalls the loop on the first operation that has to wait.
     return result;
 }
 
+RUNTIME_METHOD(udp_peer_addr, peer_addr,
+               R"DOC(
+@brief Return the address of the peer fixed by `connect()`.
+
+Only a connected socket has a peer: asking one that was never connected is an
+error rather than an empty answer. The peer of a UDP socket is a setting, not
+somebody at the other end: it says where sends go and whose datagrams are let
+in, and nothing about whether anybody is listening there.
+
+@return The remote Sockaddr.
+
+@panic OSError When the handle is closed, or was never connected.
+
+@example
+    h := UDPHandle.open(@INET).connect(parse("127.0.0.1", 5353))
+    h.peer_addr().unpack()        // ("127.0.0.1", 5353, @INET)
+)DOC", 1, nullptr, false, false) {
+    PCHECK_ENTRIES(params);
+    PCHECK_CHECK(params);
+
+    auto *isolate = O_GET_ISOLATE(_func);
+    const auto *module = _func->shared->module;
+
+    const auto *self = (const UDPHandle *) argv[0];
+
+    const auto socket = NetHandleSocket(isolate, self, "peer_addr");
+    if (socket == GYRO_INVALID_SOCKET)
+        return {};
+
+    sockaddr_storage storage{};
+    socklen_t length = sizeof(storage);
+
+    if (getpeername(socket, (sockaddr *) &storage, &length) != 0) {
+        ErrorSetFromErrno(isolate, "getpeername");
+
+        return {};
+    }
+
+    return NetSockaddrNew(isolate, module, &storage, length);
+}
+
 constexpr FunctionDef udphandle_methods[] = {
+    udp_bind,
     udp_close,
+    udp_connect,
     udp_fileno,
+    udp_local_addr,
     udp_open,
+    udp_peer_addr,
 
     FUNCTIONDEF_SENTINEL
 };
@@ -1754,6 +1961,7 @@ const ModuleEntry net_entries[] = {
     ORBIT_MODULE_EXPORT_ALIAS("Sockaddr", nullptr),
     ORBIT_MODULE_EXPORT_ALIAS("TCPHandle", nullptr),
     ORBIT_MODULE_EXPORT_ALIAS("UDPHandle", nullptr),
+    ORBIT_MODULE_EXPORT_ALIAS("UDP_REUSEADDR", O_TO_SMI(GYRO_UDP_REUSEADDR)),
 
     ORBIT_MODULE_EXPORT_ALIAS("TCP_REUSEADDR", O_TO_SMI(GYRO_TCP_REUSEADDR)),
 
@@ -1799,7 +2007,7 @@ static bool ModuleNetInit(Module *self) {
     // UDPHandle
 
     const auto tp_udp = MakeType(isolate, "UDPHandle", InstanceType::OBJECT,
-                                 sizeof(UDPHandle) - sizeof(OObject), 3,
+                                 sizeof(UDPHandle) - sizeof(OObject), 7,
                                  0);
     if (!tp_udp)
         return false;
