@@ -16,6 +16,7 @@
 #include <climits>
 #include <cstddef>
 #include <cstring>
+#include <optional>
 
 #include <orbit/orbiter/evloop.h>
 #include <orbit/orbiter/runtime.h>
@@ -177,6 +178,85 @@ static Sockaddr *NetCheckSockaddr(orbiter::Isolate *isolate, const Module *modul
     }
 
     return (Sockaddr *) obj;
+}
+
+/// Complete a Sockaddr the kernel has just written a sender into. A receive
+/// reports no address length, since the family already says it, so it is
+/// derived here the same way gyro derives it on the way out.
+static void NetDatagramSender(Sockaddr *from) {
+    switch (from->addr.ss_family) {
+        case AF_INET:
+            from->length = sizeof(sockaddr_in);
+            break;
+        case AF_INET6:
+            from->length = sizeof(sockaddr_in6);
+            break;
+        default:
+            from->length = 0;
+    }
+}
+
+/// on_resume of UDPHandle.recv: `io.object` is the (Bytes, Sockaddr) tuple the
+/// native built before submitting, and the same tuple is the result. Any status
+/// but GYRO_COMPLETED raises, GYRO_EMSGSIZE included: the part of a truncated
+/// datagram that did fit is dropped with the rest.
+static bool NetReturnDatagram(orbiter::Fiber *fiber) {
+    if (fiber->io.status != GYRO_COMPLETED) {
+        orbiter::EVLRaiseError(fiber, fiber->io.status);
+
+        return false;
+    }
+
+    auto *result = (Tuple *) fiber->io.object.get();
+
+    ((Bytes *) result->objects[0])->length = fiber->io.transferred;
+    NetDatagramSender((Sockaddr *) result->objects[1]);
+
+    fiber->SetRRValue(result);
+    fiber->AddIP();
+
+    return true;
+}
+
+/// Build the (received, sender) tuple returned by UDPHandle.recv_into.
+static HOObject NetDatagramIntoResult(orbiter::Isolate *isolate, const size_t transferred, OObject *from) {
+    auto result = TupleNew(isolate, 2);
+    if (!result)
+        return {};
+
+    TupleAppend(result.get(), (OObject *) O_TO_SMI(transferred));
+    TupleAppend(result.get(), from);
+
+    return HOObject(std::move(result));
+}
+
+/// on_resume of UDPHandle.recv_into: `io.object` is a (Bytes, Sockaddr) tuple
+/// holding the caller's pinned buffer and the sender to fill. The pin is
+/// released whatever the outcome; then, as for recv, anything but
+/// GYRO_COMPLETED raises.
+static bool NetReturnDatagramInto(orbiter::Fiber *fiber) {
+    const auto *io = (Tuple *) fiber->io.object.get();
+
+    ((Bytes *) io->objects[0])->shared->Unpin();
+
+    if (fiber->io.status != GYRO_COMPLETED) {
+        orbiter::EVLRaiseError(fiber, fiber->io.status);
+
+        return false;
+    }
+
+    auto *from = (Sockaddr *) io->objects[1];
+
+    NetDatagramSender(from);
+
+    const auto result = NetDatagramIntoResult(fiber->isolate, fiber->io.transferred, (OObject *) from);
+    if (!result)
+        return false;
+
+    fiber->SetRRValue(result.get());
+    fiber->AddIP();
+
+    return true;
 }
 
 bool orbiter::module::SocketAtomToInetFamily(Isolate *isolate, const char *atom, int *out_family) {
@@ -1785,6 +1865,412 @@ in, and nothing about whether anybody is listening there.
     return NetSockaddrNew(isolate, module, &storage, length);
 }
 
+RUNTIME_METHOD(udp_recv, recv,
+               R"DOC(
+@brief Receive the next datagram, together with the address it came from.
+
+Exactly one datagram, and whole: a receive is never short the way a stream read
+is, and two datagrams are never merged. A datagram larger than `n` is an error
+rather than a partial result. The system discards whatever did not fit, so
+there is nothing left to read afterwards and the part that did fit is not
+returned either: size `n` for the largest datagram you are willing to accept.
+
+An empty Bytes is a datagram of length zero, which is a real datagram: a UDP
+socket has no end of stream, and nothing here ever means one.
+
+When nothing has arrived yet the fiber is parked until a datagram comes in, so
+the scheduler thread stays free for other fibers; when one is already waiting,
+nothing is parked at all. On a connected socket only datagrams from the peer
+are received, and an error the network reported about it, such as "connection
+refused", is raised here.
+
+@param n          Size of the largest datagram to accept, in bytes (> 0).
+@param timeout=0  Milliseconds to wait for a datagram, 0 to wait indefinitely.
+
+@return A tuple of a new Bytes holding the datagram and the Sockaddr of its
+        sender.
+
+@panic TypeError  When a parameter has an invalid type.
+@panic ValueError When `n` is not positive, or `timeout` is negative.
+@panic OSError    When the handle is closed, when the datagram was larger than
+                  `n`, when no datagram arrived within `timeout`, or with the
+                  error the network reported for the peer.
+
+@see recv_into, send
+
+@example
+    h := UDPHandle.open(@INET).bind(parse("127.0.0.1", 5353))
+
+    data, sender := h.recv(1500)
+    h.send(data, to=sender)
+)DOC", 2, "timeout", false, false) {
+    PCHECK_ENTRIES(params,
+                   PCHECK_DEF("n", false, InstanceType::NUMBER),
+                   PCHECK_DEF("timeout", true, InstanceType::NUMBER));
+    PCHECK_CHECK(params);
+
+    auto *isolate = O_GET_ISOLATE(_func);
+    const auto *module = _func->shared->module;
+
+    const auto *self = (const UDPHandle *) argv[0];
+
+    IntegerUnderlying n;
+    if (!NumberExtract(argv[1], n))
+        return {};
+
+    if (n <= 0) {
+        ErrorSet(isolate,
+                 ValueError::Details[ValueError::Reason::ID],
+                 nullptr,
+                 n < 0
+                     ? "receive length cannot be negative"
+                     : "receive length cannot be zero: the datagram would be consumed and lost");
+
+        return {};
+    }
+
+    IntegerUnderlying timeout;
+    if (!NetCheckTimeout(isolate, argv[2], &timeout))
+        return {};
+
+    auto *handle = NetHandleRequire(isolate, self, "recv");
+    if (handle == nullptr)
+        return {};
+
+    const auto out = BytesNew(isolate, n, false);
+    if (!out)
+        return {};
+
+    constexpr sockaddr_storage empty{};
+    const auto from = NetSockaddrNew(isolate, module, &empty, 0);
+    if (!from)
+        return {};
+
+    // Built before submitting, because it is also what keeps both objects
+    // reachable while the loop writes into them.
+    auto result = TupleNew(isolate, 2);
+    if (!result)
+        return {};
+
+    TupleAppend(result.get(), (OObject *) out.get());
+    TupleAppend(result.get(), from.get());
+
+    auto *fiber = orbiter::Fiber::Current();
+
+    // The buffer needs no pin: this Bytes was just created here and no Orbit
+    // code can name it yet, so nothing can resize it while the loop writes.
+    fiber->PrepareForEventLoop(NetReturnDatagram, (OObject *) result.get());
+
+    fiber->io.buf.base = (char *) out->shared->buffer;
+    fiber->io.buf.len = n;
+
+    size_t transferred = 0;
+    const auto rc = gyro_udp_recv(handle,
+                                  &fiber->io.buf,
+                                  1,
+                                  &((Sockaddr *) from.get())->addr,
+                                  timeout,
+                                  orbiter::ResumeFromEventLoop,
+                                  fiber,
+                                  nullptr,
+                                  &transferred);
+    if (rc < 0) {
+        fiber->AbortEventLoop();
+
+        orbiter::EVLRaiseError(fiber, rc);
+
+        return {};
+    }
+
+    if (rc == GYRO_COMPLETED) {
+        fiber->AbortEventLoop();
+
+        out->length = transferred;
+        NetDatagramSender((Sockaddr *) from.get());
+
+        return HOObject(std::move(result));
+    }
+
+    return HOObject(kOddBallNIL);
+}
+
+RUNTIME_METHOD(udp_recv_into, recv_into,
+               R"DOC(
+@brief Receive the next datagram into buffer at the given offset.
+
+The destination buffer must already be at least `offset + length` bytes long,
+`recv_into` does NOT grow it. As with `recv`, exactly one datagram is received,
+and whole: one larger than `length` is an error, and the system discards it.
+Bytes beyond the datagram are left untouched, and a return of 0 is a datagram
+of length zero, never an end of stream.
+
+When nothing has arrived yet, the fiber is parked until a datagram comes in, so
+the scheduler thread stays free for other fibers; when one is already waiting,
+nothing is parked at all. While the fiber is parked the buffer is written in
+place by the event loop: its contents can still be read or changed, but any
+attempt to resize it (e.g. `append`) panics with ValueError until the receive
+completes.
+
+@param buffer     The mutable Bytes to write into.
+@param offset     Position in buffer where the first byte lands (>= 0).
+@param length     Size of the largest datagram to accept, in bytes (> 0).
+@param timeout=0  Milliseconds to wait for a datagram, 0 to wait indefinitely.
+
+@return A tuple of the number of bytes received and the Sockaddr of the sender.
+
+@panic TypeError  When a parameter has an invalid type.
+@panic ValueError When buffer is frozen, when offset or timeout is negative,
+                  when length is not positive, or when offset + length exceeds
+                  the current size of buffer.
+@panic OSError    When the handle is closed, when the datagram was larger than
+                  `length`, when no datagram arrived within `timeout`, or with
+                  the error the network reported for the peer.
+
+@see recv, send
+
+@example
+    h := UDPHandle.open(@INET).bind(parse("127.0.0.1", 5353))
+
+    buf := Bytes(len=1500)
+    n, sender := h.recv_into(buf, 0, 1500)    # 0..n holds the datagram
+)DOC", 4, "timeout", false, false) {
+    PCHECK_ENTRIES(params,
+                   PCHECK_DEF("buffer", false, InstanceType::BYTES),
+                   PCHECK_DEF("offset", false, InstanceType::NUMBER),
+                   PCHECK_DEF("length", false, InstanceType::NUMBER),
+                   PCHECK_DEF("timeout", true, InstanceType::NUMBER));
+    PCHECK_CHECK(params);
+
+    auto *isolate = O_GET_ISOLATE(_func);
+    const auto *module = _func->shared->module;
+
+    const auto *self = (const UDPHandle *) argv[0];
+
+    IntegerUnderlying r_offset;
+    if (!NumberExtract(argv[2], r_offset))
+        return {};
+
+    if (r_offset < 0) {
+        ErrorSet(isolate,
+                 ValueError::Details[ValueError::Reason::ID],
+                 nullptr,
+                 "offset cannot be negative");
+
+        return {};
+    }
+
+    IntegerUnderlying r_length;
+    if (!NumberExtract(argv[3], r_length))
+        return {};
+
+    if (r_length <= 0) {
+        ErrorSet(isolate,
+                 ValueError::Details[ValueError::Reason::ID],
+                 nullptr,
+                 r_length < 0
+                     ? "receive length cannot be negative"
+                     : "receive length cannot be zero: the datagram would be consumed and lost");
+
+        return {};
+    }
+
+    IntegerUnderlying timeout;
+    if (!NetCheckTimeout(isolate, argv[4], &timeout))
+        return {};
+
+    auto *handle = NetHandleRequire(isolate, self, "recv_into");
+    if (handle == nullptr)
+        return {};
+
+    constexpr sockaddr_storage empty{};
+    const auto from = NetSockaddrNew(isolate, module, &empty, 0);
+    if (!from)
+        return {};
+
+    const auto buffer = BytesWriteGuard((Bytes *) argv[1], r_offset, r_length);
+    if (!buffer)
+        return {};
+
+    // What the loop needs kept alive: the caller's buffer, to release its pin
+    // on resume, and the sender it writes into.
+    const auto io = TupleNew(isolate, 2);
+    if (!io)
+        return {};
+
+    TupleAppend(io.get(), argv[1]);
+    TupleAppend(io.get(), from.get());
+
+    auto *fiber = orbiter::Fiber::Current();
+
+    fiber->PrepareForEventLoop(NetReturnDatagramInto, (OObject *) io.get());
+
+    fiber->io.buf.base = (char *) buffer.Data();
+    fiber->io.buf.len = r_length;
+
+    size_t transferred = 0;
+    const auto rc = gyro_udp_recv(handle,
+                                  &fiber->io.buf,
+                                  1,
+                                  &((Sockaddr *) from.get())->addr,
+                                  timeout,
+                                  orbiter::ResumeFromEventLoop,
+                                  fiber,
+                                  nullptr,
+                                  &transferred);
+    if (rc < 0) {
+        fiber->AbortEventLoop();
+
+        orbiter::EVLRaiseError(fiber, rc);
+
+        return {};
+    }
+
+    if (rc == GYRO_COMPLETED) {
+        fiber->AbortEventLoop();
+
+        NetDatagramSender((Sockaddr *) from.get());
+
+        return NetDatagramIntoResult(isolate, transferred, from.get());
+    }
+
+    buffer.PinBuffer();
+
+    return HOObject(kOddBallNIL);
+}
+
+RUNTIME_METHOD(udp_send, send,
+               R"DOC(
+@brief Send one datagram.
+
+The bytes leave as a single datagram, whole or not at all: a send never reports
+part of one, so there is nothing to retry. A datagram of length zero is a real
+datagram and is sent like any other.
+
+A successful send means the datagram was handed to the network, and no more:
+whether it arrived, arrived once, or arrived in order are not questions UDP
+answers. The send waits only for room in the socket's own buffer, so it rarely
+parks; when it does, the scheduler thread stays free for other fibers.
+
+While the fiber is parked the source is read by the event loop. Resizing it
+(e.g. `append`) panics with ValueError until the send completes, and changing
+the bytes it already holds sends whatever is there when the loop reaches them,
+so leave a buffer alone until the send returns.
+
+@param buffer      The Bytes or String to send.
+@param to=nil      Where to send it, as a Sockaddr; nil sends to the peer fixed
+                   by `connect()`. Its family must be the one the handle was
+                   opened for.
+@param offset=0    Position in buffer of the first byte to send (>= 0).
+@param length=nil  Number of bytes to send, counted from offset. Omitted means
+                   all the way to the end of buffer.
+@param timeout=0   Milliseconds before the send is given up on, 0 to wait as
+                   long as it takes.
+
+@return The number of bytes sent, which on success is `length`.
+
+@panic TypeError  When a parameter has an invalid type, or `to` is not a
+                  Sockaddr.
+@panic ValueError When offset, length or timeout is negative, or when
+                  offset + length exceeds the size of buffer.
+@panic OSError    When the handle is closed, when `to` is nil on a socket that
+                  was never connected, when the datagram is larger than the
+                  path will carry, or with the error the network reported for
+                  the peer.
+
+@see recv, recv_into
+
+@example
+    h := UDPHandle.open(@INET)
+    h.send(b"ping", to=parse("127.0.0.1", 5353))
+
+    h.connect(parse("127.0.0.1", 5353))
+    h.send(b"ping")
+)DOC", 2, "to,offset,length,timeout", false, false) {
+    PCHECK_ENTRIES(params,
+                   PCHECK_DEF("buffer", false, InstanceType::BYTES, InstanceType::STRING),
+                   PCHECK_DEF("to", true, InstanceType::OBJECT, InstanceType::NIL),
+                   PCHECK_DEF("offset", true, InstanceType::NUMBER),
+                   PCHECK_DEF("length", true, InstanceType::NUMBER),
+                   PCHECK_DEF("timeout", true, InstanceType::NUMBER));
+    PCHECK_CHECK(params);
+
+    auto *isolate = O_GET_ISOLATE(_func);
+    const auto *module = _func->shared->module;
+
+    const auto *self = (const UDPHandle *) argv[0];
+
+    // gyro copies the destination before the send returns
+    const Sockaddr *to = nullptr;
+    if (!O_IS_SENTINEL(argv[2]) && !O_IS_NIL(argv[2])) {
+        to = NetCheckSockaddr(isolate, module, argv[2]);
+        if (to == nullptr)
+            return {};
+    }
+
+    IntegerUnderlying w_offset = 0;
+    if (!O_IS_SENTINEL(argv[3]) && !NumberExtract(argv[3], w_offset))
+        return {};
+
+    // Omitted means everything left from the offset.
+    std::optional<IntegerUnderlying> w_length;
+    if (!O_IS_SENTINEL(argv[4])) {
+        IntegerUnderlying value;
+        if (!NumberExtract(argv[4], value))
+            return {};
+
+        w_length = value;
+    }
+
+    IntegerUnderlying timeout;
+    if (!NetCheckTimeout(isolate, argv[5], &timeout))
+        return {};
+
+    auto *handle = NetHandleRequire(isolate, self, "send");
+    if (handle == nullptr)
+        return {};
+
+    // Holds the read lock of the source for as long as the view lives, so a
+    // concurrent enlarge cannot move the buffer before it has been pinned.
+    const ByteView source(isolate, argv[1], w_offset, w_length);
+    if (!source)
+        return {};
+
+    auto *fiber = orbiter::Fiber::Current();
+
+    fiber->PrepareForEventLoop(orbiter::EVLReturnWritten, argv[1]);
+
+    fiber->io.buf.base = (char *) source.Data();
+    fiber->io.buf.len = source.Size();
+
+    size_t transferred = 0;
+    const auto rc = gyro_udp_send(handle,
+                                  &fiber->io.buf,
+                                  1,
+                                  to != nullptr ? (const sockaddr *) &to->addr : nullptr,
+                                  timeout,
+                                  orbiter::ResumeFromEventLoop,
+                                  fiber,
+                                  nullptr,
+                                  &transferred);
+    if (rc < 0) {
+        fiber->AbortEventLoop();
+
+        orbiter::EVLRaiseError(fiber, rc);
+
+        return {};
+    }
+
+    if (rc == GYRO_COMPLETED) {
+        fiber->AbortEventLoop();
+
+        return HOObject((OObject *) O_TO_SMI(transferred));
+    }
+
+    (void) source.PinBuffer();
+
+    return HOObject(kOddBallNIL);
+}
+
 constexpr FunctionDef udphandle_methods[] = {
     udp_bind,
     udp_close,
@@ -1793,6 +2279,9 @@ constexpr FunctionDef udphandle_methods[] = {
     udp_local_addr,
     udp_open,
     udp_peer_addr,
+    udp_recv,
+    udp_recv_into,
+    udp_send,
 
     FUNCTIONDEF_SENTINEL
 };
@@ -2007,7 +2496,7 @@ static bool ModuleNetInit(Module *self) {
     // UDPHandle
 
     const auto tp_udp = MakeType(isolate, "UDPHandle", InstanceType::OBJECT,
-                                 sizeof(UDPHandle) - sizeof(OObject), 7,
+                                 sizeof(UDPHandle) - sizeof(OObject), 10,
                                  0);
     if (!tp_udp)
         return false;
