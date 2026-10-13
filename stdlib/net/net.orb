@@ -24,7 +24,10 @@ whatever it ends up carrying, and the shorthands for the ordinary cases.
 */
 
 pub import
-    parse
+    parse,
+
+    IPV6ONLY,
+    REUSEADDR
     from "::orbit::net"
 
 import "net/tcp"

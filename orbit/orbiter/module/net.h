@@ -5,6 +5,7 @@
 #ifndef ORBIT_ORBITER_MODULE_NET_H_
 #define ORBIT_ORBITER_MODULE_NET_H_
 
+#include <gyro/net.h>
 #include <gyro/tcp.h>
 #include <gyro/udp.h>
 

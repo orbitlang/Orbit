@@ -46,6 +46,45 @@ using namespace orbiter::module;
 /// Connections the kernel may hold for a listening socket before it starts refusing them.
 constexpr auto kTCPDefaultBacklog = 128;
 
+/// Read the optional `flags` argument of a bind of @p addr.
+/// Only the bits the gyro library in use knows are accepted, and IPV6ONLY only
+/// for an IPv6 address.
+static bool NetCheckBindFlags(orbiter::Isolate *isolate, OObject *obj, const Sockaddr *addr, unsigned int *out) {
+    *out = 0;
+
+    if (O_IS_SENTINEL(obj))
+        return true;
+
+    IntegerUnderlying flags;
+    if (!NumberExtract(obj, flags))
+        return false;
+
+    // Range first: gyro takes an unsigned int, and narrowing a wider value
+    // would drop its high bits before gyro could see them.
+    if (flags < 0 || flags > UINT_MAX || gyro_bind_flags_supported((unsigned int) flags) == 0) {
+        ErrorSet(isolate,
+                 ValueError::Details[ValueError::ID],
+                 nullptr,
+                 "invalid bind flags %lld",
+                 (long long) flags);
+
+        return false;
+    }
+
+    if ((flags & GYRO_BIND_IPV6ONLY) != 0 && addr->addr.ss_family != AF_INET6) {
+        ErrorSet(isolate,
+                 ValueError::Details[ValueError::ID],
+                 nullptr,
+                 "IPV6ONLY is a flag for an @INET6 address");
+
+        return false;
+    }
+
+    *out = (unsigned int) flags;
+
+    return true;
+}
+
 /// Read an optional timeout argument, in milliseconds.
 static bool NetCheckTimeout(orbiter::Isolate *isolate, OObject *obj, IntegerUnderlying *out) {
     *out = 0;
@@ -666,17 +705,33 @@ address of the family to take every interface.
 
 @param addr     The local address, as a Sockaddr. Its family must be the one
                 the handle was opened for.
-@param flags=0  Zero, or TCP_REUSEADDR to allow binding an address still held
-                by the connections of a previous run.
+@param flags=0  Zero, or a combination of:
+                - REUSEADDR: lets a server that has just stopped bind its port
+                  again at once, rather than wait out the connections of its
+                  previous run that the system is still winding down. It never
+                  lets two listeners share a port.
+                - IPV6ONLY: for an @INET6 address only, keeps the listener from
+                  also taking IPv4 connections. Without it, a socket bound to
+                  the unspecified address `::` may take them too, and whether
+                  it does is the system's default: yes on Linux and macOS, no
+                  on FreeBSD and Windows. Give it to serve both families on one
+                  port with two sockets, since the IPv6 one would otherwise take
+                  the port from the IPv4 one.
 
 @return Self, so that `listen()` or `connect()` can be chained.
 
-@panic OSError When the handle is closed, or the address cannot be bound: it is
-               in use, or not one of this host's, or the port is privileged.
+@panic ValueError When `flags` holds a bit that is neither REUSEADDR nor
+                  IPV6ONLY, or IPV6ONLY with an address that is not @INET6.
+@panic OSError    When the handle is closed, or the address cannot be bound:
+                  it is in use, or not one of this host's, or the port is
+                  privileged.
 
 @example
     h := TCPHandle.open(@INET)
-    h.bind(parse("127.0.0.1", 8080), flags=TCP_REUSEADDR)
+    h.bind(parse("127.0.0.1", 8080), flags=REUSEADDR)
+
+    v6 := TCPHandle.open(@INET6)
+    v6.bind(parse("::", 8080, family=@INET6), flags=REUSEADDR | IPV6ONLY)
 )DOC", 2, "flags", false, false) {
     PCHECK_ENTRIES(params,
                    PCHECK_DEF("addr", false, InstanceType::OBJECT),
@@ -692,8 +747,8 @@ address of the family to take every interface.
     if (addr == nullptr)
         return {};
 
-    IntegerUnderlying flags = 0;
-    if (!O_IS_SENTINEL(argv[2]) && !NumberExtract(argv[2], flags))
+    unsigned int flags;
+    if (!NetCheckBindFlags(isolate, argv[2], addr, &flags))
         return {};
 
     auto *handle = NetHandleRequire(isolate, self, "bind");
@@ -702,7 +757,7 @@ address of the family to take every interface.
 
     const auto rc = gyro_tcp_bind(handle,
                                   (const sockaddr *) &addr->addr,
-                                  (unsigned int) flags);
+                                  flags);
     if (rc < 0) {
         orbiter::EVLRaiseError(orbiter::Fiber::Current(), rc);
 
@@ -968,7 +1023,9 @@ RUNTIME_FUNCTION(tcp_open, open,
 
 The socket is open and configured but does nothing yet: this is the moment to
 set the options a system only honours before a socket is bound or connected,
-reaching it through `fileno()`. Then bind it, or connect it.
+reaching it through `fileno()`. Then bind it, or connect it. Restricting an
+@INET6 socket to IPv6 needs no `fileno()`: it is the IPV6ONLY flag of
+`bind()`.
 
 The event loop has already set what it needs on that socket: non-blocking mode,
 close-on-exec, and no SIGPIPE where that exists. Non-blocking is not
@@ -1479,19 +1536,35 @@ address of the family to receive on every interface.
 
 @param addr     The local address, as a Sockaddr. Its family must be the one
                 the handle was opened for.
-@param flags=0  Zero, or UDP_REUSEADDR to let other sockets bind the same
-                address.
+@param flags=0  Zero, or a combination of:
+                - REUSEADDR: lets several sockets bind the same port, each
+                  having asked for it, and the systems disagree on where that
+                  applies: macOS and the BSDs honour it for multicast addresses
+                  only, Linux for unicast ports as well, with no promise about
+                  which socket a unicast datagram reaches. The use it serves
+                  everywhere is several receivers of one multicast group;
+                  sharing a unicast port portably takes SO_REUSEPORT, set
+                  through `fileno()` before binding.
+                - IPV6ONLY: for an @INET6 address only, keeps the socket from
+                  also receiving IPv4 datagrams. Without it, a socket bound to
+                  the unspecified address `::` may receive them too, and
+                  whether it does is the system's default: yes on Linux and
+                  macOS, no on FreeBSD and Windows. Give it to serve both
+                  families on one port with two sockets, since the IPv6 one
+                  would otherwise take the port from the IPv4 one.
 
 @return Self, so that `connect()` can be chained.
 
-@panic TypeError When `addr` is not a Sockaddr.
-@panic OSError   When the handle is closed, or the address cannot be bound: it
-                 is in use, or not one of this host's, or the port is
-                 privileged.
+@panic TypeError  When `addr` is not a Sockaddr.
+@panic ValueError When `flags` holds a bit that is neither REUSEADDR nor
+                  IPV6ONLY, or IPV6ONLY with an address that is not @INET6.
+@panic OSError    When the handle is closed, or the address cannot be bound:
+                  it is in use, or not one of this host's, or the port is
+                  privileged.
 
 @example
     h := UDPHandle.open(@INET)
-    h.bind(parse("127.0.0.1", 5353), flags=UDP_REUSEADDR)
+    h.bind(parse("224.0.0.251", 5353), flags=REUSEADDR)
 )DOC", 2, "flags", false, false) {
     PCHECK_ENTRIES(params,
                    PCHECK_DEF("addr", false, InstanceType::OBJECT),
@@ -1507,8 +1580,8 @@ address of the family to receive on every interface.
     if (addr == nullptr)
         return {};
 
-    IntegerUnderlying flags = 0;
-    if (!O_IS_SENTINEL(argv[2]) && !NumberExtract(argv[2], flags))
+    unsigned int flags;
+    if (!NetCheckBindFlags(isolate, argv[2], addr, &flags))
         return {};
 
     auto *handle = NetHandleRequire(isolate, self, "bind");
@@ -1517,7 +1590,7 @@ address of the family to receive on every interface.
 
     const auto rc = gyro_udp_bind(handle,
                                   (const sockaddr *) &addr->addr,
-                                  (unsigned int) flags);
+                                  flags);
     if (rc < 0) {
         orbiter::EVLRaiseError(orbiter::Fiber::Current(), rc);
 
@@ -1706,8 +1779,9 @@ RUNTIME_FUNCTION(udp_open, open,
 
 The socket is open and configured but does nothing yet: this is the moment to
 set the options a system only honours before a socket is bound, such as reusing
-a port, allowing broadcast, joining a multicast group or restricting an @INET6
-socket to IPv6, reaching it through `fileno()`.
+a port, allowing broadcast or joining a multicast group, reaching it through
+`fileno()`. Restricting an @INET6 socket to IPv6 needs no `fileno()`: it is the
+IPV6ONLY flag of `bind()`.
 
 The event loop has already set what it needs on that socket: non-blocking mode,
 close-on-exec, and no SIGPIPE where that exists. Non-blocking is not
@@ -2408,9 +2482,9 @@ const ModuleEntry net_entries[] = {
     ORBIT_MODULE_EXPORT_ALIAS("Sockaddr", nullptr),
     ORBIT_MODULE_EXPORT_ALIAS("TCPHandle", nullptr),
     ORBIT_MODULE_EXPORT_ALIAS("UDPHandle", nullptr),
-    ORBIT_MODULE_EXPORT_ALIAS("UDP_REUSEADDR", O_TO_SMI(GYRO_UDP_REUSEADDR)),
 
-    ORBIT_MODULE_EXPORT_ALIAS("TCP_REUSEADDR", O_TO_SMI(GYRO_TCP_REUSEADDR)),
+    ORBIT_MODULE_EXPORT_ALIAS("IPV6ONLY", O_TO_SMI(GYRO_BIND_IPV6ONLY)),
+    ORBIT_MODULE_EXPORT_ALIAS("REUSEADDR", O_TO_SMI(GYRO_BIND_REUSEADDR)),
 
     ORBIT_MODULE_SENTINEL
 };

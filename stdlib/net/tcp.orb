@@ -22,7 +22,7 @@ blocking its scheduler thread, so a server built on these classes serves many
 connections from one thread without threads of its own.
 */
 
-import TCPHandle, TCP_REUSEADDR from "::orbit::net"
+import TCPHandle, REUSEADDR from "::orbit::net"
 
 import OSError from "error"
 import Readable, Writeable from "io/traits"
@@ -206,7 +206,7 @@ pub class TCPListener impl Socket {
 
         flags := 0
         if reuse_addr {
-            flags = TCP_REUSEADDR
+            flags = REUSEADDR
         }
 
         self.handle.bind(self.l_addr, flags=flags)
