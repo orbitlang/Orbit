@@ -1381,18 +1381,17 @@ so leave a buffer alone until the send returns.
     auto *isolate = O_GET_ISOLATE(_func);
 
     IntegerUnderlying w_offset = 0;
-    if (!O_IS_SENTINEL(argv[2])) {
-        if (!NumberExtract(argv[2], w_offset))
+    if (!O_IS_SENTINEL(argv[2]) && !NumberExtract(argv[2], w_offset))
+        return {};
+
+    // Omitted means everything left from the offset.
+    std::optional<IntegerUnderlying> w_length;
+    if (!O_IS_SENTINEL(argv[3])) {
+        IntegerUnderlying value;
+        if (!NumberExtract(argv[3], value))
             return {};
 
-        if (w_offset < 0) {
-            ErrorSet(isolate,
-                     ValueError::Details[ValueError::Reason::ID],
-                     nullptr,
-                     "offset cannot be negative");
-
-            return {};
-        }
+        w_length = value;
     }
 
     IntegerUnderlying timeout;
@@ -1405,60 +1404,19 @@ so leave a buffer alone until the send returns.
 
     // Holds the read lock of the source for as long as the view lives, so a
     // concurrent enlarge cannot move the buffer before it has been pinned.
-    const ByteView source(isolate, argv[1]);
+    const ByteView source(isolate, argv[1], w_offset, w_length);
     if (!source)
         return {};
 
-    const auto size = (IntegerUnderlying) source.Size();
-
-    if (w_offset > size) {
-        ErrorSet(isolate,
-                 ValueError::Details[ValueError::Reason::ID],
-                 nullptr,
-                 "send range out of bounds: offset %lld of %lld bytes",
-                 (long long) w_offset,
-                 (long long) size);
-
-        return {};
-    }
-
-    // Omitted means everything left from the offset.
-    IntegerUnderlying w_length = size - w_offset;
-    if (!O_IS_SENTINEL(argv[3])) {
-        if (!NumberExtract(argv[3], w_length))
-            return {};
-
-        if (w_length < 0) {
-            ErrorSet(isolate,
-                     ValueError::Details[ValueError::Reason::ID],
-                     nullptr,
-                     "send length cannot be negative");
-
-            return {};
-        }
-
-        if (w_length > size - w_offset) {
-            ErrorSet(isolate,
-                     ValueError::Details[ValueError::Reason::ID],
-                     nullptr,
-                     "send range out of bounds: %lld bytes from offset %lld of %lld",
-                     (long long) w_length,
-                     (long long) w_offset,
-                     (long long) size);
-
-            return {};
-        }
-    }
-
-    if (w_length == 0)
+    if (source.Size() == 0)
         return HOObject((OObject *) O_TO_SMI(0));
 
     auto *fiber = orbiter::Fiber::Current();
 
     fiber->PrepareForEventLoop(orbiter::EVLReturnWritten, argv[1]);
 
-    fiber->io.buf.base = (char *) source.Data() + w_offset;
-    fiber->io.buf.len = w_length;
+    fiber->io.buf.base = (char *) source.Data();
+    fiber->io.buf.len = source.Size();
 
     size_t transferred = 0;
     const auto rc = gyro_tcp_write(handle,
