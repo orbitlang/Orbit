@@ -5,8 +5,10 @@
 #ifndef ORBIT_ORBITER_DATATYPE_BYTEVIEW_H_
 #define ORBIT_ORBITER_DATATYPE_BYTEVIEW_H_
 
+#include <optional>
 #include <shared_mutex>
 
+#include <orbit/orbiter/datatype/number.h>
 #include <orbit/orbiter/datatype/oobject.h>
 
 #include <orbit/orbiter/sync/asyncrwlock.h>
@@ -73,6 +75,40 @@ namespace orbiter::datatype {
          * @panic TypeError When @p obj is neither a String nor a Bytes.
          */
         ByteView(Isolate *isolate, const OObject *obj) noexcept;
+
+        /**
+         * @brief Build a read view over the range `[offset, offset + length)` of @p obj.
+         *
+         * The same view as the two-argument constructor, narrowed to a range
+         * the caller asked for: `Data()` points at the byte at @p offset and
+         * `Size()` is the length of the range. The range is validated against
+         * the size of @p obj while the lock is held, so the answer cannot be
+         * overtaken by a concurrent resize. On failure the panic is set, the
+         * lock is released, and `Ok()` returns false.
+         *
+         * The pin helpers still act on the whole buffer: a pin is what keeps
+         * the buffer in place, and the range lives inside it.
+         *
+         * @param isolate Owning isolate, used to raise the errors.
+         * @param obj     String or Bytes to view. Any other value fails.
+         * @param offset  Position of the first byte of the range (>= 0). It may
+         *                equal the size of @p obj, which gives an empty range.
+         * @param length  Number of bytes in the range (>= 0), or std::nullopt
+         *                for everything from @p offset to the end.
+         *
+         * @panic TypeError  When @p obj is neither a String nor a Bytes.
+         * @panic ValueError When @p offset or @p length is negative, or the
+         *                   range does not fit in @p obj.
+         *
+         * @example
+         *     ByteView view(isolate, argv[1], offset, std::nullopt);
+         *     if (!view)
+         *         return {};  // panic already set
+         *
+         *     ::write(fd, view.Data(), view.Size());   // offset .. end
+         */
+        ByteView(Isolate *isolate, const OObject *obj, IntegerUnderlying offset,
+                 std::optional<IntegerUnderlying> length) noexcept;
 
         ByteView(const ByteView &) = delete;
 

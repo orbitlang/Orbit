@@ -14,7 +14,7 @@
 using namespace orbiter::datatype;
 
 ByteView::ByteView(Isolate *isolate, const OObject *obj) noexcept : object_(obj), data_(nullptr), size_(0),
-                                                                        valid_(false) {
+                                                                    valid_(false) {
     if (O_IS_OBJECT(obj)) {
         if (O_IS_TYPE(obj, InstanceType::STRING)) {
             // Strings are immutable: the buffer never moves, no lock needed.
@@ -52,6 +52,53 @@ ByteView::ByteView(Isolate *isolate, const OObject *obj) noexcept : object_(obj)
                         "expected a Bytes or String, got '%s'",
                         nullptr,
                         obj);
+}
+
+ByteView::ByteView(Isolate *isolate, const OObject *obj, const IntegerUnderlying offset,
+                   const std::optional<IntegerUnderlying> length) noexcept : ByteView(isolate, obj) {
+    if (!this->valid_)
+        return;
+
+    // Checked under the lock taken above, against the size it guarantees.
+    const auto size = (IntegerUnderlying) this->size_;
+
+    if (offset < 0) {
+        ErrorSet(isolate,
+                 ValueError::Details[ValueError::Reason::ID],
+                 nullptr,
+                 "offset cannot be negative");
+    } else if (offset > size) {
+        ErrorSet(isolate,
+                 ValueError::Details[ValueError::Reason::ID],
+                 nullptr,
+                 "range out of bounds: offset %lld of %lld bytes",
+                 (long long) offset,
+                 (long long) size);
+    } else if (length && *length < 0) {
+        ErrorSet(isolate,
+                 ValueError::Details[ValueError::Reason::ID],
+                 nullptr,
+                 "length cannot be negative");
+    } else if (length && *length > size - offset) {
+        ErrorSet(isolate,
+                 ValueError::Details[ValueError::Reason::ID],
+                 nullptr,
+                 "range out of bounds: %lld bytes from offset %lld of %lld",
+                 (long long) *length,
+                 (long long) offset,
+                 (long long) size);
+    } else {
+        this->data_ += offset;
+        this->size_ = (MSize) length.value_or(size - offset);
+
+        return;
+    }
+
+    this->Release();
+
+    this->data_ = nullptr;
+    this->size_ = 0;
+    this->valid_ = false;
 }
 
 bool ByteView::PinBuffer() const noexcept {
