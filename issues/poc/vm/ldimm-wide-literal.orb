@@ -1,0 +1,43 @@
+# PoC ldimm-wide-literal — VM-005: an integer literal of 2^32 or more, small
+# enough to be an SMI, loads as its own value shifted right by 32 bits:
+#
+#   io.print(4294967296)      -> 1      (2^32)
+#   io.print(1099511627776)   -> 256    (2^40)
+#
+# The compiler splits such a literal into 16-bit LDIMM chunks, and the VM
+# shifts each chunk by 16 * shift in a 32-bit type: the third chunk's shift of
+# 32 is undefined, and on ARM64 it wraps to 0. Each expected value below is
+# also computed at run time, which never goes through LDIMM, so the two sides
+# of every check are built differently.
+#
+# A runtime test: prints "ALL TESTS PASSED" only when every check matches.
+# EXPECT: contains: ALL TESTS PASSED
+
+import "io"
+
+var fails = 0
+
+func check(name, got, expected) {
+    if got == expected {
+        io.print("OK   ", name)
+    } else {
+        io.print("FAIL ", name, "-- got:", got, "expected:", expected)
+        fails += 1
+    }
+}
+
+two32 := 65536 * 65536
+
+check("2^32 - 1, the last value that loads right", 4294967295, two32 - 1)
+check("2^32", 4294967296, two32)
+check("2^32 + 1", 4294967297, two32 + 1)
+check("2^40", 1099511627776, two32 * 256)
+check("2^48 + 2^32 + 1, every chunk set", 281479271677953, two32 * 65536 + two32 + 1)
+check("a negative literal", -4294967297, -(two32 + 1))
+check("hexadecimal", 0x100000001, two32 + 1)
+
+if fails == 0 {
+    io.print("ALL TESTS PASSED")
+} else {
+    io.print(fails, "TEST(S) FAILED")
+}

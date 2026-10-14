@@ -1264,12 +1264,14 @@ CATCH_FINALLY:
                 DISPATCH;
             }
             TARGET_OP(LDIMM) {
-                const auto imm = FETCH_IMM(instr);
+                const auto imm = (MSize) FETCH_IMM(instr);
                 const auto shift = (instr >> 16) & 0x0F;
 
                 dst = FETCH_R_DST(instr);
 
-                REG_N(dst) = shift == 0 ? O_TO_SMI(imm) : O_TO_SMI(O_FROM_SMI(REG_N(dst)) | (imm << (16 * shift)));
+                REG_N(dst) = shift == 0
+                                 ? O_TO_SMI(imm)
+                                 : O_TO_SMI(O_FROM_SMI(REG_N(dst)) | (imm << (16 * shift)));
 
                 DISPATCH;
             }

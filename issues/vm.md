@@ -1,10 +1,181 @@
 # vm — bug report
 
 **Component:** `orbit/orbiter` (interpreter: trap/panic unwind, register file) · **ID prefix:** `VM`
-**PoCs:** [`poc/vm/`](poc/vm/) · **Last reviewed:** 2026-10-05
+**PoCs:** [`poc/vm/`](poc/vm/) · **Last reviewed:** 2026-10-14
 **Status:** OPEN · PARTIAL · FIXED · WONTFIX — see [GUIDE.md](GUIDE.md).
 
 ---
+
+## VM-006 — `!x` disagrees with `if x`: integers always negate to true, falsy objects to false
+**Severity:** High (silent wrong boolean, and wrong branch in `if !x`) · **Status:** OPEN · **Location:** `orbit/orbiter/vm.cpp:977` (`TARGET_OP(NOT)`)
+
+The `NOT` opcode decides truth on its own instead of asking `IsTrue`, which is
+what the conditional jumps (`JF`, `JT`) and the ternary use:
+
+```cpp
+ACCESS_REG_DST(instr) = ((MSize) value == kOddBallTRUE || O_IS_OBJECT(value))
+                            ? kOddBallFALSE
+                            : kOddBallTRUE;
+```
+
+Only `true` and heap objects count as true here. `IsTrue` (`oops.cpp:467`)
+treats an SMI as true when it is not zero and lets a heap object answer through
+its type's `to_bool`. The two disagree in both directions:
+
+```orb
+n := 3
+if !n { ... }          // taken: !3 is true
+!1                     // true
+!""  ![]  !{}  !b""    // false, though each is false to a conditional
+!(trap boom())         // false, though an error Result is false to a conditional
+```
+
+Every other case checked agrees: `nil`, `false`, `true`, `0`, non-empty
+containers, an ok Result.
+
+**Found** while writing the IPV6ONLY checks of `ortest/net/`: a check written
+as `check_true(name, !!r)` on an error Result passed for the wrong reason. The
+suites use `r ? true : false` instead.
+
+**PoC:** [`poc/vm/not-truthiness.orb`](poc/vm/not-truthiness.orb) *(confirmed
+live: 6 of 13 checks fail)*. Each check compares `!x` with
+`x ? false : true`. It is expected to fail until this is fixed, per GUIDE §11.
+
+**Fix (suggested, not tried):** `ACCESS_REG_DST(instr) = BOOL_TO_OBOOL(!IsTrue(value))`.
+Then check whether the compiler folds or rewrites `!` anywhere else (constant
+folding in `optimizer.cpp`, `if !x` lowered to a jump), and audit the stdlib
+for code written around the current behaviour.
+
+---
+
+## VM-005 — Integer literals of 2^32 and more load as their value shifted right by 32
+**Severity:** High (silent wrong value for a whole range of integer literals) · **Status:** FIXED (2026-10-14) · **Location:** `orbit/orbiter/vm.cpp:1267` (`TARGET_OP(LDIMM)`)
+
+**Fix verified (regression PoC `poc/vm/ldimm-wide-literal.orb` — prints `ALL
+TESTS PASSED`, 7 of 7; `ortest` 22/22; `phi-regalloc.orb` green).** The chunk
+is widened to `MSize` as it is fetched, so the shift that places it is done in
+64 bits:
+
+```cpp
+const auto imm = (MSize) FETCH_IMM(instr);
+...
+REG_N(dst) = shift == 0
+                 ? O_TO_SMI(imm)
+                 : O_TO_SMI(O_FROM_SMI(REG_N(dst)) | (imm << (16 * shift)));
+```
+
+The PoC builds every expected value at run time, so it compares the two paths
+rather than two copies of the same literal. Checked by hand as well, against
+the edges of the range `LDIMM` serves: `2^32`, `2^48`, the last SMI (`2^61 - 1`,
+four chunks), the first value past it (`2^61`, which leaves `LDIMM` for the
+constant pool), their negatives and the hexadecimal spellings; all load as
+written. The cause had already been confirmed by probing this same change before
+the fix landed, and the unfixed decoder fails 6 of the 7 PoC checks.
+
+`ortest/net/02` and `04` pass the 2^32 + 1 bind flag as the literal
+`0x100000001` again; while this was open they had to compute it at run time.
+
+<details><summary>Original report</summary>
+
+An integer literal small enough to be an SMI but at least 2^32 loads as the
+wrong number, with no diagnostic:
+
+```orb
+io.print(4294967295)        // 4294967295   correct
+io.print(4294967296)        // 1            expected 4294967296
+io.print(1099511627776)     // 256          expected 2^40
+io.print(281479271677953)   // 65537        expected 2^48 + 2^32 + 1
+io.print(0x100000001)       // 1
+io.print(-4294967297)       // -1
+```
+
+The same values computed at run time (`65536 * 65536`) are correct, and so are
+literals beyond the SMI range (`0x7FFFFFFFFFFFFFFF`), which go through the
+constant pool. Only `LDIMM` is involved.
+
+`Builder::LoadImmediate` splits a literal wider than 16 bits into 16-bit
+chunks, each an `LDIMM` carrying its chunk and a shift count, and the VM ORs
+them together:
+
+```cpp
+const auto imm = FETCH_IMM(instr);           // (instr) & 0xFFFFu: a 32-bit unsigned int
+...
+REG_N(dst) = shift == 0 ? O_TO_SMI(imm) : O_TO_SMI(O_FROM_SMI(REG_N(dst)) | (imm << (16 * shift)));
+```
+
+`imm << (16 * shift)` is computed in 32 bits. For the chunk of bits 32-47 the
+shift is 32, which is undefined behaviour in C++; for bits 48-63 it is 48. On
+ARM64 the hardware takes the count modulo 32, so the third chunk lands on bits
+0-15 and the fourth on bits 16-31, which is every observed value above. Other
+targets may produce something else again. The encoding and the compiler are
+right; the decoder is not.
+
+**Found** while testing the bind flags of `::orbit::net`: a check meant to pass
+`0x100000001` (2^32 + 1) received `1`, which is `REUSEADDR`, and the bind
+succeeded. `ortest/net/02` and `04` build that value at run time until this is
+fixed.
+
+**PoC:** [`poc/vm/ldimm-wide-literal.orb`](poc/vm/ldimm-wide-literal.orb)
+*(confirmed live: 6 of 7 checks fail)*. It is expected to fail until this is
+fixed, per GUIDE §11.
+
+**Fix (verified by probe, not applied):** widen before shifting,
+`((MSize) imm << (16 * shift))`. With that one change the PoC prints `ALL TESTS
+PASSED`; the change was then reverted, so the finding stays OPEN.
+
+</details>
+---
+
+## VM-004 — A call that fails while binding its arguments leaves them on the stack
+**Severity:** High (silent wrong arguments in the enclosing call; unbounded stack growth that ends in a hang) · **Status:** OPEN · **Location:** `orbit/orbiter/vm.cpp:1099` (`TARGET_OP(CALL)`, `binder.Bind` → `goto ERROR`)
+
+When `ArgumentBinder::Bind` refuses a call, too many positional arguments
+being the case reproduced, the arguments already pushed for that call stay on
+the stack. Nothing restores SP to `ArgsBaseSP()`. Every other exit path does,
+since VM-002, because it leaves through a frame whose prologue records that SP;
+a binding failure leaves **before any frame exists**, so that mechanism never
+runs. Under `trap` the catch edge resumes in the caller with SP still above the
+dead arguments, and two things follow.
+
+**Wrong arguments.** Used as an argument, the trapped call's result is pushed on
+top of the leftovers, and the enclosing callee reads its parameters from the
+top of the stack:
+
+```orb
+func one(a) { return a }
+func show(a, b, c) { io.print(a, "|", b, "|", c) }
+
+show("A", "B", trap one(1, 2))      // 1 | 2 | error      expected A | B | error
+show("A", trap one(1, 2), "C")      // 2 | error | C      expected A | error | C
+```
+
+The corruption reaches further out than the call that holds the `trap`: in the
+PoC, the label argument of the `check(...)` wrapping that call is overwritten
+too. A native callee fails the same way
+(`trap net.parse("1.2.3.4", 1, @INET, 9)`). A failure inside the callee's body
+(`trap boom(1)`) and a `trap` in assignment position both read correctly.
+
+**Stack growth.** Assignment position reads correctly but still leaks the slots
+on every failure. A loop running `r := trap one(1, 2, 3, 4, 5, 6, 7, 8)` reaches
+400,000 iterations in 0.7 s, then **hangs** before 600,000. The same loop with
+`trap boom(1)` or `trap one(1)` runs 1,000,000 iterations in under 1 s. That
+the process hangs, rather than reporting a stack overflow, may be a defect of
+its own and is worth checking once the leak is gone.
+
+**Found** while writing `ortest/net/05_udp_datagrams.orb`:
+`io.print("label", trap h.send(b"x", addr))` printed the address where the label
+should have been (`to` is keyword-only, so the call fails in the binder).
+
+**PoC:** [`poc/vm/trap-bind-error-argpos.orb`](poc/vm/trap-bind-error-argpos.orb)
+*(confirmed live: 4 of 6 checks fail; the two controls pass)*. It is expected to
+fail until this is fixed, per GUIDE §11.
+
+**Fix (suggested, not tried):** on `CallResult::ERROR` from `Bind`, restore SP
+to `binder.ArgsBaseSP()` before `goto ERROR`, so that a refused call leaves the
+stack as it found it, which is what a call that returns already does. Check the
+other callers of `Bind` (`SPWN`, `DEFER`, `runtime.cpp:536`) for the same
+pattern, and whether the callee slot and any receiver below `ArgsBaseSP()` need
+popping too.
 
 ## VM-003 — `break` out of a `try` block is silently ignored
 **Severity:** High (silent wrong control flow, no diagnostic) · **Status:** FIXED (2026-10-05) · **Location:** `orbit/liftoff/ir/jblock.cpp:94` (`FindLabeledBlock`), `orbit/orbiter/vm.cpp` (`TARGET_OP(TEND)`)
