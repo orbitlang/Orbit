@@ -7,7 +7,35 @@
 ---
 
 ## VM-006 — `!x` disagrees with `if x`: integers always negate to true, falsy objects to false
-**Severity:** High (silent wrong boolean, and wrong branch in `if !x`) · **Status:** OPEN · **Location:** `orbit/orbiter/vm.cpp:977` (`TARGET_OP(NOT)`)
+**Severity:** High (silent wrong boolean, and wrong branch in `if !x`) · **Status:** FIXED (2026-10-14) · **Location:** `orbit/orbiter/vm.cpp:980` (`TARGET_OP(NOT)`)
+
+**Fix verified (regression PoC `poc/vm/not-truthiness.orb` — prints `ALL TESTS
+PASSED`, 13 of 13; `ortest` 22/22; `phi-regalloc.orb` green).** `NOT` now asks
+the same question as the conditional jumps and the ternary:
+
+```cpp
+ACCESS_REG_DST(instr) = BOOL_TO_OBOOL(!IsTrue(value));
+```
+
+So `!3` is `false` and `if !n` with `n = 3` skips its branch, while `!""`,
+`![]`, `!{}`, `!b""` and `!` of an error Result are `true`.
+
+The rest of the path was checked as the original report asked:
+
+- the compiler emits `NOT` in one other place, `!=` and `!==`, lowered to
+  `NOT(EQ)` (`irbuilder.cpp:762`). `EQ` yields a boolean, so the result is
+  unchanged; checked live, and `ortest/typehooks/tostr_hooks.orb` (including
+  `neq hook` and `eq non-bool traps`) stays green;
+- `optimizer.cpp` folds nothing involving `!`;
+- every `!` in the stdlib (`repl.orb`, `io/io.orb`, `io/bufio`, `io/file.orb`,
+  `regex/pattern.orb`) applies to a boolean (`is`, comparisons, `closed`,
+  `failed`, `matched()`), on which the old and the new opcode agree, so no
+  stdlib code relied on the defect.
+
+`ortest/net/02` and `04` are back to `check_true(name, !!r)` for a Result;
+while this was open they had to spell it `r ? true : false`.
+
+<details><summary>Original report</summary>
 
 The `NOT` opcode decides truth on its own instead of asking `IsTrue`, which is
 what the conditional jumps (`JF`, `JT`) and the ternary use:
@@ -46,6 +74,7 @@ Then check whether the compiler folds or rewrites `!` anywhere else (constant
 folding in `optimizer.cpp`, `if !x` lowered to a jump), and audit the stdlib
 for code written around the current behaviour.
 
+</details>
 ---
 
 ## VM-005 — Integer literals of 2^32 and more load as their value shifted right by 32

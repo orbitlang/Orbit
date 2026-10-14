@@ -977,9 +977,7 @@ CATCH_FINALLY:
             TARGET_OP(NOT) {
                 auto *value = (OObject *) ACCESS_REG_SRC(instr);
 
-                ACCESS_REG_DST(instr) = ((MSize) value == kOddBallTRUE || O_IS_OBJECT(value))
-                                            ? kOddBallFALSE
-                                            : kOddBallTRUE;
+                ACCESS_REG_DST(instr) = BOOL_TO_OBOOL(!IsTrue(value));
 
                 DISPATCH;
             }

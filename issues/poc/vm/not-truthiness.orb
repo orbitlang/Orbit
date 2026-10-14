@@ -1,0 +1,53 @@
+# PoC not-truthiness — VM-006: `!x` must be the opposite of what `if x` decides.
+# The NOT opcode treats every heap object as true, while the conditional jumps
+# ask IsTrue, which lets a type say it is false: an empty String, an empty
+# container, a Result holding an error. On those `!x` and `if x` agree that the
+# value is true, which is a contradiction.
+#
+# Each check compares `!x` with `x ? false : true`, so the two sides go through
+# the two different paths.
+#
+# A runtime test: prints "ALL TESTS PASSED" only when every check matches.
+# EXPECT: contains: ALL TESTS PASSED
+
+import "io"
+
+var fails = 0
+
+func check(name, value) {
+    got := !value
+    expected := value ? false : true
+
+    if got == expected {
+        io.print("OK   ", name)
+    } else {
+        io.print("FAIL ", name, "-- !x is", got, "but x is", expected ? "false" : "true", "to a conditional")
+        fails += 1
+    }
+}
+
+func boom() { panic Error(@X, "no") }
+func fine() { return 1 }
+
+# values that are not heap objects: both paths already agree
+check("nil", nil)
+check("false", false)
+check("true", true)
+check("zero", 0)
+check("one", 1)
+
+# heap objects whose type has an opinion
+check("an empty String", "")
+check("a String", "x")
+check("empty Bytes", b"")
+check("an empty List", [])
+check("a List", [1])
+check("an empty Dict", {})
+check("an error Result", trap boom())
+check("an ok Result", trap fine())
+
+if fails == 0 {
+    io.print("ALL TESTS PASSED")
+} else {
+    io.print(fails, "TEST(S) FAILED")
+}
