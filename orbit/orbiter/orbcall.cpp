@@ -164,9 +164,19 @@ void ArgumentBinder::LoadCurrying() {
 }
 
 CallResult ArgumentBinder::Bind(Fiber *fiber, Function *&func, const U16 p_count, const CallMode mode) {
+    HList synthesized_rest;
+
+    bool rest_edited = false;
+    bool currying_pushed = false;
+
+    auto total_args = p_count;
+
     auto *callee = ResolveCallable(fiber->isolate, func);
-    if (callee == nullptr)
+    if (callee == nullptr) {
+        fiber->vm.regs.SP.reg -= (total_args * sizeof(void *));
+
         return CallResult::ERROR;
+    }
 
     func = callee;
 
@@ -180,8 +190,11 @@ CallResult ArgumentBinder::Bind(Fiber *fiber, Function *&func, const U16 p_count
     this->call_mode_is_nargs = ENUMBITMASK_ISTRUE(mode, CallMode::NARGS);
     this->call_mode_is_rest = ENUMBITMASK_ISTRUE(mode, CallMode::REST_ARG);
 
-    if (ENUMBITMASK_ISTRUE(mode, CallMode::METHOD) && !this->NormalizeMethod())
+    if (ENUMBITMASK_ISTRUE(mode, CallMode::METHOD) && !this->NormalizeMethod()) {
+        fiber->vm.regs.SP.reg -= (this->stack_args * sizeof(void *));
+
         return CallResult::ERROR;
+    }
 
     // The bottom of the region the CALLEE owns, fixed before anything pushes:
     // NormalizeMethod may already have dropped a receiver the caller keeps, and
@@ -194,15 +207,10 @@ CallResult ArgumentBinder::Bind(Fiber *fiber, Function *&func, const U16 p_count
                  nullptr,
                  MemoryError::Details[MemoryError::Reason::STACK]);
 
-        return CallResult::ERROR;
+        goto ERROR;
     }
 
-    HList synthesized_rest;
-
-    bool rest_edited = false;
-    bool currying_pushed = false;
-
-    auto total_args = this->stack_args;
+    total_args = this->stack_args;
     if (this->func->currying != nullptr)
         total_args += this->func->currying->length;
 
@@ -215,7 +223,7 @@ CallResult ArgumentBinder::Bind(Fiber *fiber, Function *&func, const U16 p_count
                              TypeError::Reason::INIT_NO_CURRY,
                              this->func->shared->owner_type->name);
 
-                return CallResult::ERROR;
+                goto ERROR;
             }
 
             this->fiber->vm.regs.RR.reg = (PtrSize) FunctionNew(this->func, this->ArgsBase(), this->stack_args).get();
@@ -231,7 +239,7 @@ CallResult ArgumentBinder::Bind(Fiber *fiber, Function *&func, const U16 p_count
                          (int) this->func->shared->arity,
                          (int) (this->stack_args + this->rest->length));
 
-            return CallResult::ERROR;
+            goto ERROR;
         }
 
         if (this->func->currying != nullptr) {
@@ -249,7 +257,7 @@ CallResult ArgumentBinder::Bind(Fiber *fiber, Function *&func, const U16 p_count
         if (this->func->shared->IsVariadic()) {
             synthesized_rest = ListNew(fiber->isolate, this->rest->length - args_diff);
             if (!synthesized_rest)
-                return CallResult::ERROR;
+                goto ERROR;
 
             ListExtend(synthesized_rest.get(), this->rest->objects + args_diff, this->rest->length - args_diff);
 
@@ -282,7 +290,7 @@ CallResult ArgumentBinder::Bind(Fiber *fiber, Function *&func, const U16 p_count
                          (int) this->func->shared->arity,
                          (int) total_args);
 
-            return CallResult::ERROR;
+            goto ERROR;
         }
 
         if (!rest_edited) {
@@ -294,7 +302,7 @@ CallResult ArgumentBinder::Bind(Fiber *fiber, Function *&func, const U16 p_count
 
             synthesized_rest = ListNew(fiber->isolate, excess_on_stack + rest_len);
             if (!synthesized_rest)
-                return CallResult::ERROR;
+                goto ERROR;
 
             if (excess_on_stack > 0) {
                 ListExtend(synthesized_rest.get(), this->StackTop(excess_on_stack), excess_on_stack);
@@ -313,15 +321,20 @@ CallResult ArgumentBinder::Bind(Fiber *fiber, Function *&func, const U16 p_count
     }
 
     if (!this->ExpandDefaultArgs())
-        return CallResult::ERROR;
+        goto ERROR;
 
     if (!this->FinalizeRestArgs())
-        return CallResult::ERROR;
+        goto ERROR;
 
     if (!this->FinalizeKwargs())
-        return CallResult::ERROR;
+        goto ERROR;
 
     return CallResult::OK;
+
+ERROR:
+    fiber->vm.regs.SP.reg = this->base_sp;
+
+    return CallResult::ERROR;
 }
 
 Function *orbiter::ResolveCallable(Isolate *isolate, Function *func) {

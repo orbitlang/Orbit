@@ -6,6 +6,82 @@
 
 ---
 
+## VM-008 — `PUSHIF` reads a type object as a Function
+**Severity:** High (latent: undefined read, effect depends on a type's name) · **Status:** OPEN · **Location:** `orbit/orbiter/vm.cpp:1423` (`TARGET_OP(PUSHIF)`)
+
+A method-style call (`obj.attr(...)`) first runs `PUSHIF METHOD`, which pushes
+the receiver only when the target is a method:
+
+```cpp
+if (ResolveCallable(fiber->isolate, (Function *) target) == nullptr)
+    goto ERROR;
+
+if (!((Function *) target)->shared->IsMethod()) {
+    DISPATCH;
+}
+```
+
+`ResolveCallable` accepts two kinds of target: a Function, and a type object
+with a constructor, which it resolves to that constructor. The test that
+follows ignores the resolution and casts the original target. For a type object
+`((Function *) target)->shared` is `TypeInfo::name`, a `const char *`, so
+`IsMethod()` reads the `kind` flags of a `FuncShared` that is really the bytes
+around the type's name, and pushes the receiver or not according to them.
+
+**PoC:** none. The one shape checked, a builtin type reached through a selector
+(`h.t(len=4)` with `h.t = Bytes`), happens to read a clear bit and behaves; the
+outcome depends on the bytes near each name, so a reproducer would test the
+memory layout, not the defect. Found *by inspection* while verifying VM-004.
+
+**Fix (suggested, not tried):** test the resolved callable,
+`auto *callee = ResolveCallable(...); ... if (!callee->shared->IsMethod())`.
+Then check that a constructor reached through a selector binds its receiver the
+way `Bind`'s `NormalizeMethod` expects.
+
+---
+
+## VM-007 — Past about 510,000 frames, every call reallocates the whole stack
+**Severity:** High (a bottomless recursion hangs for minutes instead of raising a stack overflow) · **Status:** OPEN · **Location:** `orbit/orbiter/vmstack.cpp:36` (`VMStack::Grow`)
+
+```cpp
+auto increment = std::max(size, (this->capacity * kStackGrowthFactor) / kStackGrowthScalingFactor);
+
+if (this->capacity + increment >= this->limit) {
+    increment = size;
+    ...
+}
+```
+
+The stack grows by 30% a step until that step would cross `kMaxStackSize`
+(32 MB). From then on each growth is exactly the bytes asked for, so every new
+frame in the last stretch before the limit reallocates, and may copy, a stack
+of about 31 MB. A recursion through that stretch is quadratic:
+
+| depth (one-argument function) | time |
+|---|---|
+| 400,000 | 0.19 s |
+| 510,000 | 0.19 s |
+| 520,000 | > 15 s (CPU-bound) |
+| bottomless | minutes before the stack overflow error |
+
+The limit itself is right, and so is the error at the end of it; only the way
+there is wrong. The hang in the original VM-004 report was this stretch,
+reached by leaked argument slots instead of by frames.
+
+**PoC:** [`poc/vm/stack-growth-near-limit.orb`](poc/vm/stack-growth-near-limit.orb)
+*(confirmed live: times out after 30 s)*. It is expected to fail until this is
+fixed, per GUIDE §11.
+
+**Fix (verified by probe, not applied):** when the 30% step would cross the
+limit, grow to just below the limit in one step:
+`increment = std::max(size, this->limit - this->capacity - 1)`. With that
+change the PoC prints `ALL TESTS PASSED` in 0.6 s, a bottomless recursion
+raises `OOMError: stack overflow` in 0.2 s, and the deepest recursion that fits
+is unchanged (520,000 frames complete, 530,000 overflow); the change was then
+reverted.
+
+---
+
 ## VM-006 — `!x` disagrees with `if x`: integers always negate to true, falsy objects to false
 **Severity:** High (silent wrong boolean, and wrong branch in `if !x`) · **Status:** FIXED (2026-10-14) · **Location:** `orbit/orbiter/vm.cpp:980` (`TARGET_OP(NOT)`)
 
@@ -156,7 +232,61 @@ PASSED`; the change was then reverted, so the finding stays OPEN.
 ---
 
 ## VM-004 — A call that fails while binding its arguments leaves them on the stack
-**Severity:** High (silent wrong arguments in the enclosing call; unbounded stack growth that ends in a hang) · **Status:** OPEN · **Location:** `orbit/orbiter/vm.cpp:1099` (`TARGET_OP(CALL)`, `binder.Bind` → `goto ERROR`)
+**Severity:** High (silent wrong arguments in the enclosing call; unbounded stack growth that ends in a hang) · **Status:** FIXED (2026-10-14) · **Location:** `orbit/orbiter/orbcall.cpp:166` (`ArgumentBinder::Bind`)
+
+**Fix verified (regression PoC `poc/vm/trap-bind-error-argpos.orb` — prints
+`ALL TESTS PASSED`, 20 of 20 in 1.1 s; `ortest` 22/22; PoC gate 38/38;
+`phi-regalloc.orb` green).** `Bind` now leaves the stack as it found it on every
+way out that refuses the call:
+
+- the shared failure path ends at an `ERROR:` label that restores
+  `SP = base_sp` (`orbcall.cpp:334`). Every refusal after `base_sp` is fixed goes
+  through it: stack exhausted, constructor without its arguments, too many
+  arguments (both checks, with and without a spread or curried arguments),
+  allocation of the synthesized rest list, named arguments without defaults,
+  keyword arguments refused;
+- the two refusals before `base_sp` exists pop what the caller pushed
+  themselves: a callee that is not callable (`p_count` slots, `orbcall.cpp:175`)
+  and a method given a receiver of the wrong type (`stack_args` slots).
+
+The count of the first is right because of how the compiler emits a method
+call: the receiver is pushed by `PUSHIF METHOD` only when the target is a
+method, and `PUSHIF` itself refuses a target that is not callable before any
+argument of the call is pushed. So `Bind` meets a callee that is not callable
+only in a call that is not a method call, where `p_count` is exactly what was
+pushed. `SPWN`, `DEFER` and `EvalSync` (`runtime.cpp`) bind through the same
+function and only `goto ERROR` afterwards, so they get the restore without
+popping twice.
+
+The PoC was rewritten to cover every refusal reachable from Orbit code, not
+only the one first reported:
+
+- **in argument position**, fourteen shapes: too many arguments (last and
+  middle position, many), not callable, wrong receiver, constructor without
+  its arguments, too many on a curried function, a spread longer than the gap
+  and one past the arity, a named argument without defaults, keyword arguments
+  refused (alone, and after defaults and a rest list were pushed), a native
+  callee, and a `spawn`; plus two controls;
+- **in a loop**, in the frame of the `trap` (a frame that returns resets SP
+  anyway and would hide the leak), 150,000 refusals of 32 arguments for each of
+  the three ways out (the `ERROR` label, not callable, wrong receiver) and for a
+  `defer` caught by a `try` in the same frame. A leak that size is past the
+  32 MB stack several times over.
+
+Run against the binder as it was before the fix, all fourteen shapes fail and
+the loops hang; with the fix, everything passes. The one refusal not covered is
+a stack exhausted inside `Bind` (`EnsureStack`): reaching it takes a recursion
+past the point where [VM-007](#vm-007--past-about-510000-frames-every-call-reallocates-the-whole-stack)
+makes every frame reallocate the stack.
+
+The hang in the original report was this leak meeting VM-007: leftovers piled
+up until the stack entered the region where it grows one request at a time.
+
+Two defects were found while writing the new PoC and are filed on their own:
+[VM-008](#vm-008--pushif-reads-a-type-object-as-a-function) and
+[IR-010](ir.md).
+
+<details><summary>Original report</summary>
 
 When `ArgumentBinder::Bind` refuses a call, too many positional arguments
 being the case reproduced, the arguments already pushed for that call stay on
@@ -293,6 +423,7 @@ construct does not even compile.
 
 </details>
 
+</details>
 ---
 
 ## VM-002 — A deferred control transfer in argument position overwrites the enclosing call's arguments

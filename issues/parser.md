@@ -434,6 +434,10 @@ message (34/35 family).
 - `ParseForInStatement` passes `constexpr Position end{}` as the var-decl
   start → `{0,0,0}` start location.
 
+
+**Note (2026-10-14):** no longer only cosmetic. The try block's scope covering
+the `catch` keyword makes the IR builder enter it for the catch body, and any
+block nested there aborts the compiler: see [IR-010](ir.md).
 ---
 
 ## PARSE-020 — Meaningless access modifiers silently accepted

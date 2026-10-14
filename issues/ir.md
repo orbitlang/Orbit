@@ -1,10 +1,64 @@
 # ir — bug report
 
 **Component:** `orbit/liftoff/ir` (instruction.h, linearscan.cpp, irbuilder.cpp) · **ID prefix:** `IR`
-**PoCs:** [`poc/ir/`](poc/ir/) · **Last reviewed:** 2026-10-05
+**PoCs:** [`poc/ir/`](poc/ir/) · **Last reviewed:** 2026-10-14
 **Status:** OPEN · PARTIAL · FIXED · WONTFIX — see [GUIDE.md](GUIDE.md).
 
 > Imported 2026-06-15 from `orbit/liftoff/ir/KNOWN_ISSUES.md` (ISSUE-001 → IR-001).
+
+---
+
+## IR-010 — Any block nested in a `catch` body aborts the compiler
+**Severity:** High (compile-time abort on valid source; release: the `assert` is gone and `Generate` returns an empty handle) · **Status:** OPEN · **Location:** `orbit/liftoff/ir/irbuilder.cpp:1722` (`visitTryBlock`, catch body) → `:838` (`visitBranch`); root cause `orbit/liftoff/parser/parser.cpp` (`ParseBlock`, PARSE-019)
+
+An `if` or a `for` inside a `catch` body is enough:
+
+```orb
+try {
+    boom()
+} catch e {
+    if e.kind == @X { r = 1 }
+}
+```
+
+```
+Assertion failed: (false), function Generate, file irbuilder.cpp, line 2074.
+```
+
+It happens in a function and at module scope, with or without a name for the
+error. The same blocks inside `try` and inside `finally` compile, and the same
+catch body without the nested block compiles too, so the nested scope is the
+whole trigger.
+
+**Cause, confirmed under lldb.** `visitBranch` throws `SymbolTableException`
+because `EnterNestedScope` cannot find the `if`'s scope (offset 61 in the
+reproducer) from the active scope, and the active scope is `[11, 46)`: the
+**try** block's, not the catch's. The catch body is entered with
+`EnterNestedScope(catch_block->loc.start.offset)`, the offset of the `catch`
+keyword (40), and the try block's scope reaches past it: `ParseBlock` closes a
+scope with `LeaveNestedScope(TKCUR_END.offset)` after it has consumed the `}`,
+so the range ends with the token *after* the block, which for a `try` is the
+`catch` keyword itself. That is [PARSE-019](parser.md), which was filed as
+Info; this is the first observed consequence. The walk in `EnterNestedScope`
+picks the first child that contains the offset, the try scope, and the catch
+scope, where the `if`'s scope lives, is never entered. Symbols declared in the
+catch body still resolve, because lookups fall back to the parent; only a
+nested scope exposes it.
+
+**Found** while writing the `defer` loop of the VM-004 PoC: a `catch` that
+counted refusals with an `if` aborted the compile. That PoC keeps its catch
+body flat.
+
+**PoC:** [`poc/ir/ir-010-block-in-catch.orb`](poc/ir/ir-010-block-in-catch.orb)
+*(confirmed live: aborts the compiler; the same file with the nested blocks
+flattened prints `ALL TESTS PASSED`)*. It is expected to fail until this is
+fixed, per GUIDE §11.
+
+**Fix (suggested, not tried):** end a block's scope at the `}` it consumed
+rather than at the token after it (PARSE-019), which keeps sibling scopes from
+overlapping. Fixing only the catch, by entering its scope through something
+other than an offset that a neighbour may cover, would leave the overlap in
+place for every other pair of adjacent blocks.
 
 ---
 

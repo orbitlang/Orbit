@@ -1,0 +1,75 @@
+# PoC ir-010-block-in-catch — IR-010: a block nested in a `catch` body (an
+# `if`, a `for`) must compile. Today any one of them aborts the compiler with
+# `Assertion failed: (false), function Generate, file irbuilder.cpp`, in a
+# function or at module scope, with or without a name for the error.
+#
+# The same blocks inside `try` and `finally` compile, which is the control
+# below. Root cause: the scope of the `try` block ends at an offset past the
+# `catch` keyword (PARSE-019), so the IR builder enters the try's scope for the
+# catch body, and a nested scope that belongs to the catch is not found there.
+#
+# A runtime test: prints "ALL TESTS PASSED" only when every check matches.
+# EXPECT: contains: ALL TESTS PASSED
+
+import "io"
+
+var fails = 0
+
+func check(name, got, expected) {
+    if got == expected {
+        io.print("OK   ", name)
+    } else {
+        io.print("FAIL ", name, "-- got:", got, "expected:", expected)
+        fails += 1
+    }
+}
+
+func boom() { panic Error(@X, "no") }
+
+func if_in_catch() {
+    var r = 0
+    try {
+        boom()
+    } catch e {
+        if e.kind == @X { r = 1 }
+    }
+    return r
+}
+
+func for_in_catch() {
+    var r = 0
+    try {
+        boom()
+    } catch {
+        for var x in [1, 2, 3] { r += x }
+    }
+    return r
+}
+
+func controls() {
+    var r = 0
+    try {
+        if true { r += 1 }
+    } finally {
+        if true { r += 1 }
+    }
+    return r
+}
+
+check("if in a catch", if_in_catch(), 1)
+check("for in a catch without a name", for_in_catch(), 6)
+check("control: if in try and finally", controls(), 2)
+
+var at_module = 0
+try {
+    boom()
+} catch err {
+    if err.kind == @X { at_module = 1 }
+}
+check("if in a catch at module scope", at_module, 1)
+
+if fails == 0 {
+    io.print("ALL TESTS PASSED")
+} else {
+    io.print(fails, "TEST(S) FAILED")
+}

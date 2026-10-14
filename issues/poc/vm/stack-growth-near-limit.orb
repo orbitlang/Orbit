@@ -1,0 +1,51 @@
+# PoC stack-growth-near-limit — VM-007: a recursion with no bottom must end in
+# a stack overflow error at once, not after minutes of reallocation.
+#
+# VMStack::Grow enlarges the stack by 30% a step until that step would cross
+# the 32 MB limit; from then on it grows by exactly the bytes asked for, so each
+# frame in the last stretch before the limit reallocates, and may copy, a stack
+# of about 31 MB. For a one-argument function on ARM64 macOS the limit is about
+# 525,000 frames and the slow stretch the last 10,000 of them: 510,000 frames
+# take 0.2 s, 520,000 do not finish in 15 s, and the overflow error a bottomless
+# recursion should raise takes minutes to arrive.
+#
+# Expected to fail by timing out until the fix lands (the runner gives each PoC
+# 30 s). The first check is a control well below the limit.
+#
+# A runtime test: prints "ALL TESTS PASSED" only when every check matches.
+# EXPECT: contains: ALL TESTS PASSED
+
+import "io"
+
+var fails = 0
+
+func check(name, got, expected) {
+    if got == expected {
+        io.print("OK   ", name)
+    } else {
+        io.print("FAIL ", name, "-- got:", got, "expected:", expected)
+        fails += 1
+    }
+}
+
+func deep(n) {
+    if n == 300000 { return n }
+    return deep(n + 1)
+}
+
+func bottomless(n) {
+    return bottomless(n + 1)
+}
+
+check("control: a deep recursion below the limit", deep(0), 300000)
+
+r := trap bottomless(0)
+err := r.unwrap_err()
+check("a bottomless recursion is an error", err.kind, @OOMError)
+check("and says why", err.reason.find("stack overflow") >= 0, true)
+
+if fails == 0 {
+    io.print("ALL TESTS PASSED")
+} else {
+    io.print(fails, "TEST(S) FAILED")
+}

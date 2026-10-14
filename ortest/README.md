@@ -46,7 +46,8 @@ kwargs, methods, currying), `gc/` (the `gc` module: forced collection and
 instance reclaim), `typehooks/` (str/eq user hooks), `operators/` (language operators, e.g.
 `01_is` for the `is` type test), `generators/` (yield/resume: params, locals
 and a held heap object surviving a GC between two yields), `net/` (sockets:
-address parsing, the raw `TCPHandle`, and the stdlib `TCPListener`/`TCPStream`),
+address parsing, the raw `TCPHandle` and `UDPHandle`, and the stdlib
+`TCPListener`/`TCPStream`),
 `exceptions/` (leaving a try/catch/finally abruptly with break, continue or
 return).
 Add a new subsystem as a new subfolder — the runner picks it up automatically.

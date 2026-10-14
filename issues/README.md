@@ -22,12 +22,12 @@ are resolved.
 | [sbuffer.md](sbuffer.md) | `orbit/liftoff/scanner/sbuffer` | 0/3 |
 | [utf8-stringbuilder.md](utf8-stringbuilder.md) | `orbit/orbiter/datatype/stringbuilder` (UTF-8 codec) | 1/4 |
 | [parser.md](parser.md) | `orbit/liftoff/parser` (parser.cpp, context.h, ast.h) | 13/25 |
-| [ir.md](ir.md) | `orbit/liftoff/ir` (linearscan, intervalspiller, irbuilder, instruction) | 1/9 |
+| [ir.md](ir.md) | `orbit/liftoff/ir` (linearscan, intervalspiller, irbuilder, instruction) | 2/10 |
 | [compiler.md](compiler.md) | `orbit/liftoff/compiler.cpp` (compile driver) | 1/1 |
 | [ctbuilder.md](ctbuilder.md) | `orbit/orbiter/datatype/ctbuilder.cpp` (class types, blueprint, hook dispatch) | 0/1 |
 | [function.md](function.md) | `orbit/orbiter/datatype/function.cpp` (Function objects, `FuncShared` lifetime) | 1/1 |
 | [oobject.md](oobject.md) | `orbit/orbiter/datatype/oobject.cpp` (object/type core, type lifecycle) | 1/1 |
-| [vm.md](vm.md) | `orbit/orbiter` (interpreter: trap unwind, registers) | 0/3 |
+| [vm.md](vm.md) | `orbit/orbiter` (interpreter: trap unwind, registers, stack) | 2/8 |
 | [number.md](number.md) | `orbit/orbiter/datatype/number.cpp` (integer literals & representation) | 2/2 |
 
 ## Top priorities (High severity, quick wins)
@@ -39,6 +39,12 @@ are resolved.
 - ~~**IR-004** — a derived class resolved its own members through its superclass (wrong `init`, shadowed properties)~~ *(FIXED 2026-07-17, `LoadFromObjectProp` searches a class's own chain first)*
 - ~~**IR-005** — instantiating a class three levels deep in an inheritance chain hangs the interpreter~~ *(FIXED 2026-07-22, `super` resolves from the enclosing class, not the receiver's runtime type)*
 - ~~**IR-006** — two calls passing rest/named/keyword arguments collide on R10/R11/R12 (crash or silently wrong rest list)~~ *(FIXED 2026-07-24, the value is copied into the protocol register right before the call instead of the producer being pinned to it)*
+- **IR-010** — any block (`if`, `for`) nested in a `catch` body aborts the compiler; root cause PARSE-019 (scope ranges overlap the next token)
+- **VM-007** — past about 510,000 frames every call reallocates the whole stack, so a bottomless recursion hangs for minutes before its overflow error; fix verified by probe
+- **VM-008** — `PUSHIF` reads a type object as a Function when deciding whether to push the receiver (latent, by inspection)
+- ~~**VM-006** — `!x` disagrees with `if x`: `NOT` treats every integer as false and every heap object as true, so `if !3` is taken~~ *(FIXED 2026-10-14, `NOT` asks `IsTrue` like the conditional jumps)*
+- ~~**VM-005** — integer literals of 2^32 and more load as their value shifted right by 32 (`LDIMM` shifts a 32-bit chunk by 32 or 48); one-line fix verified by probe~~ *(FIXED 2026-10-14, the `LDIMM` chunk is widened to 64 bits before it is shifted)*
+- ~~**VM-004** — a call refused while binding its arguments leaves them on the stack: wrong arguments under `trap` in argument position, unbounded stack growth in a loop~~ *(FIXED 2026-10-14, `Bind` restores SP on every refusal; PoC covers fourteen shapes and four loops)*
 - **COMP-001** — any syntax error in file mode asserts in `Compile` instead of reporting (release: UB on empty AST)
 - **IR-007** — a blank (`_`) read as a value asserts instead of reporting (release: null deref); blocked by COMP-001
 - ~~**VM-002** — a deferred control transfer in argument position overwrites the enclosing call's arguments~~ *(FIXED 2026-10-01, the call frame prologue now records the SP to restore instead of every exit path counting slots to pop)*
@@ -68,3 +74,9 @@ are resolved.
 - 2026-09-30: `orbit/orbiter` (exception stack) — `ExceptionContext` gained an explicit `SP`, which closes the trapped-panic half of VM-002 (PoC's `trap` checks all green); the `return`-through-`finally` half is still open, so VM-002 is PARTIAL and its PoC now covers both. Confirmed by building HEAD and the working tree and running the same reproducers: VM-003 (`break` out of a `try`) and IR-008 (`continue` out of a `try`) predate that work and are filed as their own findings. The now-unwritten `ret_pops` field is noted under VM-002.
 - 2026-10-01: `orbit/orbiter` (call frames) — the frame prologue now carries the stack pointer to restore (`Context | SP | BP | IP`), sourced from `ArgumentBinder::ArgsBaseSP()`, and `Return` no longer pops by count. VM-002 FIXED as a result, both halves, with the PoC green and `ortest` 19/19. Two latent discrepancies surfaced on the way and are now documented on `ArgsBaseSP`: the binder pushes slots it does not count (rest list, kwargs dict), and drops the receiver of a method-mode call whose callee is not a method. VM-003 and IR-008 (`break` and `continue` out of a `try`) are untouched and still open.
 - 2026-10-05: `orbit/liftoff/ir` + `orbit/orbiter` (abrupt exit from try/catch/finally) — VM-003 and IR-008 FIXED: they were one defect, an unlabelled `break`/`continue` target resolving to the enclosing TCF block instead of the loop, which also meant no `TSPA` was ever emitted. Two more fixed in the same pass: `TEND`'s propagation re-entered its own finally (infinite loop), and `ExPtrContainer::SetAction` OR-ed actions together instead of replacing them. IR-009 filed and FIXED, found through this work but unrelated to it. New `ortest/exceptions/` topic plus two regression PoCs; both fixes mutation-tested.
+- 2026-10-13: `orbit/orbiter` (call binding) — VM-004 filed, confirmed live with [`poc/vm/trap-bind-error-argpos.orb`](poc/vm/trap-bind-error-argpos.orb). Found while writing the `ortest/net/` UDP suites. **The PoC gate is 35/36 until this is fixed**, per GUIDE §11.
+- 2026-10-13: `orbit/orbiter` (`LDIMM` decoding) — VM-005 filed, confirmed live with [`poc/vm/ldimm-wide-literal.orb`](poc/vm/ldimm-wide-literal.orb) and the cause confirmed by probing the fix (then reverted). Found while testing `::orbit::net` bind flags. The PoC gate is 35/37 until VM-004 and VM-005 are fixed.
+- 2026-10-13: `orbit/orbiter` (`NOT`) — VM-006 filed, confirmed live with [`poc/vm/not-truthiness.orb`](poc/vm/not-truthiness.orb). Found while writing the IPV6ONLY checks of `ortest/net/`. The PoC gate is 35/38 until VM-004, VM-005 and VM-006 are fixed.
+- 2026-10-14: `orbit/orbiter` (`LDIMM` decoding) — VM-005 FIXED: the chunk is widened to `MSize` before the shift. PoC 7/7, `ortest` 22/22, SMI-range edges checked by hand; `ortest/net/02` and `04` use the `0x100000001` literal again. The PoC gate is 36/38 until VM-004 and VM-006 are fixed.
+- 2026-10-14: `orbit/orbiter` (`NOT`) — VM-006 FIXED: `NOT` is `!IsTrue(value)`. PoC 13/13, `ortest` 22/22; `!=`/`!==` (lowered to `NOT(EQ)`) and every `!` in the stdlib checked, none relied on the defect. The PoC gate is 37/38 until VM-004 is fixed.
+- 2026-10-14: `orbit/orbiter` (call binding, stack) + `orbit/liftoff/ir` (catch scopes) — VM-004 FIXED: `Bind` restores SP on every refusal, verified with a PoC rewritten to cover every refusal reachable from Orbit (fourteen shapes in argument position, four same-frame loops), which fails on the old binder and passes on the new one. Filed on the way: VM-007 (stack growth near the limit, fix verified by probe), VM-008 (`PUSHIF` type confusion, by inspection), IR-010 (blocks in a catch abort the compiler, root cause PARSE-019, confirmed under lldb). The PoC gate is 38/40 until VM-007 and IR-010 are fixed.
