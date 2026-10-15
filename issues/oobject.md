@@ -1,9 +1,133 @@
 # oobject — bug report
 
 **Component:** `orbit/orbiter/datatype/oobject.cpp` (object/type core: `MakeType`, property tables, type lifecycle) · **ID prefix:** `OBJ`
-**PoCs:** none (not observable through the available tooling, see below) · **Last reviewed:** 2026-09-23
+**PoCs:** [`poc/oobject/`](poc/oobject/) (OBJ-002, OBJ-003; OBJ-001 has none, see below) · **Last reviewed:** 2026-10-15
 **Status:** OPEN · PARTIAL · FIXED · WONTFIX — see [GUIDE.md](GUIDE.md).
 
+---
+
+## OBJ-003 — `true` and `false` are named 'nil' wherever a type is printed
+**Severity:** Low (wrong diagnostics and display) · **Status:** OPEN · **Location:** `orbit/orbiter/datatype/oobject.cpp:315` (`GetTypeName`), `orbit/orbiter/isolate.cpp:94` (primitive types)
+
+`GetTypeName` files every value that is neither a heap object nor an SMI under
+the `BOOLEAN` primitive:
+
+```cpp
+if (!O_IS_OBJECT(object)) {
+    if (O_IS_SMI(object))
+        type = isolate->primitive[(int) InstanceType::NUMBER];
+    else
+        type = isolate->primitive[(int) InstanceType::BOOLEAN];
+}
+...
+memory::MemoryCopy(out_str, type != nullptr ? type->name : "nil", min_length);
+```
+
+No type is registered for `BOOLEAN` (`isolate.cpp` initializes no such
+primitive), so `type` is null and the name falls back to `"nil"`. `nil` takes
+the same road, since it is not a heap object either, and comes out right only
+by that accident. Every message built from `GetTypeName` inherits it:
+
+```
+io.print(trap t())        # t returns true  -> ok<nil>
+true + 1                  # operator '+' not supported between 'nil' and 'Number'
+false.nope                # 'nil' object has no property 'nope'
+```
+
+The value itself is fine: `unwrap()` returns `true`. Only its name is wrong.
+
+**Found** while checking VM-009: a recursion returning `true` through a `trap`
+printed `ok<nil>`.
+
+**PoC:** [`poc/oobject/obj-003.orb`](poc/oobject/obj-003.orb) *(confirmed live:
+4 of 6 checks fail; the two about `nil` pass)*. It asks only that a boolean is
+not called 'nil' and that `nil` still is, so it does not fix the new name in
+advance.
+
+**Fix (suggested, not tried):** give booleans a name of their own, either a
+registered `BOOLEAN` primitive or a dedicated branch in `GetTypeName`, and tell
+`nil` apart explicitly (`O_IS_NIL`) instead of through the null fallback.
+
+---
+
+## OBJ-002 — `GetTypeName` writes past the caller's buffer when a type name is long
+**Severity:** High (stack buffer overflow on an everyday error path) · **Status:** FIXED (2026-10-15) · **Location:** `orbit/orbiter/datatype/oobject.cpp:336` (`GetTypeName`)
+
+**Fix verified (regression PoC `poc/oobject/obj-002.orb` — prints `ALL TESTS
+PASSED`, 5 of 5; `ortest` 22/22; PoC gate unchanged apart from the open
+findings; `phi-regalloc.orb` green).** The copy now leaves room for the
+terminator:
+
+```cpp
+const auto min_length = std::min(length, out_size - 1);
+```
+
+Checked by hand at 23, 24 and 25 characters and at 44: no abort at any length,
+in an error message or in a printed Result. Two things the change could have
+broken were checked across every caller: none passes an `out_size` of 0, where
+`out_size - 1` would wrap (all pass `sizeof` of an array), and none uses the
+return value, which is still the full length of the name and not the number of
+bytes copied.
+
+What remains is by design of the fix, not a defect: a name longer than 23
+characters is cut short in messages, `'ConnectionPoolManagerFo'` for
+`ConnectionPoolManagerForTheWholeApplication`. A larger buffer at the
+error-message call sites, or formatting straight from `type->name`, would show
+it whole.
+
+<details><summary>Original report</summary>
+
+```cpp
+if (out_str != nullptr) {
+    const auto min_length = std::min(length, out_size);
+
+    memory::MemoryCopy(out_str, type != nullptr ? type->name : "nil", min_length);
+
+    out_str[min_length] = '\0';
+}
+```
+
+When the name is as long as the buffer or longer, `min_length` is `out_size`
+and the terminator lands at `out_str[out_size]`, one byte past the end. Almost
+every caller passes a `char[24]`: `ErrorSetWithObjType` (`error.cpp:365`),
+which builds most of the runtime's `TypeError`s, `ResultToString`, the three
+hook dispatchers in `ctbuilder.cpp`, and others across `oops.cpp`, `vm.cpp`,
+`pcheck.cpp`, `stringformatter.cpp`, `iterator.cpp`, `future.cpp` and
+`native/prepare.cpp`.
+
+So a class whose name has 24 characters or more turns the most ordinary error
+about one of its instances into a stack buffer overflow. With a 23-character
+name all of these work; with 24:
+
+```
+x := new A23456789012345678901234()
+x + 1          # SIGABRT
+x()            # SIGABRT
+x.nope         # SIGABRT
+io.print(trap new A23456789012345678901234())   # SIGABRT
+```
+
+Under lldb the abort is `__stack_chk_fail` in `ResultToString`: the stack
+protector of a debug build catches the write. A build without the protector
+corrupts the byte after the buffer and carries on. Names that long are not
+exotic (`ConnectionPoolManagerForTheWholeApplication`, or simply
+`HttpConnectionPoolManager` at 25).
+
+**Found** while looking into OBJ-003, in the same function.
+
+**PoC:** [`poc/oobject/obj-002.orb`](poc/oobject/obj-002.orb) *(confirmed live:
+SIGABRT at the first check)*. It asks only that the program survives and that
+the name shows up in full or cut short, so it accepts either kind of fix. It is
+expected to fail until this is fixed, per GUIDE §11.
+
+**Fix (verified by probe, not applied):** leave room for the terminator,
+`std::min(length, out_size - 1)`. With that change the PoC prints `ALL TESTS
+PASSED`; the change was then reverted. Names are then cut at 23 characters in
+messages, so a larger buffer at the error-message call sites, or formatting
+the name straight from `type->name` where the length is known, is worth
+considering as well.
+
+</details>
 ---
 
 ## OBJ-001 — A collected TypeInfo frees nothing: no type destructor, `aux.dtor` never runs

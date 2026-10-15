@@ -26,8 +26,8 @@ are resolved.
 | [compiler.md](compiler.md) | `orbit/liftoff/compiler.cpp` (compile driver) | 1/1 |
 | [ctbuilder.md](ctbuilder.md) | `orbit/orbiter/datatype/ctbuilder.cpp` (class types, blueprint, hook dispatch) | 0/1 |
 | [function.md](function.md) | `orbit/orbiter/datatype/function.cpp` (Function objects, `FuncShared` lifetime) | 1/1 |
-| [oobject.md](oobject.md) | `orbit/orbiter/datatype/oobject.cpp` (object/type core, type lifecycle) | 1/1 |
-| [vm.md](vm.md) | `orbit/orbiter` (interpreter: trap unwind, registers, stack) | 1/8 |
+| [oobject.md](oobject.md) | `orbit/orbiter/datatype/oobject.cpp` (object/type core, type lifecycle, type names) | 2/3 |
+| [vm.md](vm.md) | `orbit/orbiter` (interpreter: trap unwind, registers, stack) | 1/9 |
 | [number.md](number.md) | `orbit/orbiter/datatype/number.cpp` (integer literals & representation) | 2/2 |
 
 ## Top priorities (High severity, quick wins)
@@ -40,7 +40,9 @@ are resolved.
 - ~~**IR-005** — instantiating a class three levels deep in an inheritance chain hangs the interpreter~~ *(FIXED 2026-07-22, `super` resolves from the enclosing class, not the receiver's runtime type)*
 - ~~**IR-006** — two calls passing rest/named/keyword arguments collide on R10/R11/R12 (crash or silently wrong rest list)~~ *(FIXED 2026-07-24, the value is copied into the protocol register right before the call instead of the producer being pinned to it)*
 - **IR-010** — any block (`if`, `for`) nested in a `catch` body aborts the compiler; root cause PARSE-019 (scope ranges overlap the next token)
-- **VM-007** — past about 510,000 frames every call reallocates the whole stack, so a bottomless recursion hangs for minutes before its overflow error; fix verified by probe
+- ~~**OBJ-002** — `GetTypeName` writes its NUL one byte past a `char[24]`: any type error on an instance of a class named with 24+ characters aborts (stack overflow)~~ *(FIXED 2026-10-15, the copy leaves room for the terminator; names past 23 characters are cut short)*
+- **VM-009** — a `try`/`trap` context keeps an absolute address into the VM stack, which `realloc` moves: a `trap` in every frame of a recursion ~1,000 deep segfaults
+- ~~**VM-007** — past about 510,000 frames every call reallocates the whole stack, so a bottomless recursion hangs for minutes before its overflow error; fix verified by probe~~ *(FIXED 2026-10-15, the last growth takes everything up to the limit in one step)*
 - ~~**VM-008** — `PUSHIF` reads a type object as a Function when deciding whether to push the receiver (latent, by inspection)~~ *(FIXED 2026-10-15, `PUSHIF` asks the resolved constructor; confirmed live on `Error`)*
 - ~~**VM-006** — `!x` disagrees with `if x`: `NOT` treats every integer as false and every heap object as true, so `if !3` is taken~~ *(FIXED 2026-10-14, `NOT` asks `IsTrue` like the conditional jumps)*
 - ~~**VM-005** — integer literals of 2^32 and more load as their value shifted right by 32 (`LDIMM` shifts a 32-bit chunk by 32 or 48); one-line fix verified by probe~~ *(FIXED 2026-10-14, the `LDIMM` chunk is widened to 64 bits before it is shifted)*
@@ -81,3 +83,6 @@ are resolved.
 - 2026-10-14: `orbit/orbiter` (`NOT`) — VM-006 FIXED: `NOT` is `!IsTrue(value)`. PoC 13/13, `ortest` 22/22; `!=`/`!==` (lowered to `NOT(EQ)`) and every `!` in the stdlib checked, none relied on the defect. The PoC gate is 37/38 until VM-004 is fixed.
 - 2026-10-14: `orbit/orbiter` (call binding, stack) + `orbit/liftoff/ir` (catch scopes) — VM-004 FIXED: `Bind` restores SP on every refusal, verified with a PoC rewritten to cover every refusal reachable from Orbit (fourteen shapes in argument position, four same-frame loops), which fails on the old binder and passes on the new one. Filed on the way: VM-007 (stack growth near the limit, fix verified by probe), VM-008 (`PUSHIF` type confusion, by inspection), IR-010 (blocks in a catch abort the compiler, root cause PARSE-019, confirmed under lldb). The PoC gate is 38/40 until VM-007 and IR-010 are fixed.
 - 2026-10-15: `orbit/orbiter` (`PUSHIF`) — VM-008 FIXED: the method test uses the callable `ResolveCallable` returns. New PoC `poc/vm/pushif-type-target.orb` (every builtin type with a constructor, called through a selector) passes 11/11, and on the old code fails on `Error`, which confirms the defect live. The PoC gate is 39/41 until VM-007 and IR-010 are fixed.
+- 2026-10-15: `orbit/orbiter` (stack) — VM-007 FIXED: `Grow` takes the rest of the limit in one step; PoC passes in 1.2 s, maximum depth unchanged. VM-009 filed while checking it (exception contexts dangle after the stack moves; SIGSEGV confirmed live, CP outside the live buffer confirmed under lldb), unrelated to the fix. The PoC gate is 40/42 until IR-010 and VM-009 are fixed.
+- 2026-10-15: `orbit/orbiter/datatype/oobject.cpp` (`GetTypeName`) — OBJ-003 filed (booleans named 'nil' in Results and error messages, no BOOLEAN primitive) and, in the same function, OBJ-002 (off-by-one NUL past the caller's buffer, SIGABRT via `__stack_chk_fail` with a 24-character class name; fix verified by probe). New PoC directory `poc/oobject/`. The PoC gate is 40/44 until IR-010, VM-009, OBJ-002 and OBJ-003 are fixed.
+- 2026-10-15: `orbit/orbiter/datatype/oobject.cpp` (`GetTypeName`) — OBJ-002 FIXED: `std::min(length, out_size - 1)`. PoC 5/5, no abort at any name length; every caller checked for a zero size and for use of the return value. The PoC gate is 41/44 until IR-010, VM-009 and OBJ-003 are fixed.

@@ -327,13 +327,13 @@ U32 orbiter::datatype::GetTypeName(const Isolate *isolate, const OObject *object
             type = (TypeInfo *) object;
     }
 
-    auto length = (U32) 3; // 'nil'
+    U32 length = 3; // 'nil'
 
     if (type != nullptr)
         length = strlen(type->name);
 
     if (out_str != nullptr) {
-        const auto min_length = std::min(length, out_size);
+        const auto min_length = std::min(length, out_size - 1);
 
         memory::MemoryCopy(out_str, type != nullptr ? type->name : "nil", min_length);
 

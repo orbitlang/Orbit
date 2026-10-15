@@ -1,0 +1,63 @@
+# PoC OBJ-002 — GetTypeName writes its terminating NUL one byte past the buffer
+# when a type name is as long as the buffer or longer. Most callers pass a
+# char[24], ErrorSetWithObjType among them, so a class named with 24 characters
+# or more turns the most ordinary error about one of its instances into a stack
+# buffer overflow: a debug build stops in __stack_chk_fail (SIGABRT), a build
+# without the stack protector corrupts the stack silently.
+#
+# Each check below raises or formats something that names the type, and only
+# asks that the program survive and that the name shows up, in full or cut
+# short: either is a reasonable fix, overrunning the buffer is not.
+#
+# A runtime test: prints "ALL TESTS PASSED" only when every check matches.
+# EXPECT: contains: ALL TESTS PASSED
+
+import "io"
+
+var fails = 0
+
+func check(name, got, expected) {
+    if got == expected {
+        io.print("OK   ", name)
+    } else {
+        io.print("FAIL ", name, "-- got:", got, "expected:", expected)
+        fails += 1
+    }
+}
+
+# 24 characters: the shortest name that overruns a char[24]
+class A23456789012345678901234 {
+    pub init() { }
+}
+
+# well past it
+class ConnectionPoolManagerForTheWholeApplication {
+    pub init() { }
+}
+
+# the stable part of either name, which a truncation keeps
+kShort := "A2345678901234567890"
+kLong := "ConnectionPoolManager"
+
+x := new A23456789012345678901234()
+y := new ConnectionPoolManagerForTheWholeApplication()
+
+r := trap (x + 1)
+check("operator on a 24-character type", r.unwrap_err().reason.find(kShort) >= 0, true)
+
+r = trap x()
+check("call on a 24-character type", r.unwrap_err().reason.find(kShort) >= 0, true)
+
+r = trap x.nope
+check("attribute of a 24-character type", r.unwrap_err().reason.find(kShort) >= 0, true)
+
+r = trap y()
+check("call on a 44-character type", r.unwrap_err().reason.find(kLong) >= 0, true)
+
+check("a Result holding it, as a string", tostr(trap new A23456789012345678901234()).find("ok<" + kShort) >= 0, true)
+
+if fails == 0 {
+    io.print("ALL TESTS PASSED")
+} else {
+    io.print(fails, "TEST(S) FAILED")
+}
