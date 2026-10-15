@@ -27,7 +27,7 @@ are resolved.
 | [ctbuilder.md](ctbuilder.md) | `orbit/orbiter/datatype/ctbuilder.cpp` (class types, blueprint, hook dispatch) | 0/1 |
 | [function.md](function.md) | `orbit/orbiter/datatype/function.cpp` (Function objects, `FuncShared` lifetime) | 1/1 |
 | [oobject.md](oobject.md) | `orbit/orbiter/datatype/oobject.cpp` (object/type core, type lifecycle) | 1/1 |
-| [vm.md](vm.md) | `orbit/orbiter` (interpreter: trap unwind, registers, stack) | 2/8 |
+| [vm.md](vm.md) | `orbit/orbiter` (interpreter: trap unwind, registers, stack) | 1/8 |
 | [number.md](number.md) | `orbit/orbiter/datatype/number.cpp` (integer literals & representation) | 2/2 |
 
 ## Top priorities (High severity, quick wins)
@@ -41,7 +41,7 @@ are resolved.
 - ~~**IR-006** — two calls passing rest/named/keyword arguments collide on R10/R11/R12 (crash or silently wrong rest list)~~ *(FIXED 2026-07-24, the value is copied into the protocol register right before the call instead of the producer being pinned to it)*
 - **IR-010** — any block (`if`, `for`) nested in a `catch` body aborts the compiler; root cause PARSE-019 (scope ranges overlap the next token)
 - **VM-007** — past about 510,000 frames every call reallocates the whole stack, so a bottomless recursion hangs for minutes before its overflow error; fix verified by probe
-- **VM-008** — `PUSHIF` reads a type object as a Function when deciding whether to push the receiver (latent, by inspection)
+- ~~**VM-008** — `PUSHIF` reads a type object as a Function when deciding whether to push the receiver (latent, by inspection)~~ *(FIXED 2026-10-15, `PUSHIF` asks the resolved constructor; confirmed live on `Error`)*
 - ~~**VM-006** — `!x` disagrees with `if x`: `NOT` treats every integer as false and every heap object as true, so `if !3` is taken~~ *(FIXED 2026-10-14, `NOT` asks `IsTrue` like the conditional jumps)*
 - ~~**VM-005** — integer literals of 2^32 and more load as their value shifted right by 32 (`LDIMM` shifts a 32-bit chunk by 32 or 48); one-line fix verified by probe~~ *(FIXED 2026-10-14, the `LDIMM` chunk is widened to 64 bits before it is shifted)*
 - ~~**VM-004** — a call refused while binding its arguments leaves them on the stack: wrong arguments under `trap` in argument position, unbounded stack growth in a loop~~ *(FIXED 2026-10-14, `Bind` restores SP on every refusal; PoC covers fourteen shapes and four loops)*
@@ -80,3 +80,4 @@ are resolved.
 - 2026-10-14: `orbit/orbiter` (`LDIMM` decoding) — VM-005 FIXED: the chunk is widened to `MSize` before the shift. PoC 7/7, `ortest` 22/22, SMI-range edges checked by hand; `ortest/net/02` and `04` use the `0x100000001` literal again. The PoC gate is 36/38 until VM-004 and VM-006 are fixed.
 - 2026-10-14: `orbit/orbiter` (`NOT`) — VM-006 FIXED: `NOT` is `!IsTrue(value)`. PoC 13/13, `ortest` 22/22; `!=`/`!==` (lowered to `NOT(EQ)`) and every `!` in the stdlib checked, none relied on the defect. The PoC gate is 37/38 until VM-004 is fixed.
 - 2026-10-14: `orbit/orbiter` (call binding, stack) + `orbit/liftoff/ir` (catch scopes) — VM-004 FIXED: `Bind` restores SP on every refusal, verified with a PoC rewritten to cover every refusal reachable from Orbit (fourteen shapes in argument position, four same-frame loops), which fails on the old binder and passes on the new one. Filed on the way: VM-007 (stack growth near the limit, fix verified by probe), VM-008 (`PUSHIF` type confusion, by inspection), IR-010 (blocks in a catch abort the compiler, root cause PARSE-019, confirmed under lldb). The PoC gate is 38/40 until VM-007 and IR-010 are fixed.
+- 2026-10-15: `orbit/orbiter` (`PUSHIF`) — VM-008 FIXED: the method test uses the callable `ResolveCallable` returns. New PoC `poc/vm/pushif-type-target.orb` (every builtin type with a constructor, called through a selector) passes 11/11, and on the old code fails on `Error`, which confirms the defect live. The PoC gate is 39/41 until VM-007 and IR-010 are fixed.

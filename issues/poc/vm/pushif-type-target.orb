@@ -1,0 +1,75 @@
+# PoC pushif-type-target — VM-008: a type object called through a selector
+# (`obj.attr(...)` where `attr` is a type) must be called through its
+# constructor, with the same arguments a direct call passes.
+#
+# PUSHIF METHOD decides whether to push the receiver by asking the callee
+# whether it is a method. It used to ask the original target, cast to a
+# Function, so for a type object it read TypeInfo::name as Function::shared and
+# took the method flag from whatever bytes lay near the type's name. It now asks
+# the constructor the target resolves to, which is never a method: every type
+# constructor is a plain function, so no receiver is pushed and Bind drops the
+# slot it reserved for one.
+#
+# Every builtin type with a constructor is called here both ways. The value the
+# selector call returns must equal the one the direct call returns, or for the
+# types without a useful equality be of that type, and the arguments must
+# arrive where the direct call puts them.
+#
+# A runtime test: prints "ALL TESTS PASSED" only when every check matches.
+# EXPECT: contains: ALL TESTS PASSED
+
+import "io"
+
+var fails = 0
+
+func check(name, got, expected) {
+    if got == expected {
+        io.print("OK   ", name)
+    } else {
+        io.print("FAIL ", name, "-- got:", got, "expected:", expected)
+        fails += 1
+    }
+}
+
+class Holder {
+    pub var t
+
+    pub init(t) {
+        self.t = t
+    }
+}
+
+bytes := new Holder(Bytes)
+check("Bytes, keyword argument", bytes.t(len=4), Bytes(len=4))
+check("Bytes, two keyword arguments", bytes.t(len=2, cap=8), Bytes(len=2, cap=8))
+
+set := new Holder(Set)
+s_sel := set.t(base=[3, 1, 3])
+check("Set, keyword argument", (1 in s_sel, 3 in s_sel, 2 in s_sel), (true, true, false))
+check("Set, no argument", 1 in set.t(), false)
+
+err := new Holder(Error)
+e := err.t(@Kind, "reason", details=7)
+check("Error, kind", e.kind, @Kind)
+check("Error, reason", e.reason, "reason")
+check("Error, details", e.details, 7)
+
+chan := new Holder(Chan)
+check("Chan", chan.t(capacity=2) is Chan, true)
+
+ctx := new Holder(Context)
+check("Context", ctx.t() is Context, true)
+
+# a refusal through the same path leaves the enclosing call alone (VM-004)
+func seen_mid(a, b, c) { return (a, c) }
+check("refused through a selector", seen_mid("A", trap err.t(), "C"), ("A", "C"))
+
+notype := new Holder(5)
+r := trap notype.t(1)
+check("a selector to something not callable", r.unwrap_err().kind, @TypeError)
+
+if fails == 0 {
+    io.print("ALL TESTS PASSED")
+} else {
+    io.print(fails, "TEST(S) FAILED")
+}

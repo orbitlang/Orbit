@@ -1,13 +1,50 @@
 # vm — bug report
 
 **Component:** `orbit/orbiter` (interpreter: trap/panic unwind, register file) · **ID prefix:** `VM`
-**PoCs:** [`poc/vm/`](poc/vm/) · **Last reviewed:** 2026-10-14
+**PoCs:** [`poc/vm/`](poc/vm/) · **Last reviewed:** 2026-10-15
 **Status:** OPEN · PARTIAL · FIXED · WONTFIX — see [GUIDE.md](GUIDE.md).
 
 ---
 
 ## VM-008 — `PUSHIF` reads a type object as a Function
-**Severity:** High (latent: undefined read, effect depends on a type's name) · **Status:** OPEN · **Location:** `orbit/orbiter/vm.cpp:1423` (`TARGET_OP(PUSHIF)`)
+**Severity:** High (undefined read; confirmed live as a corrupted call) · **Status:** FIXED (2026-10-15) · **Location:** `orbit/orbiter/vm.cpp:1417` (`TARGET_OP(PUSHIF)`)
+
+**Fix verified (new regression PoC `poc/vm/pushif-type-target.orb` — prints
+`ALL TESTS PASSED`, 11 of 11; `ortest` 22/22; PoC gate unchanged apart from
+the two open findings; `phi-regalloc.orb` green).** `PUSHIF` keeps what
+`ResolveCallable` returns and asks it, not the original target:
+
+```cpp
+auto target = (Function *) ACCESS_REG_SRC(instr);
+...
+target = ResolveCallable(fiber->isolate, target);
+if (target == nullptr)
+    goto ERROR;
+
+if (!target->shared->IsMethod()) {
+    DISPATCH;
+}
+```
+
+The other half of the original question, whether a constructor reached
+through a selector binds its receiver the way `Bind` expects, holds: the five
+builtin types with a constructor (`Bytes`, `Set`, `Error`, `Chan`, `Context`)
+all build it with `RUNTIME_FUNCTION`, never as a method, and an Orbit class has
+no constructor of its own to be called through (`K(1)` is refused). So `PUSHIF`
+pushes no receiver, `NormalizeMethod` drops the slot reserved for one, and the
+two agree.
+
+The PoC calls each of those five types through a selector and compares the
+result with a direct call, with keyword arguments, several arguments and none;
+it also checks a refused constructor call in argument position and a selector
+to something that is not callable. **The defect is now confirmed live, not
+only by inspection**: run against the old `PUSHIF`, the bytes near the name
+`Error` read as a method flag, the receiver was pushed, and the refused call
+`seen_mid("A", trap err.t(), "C")` handed the callee the `Holder` object in
+place of `"A"`. The other checks happened to pass there, which is why the first
+probe (`Bytes`) found nothing.
+
+<details><summary>Original report</summary>
 
 A method-style call (`obj.attr(...)`) first runs `PUSHIF METHOD`, which pushes
 the receiver only when the target is a method:
@@ -38,6 +75,7 @@ memory layout, not the defect. Found *by inspection* while verifying VM-004.
 Then check that a constructor reached through a selector binds its receiver the
 way `Bind`'s `NormalizeMethod` expects.
 
+</details>
 ---
 
 ## VM-007 — Past about 510,000 frames, every call reallocates the whole stack

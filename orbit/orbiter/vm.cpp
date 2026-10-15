@@ -1416,14 +1416,15 @@ CATCH_FINALLY:
             }
             TARGET_OP(PUSHIF) {
                 const auto value = (OObject *) ACCESS_REG_DST(instr);
-                const auto target = (OObject *) ACCESS_REG_SRC(instr);
-                const auto flags = (PushIfFlags) (instr & 0xFu);
+                auto target = (Function *) ACCESS_REG_SRC(instr);
 
+                const auto flags = (PushIfFlags) (instr & 0xFu);
                 if (flags == PushIfFlags::METHOD) {
-                    if (ResolveCallable(fiber->isolate, (Function *) target) == nullptr)
+                    target = ResolveCallable(fiber->isolate, target);
+                    if (target == nullptr)
                         goto ERROR;
 
-                    if (!((Function *) target)->shared->IsMethod()) {
+                    if (!target->shared->IsMethod()) {
                         DISPATCH;
                     }
                 } else {
