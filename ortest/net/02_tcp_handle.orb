@@ -106,14 +106,13 @@ check_refused("v6 address on a v4 socket", r, @OSError)
 mismatch.close()
 
 # bind refuses a flag it does not know rather than ignore it, and a value
-# wider than a flag word is not cut down into one it does know (computed rather
-# than written as a literal: literals of 2^32 and up are miscompiled, VM-005)
+# wider than a flag word is not cut down into one it does know
 flagged := raw.TCPHandle.open(@INET)
 r = trap flagged.bind(net.parse("127.0.0.1", 0), flags=0x40000000)
 check_error("an unknown bind flag", r, @ValueError, "invalid bind flags")
 r = trap flagged.bind(net.parse("127.0.0.1", 0), flags=-1)
 check_error("a negative bind flag", r, @ValueError, "invalid bind flags")
-r = trap flagged.bind(net.parse("127.0.0.1", 0), flags=0xFFFFFFFF + 2)
+r = trap flagged.bind(net.parse("127.0.0.1", 0), flags=0x100000001)
 check_error("a flag wider than 32 bits", r, @ValueError, "invalid bind flags")
 # IPV6ONLY is for an IPv6 address, and keeps the IPv4 side of the port free for
 # a socket of its own. Only that side is pinned down: what happens without the
@@ -128,7 +127,7 @@ _, v6_port, _ := v6only.local_addr().unpack()
 
 v4_side := raw.TCPHandle.open(@INET)
 r = trap v4_side.bind(net.parse("0.0.0.0", v6_port))
-check_true("the IPv4 side of the port stays free", r ? true : false)
+check_true("the IPv4 side of the port stays free", !!r)
 v4_side.close()
 v6only.close()
 flagged.close()

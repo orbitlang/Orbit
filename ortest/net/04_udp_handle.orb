@@ -1,0 +1,228 @@
+# Net suite 04 -- UDPHandle, the raw datagram socket the engine exposes.
+#
+# The handle mirrors gyro one call at a time, like TCPHandle does. This suite
+# covers the part of its life that involves no datagram: opening a socket of
+# each family, binding it, fixing its peer, reading both addresses back, and
+# closing it. Every one of those answers at once, so nothing here parks.
+#
+# What is pinned down here:
+#
+#   - open yields a descriptor at once, for either internet family, and two
+#     handles never share one;
+#   - the family is checked before anything is opened: @UNIX is a family the
+#     module knows but UDP does not speak, which is a different refusal from a
+#     family nobody knows;
+#   - an unbound socket reports the wildcard address and port 0, and has no
+#     peer until it is connected;
+#   - connect is a setting, not a handshake: it needs nobody at the other end,
+#     gives the socket a local port, and can be repeated to change the peer;
+#   - the family of an address is enforced against the socket's;
+#   - a closed handle answers every call with a bad descriptor, and closing
+#     twice is not an error.
+#
+# Ports are always 0, read back with local_addr: a suite that picks its own
+# port fails on the machine that happens to be using it.
+#
+# EXPECT: contains: ALL TESTS PASSED
+
+import "io"
+import "net"
+import "runtime"
+import "::orbit::net" as raw
+
+var fails = 0
+
+# Refusals are captured in assignment position first, the house style of the
+# net suites.
+var r = nil
+
+func check(name, got, expected) {
+    if got == expected {
+        io.print("OK   ", name)
+    } else {
+        io.print("FAIL ", name, "-- got:", got, "expected:", expected)
+        fails += 1
+    }
+}
+
+func check_true(name, got) {
+    check(name, got, true)
+}
+
+# Some refusals come straight from the operating system, and the sentence it
+# gives differs between them. Check that the call was refused, and as what,
+# without pinning words we do not own.
+func check_refused(name, res, want_kind) {
+    if res {
+        io.print("FAIL ", name, "-- expected a panic, got:", res.unwrap())
+        fails += 1
+        return
+    }
+
+    check(name, res.unwrap_err().kind, want_kind)
+}
+
+func check_error(name, res, want_kind, want_substr) {
+    if res {
+        io.print("FAIL ", name, "-- expected a panic, got:", res.unwrap())
+        fails += 1
+        return
+    }
+
+    err := res.unwrap_err()
+
+    if err.kind == want_kind && err.reason.find(want_substr) >= 0 {
+        io.print("OK   ", name)
+    } else {
+        io.print("FAIL ", name, "-- got:", err.kind, err.reason,
+                 "expected:", want_kind, want_substr)
+        fails += 1
+    }
+}
+
+# ---------------------------------------------------------------------------
+# Opening: a descriptor exists at once, for either family
+# ---------------------------------------------------------------------------
+v4 := raw.UDPHandle.open(@INET)
+check_true("open @INET yields a descriptor", v4.fileno() >= 0)
+
+v6 := raw.UDPHandle.open(@INET6)
+check_true("open @INET6 yields a descriptor", v6.fileno() >= 0)
+
+check_true("two handles, two descriptors", v4.fileno() != v6.fileno())
+check("fileno is stable", v4.fileno(), v4.fileno())
+
+check_true("the type is the module's", v4 is raw.UDPHandle)
+check_true("and not the TCP one", !(v4 is raw.TCPHandle))
+
+# ---------------------------------------------------------------------------
+# Refusals: checked before any socket is opened
+# ---------------------------------------------------------------------------
+if runtime.os != "windows" {
+    r = trap raw.UDPHandle.open(@UNIX)
+    check_error("@UNIX is not a UDP family", r, @ValueError, "a UDP socket is @INET or @INET6")
+}
+
+r = trap raw.UDPHandle.open(@NOPE)
+check_error("unknown family", r, @ValueError, "unknown address family")
+
+r = trap raw.UDPHandle.open("INET")
+check_error("family must be an atom", r, @TypeError, "family")
+
+# ---------------------------------------------------------------------------
+# Before binding: no address of its own, and no peer
+# ---------------------------------------------------------------------------
+host_u, port_u, family_u := v4.local_addr().unpack()
+check("unbound host", host_u, "0.0.0.0")
+check("unbound port", port_u, 0)
+check("unbound family", family_u, @INET)
+
+r = trap v4.peer_addr()
+check_error("unbound has no peer", r, @OSError, "getpeername")
+
+# the family is an assertion the system enforces, not a hint
+r = trap v4.bind(net.parse("::1", 0, family=@INET6))
+check_refused("bind a v6 address on a v4 socket", r, @OSError)
+r = trap v4.connect(net.parse("::1", 9, family=@INET6))
+check_refused("connect a v4 socket to a v6 peer", r, @OSError)
+
+r = trap v4.bind(5)
+check_error("bind takes a Sockaddr", r, @TypeError, "addr")
+
+# bind refuses a flag it does not know rather than ignore it, and a value
+# wider than a flag word is not cut down into one it does know
+r = trap v4.bind(net.parse("127.0.0.1", 0), flags=0x40000000)
+check_error("an unknown bind flag", r, @ValueError, "invalid bind flags")
+r = trap v4.bind(net.parse("127.0.0.1", 0), flags=-1)
+check_error("a negative bind flag", r, @ValueError, "invalid bind flags")
+r = trap v4.bind(net.parse("127.0.0.1", 0), flags=0x100000001)
+check_error("a flag wider than 32 bits", r, @ValueError, "invalid bind flags")
+
+# IPV6ONLY is for an IPv6 address, and keeps the IPv4 side of the port free for
+# a socket of its own. Only that side is pinned down: what happens without the
+# flag is the system's default, and the systems disagree.
+r = trap v4.bind(net.parse("127.0.0.1", 0), flags=raw.IPV6ONLY)
+check_error("IPV6ONLY on an IPv4 address", r, @ValueError, "IPV6ONLY")
+
+v6only := raw.UDPHandle.open(@INET6)
+check("IPV6ONLY binds an IPv6 address",
+      v6only.bind(net.parse("::", 0, family=@INET6), flags=raw.IPV6ONLY | raw.REUSEADDR), v6only)
+_, v6_port, _ := v6only.local_addr().unpack()
+
+v4_side := raw.UDPHandle.open(@INET)
+r = trap v4_side.bind(net.parse("0.0.0.0", v6_port))
+check_true("the IPv4 side of the port stays free", !!r)
+v4_side.close()
+v6only.close()
+r = trap v4.connect("127.0.0.1")
+check_error("connect takes a Sockaddr", r, @TypeError, "addr")
+
+# ---------------------------------------------------------------------------
+# Binding
+# ---------------------------------------------------------------------------
+check("bind returns self", v4.bind(net.parse("127.0.0.1", 0), flags=raw.REUSEADDR), v4)
+
+host_b, port_b, family_b := v4.local_addr().unpack()
+check("bound host", host_b, "127.0.0.1")
+check_true("bound port chosen by the system", port_b > 0)
+check("bound family", family_b, @INET)
+
+r = trap v4.bind(net.parse("127.0.0.1", 0))
+check_refused("a socket is bound once", r, @OSError)
+
+# without REUSEADDR on both sides, the address belongs to the first one
+taker := raw.UDPHandle.open(@INET)
+r = trap taker.bind(net.parse("127.0.0.1", port_b))
+check_refused("an address in use is refused", r, @OSError)
+taker.close()
+
+# ---------------------------------------------------------------------------
+# Connecting: a setting, answered at once
+# ---------------------------------------------------------------------------
+cli := raw.UDPHandle.open(@INET)
+check("connect returns self", cli.connect(net.parse("127.0.0.1", port_b)), cli)
+check("peer is the address given", cli.peer_addr().unpack(), ("127.0.0.1", port_b, @INET))
+
+# connecting picked a local port, without any bind
+host_c, port_c, _ := cli.local_addr().unpack()
+check("connect gives a local host", host_c, "127.0.0.1")
+check_true("connect gives a local port", port_c > 0 && port_c != port_b)
+
+# nobody needs to be listening: port 9 (discard) is almost never served
+cli.connect(net.parse("127.0.0.1", 9))
+check("connect again changes the peer", cli.peer_addr().unpack(), ("127.0.0.1", 9, @INET))
+check("and keeps the local address", cli.local_addr().unpack(), (host_c, port_c, @INET))
+cli.close()
+
+# the same for the other family
+cli6 := raw.UDPHandle.open(@INET6)
+cli6.connect(net.parse("::1", 9, family=@INET6))
+check("v6 peer", cli6.peer_addr().unpack(), ("::1", 9, @INET6))
+cli6.close()
+
+# ---------------------------------------------------------------------------
+# Closing
+# ---------------------------------------------------------------------------
+check("close returns nothing", v4.close(), nil)
+check("close again is a no-op", v4.close(), nil)
+
+r = trap v4.fileno()
+check_error("fileno after close", r, @OSError, "fileno")
+r = trap v4.local_addr()
+check_error("local_addr after close", r, @OSError, "local_addr")
+r = trap v4.peer_addr()
+check_error("peer_addr after close", r, @OSError, "peer_addr")
+r = trap v4.bind(net.parse("127.0.0.1", 0))
+check_error("bind after close", r, @OSError, "bind")
+r = trap v4.connect(net.parse("127.0.0.1", 9))
+check_error("connect after close", r, @OSError, "connect")
+
+# closing one handle leaves the other alone
+check_true("the other handle is still open", v6.fileno() >= 0)
+v6.close()
+
+if fails == 0 {
+    io.print("ALL TESTS PASSED")
+} else {
+    io.print(fails, "TEST(S) FAILED")
+}

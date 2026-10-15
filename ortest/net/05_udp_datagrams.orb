@@ -1,0 +1,298 @@
+# Net suite 05 -- UDPHandle moving datagrams: send, recv, recv_into.
+#
+# A datagram is not a piece of a stream, and every check here is one of the
+# ways the difference shows:
+#
+#   - boundaries are kept: two sends are two receives, never one merged read;
+#   - a datagram of length zero is a real datagram, sent and received like any
+#     other, and not an end of stream (UDP has none);
+#   - a datagram larger than the receive is an error, and it is gone: the next
+#     receive gets the datagram after it, not the rest of it;
+#   - every receive says who sent it, and a connected socket is a filter: it
+#     lets in only its peer, and is where the network's refusals are reported.
+#
+# Most of it runs in one fiber: send first, then receive. A datagram that has
+# left the sender has not always landed in the receiver's buffer yet, even over
+# loopback, so a receive may find it waiting or park until it arrives; either
+# way it gets that datagram, which is all the order needs. Two parts need more:
+# a receive that must start before anything is sent (another fiber sends a
+# little later, and the generous timeout is only there to fail the test rather
+# than hang it), and a refusal, which needs a port that is closed for real:
+# closing a handle is finished by the event loop, so the suite gives it a
+# moment before sending there.
+#
+# Ports are always 0, read back with local_addr.
+#
+# EXPECT: contains: ALL TESTS PASSED
+
+import "io"
+import "net"
+import "chrono"
+import "::orbit::net" as raw
+
+var fails = 0
+
+# Refusals are captured in assignment position first, the house style of the
+# net suites.
+var r = nil
+
+func check(name, got, expected) {
+    if got == expected {
+        io.print("OK   ", name)
+    } else {
+        io.print("FAIL ", name, "-- got:", got, "expected:", expected)
+        fails += 1
+    }
+}
+
+func check_true(name, got) {
+    check(name, got, true)
+}
+
+# Some refusals come straight from the operating system, and the sentence it
+# gives differs between them. Check that the call was refused, and as what,
+# without pinning words we do not own.
+func check_refused(name, res, want_kind) {
+    if res {
+        io.print("FAIL ", name, "-- expected a panic, got:", res.unwrap())
+        fails += 1
+        return
+    }
+
+    check(name, res.unwrap_err().kind, want_kind)
+}
+
+func check_error(name, res, want_kind, want_substr) {
+    if res {
+        io.print("FAIL ", name, "-- expected a panic, got:", res.unwrap())
+        fails += 1
+        return
+    }
+
+    err := res.unwrap_err()
+
+    if err.kind == want_kind && err.reason.find(want_substr) >= 0 {
+        io.print("OK   ", name)
+    } else {
+        io.print("FAIL ", name, "-- got:", err.kind, err.reason,
+                 "expected:", want_kind, want_substr)
+        fails += 1
+    }
+}
+
+# A Sockaddr compares by identity, so addresses are compared unpacked.
+srv := raw.UDPHandle.open(@INET).bind(net.parse("127.0.0.1", 0))
+srv_addr := srv.local_addr()
+
+cli := raw.UDPHandle.open(@INET).bind(net.parse("127.0.0.1", 0))
+cli_addr := cli.local_addr()
+
+# ---------------------------------------------------------------------------
+# One datagram, and who sent it
+# ---------------------------------------------------------------------------
+check("send returns the length", cli.send(b"hello", to=srv_addr), 5)
+
+data, from := srv.recv(64)
+check("recv returns the datagram", data, b"hello")
+check("recv says who sent it", from.unpack(), cli_addr.unpack())
+
+# the sender is an address like any other: it is where a reply goes
+srv.send(b"hi back", to=from)
+reply, reply_from := cli.recv(64)
+check("a reply reaches the sender", reply, b"hi back")
+check("and comes from the server", reply_from.unpack(), srv_addr.unpack())
+
+# ---------------------------------------------------------------------------
+# Boundaries
+# ---------------------------------------------------------------------------
+cli.send(b"a", to=srv_addr)
+cli.send(b"bc", to=srv_addr)
+cli.send(b"def", to=srv_addr)
+check("first datagram alone", srv.recv(64)[0], b"a")
+check("second datagram alone", srv.recv(64)[0], b"bc")
+check("third datagram alone", srv.recv(64)[0], b"def")
+
+# a String goes out as its bytes
+cli.send("héllo", to=srv_addr)
+check("a String is sent as bytes", srv.recv(64)[0], b"h\xc3\xa9llo")
+
+# offset and length pick the datagram out of a larger buffer
+check("send a slice", cli.send(b"0123456789", to=srv_addr, offset=2, length=3), 3)
+check("the slice is the datagram", srv.recv(64)[0], b"234")
+cli.send(b"0123456789", to=srv_addr, offset=7)
+check("offset alone sends the tail", srv.recv(64)[0], b"789")
+
+# a range over a String counts bytes, not characters
+cli.send("héllo", to=srv_addr, offset=1, length=2)
+check("a String range is in bytes", srv.recv(64)[0], b"\xc3\xa9")
+
+# an offset at the very end is an empty range, so an empty datagram
+check("offset at the end sends nothing", cli.send(b"abc", to=srv_addr, offset=3), 0)
+check("and the peer gets an empty datagram", srv.recv(64)[0], b"")
+
+# ---------------------------------------------------------------------------
+# Zero length: a datagram, not an end of stream
+# ---------------------------------------------------------------------------
+check("an empty datagram is sent", cli.send(b"", to=srv_addr), 0)
+empty, empty_from := srv.recv(64)
+check("an empty datagram is received", empty, b"")
+check("and has a sender", empty_from.unpack(), cli_addr.unpack())
+
+# and the socket goes on working after it
+cli.send(b"next", to=srv_addr)
+check("the datagram after an empty one", srv.recv(64)[0], b"next")
+
+# ---------------------------------------------------------------------------
+# Too large: an error, and the datagram is gone
+# ---------------------------------------------------------------------------
+cli.send(b"0123456789", to=srv_addr)
+cli.send(b"after", to=srv_addr)
+r = trap srv.recv(4)
+check_error("a datagram larger than the receive", r, @OSError, "message too long")
+check("the truncated datagram is gone", srv.recv(64)[0], b"after")
+
+cli.send(b"exactly", to=srv_addr)
+check("a datagram of exactly n bytes fits", srv.recv(7)[0], b"exactly")
+
+# ---------------------------------------------------------------------------
+# recv_into
+# ---------------------------------------------------------------------------
+buf := Bytes(len=8)
+cli.send(b"xyz", to=srv_addr)
+n, into_from := srv.recv_into(buf, 2, 6)
+check("recv_into returns the length", n, 3)
+check("recv_into says who sent it", into_from.unpack(), cli_addr.unpack())
+check("recv_into wrote at the offset", buf[2:5], b"xyz")
+check("recv_into left the head alone", buf[0:2], Bytes(len=2))
+check("recv_into left the tail alone", buf[5:8], Bytes(len=3))
+
+cli.send(b"", to=srv_addr)
+check("recv_into an empty datagram", srv.recv_into(buf, 0, 8)[0], 0)
+
+cli.send(b"0123456789", to=srv_addr)
+cli.send(b"ok", to=srv_addr)
+r = trap srv.recv_into(buf, 0, 4)
+check_error("recv_into a datagram too large", r, @OSError, "message too long")
+check("and it is gone too", srv.recv_into(buf, 0, 8)[0], 2)
+
+# ---------------------------------------------------------------------------
+# Nothing to receive
+# ---------------------------------------------------------------------------
+r = trap srv.recv(16, timeout=50)
+check_error("recv with nothing to take times out", r, @OSError, "timed out")
+r = trap srv.recv_into(buf, 0, 8, timeout=50)
+check_error("recv_into with nothing to take times out", r, @OSError, "timed out")
+
+# ---------------------------------------------------------------------------
+# Parking: the datagram arrives after the receive started waiting
+# ---------------------------------------------------------------------------
+func send_later(h, payload, to) {
+    chrono.sleep(50)
+    h.send(payload, to=to)
+}
+
+spawn send_later(cli, b"late", srv_addr)
+late, late_from := srv.recv(64, timeout=5000)
+check("a parked recv gets the datagram", late, b"late")
+check("and the sender", late_from.unpack(), cli_addr.unpack())
+
+spawn send_later(cli, b"later", srv_addr)
+parked := Bytes(len=8)
+n_parked, from_parked := srv.recv_into(parked, 1, 7, timeout=5000)
+check("a parked recv_into gets the length", n_parked, 5)
+check("and the sender of the parked recv_into", from_parked.unpack(), cli_addr.unpack())
+check("and the bytes at the offset", parked[1:6], b"later")
+
+# ---------------------------------------------------------------------------
+# A connected socket: the default destination, and a filter
+# ---------------------------------------------------------------------------
+peer := raw.UDPHandle.open(@INET).connect(srv_addr)
+peer_addr := peer.local_addr()
+
+check("send without a destination goes to the peer", peer.send(b"to peer"), 7)
+got_peer, got_peer_from := srv.recv(64)
+check("the peer received it", got_peer, b"to peer")
+check("from the connected socket", got_peer_from.unpack(), peer_addr.unpack())
+
+# a datagram from anybody but the peer is dropped before it is received; the
+# one from the peer, sent after it, is the next thing to arrive
+cli.send(b"stranger", to=peer_addr)
+srv.send(b"from peer", to=peer_addr)
+filtered, filtered_from := peer.recv(64)
+check("only the peer gets through", filtered, b"from peer")
+check("and it is the peer", filtered_from.unpack(), srv_addr.unpack())
+
+# an explicit destination still works on a connected socket where the system
+# allows it; it is not pinned here, since the systems disagree
+
+# ---------------------------------------------------------------------------
+# Refusals
+# ---------------------------------------------------------------------------
+lonely := raw.UDPHandle.open(@INET)
+r = trap lonely.send(b"x")
+check_error("no destination and no peer", r, @OSError, "not connected")
+
+r = trap lonely.send(b"x", to=net.parse("::1", 9, family=@INET6))
+check_refused("a v6 destination from a v4 socket", r, @OSError)
+lonely.close()
+
+r = trap cli.send(b"x", to="127.0.0.1")
+check_error("to must be a Sockaddr", r, @TypeError, "'to'")
+r = trap cli.send(b"x", srv_addr)
+check_error("to is keyword-only", r, @TypeError, "positional")
+r = trap cli.send(b"abc", to=srv_addr, offset=1, length=99)
+check_error("send past the end", r, @ValueError, "out of bounds")
+r = trap cli.send(b"abc", to=srv_addr, offset=4)
+check_error("offset past the end", r, @ValueError, "out of bounds")
+r = trap cli.send(b"abc", to=srv_addr, length=-1)
+check_error("negative send length", r, @ValueError, "negative")
+r = trap cli.send(b"abc", to=srv_addr, offset=-1)
+check_error("negative send offset", r, @ValueError, "negative")
+r = trap cli.send(b"abc", to=srv_addr, timeout=-1)
+check_error("negative send timeout", r, @ValueError, "timeout")
+
+r = trap srv.recv(0)
+check_error("recv of zero bytes", r, @ValueError, "cannot be zero")
+r = trap srv.recv(-1)
+check_error("negative recv", r, @ValueError, "negative")
+r = trap srv.recv(4, timeout=-1)
+check_error("negative recv timeout", r, @ValueError, "timeout")
+r = trap srv.recv_into(buf, 0, 0)
+check_error("recv_into of zero bytes", r, @ValueError, "cannot be zero")
+r = trap srv.recv_into(buf, -1, 4)
+check_error("negative recv_into offset", r, @ValueError, "negative")
+r = trap srv.recv_into(buf, 4, 8)
+check_refused("recv_into past the end of the buffer", r, @ValueError)
+
+# a connected socket hears about a peer nobody serves: the port is bound, read
+# back and closed, and given a moment for the event loop to finish the close
+gone := raw.UDPHandle.open(@INET).bind(net.parse("127.0.0.1", 0))
+gone_addr := gone.local_addr()
+gone.close()
+chrono.sleep(50)
+
+knocker := raw.UDPHandle.open(@INET).connect(gone_addr)
+knocker.send(b"anyone?")
+r = trap knocker.recv(16, timeout=5000)
+check_error("a refused peer is reported on recv", r, @OSError, "connection refused")
+knocker.close()
+
+# ---------------------------------------------------------------------------
+# Closed
+# ---------------------------------------------------------------------------
+cli.close()
+r = trap cli.send(b"x", to=srv_addr)
+check_error("send after close", r, @OSError, "send")
+r = trap cli.recv(4)
+check_error("recv after close", r, @OSError, "recv")
+r = trap cli.recv_into(buf, 0, 4)
+check_error("recv_into after close", r, @OSError, "recv_into")
+
+peer.close()
+srv.close()
+
+if fails == 0 {
+    io.print("ALL TESTS PASSED")
+} else {
+    io.print(fails, "TEST(S) FAILED")
+}
