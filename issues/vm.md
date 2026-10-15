@@ -6,6 +6,54 @@
 
 ---
 
+## VM-009 — An exception context dangles once the VM stack is reallocated
+**Severity:** High (use after free; crash, or silent reads of freed memory) · **Status:** OPEN · **Location:** `orbit/orbiter/vm.cpp:1962` (`TARGET_OP(TBGIN)`), `orbit/orbiter/vmstack.cpp:36` (`VMStack::Grow`), `orbit/orbiter/excstack.h` (`ExPtrContainer`)
+
+`TBGIN` builds a `try` or `trap` context inside the stack buffer and keeps its
+**absolute** address:
+
+```cpp
+const auto location = stack->stack + (regs->BP.reg + slot);
+const auto ctx = new(location)ExceptionContext((ExceptionContext *) regs->CP.reg, ...);
+regs->CP.reg = (PtrSize) ctx;
+```
+
+That address lives on in `CP` and in the `prev` link of every context opened
+after it. Growing the stack is a `realloc`, which may move the buffer, and it
+does: under lldb the first growth, from 16 KB to 21 KB, moved it from
+`0x7548c0c010` to `0x7549060010`. `SP` and `BP` are offsets into the buffer and
+follow it; `CP` and `prev` are pointers and keep pointing into the freed block.
+
+- **A context in every frame crashes.** A recursion that opens a `trap` in each
+  frame dies with `SIGSEGV` in `TEND` (`ExPtrContainer::action` on a null
+  context) at a depth between 500 and 1,000, the first growth of the stack.
+- **A single context above a deep recursion only seems to work.** `trap deep(0)`
+  over 50,000 frames returns the right value, but at its `TEND` under lldb
+  `CP` was 8 MB below the live buffer: it reads the freed block, which happens
+  to be intact.
+
+Not a regression from the VM-007 fix: the crash reproduces identically with the
+old `Grow`, since the stack has always grown by `realloc`.
+
+**Found** while extending the VM-004 PoC to its last uncovered refusal, a stack
+exhausted inside `Bind`: reaching it in the frame of a `trap` needs a `trap` in
+every frame of a deep recursion.
+
+**PoC:** [`poc/vm/exception-context-stack-move.orb`](poc/vm/exception-context-stack-move.orb)
+*(confirmed live: SIGSEGV at the third check; the same file at a depth of 300,
+where the stack never grows, prints `ALL TESTS PASSED`)*. It is expected to fail
+until this is fixed, per GUIDE §11.
+
+**Fix (suggested, not tried):** keep `CP` and the `prev` links as offsets from
+the stack base, as `SP` and `BP` already are, and turn them into pointers only
+where a context is read or written. Rebasing every live context inside `Grow`
+would also work, but it has to find all of them, saved frames included, and
+anything else that stores an absolute stack address would still be wrong.
+Worth auditing at the same time for other absolute pointers into the stack
+held across a call (the frame prologue saves `Context | SP | BP | IP`).
+
+---
+
 ## VM-008 — `PUSHIF` reads a type object as a Function
 **Severity:** High (undefined read; confirmed live as a corrupted call) · **Status:** FIXED (2026-10-15) · **Location:** `orbit/orbiter/vm.cpp:1417` (`TARGET_OP(PUSHIF)`)
 
@@ -79,7 +127,37 @@ way `Bind`'s `NormalizeMethod` expects.
 ---
 
 ## VM-007 — Past about 510,000 frames, every call reallocates the whole stack
-**Severity:** High (a bottomless recursion hangs for minutes instead of raising a stack overflow) · **Status:** OPEN · **Location:** `orbit/orbiter/vmstack.cpp:36` (`VMStack::Grow`)
+**Severity:** High (a bottomless recursion hangs for minutes instead of raising a stack overflow) · **Status:** FIXED (2026-10-15) · **Location:** `orbit/orbiter/vmstack.cpp:36` (`VMStack::Grow`)
+
+**Fix verified (regression PoC `poc/vm/stack-growth-near-limit.orb` — prints
+`ALL TESTS PASSED` in 1.2 s; `ortest` 22/22; PoC gate unchanged apart from the
+open IR-010; `phi-regalloc.orb` green).** When the 30% step would cross the
+limit, the stack now takes everything that is left in one step, and refuses
+only when even that is not enough for the request:
+
+```cpp
+if (this->capacity + increment >= this->limit) {
+    increment = this->limit - this->capacity - 1;
+    if (increment < size)
+        return false;
+}
+```
+
+`limit - capacity - 1` cannot wrap: the capacity reaches `limit - 1` at most,
+where the difference is 0 and the request is refused. Measured across the old
+cliff, every depth now answers in about 0.2 s, and the deepest recursion that
+fits is the same as before (520,000 frames of a one-argument function
+complete, 525,000 raise `OOMError: stack overflow`), so the whole 32 MB is
+still usable. Refusing as soon as the 30% step would cross the limit, which was
+also considered, would have stopped the stack at the last 30% step instead:
+close to the limit with today's numbers, but as low as `limit / 1.3` in
+general.
+
+[VM-009](#vm-009--an-exception-context-dangles-once-the-vm-stack-is-reallocated)
+was found while checking this fix and is unrelated to it: it reproduces with and
+without the change.
+
+<details><summary>Original report</summary>
 
 ```cpp
 auto increment = std::max(size, (this->capacity * kStackGrowthFactor) / kStackGrowthScalingFactor);
@@ -118,6 +196,7 @@ raises `OOMError: stack overflow` in 0.2 s, and the deepest recursion that fits
 is unchanged (520,000 frames complete, 530,000 overflow); the change was then
 reverted.
 
+</details>
 ---
 
 ## VM-006 — `!x` disagrees with `if x`: integers always negate to true, falsy objects to false
@@ -323,6 +402,12 @@ up until the stack entered the region where it grows one request at a time.
 Two defects were found while writing the new PoC and are filed on their own:
 [VM-008](#vm-008--pushif-reads-a-type-object-as-a-function) and
 [IR-010](ir.md).
+
+**Note (2026-10-15):** with VM-007 fixed, the uncovered refusal (a stack
+exhausted inside `Bind`) is now waiting on
+[VM-009](#vm-009--an-exception-context-dangles-once-the-vm-stack-is-reallocated)
+instead: reaching it in the frame of a `trap` needs a `trap` in every frame of
+a recursion deep enough to grow the stack.
 
 <details><summary>Original report</summary>
 

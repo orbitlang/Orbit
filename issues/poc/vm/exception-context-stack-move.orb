@@ -1,0 +1,89 @@
+# PoC exception-context-stack-move — VM-009: an exception context (the frame
+# slot a `try` or a `trap` opens) must survive the VM stack growing underneath
+# it.
+#
+# TBGIN builds the ExceptionContext inside the stack buffer and keeps its
+# absolute address, in CP and in the `prev` link of the next context. Growing
+# the stack is a realloc, which may move the buffer; SP and BP are offsets and
+# follow it, CP and `prev` are not and keep pointing into the freed block. The
+# first growth happens at 16 KB, a few hundred frames deep.
+#
+# A `trap` in every frame of a recursion 1,000 deep crashes (SIGSEGV in TEND,
+# reading a null context). A single `try` above a deep recursion still works,
+# but only because the freed block has not been reused yet: under lldb its CP
+# lies 8 MB outside the live stack. Both shapes are checked, plus `try` in
+# every frame.
+#
+# A runtime test: prints "ALL TESTS PASSED" only when every check matches.
+# EXPECT: contains: ALL TESTS PASSED
+
+import "io"
+
+var fails = 0
+
+func check(name, got, expected) {
+    if got == expected {
+        io.print("OK   ", name)
+    } else {
+        io.print("FAIL ", name, "-- got:", got, "expected:", expected)
+        fails += 1
+    }
+}
+
+kDepth := 3000
+
+func deep(n) {
+    if n == kDepth { return n }
+    return deep(n + 1)
+}
+
+# one context, opened before the stack grows and closed after
+r := trap deep(0)
+check("one trap above a deep recursion", r.unwrap(), kDepth)
+
+func try_above() {
+    var v = 0
+    try {
+        v = deep(0)
+    } catch e {
+        v = -1
+    }
+    return v
+}
+check("one try above a deep recursion", try_above(), kDepth)
+
+# a context in every frame: each one is linked to the one below it
+func trap_each(n) {
+    if n == kDepth { return n }
+    inner := trap trap_each(n + 1)
+    return inner.unwrap()
+}
+check("a trap in every frame", trap_each(0), kDepth)
+
+func try_each(n) {
+    if n == kDepth { return n }
+    var v = 0
+    try {
+        v = try_each(n + 1)
+    } catch e {
+        v = -1
+    }
+    return v
+}
+check("a try in every frame", try_each(0), kDepth)
+
+# and a panic raised at the bottom, caught and raised again by every frame
+func boom_at(n) {
+    if n == kDepth { panic Error(@Deep, "bottom") }
+    inner := trap boom_at(n + 1)
+    if !inner { panic inner.unwrap_err() }
+    return inner.unwrap()
+}
+r_boom := trap boom_at(0)
+check("a panic passed up through every trap", r_boom.unwrap_err().kind, @Deep)
+
+if fails == 0 {
+    io.print("ALL TESTS PASSED")
+} else {
+    io.print(fails, "TEST(S) FAILED")
+}

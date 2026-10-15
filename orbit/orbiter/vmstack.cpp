@@ -39,9 +39,12 @@ bool VMStack::Grow(Isolate *isolate, MSize size) noexcept {
     auto increment = std::max(size, (this->capacity * kStackGrowthFactor) / kStackGrowthScalingFactor);
 
     if (this->capacity + increment >= this->limit) {
-        increment = size;
-
-        if (this->capacity + increment >= this->limit)
+        // When growing by the standard growth factor would exceed the stack limit,
+        // clamp the increment to the remaining capacity up to the limit.
+        // If the remaining space is still insufficient for the requested size,
+        // the stack growth fails.
+        increment = this->limit - this->capacity - 1;
+        if (increment < size)
             return false;
     }
 

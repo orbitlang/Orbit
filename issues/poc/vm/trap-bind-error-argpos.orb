@@ -21,8 +21,8 @@
 # would hide the leak.
 #
 # A stack exhausted inside Bind (EnsureStack) is the one refusal not covered:
-# reaching it takes a recursion past the point where VM-007 makes the stack
-# reallocate on every frame, which is minutes rather than an error.
+# reaching it in the frame of a `trap` takes a `trap` in every frame of a
+# recursion deep enough to grow the stack, which crashes until VM-009 is fixed.
 #
 # A runtime test: prints "ALL TESTS PASSED" only when every check matches.
 # EXPECT: contains: ALL TESTS PASSED
