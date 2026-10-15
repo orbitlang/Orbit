@@ -313,13 +313,19 @@ TypeInfo *orbiter::datatype::GetSuper(const TypeInfo *base, const TypeInfo *owne
 }
 
 U32 orbiter::datatype::GetTypeName(const Isolate *isolate, const OObject *object, char *out_str, const U32 out_size) {
+    char raw_name[5] = "nil";
+    U32 length = 3; // 'nil'
+
     const TypeInfo *type = nullptr;
 
     if (!O_IS_OBJECT(object)) {
         if (O_IS_SMI(object))
             type = isolate->primitive[(int) InstanceType::NUMBER];
-        else
-            type = isolate->primitive[(int) InstanceType::BOOLEAN];
+        else if (O_IS_FALSE(object) || O_IS_TRUE(object)) {
+            memory::MemoryCopy(raw_name, "Bool", 4);
+
+            length = 4;
+        }
     } else {
         if (O_GET_RC(object).IsInstance())
             type = O_GET_TYPE(object);
@@ -327,15 +333,13 @@ U32 orbiter::datatype::GetTypeName(const Isolate *isolate, const OObject *object
             type = (TypeInfo *) object;
     }
 
-    U32 length = 3; // 'nil'
-
     if (type != nullptr)
         length = strlen(type->name);
 
     if (out_str != nullptr) {
         const auto min_length = std::min(length, out_size - 1);
 
-        memory::MemoryCopy(out_str, type != nullptr ? type->name : "nil", min_length);
+        memory::MemoryCopy(out_str, type != nullptr ? type->name : raw_name, min_length);
 
         out_str[min_length] = '\0';
     }

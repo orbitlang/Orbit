@@ -7,7 +7,40 @@
 ---
 
 ## OBJ-003 — `true` and `false` are named 'nil' wherever a type is printed
-**Severity:** Low (wrong diagnostics and display) · **Status:** OPEN · **Location:** `orbit/orbiter/datatype/oobject.cpp:315` (`GetTypeName`), `orbit/orbiter/isolate.cpp:94` (primitive types)
+**Severity:** Low (wrong diagnostics and display) · **Status:** FIXED (2026-10-15) · **Location:** `orbit/orbiter/datatype/oobject.cpp:315` (`GetTypeName`)
+
+**Fix verified (regression PoC `poc/oobject/obj-003.orb` — prints `ALL TESTS
+PASSED`, 7 of 7; `ortest` 22/22; PoC gate unchanged apart from the open
+findings; `phi-regalloc.orb` green).** `GetTypeName` now names both boolean
+oddballs `Bool`, by type as every other type is named, in a single branch;
+everything else that is neither a heap object nor an SMI keeps the `"nil"`
+fallback, which is now reached by `nil` on purpose rather than by accident:
+
+```cpp
+else if (O_IS_FALSE(object) || O_IS_TRUE(object)) {
+    memory::MemoryCopy(raw_name, "Bool", 4);
+
+    length = 4;
+}
+```
+
+Observed live:
+
+```
+io.print(trap t(), trap f(), trap n())   # ok<Bool> ok<Bool> ok<nil>
+true + 1      # operator '+' not supported between 'Bool' and 'Number'
+false()       # invalid call to a non-callable object('Bool')
+nil + 1       # operator '+' not supported between 'nil' and 'Number'
+```
+
+No suite or stdlib module matched on the old `'nil'` text, and the PoC now pins
+both names (`Bool` for a boolean, `nil` for nil). No `BOOLEAN` primitive was
+added, deliberately: a name is all the messages need, and a type object would
+only matter for something like `x is Bool`, which the language does not offer.
+An intermediate version named the booleans by value (`'true'`, `'false'`); it
+was replaced by `Bool` the same day for consistency with the other types.
+
+<details><summary>Original report</summary>
 
 `GetTypeName` files every value that is neither a heap object nor an SMI under
 the `BOOLEAN` primitive:
@@ -48,6 +81,7 @@ advance.
 registered `BOOLEAN` primitive or a dedicated branch in `GetTypeName`, and tell
 `nil` apart explicitly (`O_IS_NIL`) instead of through the null fallback.
 
+</details>
 ---
 
 ## OBJ-002 — `GetTypeName` writes past the caller's buffer when a type name is long

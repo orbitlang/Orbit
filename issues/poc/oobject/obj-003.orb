@@ -7,8 +7,8 @@
 # back to the string "nil". nil takes the same road and comes out right only by
 # that accident.
 #
-# The checks ask only that a boolean is not called 'nil' and that nil still is;
-# what a boolean is called instead is for the fix to decide.
+# Fixed by naming both booleans 'Bool', as the other types are named by type
+# and not by value; nil keeps 'nil'. The checks pin both names down.
 #
 # A runtime test: prints "ALL TESTS PASSED" only when every check matches.
 # EXPECT: contains: ALL TESTS PASSED
@@ -30,15 +30,16 @@ func t() { return true }
 func f() { return false }
 func n() { return nil }
 
-check("ok(true) is not ok<nil>", tostr(trap t()) == "ok<nil>", false)
-check("ok(false) is not ok<nil>", tostr(trap f()) == "ok<nil>", false)
+check("ok(true) is ok<Bool>", tostr(trap t()), "ok<Bool>")
+check("ok(false) is ok<Bool>", tostr(trap f()), "ok<Bool>")
 check("ok(nil) is ok<nil>", tostr(trap n()), "ok<nil>")
 
 r := trap (true + 1)
-check("an operator error on true", r.unwrap_err().reason.find("'nil'") >= 0, false)
+check("an operator error on true names Bool", r.unwrap_err().reason.find("'Bool'") >= 0, true)
+check("and not nil", r.unwrap_err().reason.find("'nil'") >= 0, false)
 
 r = trap false.nope
-check("an attribute error on false", r.unwrap_err().reason.find("'nil'") >= 0, false)
+check("an attribute error on false names Bool", r.unwrap_err().reason.find("'Bool'") >= 0, true)
 
 r = trap (nil + 1)
 check("an operator error on nil still says nil", r.unwrap_err().reason.find("'nil'") >= 0, true)
