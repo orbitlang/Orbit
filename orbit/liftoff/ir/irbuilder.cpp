@@ -1071,9 +1071,11 @@ Instruction *IRBuilder::visitFunction(const parser::Function *node) {
 
             this->builder_.StackPush(self);
 
-            auto *call = this->builder_.CreateCallDetached(orbiter::OPCode::CALL, s_init, 1, orbiter::CallMode::METHOD);
+            auto *call = (CallInstr *) this->builder_.CreateCallDetached(orbiter::OPCode::CALL, s_init, 1, orbiter::CallMode::METHOD);
 
             this->builder_.AddInstruction(call);
+
+            this->builder_.context->stack_push_count -= call->arguments;
         }
 
         for (const auto &var: this->ct_active_->properties) {

@@ -8,6 +8,78 @@
 
 ---
 
+## IR-013 — A subclass without an explicit `init` aborts the compiler
+**Severity:** High (compile-time abort on valid source in a debug build; release not tried) · **Status:** FIXED (2026-10-16) · **Location:** `orbit/liftoff/ir/irbuilder.cpp:1065` (`visitFunction`, the synthesized `init` of a subclass)
+
+**Fix verified (PoC `poc/ir/ir-013-subclass-without-init.orb` — prints
+`ALL TESTS PASSED`, 6 of 6; `ortest/oop/02_inheritance_resolution.orb` gained
+five checks for subclasses without `init`, one and two levels deep, and passes;
+`ortest` 24/26 and the PoC gate 47/52, the failures being open findings;
+`phi-regalloc.orb` green).** The synthesized `super.init` call now releases
+its pushed receiver like every other detached call site:
+
+```cpp
+auto *call = (CallInstr *) this->builder_.CreateCallDetached(orbiter::OPCode::CALL, s_init, 1, orbiter::CallMode::METHOD);
+
+this->builder_.AddInstruction(call);
+
+this->builder_.context->stack_push_count -= call->arguments;
+```
+
+Without the last line the new `oop/02` checks abort the compile with the same
+assert, so the suite guards against a regression. A two-level chain of
+synthesized `init`s runs the base `init` once per construction.
+
+<details><summary>Original report</summary>
+
+A class that extends another and declares no `init` gets a synthesized one,
+which calls the superclass's:
+
+```cpp
+if (this->ct_active_->extends_type && ENUMBITMASK_ISTRUE(node->symbol->flags, SymbolFlags::SYNTHETIC)) {
+    ...
+    this->builder_.StackPush(self);
+
+    auto *call = this->builder_.CreateCallDetached(orbiter::OPCode::CALL, s_init, 1, orbiter::CallMode::METHOD);
+
+    this->builder_.AddInstruction(call);
+}
+```
+
+`StackPush` counts the pushed receiver in the context's `stack_push_count`.
+`CreateCall` would release it (`builder.cpp:147`), and every call site that
+builds its call detached releases it by hand after `AddInstruction`
+(`irbuilder.cpp:899`, `:916`, `:1400`). This one does not, so `LeaveContext`
+finds the count at 1:
+`Assertion failed: (this->context->stack_push_count ==0), function LeaveContext, file builder.cpp, line 709`.
+
+Any subclass without an explicit `init` aborts the compile: `class D : P { }`,
+or one with members of its own. A subclass that writes
+`pub init() { super.init() }` is fine, which is why no suite noticed: every
+subclass in `ortest/` and `issues/poc/` declares its `init`.
+
+**Found** while probing VM-011 with an empty subclass.
+
+**PoC:** [`poc/ir/ir-013-subclass-without-init.orb`](poc/ir/ir-013-subclass-without-init.orb)
+*(confirmed live: the assert fires at compile time)*.
+
+**Fix (suggested, verified by probe):** release the pushed receiver after
+adding the call, like the other detached call sites:
+
+```cpp
+this->builder_.AddInstruction(call);
+
+this->builder_.context->stack_push_count -= 1;
+```
+
+With this line the PoC passes 6/6 (the synthesized `init` runs the base `init`,
+inherited properties and methods work), and `ortest` and the PoC gate are
+otherwise unchanged; the probe was then reverted.
+
+</details>
+
+---
+
 ## IR-012 — `self.prop` in a function nested in a method reads through a null owner type
 **Severity:** High (SIGSEGV) · **Status:** OPEN · **Location:** `orbit/liftoff/ir/irbuilder.cpp:1456` (`visitSelector`, the `self` fast path) → `orbit/orbiter/vm.cpp:1747` (`TARGET_OP(LDOBJP)`, inline path)
 
@@ -47,6 +119,16 @@ closure that returns `self` works, and the PoC now crashes at its first
 
 The same inline path is what crashes a decorated method in IR-011, where the
 method itself is never given its `owner_type`.
+
+**Note (2026-10-16), a constraint on the fix:** whatever IR-011 does to make
+a decorator's result callable as a method of the decorated class, the inline
+path must not take the slot layout from that class. In
+`ortest/decorators/04_decorator_objects.orb` the function installed in
+`Handler` was written in `Server` and reads `self.call` on the server: if the
+inline load used `Handler` as the layout, it would read the server's slots at
+`Handler`'s offsets. The layout has to come from the class the code was written
+in (the nested function's enclosing class), not from the class it ends up
+installed in.
 
 **PoC:** [`poc/ir/ir-012-self-prop-in-nested-func.orb`](poc/ir/ir-012-self-prop-in-nested-func.orb)
 *(confirmed live with the SYM-001 probe applied: the control passes, the
@@ -120,6 +202,32 @@ while building `ortest/decorators/02_methods.orb`.
 *(confirmed live: the control passes, the call through an instance returns a
 `Function`, the call with an explicit receiver crashes)*. Its wrappers copy the
 decorated function into a local, so they do not depend on SYM-001.
+
+**Note (2026-10-16):** the user fixed two decorator shapes that a framework
+needs as acceptance criteria, in `ortest/decorators/04_decorator_objects.orb`:
+a method of another object that returns an anonymous function closing over
+`self` and `f`, and one that returns a curried private method of its own
+(`self.wrapper(f)`). Today the first returns a `Function` from `h.handle()`,
+and the second crashes in the decorated method, which has no `owner_type`.
+
+**Decisions (2026-10-16, user):**
+- A decorator's result installed in a `func` member is callable as a method of
+  that class: the receiver arrives as its first argument.
+- A plain function returned by a decorator is **cloned** before it is
+  promoted (a new `FuncShared`, the same code, closure and currying), so a
+  function shared elsewhere is never turned into a method. A method of the
+  class or of a superclass is installed as it is; a curried method whose
+  receiver is already bound counts as a plain function.
+- Access to private and protected members is **lexical**: it follows the class
+  the code was written in, not the class a function ends up installed in.
+  Functions nested in a method therefore see their class's private members
+  (today they do not).
+- Consequently a function carries two types that `owner_type` conflates
+  today: the class its code belongs to (access checks, `super`, inline slot
+  layout) and the receiver type it accepts as a method (`NormalizeMethod`).
+
+Still open: what a decorator may return besides a function (a type, a native
+function, a callable instance): refuse it, or wrap it in an adapter.
 
 ---
 

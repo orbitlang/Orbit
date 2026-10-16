@@ -1,0 +1,15 @@
+# A definition takes a single decorator list: `@[a, b, c]` already applies
+# several decorators, left to right, so a second list stacked on the first
+# (`@[a]` then `@[b]`) is a syntax error. A class body reaches the same check
+# (ParseDecorator); the module form is the one exercised here.
+#
+# Today the error is reported through the COMP-001 assert in file mode; the
+# message is checked, not the way the process exits.
+#
+# EXPECT: error: Invalid decorator placement
+
+func d(f) { return f }
+
+@[d]
+@[d]
+func twice_listed() { return 1 }

@@ -1,0 +1,61 @@
+# PoC ir-013-subclass-without-init — IR-013: a subclass that declares no `init`
+# must compile, and its synthesized `init` must call the superclass's.
+#
+# visitFunction synthesizes the `init` and, when the class extends another,
+# pushes `self` and calls `super.init`. The call is built with
+# CreateCallDetached and added by hand, and unlike every other call site the
+# builder's `stack_push_count` was never decreased by its argument, so
+# LeaveContext found it at 1: `Assertion failed: (this->context->
+# stack_push_count ==0), function LeaveContext, file builder.cpp`. Any subclass
+# without an explicit `init` aborted the compile, with or without members of
+# its own. Fixed by releasing the pushed receiver after the call.
+#
+# A runtime test: prints "ALL TESTS PASSED" only when every check matches.
+# EXPECT: contains: ALL TESTS PASSED
+
+import "io"
+
+var fails = 0
+
+func check(name, got, expected) {
+    if got == expected {
+        io.print("OK   ", name)
+    } else {
+        io.print("FAIL ", name, "-- got:", got, "expected:", expected)
+        fails += 1
+    }
+}
+
+var base_inits = 0
+
+class Base {
+    pub var v = 5
+
+    pub init() {
+        base_inits += 1
+    }
+
+    pub func get() { return self.v }
+}
+
+class Empty : Base { }
+
+class WithMember : Base {
+    pub var w = 1
+}
+
+e := new Empty()
+check("an empty subclass is constructed", e is Empty, true)
+check("its synthesized init calls the base init", base_inits, 1)
+check("it inherits the base property", e.v, 5)
+check("and the base method", e.get(), 5)
+
+m := new WithMember()
+check("a subclass with a member of its own", (m.v, m.w), (5, 1))
+check("which calls the base init too", base_inits, 2)
+
+if fails == 0 {
+    io.print("ALL TESTS PASSED")
+} else {
+    io.print(fails, "TEST(S) FAILED")
+}

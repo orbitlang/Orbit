@@ -1,0 +1,104 @@
+# Decorators that are methods of another object, decorating the methods of a
+# class: the shapes a framework needs (a server, an app, a router that counts,
+# registers or wraps handlers). Both decorators below must stay usable.
+#
+#   - `decorator(f)` returns an anonymous function that closes over the
+#     server (`self`) and the decorated method `f`. Installed in the handler
+#     class, it is called as a method: the handler instance arrives as its first
+#     argument (`me`), `self` inside it is still the server, and it calls the
+#     decorated method with `f(me)`.
+#   - `decorator2(f)` returns `self.wrapper(f)`: a call with too few arguments,
+#     so a curried method of the server with its receiver and `f` already bound.
+#     Installed in the handler class, the handler instance completes it as `me`.
+#
+# Both need what IR-011 is about: the value a decorator returns for a method
+# must be callable as a method of the class it is installed in. The first one
+# also reads `self.call` inside a function nested in a method (IR-012).
+#
+# EXPECT: contains: ALL TESTS PASSED
+
+import "io"
+
+var fails = 0
+
+func check(name, got, expected) {
+    if got == expected {
+        io.print("OK   ", name)
+    } else {
+        io.print("FAIL ", name, "-- got:", got, "expected:", expected)
+        fails += 1
+    }
+}
+
+class Server {
+    pub var call = 0
+    var count = 0
+
+    pub func decorator(f) {
+        self.count += 1
+
+        return func (me) {
+            self.call += 1
+            return f(me)
+        }
+    }
+
+    pub func decorator2(f) {
+        return self.wrapper(f)
+    }
+
+    func wrapper(f, me) {
+        return f(me) * 10
+    }
+
+    pub func decorated() { return self.count }
+}
+
+srv := new Server()
+
+class Handler {
+    pub var v = 4
+
+    pub init() { }
+
+    @[srv.decorator]
+    pub func handle() { return self.v }
+
+    @[srv.decorator2]
+    pub func handle2() { return self.v + 1 }
+}
+
+check("the decorator ran once, when the class was built", srv.decorated(), 1)
+
+h := new Handler()
+
+# --- decorator: an anonymous function closing over the server --------------
+
+check("a closure decorator, called through an instance", h.handle(), 4)
+check("its `self` is the server", srv.call, 1)
+h.handle()
+check("once per call", srv.call, 2)
+
+# --- decorator2: a curried method of the server -----------------------------
+
+check("a curried-method decorator, called through an instance", h.handle2(), 50)
+
+# --- other ways to reach the decorated methods ------------------------------
+
+handle := Handler.handle
+check("taken from the class, called with a receiver", handle(h), 4)
+
+class Special : Handler {
+    pub init() {
+        super.init()
+    }
+}
+
+s := new Special()
+check("inherited by a subclass", (s.handle(), s.handle2()), (4, 50))
+
+if fails == 0 {
+    io.print("ALL TESTS PASSED")
+} else {
+    io.print(fails, "TEST(S) FAILED")
+}

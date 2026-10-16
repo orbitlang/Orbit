@@ -5,9 +5,10 @@
 #   - `@[d]`        → f = d(f)
 #   - `@[d(x, y)]`  → f = d(f, x, y): the function is prepended to the
 #                     arguments written in the brackets, it is not a factory
-#                     call followed by an application
+#                     call followed by an application; `@[d()]` is `@[d]`
 #   - `@[a, b]`     → f = b(a(f)): the list is applied left to right
 #   - `@[obj.m]`    → any expression naming a callable works
+#   - `@[]`         → f is left as it is
 # A decorator runs once, when the definition executes, and may return any value.
 # Recursive calls inside the body go through the decorated name.
 #
@@ -87,6 +88,27 @@ func name(x) { return x }
 
 check("a decorator with two arguments", name("a"), "<a>")
 
+# `@[d()]` is `d(f)`, the same as `@[d]`: a call in the list is never
+# evaluated to obtain a decorator
+var marked = 0
+
+func mark_call(f) {
+    marked += 1
+    return f
+}
+
+@[mark_call()]
+func called(x) { return x - 1 }
+
+check("empty parentheses are the bare decorator", called(5), 4)
+check("applied once, to the function", marked, 1)
+
+# an empty list is allowed and leaves the function as it is
+@[]
+func untouched(x) { return x * 2 }
+
+check("an empty list leaves the function alone", untouched(4), 8)
+
 # a list is applied left to right: the first one wraps the function
 func tag(f, t) {
     func w(x) { return t + f(x) }
@@ -144,6 +166,29 @@ func registered() { return 1 }
 
 check("a method as a decorator", registered(), 1)
 check("which saw the function", reg.n, 1)
+
+# the shape a web framework uses: a method of an object, with arguments, that
+# receives the function and returns what replaces it
+class Router {
+    pub var routes = nil
+
+    pub init() {
+        self.routes = {}
+    }
+
+    pub func route(f, path) {
+        self.routes[path] = f
+        return f
+    }
+}
+
+app := new Router()
+
+@[app.route("/users")]
+func users() { return "users page" }
+
+check("a method decorator with an argument returns the replacement", users(), "users page")
+check("and the method saw both the function and the argument", app.routes["/users"](), "users page")
 
 # --- a decorated function inside a function ---------------------------------
 

@@ -116,7 +116,13 @@ ellipsis_arg = expression, "...";
 kwargs_arg = "*", identifier;
 
 (* Function Decorator *)
-decorator = "@[", expression , ["(", [argument_list], ")"], "]";
+(* One list per definition; the decorators are applied left to right, the first
+   one to the function itself: `@[a, b]` binds `b(a(f))`. A call is not evaluated
+   on its own: the function is prepended to its arguments, so `@[d(x, y)]` applies
+   `d(f, x, y)`, and `@[d]` and `@[d()]` are the same decorator. An empty list
+   `@[]` is allowed and leaves the function as it is. *)
+decorator_list = "@[", [decorator, {",", decorator}], "]";
+decorator = expression;
 
 (* Inline functions *)
 inline_function = "func", "(", [parameter_list], ")", [return_type], [async_keyword], block_function;
@@ -171,9 +177,9 @@ native_block_member = ("func", identifier, "(", [native_parameter_list], ")", ":
 native_type = "bool" | "byte" | "i8" | "i16" | "i32" | "i64" | "iSize" | "u8" | "u16" | "u32" | "u64" | "uSize" | "unit" | "opaque" | "ptr" |"f32" | "f64";
 
 (* Function definitions *)
-function_definition = [doc_comment], {decorator}, "func", identifier, "(", [parameter_list], ")", [return_type], [async_keyword], block_function;
-class_function_definition = [doc_comment], {decorator}, "func", identifier, "(", [parameter_list], ")", [return_type], [async_keyword], [const_keyword], block_function;
-trait_function_definition = [doc_comment], {decorator}, "func", identifier, "(", [parameter_list], ")", [return_type], [async_keyword], [const_keyword], [block_function];
+function_definition = [doc_comment], [decorator_list], "func", identifier, "(", [parameter_list], ")", [return_type], [async_keyword], block_function;
+class_function_definition = [doc_comment], [decorator_list], "func", identifier, "(", [parameter_list], ")", [return_type], [async_keyword], [const_keyword], block_function;
+trait_function_definition = [doc_comment], [decorator_list], "func", identifier, "(", [parameter_list], ")", [return_type], [async_keyword], [const_keyword], [block_function];
 
 parameter_list = parameter, {",", parameter}, [",", variadic_param], [",", kwargs_param];
 parameter = simple_param | default_param;

@@ -1,0 +1,63 @@
+# PoC curry-named-args — VM-010: a call that is curried (too few positional
+# arguments) must keep the named arguments and the `*kwargs` it was given, and
+# pass them on when the curried function is finally called.
+#
+# ArgumentBinder::Bind builds the curried function from the positional
+# arguments alone (`FunctionNew(func, ArgsBase(), stack_args)`); the named
+# arguments (r10) and the keyword dict (r12) are dropped, silently: the final
+# call sees the defaults again.
+#
+# This is also what keeps a pre-configured decorator from working:
+# `by7 := times(n=7)` is curried waiting for the function, and `@[by7]` then
+# applies `times(f)` with the default `n`.
+#
+# A runtime test: prints "ALL TESTS PASSED" only when every check matches.
+# EXPECT: contains: ALL TESTS PASSED
+
+import "io"
+
+var fails = 0
+
+func check(name, got, expected) {
+    if got == expected {
+        io.print("OK   ", name)
+    } else {
+        io.print("FAIL ", name, "-- got:", got, "expected:", expected)
+        fails += 1
+    }
+}
+
+func g(a, b, c=5) { return a * 100 + b * 10 + c }
+
+check("control: a named default on a full call", g(1, 2, c=9), 129)
+check("control: a curried call without names", g(1)(2), 125)
+check("a named default kept by currying", g(1, c=9)(2), 129)
+check("a named default given before any positional", g(c=9)(1, 2), 129)
+
+func kw(a, b, *rest) { return "x" in rest }
+
+check("control: kwargs on a full call", kw(1, 2, *{"x": 1}), true)
+check("kwargs kept by currying", kw(1, *{"x": 1})(2), true)
+
+# a decorator configured once, applied twice
+func times(f, n=2) {
+    func w(x) { return f(x) * n }
+    return w
+}
+
+by7 := times(n=7)
+
+@[by7]
+func seven(x) { return x }
+
+@[by7]
+func fourteen(x) { return x * 2 }
+
+check("a pre-configured decorator", seven(1), 7)
+check("reused on a second function", fourteen(1), 14)
+
+if fails == 0 {
+    io.print("ALL TESTS PASSED")
+} else {
+    io.print(fails, "TEST(S) FAILED")
+}

@@ -6,6 +6,94 @@
 
 ---
 
+## VM-011 — A method called through its type receives the type as its receiver
+**Severity:** Medium (a normal call form is refused) · **Status:** OPEN · **Location:** `orbit/orbiter/vm.cpp:1416` (`TARGET_OP(PUSHIF)`), `orbit/orbiter/orbcall.cpp:128` (`ArgumentBinder::NormalizeMethod`)
+
+`Type.method(obj, args...)` should run `method` with `obj` as its receiver,
+as the same method taken into a variable does (`m := Type.method; m(obj)`,
+which works). Instead it is refused, for classes and builtin types alike:
+
+```
+P.get(p)            -> TypeError: method call requires 'P' instance as receiver
+List.append(l, 3)   -> TypeError: method call requires 'List' instance as receiver
+```
+
+A selector call emits `PUSHIF`, which pushes the selector's base as the
+receiver whenever the callee is a method. Here the base is the type object, so
+the type is pushed and `obj` becomes the first ordinary argument;
+`NormalizeMethod` then checks the type object against `owner_type` and refuses
+it. The explicit receiver never takes the receiver's place.
+
+The user confirmed (2026-10-16) that this is a defect: calling a method
+through its type is meant to work, with the first argument as the receiver.
+
+**Found** while discussing decorated methods (IR-011), where calling a
+decorated method with an explicit receiver is one of the shapes to support.
+
+**PoC:** [`poc/vm/method-through-type.orb`](poc/vm/method-through-type.orb)
+*(confirmed live: both controls pass, the five calls through a type are
+refused; a receiver of the wrong type is refused, as it must stay)*.
+
+**Fix (suggested, not tried):** in `PUSHIF`, do not push the base when it is a
+type object and the callee is a method of that type or of a supertype, so the
+first explicit argument becomes the receiver and `NormalizeMethod` checks it.
+Before changing it, find what relies on a type receiver today:
+`NormalizeMethod` has an explicit branch for a receiver that is not an
+instance (`type = O_GET_TYPE(type)`), so some call does pass a type on purpose
+(by inspection; not traced yet).
+
+---
+
+## VM-010 — A curried call drops its named arguments and `*kwargs`
+**Severity:** Medium (silent wrong result: the final call runs with the defaults) · **Status:** OPEN · **Location:** `orbit/orbiter/orbcall.cpp:229` (`ArgumentBinder::Bind`, the currying path)
+
+When a call has fewer positional arguments than the function's arity, `Bind`
+returns a curried function instead of calling it. The curried function is
+built from the positional arguments alone:
+
+```cpp
+this->fiber->vm.regs.RR.reg = (PtrSize) FunctionNew(this->func, this->ArgsBase(), this->stack_args).get();
+```
+
+The named arguments (`r10`, `nargs`) and the keyword dict (`r12`, `kwargs`) of
+that call are not saved anywhere, and nothing reports it. When the curried
+function is completed, the function sees its defaults again:
+
+| Call | Result | Expected |
+|---|---|---|
+| `g(1, c=9)(2)` on `func g(a, b, c=5)` | 125 | 129 |
+| `g(c=9)(1, 2)` | 125 | 129 |
+| `kw(1, *{"x": 1})(2)` on `func kw(a, b, *rest)` | `rest` is `{}` | `{"x": 1}` |
+
+The same full calls, with every positional argument given, are right.
+
+**Why it matters now.** Decorators lean on currying for the case of a
+decorator configured once and applied many times: with the decorated function
+as the first parameter (`func times(f, n=2)`), `by7 := times(n=7)` should be a
+decorator waiting for the function, and `@[by7]` should apply `times(f, n=7)`.
+Today `@[by7]` applies `times(f)` with the default `n=2`.
+
+Related, to be decided along with the fix: only a parameter with a default can
+be named (by design, see `ortest/calls/01_argument_passing.orb`), but naming a
+**required** one is not refused. `g(1, b=2)` on `func g(a, b)` takes the same
+currying path, drops `b=2`, and returns a curried function where an error
+(or a bound `b`) would be expected. A name the function does not have at all
+is refused (`'g' does not accept named arguments`).
+
+**Found** while discussing pre-configured decorators with the user.
+
+**PoC:** [`poc/vm/curry-named-args.orb`](poc/vm/curry-named-args.orb)
+*(confirmed live: the three controls pass, the five curried checks fail)*.
+
+**Fix (suggested, not tried):** keep the call's `nargs` and `kwargs` in the
+curried function next to the positional arguments, and merge them into the
+completing call (the completing call's own names win, or a name given twice is
+refused: to be decided). The required-parameter case needs its own rule:
+either refuse the name, or let a named required parameter count towards the
+arity.
+
+---
+
 ## VM-009 — An exception context dangles once the VM stack is reallocated
 **Severity:** High (use after free; crash, or silent reads of freed memory) · **Status:** FIXED (2026-10-16) · **Location:** `orbit/orbiter/vm.cpp:1962` (`TARGET_OP(TBGIN)`), `orbit/orbiter/vmstack.cpp:36` (`VMStack::Grow`), `orbit/orbiter/excstack.h` (`ExPtrContainer`)
 

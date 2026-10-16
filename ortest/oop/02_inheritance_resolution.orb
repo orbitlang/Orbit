@@ -15,6 +15,9 @@
 # runtime type, or `super.m()` in an inherited method re-resolves to itself and
 # the constructor chain loops forever from the third level on (guard for IR-005).
 #
+# And a subclass with no `init` of its own, whose synthesized one must call the
+# superclass's (guard for IR-013).
+#
 # EXPECT: contains: ALL TESTS PASSED
 
 import "io"
@@ -107,6 +110,35 @@ four := new L4()
 check("4-level: deepest field", four.v1, 10)
 check("4-level: own field", four.v4, 40)
 check("4-level: super method chain", four.who(), "L4<L3<L2<L1")
+
+# A subclass that declares no `init` gets a synthesized one that calls the
+# superclass's (it aborted the compile until IR-013 was fixed).
+var implicit_inits = 0
+
+class WithInit {
+    pub var a = 1
+
+    pub init() {
+        implicit_inits += 1
+    }
+
+    pub func get() { return self.a }
+}
+
+class NoInit : WithInit {
+    pub var b = 2
+}
+
+class NoInitEmpty : NoInit { }
+
+no_init := new NoInit()
+check("no init: the base init runs", implicit_inits, 1)
+check("no init: own and inherited fields", (no_init.a, no_init.b), (1, 2))
+check("no init: inherited method", no_init.get(), 1)
+
+empty := new NoInitEmpty()
+check("no init, empty body, two levels: the base init runs", implicit_inits, 2)
+check("no init, empty body, two levels: fields", (empty.a, empty.b), (1, 2))
 
 if fails == 0 {
     io.print("ALL TESTS PASSED")

@@ -1,0 +1,77 @@
+# PoC method-through-type — VM-011: a method called through its type,
+# `Type.method(obj, args...)`, must run with `obj` as the receiver, exactly as
+# the same method taken into a variable does (`m := Type.method; m(obj)`).
+#
+# The selector call emits PUSHIF, which pushes the selector's base as the
+# receiver whenever the callee is a method. When the base is the type object
+# itself, the type is pushed, NormalizeMethod refuses it ("method call
+# requires 'P' instance as receiver"), and the explicit receiver never takes
+# its place. Builtin types and classes behave the same.
+#
+# The variable form works and is the control. A receiver of the wrong type
+# must still be refused.
+#
+# A runtime test: prints "ALL TESTS PASSED" only when every check matches.
+# EXPECT: contains: ALL TESTS PASSED
+
+import "io"
+
+var fails = 0
+
+func check(name, got, expected) {
+    if got == expected {
+        io.print("OK   ", name)
+    } else {
+        io.print("FAIL ", name, "-- got:", got, "expected:", expected)
+        fails += 1
+    }
+}
+
+class P {
+    pub var v = 5
+
+    pub func get() { return self.v }
+
+    pub func add(x) { return self.v + x }
+}
+
+class D : P {
+    pub init() {
+        super.init()
+    }
+}
+
+p := new P()
+
+get := P.get
+check("control: a method taken into a variable", get(p), 5)
+
+l := [1, 2]
+append := List.append
+append(l, 3)
+check("control: a builtin method taken into a variable", l, [1, 2, 3])
+
+r := trap P.get(p)
+check("a method called through its class", r.unwrap_or("REFUSED"), 5)
+
+r_add := trap P.add(p, 1)
+check("with an argument after the receiver", r_add.unwrap_or("REFUSED"), 6)
+
+r_sub := trap P.get(new D())
+check("with an instance of a subclass", r_sub.unwrap_or("REFUSED"), 5)
+
+r_inh := trap D.get(new D())
+check("an inherited method called through the subclass", r_inh.unwrap_or("REFUSED"), 5)
+
+l2 := [1, 2]
+r_list := trap List.append(l2, 3)
+check("a builtin method called through its type", (r_list.unwrap_or("REFUSED") != "REFUSED", l2), (true, [1, 2, 3]))
+
+r_bad := trap P.get(5)
+check("a receiver of the wrong type is still refused", r_bad.unwrap_err().kind, @TypeError)
+
+if fails == 0 {
+    io.print("ALL TESTS PASSED")
+} else {
+    io.print(fails, "TEST(S) FAILED")
+}
