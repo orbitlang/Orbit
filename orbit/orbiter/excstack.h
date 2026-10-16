@@ -19,8 +19,8 @@ namespace orbiter {
 
         ExPtrContainer() = default;
 
-        [[nodiscard]] ExceptionContext *prev() const {
-            return (ExceptionContext *) (this->ptr & ~0x3);
+        [[nodiscard]] U32 prev() const {
+            return this->ptr >> 2;
         }
 
         [[nodiscard]] U32 action() const {
@@ -45,18 +45,23 @@ namespace orbiter {
         PtrSize jump_target;
         PtrSize ret_value;
 
-        ExceptionContext(ExceptionContext *prev, const PtrSize key, const U32 catch_off)
+        ExceptionContext(const U32 offset_prev, const PtrSize key, const U32 catch_off)
             : _sentinel_(kExceptionContextTag),
               catch_off(catch_off),
               finally_off(0),
               key(key),
               jump_target(0),
               ret_value(0) {
-            // The action travels in the low bits of the same word, so the previous
-            // context has to leave them free.
-            assert(((PtrSize) prev & 0x3) == 0);
+            // `offset_prev` is the CP value of the enclosing context (0 for none).
+            // It is shifted up by two bits so the pending action can travel in the
+            // low bits of the same word; prev() shifts it back down.
+            this->info.ptr = offset_prev << 2;
+        }
 
-            this->info.ptr = (PtrSize) prev;
+        U32 GetOffset(const void *base) const {
+            // Biased by one: CP == 0 means no context, and a context can sit at
+            // offset 0 (the first slot of the module frame, whose BP is 0).
+            return ((unsigned char *) this - (unsigned char *) base) + 1;
         }
     };
 
@@ -68,6 +73,13 @@ namespace orbiter {
     // whole number of slots would silently reserve one too few.
     static_assert(sizeof(ExceptionContext) % sizeof(PtrSize) == 0,
                   "the exception context must be a whole number of stack slots");
+
+    inline ExceptionContext *ExContextGet(const void *base, const U32 offset) {
+        if (offset == 0)
+            return nullptr;
+
+        return (ExceptionContext *) ((unsigned char *) base + (offset - 1));
+    }
 } // namespace orbiter
 
 #endif // !ORBIT_ORBITER_VMEXCSTACK_H_

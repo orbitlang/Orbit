@@ -1,0 +1,18 @@
+# PoC panic-without-handler — VM-009: a panic with no `try` or `trap` anywhere
+# must leave the program with the error, not with a VM assert.
+#
+# With no context open, CP is 0. While VM-009 was being fixed, an encoding with
+# no bias turned CP == 0 into the stack base instead of "no context": the error
+# path read the module's own slots as an exception context and jumped to a
+# garbage catch offset (`Assertion failed: (false)` in the dispatch loop). The
+# expected outcome is the plain uncaught-panic report, which names the reason.
+#
+# EXPECT: error: no handler anywhere
+
+import "io"
+
+func boom() { panic Error(@Unhandled, "no handler anywhere") }
+
+io.print(b"before")
+boom()
+io.print(b"after: must not be printed")

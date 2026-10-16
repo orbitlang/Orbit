@@ -1,13 +1,75 @@
 # vm — bug report
 
 **Component:** `orbit/orbiter` (interpreter: trap/panic unwind, register file) · **ID prefix:** `VM`
-**PoCs:** [`poc/vm/`](poc/vm/) · **Last reviewed:** 2026-10-15
+**PoCs:** [`poc/vm/`](poc/vm/) · **Last reviewed:** 2026-10-16
 **Status:** OPEN · PARTIAL · FIXED · WONTFIX — see [GUIDE.md](GUIDE.md).
 
 ---
 
 ## VM-009 — An exception context dangles once the VM stack is reallocated
-**Severity:** High (use after free; crash, or silent reads of freed memory) · **Status:** OPEN · **Location:** `orbit/orbiter/vm.cpp:1962` (`TARGET_OP(TBGIN)`), `orbit/orbiter/vmstack.cpp:36` (`VMStack::Grow`), `orbit/orbiter/excstack.h` (`ExPtrContainer`)
+**Severity:** High (use after free; crash, or silent reads of freed memory) · **Status:** FIXED (2026-10-16) · **Location:** `orbit/orbiter/vm.cpp:1962` (`TARGET_OP(TBGIN)`), `orbit/orbiter/vmstack.cpp:36` (`VMStack::Grow`), `orbit/orbiter/excstack.h` (`ExPtrContainer`)
+
+**Fix verified (regression PoC `poc/vm/exception-context-stack-move.orb` —
+prints `ALL TESTS PASSED`, 8 of 8 — plus two new PoCs,
+`poc/vm/exception-context-module-slot.orb` and
+`poc/vm/panic-without-handler.orb`; `ortest` 22/22; PoC gate 45/46, the open
+IR-010 being the only failure; `phi-regalloc.orb` green).** `CP` and the link
+to the previous context are no longer pointers but offsets from the stack base,
+like `SP` and `BP`, and become pointers only where a context is read or
+written:
+
+```cpp
+// TBGIN
+const auto ctx = new(location)ExceptionContext(regs->CP.reg, regs->BP.reg, catch_off);
+regs->CP.reg = ctx->GetOffset(fiber->vm.stack.stack);   // offset + 1
+
+inline ExceptionContext *ExContextGet(const void *base, const U32 offset) {
+    if (offset == 0)
+        return nullptr;
+    return (ExceptionContext *) ((unsigned char *) base + (offset - 1));
+}
+```
+
+Three details of the encoding are load-bearing, and each has a check that
+fails without it (mutation-tested by swapping each one back in):
+
+- **The offset is biased by one.** `CP == 0` still means "no context", and a
+  context can really sit at offset 0: the module frame has `BP == 0` and its
+  first reserved slot is slot 0. Without the bias the first module-level `try`
+  reads as "no context" and `TEND` dereferences null: 6 of 11 `vm` PoCs and 8
+  of 22 `ortest` suites crash, `exception-context-module-slot.orb` among them.
+- **"No context" maps to `nullptr`, not to the stack base.** An intermediate
+  version without the bias also lacked the zero check, so `CP == 0` became the
+  base of the stack and every `!= nullptr` test passed: a panic with no handler
+  read the module's own slots as a context and jumped to a garbage catch
+  offset (`Assertion failed: (false)` in the dispatch loop). Only
+  `panic-without-handler.orb` catches it; `ortest` stays 22/22.
+- **`prev` is shifted, and `SetAction` overwrites.** The previous CP is stored
+  as `offset_prev << 2` so the pending action keeps the two low bits, and
+  `prev()` shifts it back. `SetAction` must clear the old action before writing
+  the new one: an intermediate version OR-ed them, so a pending `return` (3)
+  replaced by a `break` (1) still read as `return`. Caught by `ortest`
+  `exceptions/01_abrupt_exit.orb` and by the new last check of the stack-move
+  PoC, which raises the `break` after the stack grew.
+
+The stack-move PoC gained three checks: two contexts in one frame, each above
+a growth (the inner one is released first and CP must point back at the outer
+one); a `return` pending in a `finally` across a growth; and a pending `return`
+replaced by a `break` raised after a growth.
+
+**Audit of other absolute stack addresses**, as suggested in the original
+report. The frame prologue saves `SP` and `BP` as offsets and `IP` as a code
+address, so it is unaffected. A generator that yields inside a `try` and is
+resumed from 50 frames deeper still catches (probe, same result before and
+after the fix). The other `stack->stack + ...` expressions build a pointer for
+immediate use, with one case left unverified: `CallNative`, `CallFunction`
+and `EvalAsync` hand a native function an `args` pointer into the stack, which
+would dangle if the native called back into Orbit on the same fiber and the
+callback grew the stack before the native read its arguments again. Not
+reproduced, and not filed until it is.
+
+<details><summary>Original report</summary>
+
 
 `TBGIN` builds a `try` or `trap` context inside the stack buffer and keeps its
 **absolute** address:
@@ -51,6 +113,8 @@ would also work, but it has to find all of them, saved frames included, and
 anything else that stores an absolute stack address would still be wrong.
 Worth auditing at the same time for other absolute pointers into the stack
 held across a call (the frame prologue saves `Context | SP | BP | IP`).
+
+</details>
 
 ---
 
@@ -408,6 +472,9 @@ exhausted inside `Bind`) is now waiting on
 [VM-009](#vm-009--an-exception-context-dangles-once-the-vm-stack-is-reallocated)
 instead: reaching it in the frame of a `trap` needs a `trap` in every frame of
 a recursion deep enough to grow the stack.
+
+**Note (2026-10-16):** VM-009 is fixed, so nothing blocks that last refusal
+any more; the PoC does not cover it yet.
 
 <details><summary>Original report</summary>
 

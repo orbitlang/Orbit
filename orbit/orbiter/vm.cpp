@@ -244,8 +244,7 @@ bool StoreToIndex(const Fiber *fiber, OObject *object, const OObject *index, OOb
 bool UnwindStack(Fiber *fiber, const PtrSize barrier) {
     const auto *context = &fiber->context;
     auto *regs = &fiber->vm.regs;
-    const auto *stack = &fiber->vm.stack;
-    const auto *except = (ExceptionContext *) regs->CP.reg;
+    const auto *except = ExContextGet(fiber->vm.stack.stack, regs->CP.reg);
 
     while (regs->SP.reg > 0) {
         ExecuteCleanupForPC(fiber);
@@ -523,12 +522,12 @@ void ExecuteCleanupForPC(const Fiber *fiber) {
     }
 }
 
-void ReleaseExceptionContext(Registers *regs) {
-    auto *ctx = (ExceptionContext *) regs->CP.reg;
+void ReleaseExceptionContext(const Fiber *fiber, Registers *regs) {
+    auto *ctx = ExContextGet(fiber->vm.stack.stack, regs->CP.reg);
 
     assert(ctx!=nullptr);
 
-    regs->CP.reg = (PtrSize) ctx->info.prev();
+    regs->CP.reg = ctx->info.prev();
 
     memory::MemoryZero(ctx, sizeof(ExceptionContext));
 }
@@ -1856,7 +1855,7 @@ CATCH_FINALLY:
             TARGET_OP(JERR) {
                 const auto offset = instr & 0xFFFFF;
 
-                auto *ec = (ExceptionContext *) regs->CP.reg;
+                auto *ec = ExContextGet(fiber->vm.stack.stack, regs->CP.reg);
                 auto *e_key = (Atom *) REG_N(FETCH_J_SRC(instr));
 
                 if (e_key == nullptr || ((Error *) fiber->panic.current_->error)->kind == e_key) {
@@ -1964,19 +1963,19 @@ CATCH_FINALLY:
                 const auto slot = ((instr >> 18) & 0x3Fu) * sizeof(void *);
 
                 const auto location = stack->stack + (regs->BP.reg + slot);
-                const auto ctx = new(location)ExceptionContext((ExceptionContext *) regs->CP.reg,
+                const auto ctx = new(location)ExceptionContext(regs->CP.reg,
                                                                regs->BP.reg,
                                                                catch_off);
 
-                regs->CP.reg = (PtrSize) ctx;
+                regs->CP.reg = ctx->GetOffset(fiber->vm.stack.stack);
 
                 DISPATCH;
             }
             TARGET_OP(TEND) {
-                const auto ctx = (ExceptionContext *) regs->CP.reg;
+                const auto ctx = ExContextGet(fiber->vm.stack.stack, regs->CP.reg);
 
                 if (fiber->IsPanicking()) {
-                    ReleaseExceptionContext(regs);
+                    ReleaseExceptionContext(fiber, regs);
 
                     goto ERROR;
                 }
@@ -1989,7 +1988,7 @@ CATCH_FINALLY:
 
                     REG_RR = ctx->ret_value;
 
-                    ReleaseExceptionContext(regs);
+                    ReleaseExceptionContext(fiber, regs);
 
                     Return(fiber, barrier);
 
@@ -2002,9 +2001,9 @@ CATCH_FINALLY:
                 if (action != PendingAction::NONE) {
                     const U32 target = ctx->jump_target;
 
-                    ReleaseExceptionContext(regs);
+                    ReleaseExceptionContext(fiber, regs);
 
-                    auto *outer = (ExceptionContext *) regs->CP.reg;
+                    auto *outer = ExContextGet(fiber->vm.stack.stack, regs->CP.reg);
                     if (outer != nullptr && outer->key == regs->BP.reg) {
                         // Read before overwriting: an action already pending on the
                         // outer context means its finally is the block we are running
@@ -2027,13 +2026,13 @@ CATCH_FINALLY:
                     goto BEGIN;
                 }
 
-                ReleaseExceptionContext(regs);
+                ReleaseExceptionContext(fiber, regs);
 
                 DISPATCH;
             }
             TARGET_OP(TSFIN) {
                 const auto offset = instr & 0xFFFFFFu;
-                auto *ec = (ExceptionContext *) regs->CP.reg;
+                auto *ec = ExContextGet(fiber->vm.stack.stack, regs->CP.reg);
 
                 ec->finally_off = offset;
 
@@ -2045,7 +2044,7 @@ CATCH_FINALLY:
 
                 src = ((instr >> 18) & 0xF);
 
-                auto ctx = (ExceptionContext *) regs->CP.reg;
+                auto ctx = ExContextGet(fiber->vm.stack.stack, regs->CP.reg);
 
                 ctx->info.SetAction((U32) action);
                 ctx->jump_target = offset;
@@ -2056,7 +2055,7 @@ CATCH_FINALLY:
                 DISPATCH;
             }
             TARGET_OP(LDEXC) {
-                ACCESS_REG_DST(instr) = ((ExceptionContext *) regs->CP.reg)->ret_value;
+                ACCESS_REG_DST(instr) = (ExContextGet(fiber->vm.stack.stack, regs->CP.reg))->ret_value;
 
                 DISPATCH;
             }
@@ -2070,7 +2069,7 @@ CATCH_FINALLY:
 
 ERROR:
     if (fiber->panic.current_ != nullptr) {
-        auto *except = (ExceptionContext *) regs->CP.reg;
+        auto *except = ExContextGet(fiber->vm.stack.stack, regs->CP.reg);
         if (except != nullptr) {
             if (except->key == regs->BP.reg) {
                 ExecuteCleanupForPC(fiber);
@@ -2090,7 +2089,7 @@ ERROR:
                 }
 
                 // Release the exhausted exception context (both catch and finally consumed)
-                ReleaseExceptionContext(regs);
+                ReleaseExceptionContext(fiber, regs);
             }
         }
     }

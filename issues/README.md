@@ -27,7 +27,7 @@ are resolved.
 | [ctbuilder.md](ctbuilder.md) | `orbit/orbiter/datatype/ctbuilder.cpp` (class types, blueprint, hook dispatch) | 0/1 |
 | [function.md](function.md) | `orbit/orbiter/datatype/function.cpp` (Function objects, `FuncShared` lifetime) | 1/1 |
 | [oobject.md](oobject.md) | `orbit/orbiter/datatype/oobject.cpp` (object/type core, type lifecycle, type names) | 1/3 |
-| [vm.md](vm.md) | `orbit/orbiter` (interpreter: trap unwind, registers, stack) | 1/9 |
+| [vm.md](vm.md) | `orbit/orbiter` (interpreter: trap unwind, registers, stack) | 0/9 |
 | [number.md](number.md) | `orbit/orbiter/datatype/number.cpp` (integer literals & representation) | 2/2 |
 
 ## Top priorities (High severity, quick wins)
@@ -41,7 +41,7 @@ are resolved.
 - ~~**IR-006** — two calls passing rest/named/keyword arguments collide on R10/R11/R12 (crash or silently wrong rest list)~~ *(FIXED 2026-07-24, the value is copied into the protocol register right before the call instead of the producer being pinned to it)*
 - **IR-010** — any block (`if`, `for`) nested in a `catch` body aborts the compiler; root cause PARSE-019 (scope ranges overlap the next token)
 - ~~**OBJ-002** — `GetTypeName` writes its NUL one byte past a `char[24]`: any type error on an instance of a class named with 24+ characters aborts (stack overflow)~~ *(FIXED 2026-10-15, the copy leaves room for the terminator; names past 23 characters are cut short)*
-- **VM-009** — a `try`/`trap` context keeps an absolute address into the VM stack, which `realloc` moves: a `trap` in every frame of a recursion ~1,000 deep segfaults
+- ~~**VM-009** — a `try`/`trap` context keeps an absolute address into the VM stack, which `realloc` moves: a `trap` in every frame of a recursion ~1,000 deep segfaults~~ *(FIXED 2026-10-16, CP and the `prev` links are offsets from the stack base, biased by one)*
 - ~~**VM-007** — past about 510,000 frames every call reallocates the whole stack, so a bottomless recursion hangs for minutes before its overflow error; fix verified by probe~~ *(FIXED 2026-10-15, the last growth takes everything up to the limit in one step)*
 - ~~**VM-008** — `PUSHIF` reads a type object as a Function when deciding whether to push the receiver (latent, by inspection)~~ *(FIXED 2026-10-15, `PUSHIF` asks the resolved constructor; confirmed live on `Error`)*
 - ~~**VM-006** — `!x` disagrees with `if x`: `NOT` treats every integer as false and every heap object as true, so `if !3` is taken~~ *(FIXED 2026-10-14, `NOT` asks `IsTrue` like the conditional jumps)*
@@ -87,3 +87,4 @@ are resolved.
 - 2026-10-15: `orbit/orbiter/datatype/oobject.cpp` (`GetTypeName`) — OBJ-003 filed (booleans named 'nil' in Results and error messages, no BOOLEAN primitive) and, in the same function, OBJ-002 (off-by-one NUL past the caller's buffer, SIGABRT via `__stack_chk_fail` with a 24-character class name; fix verified by probe). New PoC directory `poc/oobject/`. The PoC gate is 40/44 until IR-010, VM-009, OBJ-002 and OBJ-003 are fixed.
 - 2026-10-15: `orbit/orbiter/datatype/oobject.cpp` (`GetTypeName`) — OBJ-002 FIXED: `std::min(length, out_size - 1)`. PoC 5/5, no abort at any name length; every caller checked for a zero size and for use of the return value. The PoC gate is 41/44 until IR-010, VM-009 and OBJ-003 are fixed.
 - 2026-10-15: `orbit/orbiter/datatype/oobject.cpp` (`GetTypeName`) — OBJ-003 FIXED: both booleans are named `Bool`, `nil` keeps `nil` on purpose. PoC 7/7 (pins both names), no suite relied on the old text. The PoC gate is 42/44 until IR-010 and VM-009 are fixed.
+- 2026-10-16: `orbit/orbiter` (`excstack.h`, exception contexts) — VM-009 FIXED: CP and the `prev` links are stack offsets biased by one, `ExContextGet` maps 0 to no context. Stack-move PoC 8/8 (three checks added: two contexts in one frame, a pending `return` across a growth, a `break` replacing it); new PoCs `poc/vm/exception-context-module-slot.orb` (a context at offset 0) and `poc/vm/panic-without-handler.orb`. Each check was mutation-tested against the encoding mistakes met on the way (no bias, no zero check, merged action bits). Open audit item, not filed: a native's `args` pointer across a callback that grows the stack. The PoC gate is 45/46 until IR-010 is fixed.

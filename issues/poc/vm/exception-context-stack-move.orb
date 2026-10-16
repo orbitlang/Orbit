@@ -14,6 +14,14 @@
 # lies 8 MB outside the live stack. Both shapes are checked, plus `try` in
 # every frame.
 #
+# Fixed by keeping CP, and the link to the previous context, as an offset from
+# the stack base biased by one (0 is "no context"). The checks after the first
+# five pin down what that encoding has to keep: two contexts in one frame, each
+# above a growth, and a pending action (`return`, `break`) carried across a
+# growth and replaced by another one. The context at offset 0 and a panic with
+# no handler at all have PoCs of their own (exception-context-module-slot.orb,
+# panic-without-handler.orb).
+#
 # A runtime test: prints "ALL TESTS PASSED" only when every check matches.
 # EXPECT: contains: ALL TESTS PASSED
 
@@ -81,6 +89,54 @@ func boom_at(n) {
 }
 r_boom := trap boom_at(0)
 check("a panic passed up through every trap", r_boom.unwrap_err().kind, @Deep)
+
+# two contexts in one frame, the stack growing under both: the inner one is
+# released first, and CP must then point back at the outer one
+func nested_same_frame() {
+    var r = 0
+    try {
+        try {
+            r += deep(0)
+        } catch {
+            r = -100
+        }
+        r += deep(0)
+        boom_at(kDepth)
+    } catch e {
+        r += e.kind == @Deep ? 1 : -1000
+    }
+    return r
+}
+check("two contexts in one frame, caught by the outer", nested_same_frame(), 2 * kDepth + 1)
+
+# a return pending in a finally, the stack growing before the finally runs
+func return_across_growth() {
+    try {
+        return deep(0)
+    } finally {
+        deep(0)
+    }
+    return -1
+}
+check("a return carried across a growth", return_across_growth(), kDepth)
+
+# a pending return replaced by a break raised after the stack grew: the action
+# bits have to be overwritten, not merged (RETURN | BREAK reads as RETURN)
+func break_replaces_return() {
+    loop {
+        try {
+            return "returned"
+        } finally {
+            try {
+                deep(0)
+                break
+            } finally {
+            }
+        }
+    }
+    return "broke"
+}
+check("a break replaces a pending return across a growth", break_replaces_return(), "broke")
 
 if fails == 0 {
     io.print("ALL TESTS PASSED")

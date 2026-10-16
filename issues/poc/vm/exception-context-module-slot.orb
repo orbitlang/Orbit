@@ -1,0 +1,59 @@
+# PoC exception-context-module-slot — VM-009: a `try` at module scope that is
+# the first thing the module reserves a stack slot for.
+#
+# CP holds the offset of the current exception context from the stack base,
+# biased by one so that 0 can mean "no context". The bias is not cosmetic: the
+# module frame has BP == 0 and its first reserved slot is slot 0, so the context
+# of the first module-level `try` sits at offset 0 itself. Without the bias it
+# would read as "no context", and the panic below would leave the module
+# uncaught instead of landing in the catch.
+#
+# The `try` must stay the first statement that reserves a slot: do not add
+# module-scope code above it.
+#
+# A runtime test: prints "ALL TESTS PASSED" only when every check matches.
+# EXPECT: contains: ALL TESTS PASSED
+
+import "io"
+
+var caught = 0
+var finished = 0
+
+func boom() { panic Error(@Slot0, "first module slot") }
+
+try {
+    boom()
+} catch e {
+    caught = 1
+} finally {
+    finished = 1
+}
+
+var fails = 0
+
+func check(name, got, expected) {
+    if got == expected {
+        io.print("OK   ", name)
+    } else {
+        io.print("FAIL ", name, "-- got:", got, "expected:", expected)
+        fails += 1
+    }
+}
+
+check("a try in the first module slot catches", caught, 1)
+check("and runs its finally", finished, 1)
+
+# a second module-level context, opened after the first was released
+var again = 0
+try {
+    boom()
+} catch {
+    again = 1
+}
+check("a second module-level try catches", again, 1)
+
+if fails == 0 {
+    io.print("ALL TESTS PASSED")
+} else {
+    io.print(fails, "TEST(S) FAILED")
+}
