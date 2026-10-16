@@ -107,7 +107,11 @@ void SymbolTable::ComputeLocalVarOffset(Scope *scope, const SubScope *s_scope) c
             continue;
 
         if (symbol->type == SymbolType::PARAMETER) {
-            symbol->offset = scope->parameter_count++;
+            if (symbol->location == StorageLocation::CLOSURE) {
+                symbol->stack_offset = scope->parameter_count++;
+                symbol->offset = scope->closure_count++;
+            } else
+                symbol->offset = scope->parameter_count++;
 
             continue;
         }

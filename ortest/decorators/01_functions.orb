@@ -1,0 +1,162 @@
+# Decorators on plain functions: `@[deco] func f() {}` binds `f` to the value
+# `deco` returns when called with the function.
+#
+# The forms covered, as the compiler lowers them (IRBuilder::visitDecorator):
+#   - `@[d]`        → f = d(f)
+#   - `@[d(x, y)]`  → f = d(f, x, y): the function is prepended to the
+#                     arguments written in the brackets, it is not a factory
+#                     call followed by an application
+#   - `@[a, b]`     → f = b(a(f)): the list is applied left to right
+#   - `@[obj.m]`    → any expression naming a callable works
+# A decorator runs once, when the definition executes, and may return any value.
+# Recursive calls inside the body go through the decorated name.
+#
+# Most decorators here return a wrapper that captures the decorated function,
+# one of its own parameters: that capture crashed until SYM-001 was fixed.
+#
+# EXPECT: contains: ALL TESTS PASSED
+
+import "io"
+
+var fails = 0
+
+func check(name, got, expected) {
+    if got == expected {
+        io.print("OK   ", name)
+    } else {
+        io.print("FAIL ", name, "-- got:", got, "expected:", expected)
+        fails += 1
+    }
+}
+
+# --- decorators that return the function itself -----------------------------
+
+var applied = 0
+
+func mark(f) {
+    applied += 1
+    return f
+}
+
+@[mark]
+func plain(x) { return x * 3 }
+
+check("an identity decorator keeps the function", plain(2), 6)
+plain(1)
+check("and runs once, at the definition", applied, 1)
+
+# --- a decorator may return any value ---------------------------------------
+
+func replace(f) { return 42 }
+
+@[replace]
+func gone() { return 0 }
+
+check("a decorator may replace the function with a value", gone, 42)
+
+# --- wrappers ----------------------------------------------------------------
+
+func twice(f) {
+    func w(x) { return f(f(x)) }
+    return w
+}
+
+@[twice]
+func inc(x) { return x + 1 }
+
+check("a wrapper around the function", inc(1), 3)
+
+# arguments in the brackets follow the function
+func add(f, n) {
+    func w(x) { return f(x) + n }
+    return w
+}
+
+@[add(10)]
+func ident(x) { return x }
+
+check("a decorator with an argument", ident(5), 15)
+
+func between(f, pre, post) {
+    func w(x) { return pre + f(x) + post }
+    return w
+}
+
+@[between("<", ">")]
+func name(x) { return x }
+
+check("a decorator with two arguments", name("a"), "<a>")
+
+# a list is applied left to right: the first one wraps the function
+func tag(f, t) {
+    func w(x) { return t + f(x) }
+    return w
+}
+
+@[tag("a"), tag("b")]
+func tagged(x) { return x }
+
+check("a list of decorators, applied left to right", tagged("x"), "bax")
+
+# a wrapper that forwards whatever it is given
+func forward(f) {
+    func w(...args) { return f(args...) }
+    return w
+}
+
+@[forward]
+func add3(a, b, c) { return a + b + c }
+
+check("a forwarding wrapper", add3(1, 2, 3), 6)
+
+# recursion goes through the decorated name
+var calls = 0
+
+func counted(f) {
+    func w(n) {
+        calls += 1
+        return f(n)
+    }
+    return w
+}
+
+@[counted]
+func fact(n) { return n <= 1 ? 1 : n * fact(n - 1) }
+
+check("a recursive decorated function", fact(5), 120)
+check("each recursive call goes through the wrapper", calls, 5)
+
+# --- where the decorator comes from -----------------------------------------
+
+class Registry {
+    pub var n = 0
+
+    pub func register(f) {
+        self.n += 1
+        return f
+    }
+}
+
+reg := new Registry()
+
+@[reg.register]
+func registered() { return 1 }
+
+check("a method as a decorator", registered(), 1)
+check("which saw the function", reg.n, 1)
+
+# --- a decorated function inside a function ---------------------------------
+
+func outer() {
+    @[twice]
+    func inner(x) { return x + 1 }
+    return inner(1)
+}
+
+check("a decorated local function", outer(), 3)
+
+if fails == 0 {
+    io.print("ALL TESTS PASSED")
+} else {
+    io.print(fails, "TEST(S) FAILED")
+}

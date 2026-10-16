@@ -41,6 +41,10 @@ Blocked by SYM-001: `self` is a parameter, so today capturing it crashes
 before the property is read. With the SYM-001 fix applied as a probe, a
 closure that returns `self` works and one that reads `self.v` crashes here.
 
+**Note (2026-10-16):** SYM-001 is fixed, so this is no longer blocked: a
+closure that returns `self` works, and the PoC now crashes at its first
+`self.v` in a nested function.
+
 The same inline path is what crashes a decorated method in IR-011, where the
 method itself is never given its `owner_type`.
 

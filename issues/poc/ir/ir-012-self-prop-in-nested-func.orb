@@ -8,8 +8,7 @@
 # function it is null and `O_SLOT(obj, nullptr)` crashes (SIGSEGV).
 #
 # Reading the property through a local copy of `self` takes the generic path
-# and is the control. Blocked by SYM-001: until it is fixed, capturing `self`
-# crashes before the property is read.
+# and is the control. Capturing `self` itself works since SYM-001 was fixed.
 #
 # A runtime test: prints "ALL TESTS PASSED" only when every check matches.
 # EXPECT: contains: ALL TESTS PASSED

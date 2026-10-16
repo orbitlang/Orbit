@@ -7,7 +7,43 @@
 ---
 
 ## SYM-001 — A parameter captured by a nested function gets no closure slot
-**Severity:** High (SIGSEGV on a basic closure; every wrapping decorator hits it) · **Status:** OPEN · **Location:** `orbit/liftoff/symtable.cpp:109` (`ComputeLocalVarOffset`, the `PARAMETER` branch)
+**Severity:** High (SIGSEGV on a basic closure; every wrapping decorator hits it) · **Status:** FIXED (2026-10-16) · **Location:** `orbit/liftoff/symtable.cpp:109` (`ComputeLocalVarOffset`, the `PARAMETER` branch)
+
+**Fix verified (PoC `poc/symtable/sym-001.orb` — prints `ALL TESTS PASSED`,
+7 of 7; `ortest/decorators/01_functions.orb` 13/13; `ortest` 23/24 and the PoC
+gate 46/49, the failures being the open IR-010, IR-011 and IR-012;
+`phi-regalloc.orb` green).** A captured parameter now gets both numbers, the
+way `LoadParameter` expects them: `stack_offset` is its parameter index and
+`offset` its closure index.
+
+```cpp
+if (symbol->type == SymbolType::PARAMETER) {
+    if (symbol->location == StorageLocation::CLOSURE) {
+        symbol->stack_offset = scope->parameter_count++;
+        symbol->offset = scope->closure_count++;
+    } else
+        symbol->offset = scope->parameter_count++;
+
+    continue;
+}
+```
+
+The enclosing function now creates its closure, and the nested function reads
+the captured value from it. A closure that reads `self.prop` still crashes,
+but that is IR-012, which this fix unblocks.
+
+**Note (2026-10-16):** an intermediate version dropped the `continue` and let
+parameters fall through to the storage-location `switch`. It produced correct
+values, but only because parameters are the first symbols laid out in their
+scope, so `stack_count` happened to equal each parameter's index. It also
+counted every parameter as a local: `three(a, b, c)` with no locals got
+`vars_count` 3 instead of 0, so every call reserved and zeroed one unused slot
+per parameter, and the deepest recursion fell from 524,286 to 466,032 frames
+(one argument) and from 419,429 to 322,637 (three). The final version keeps
+the `continue`, and both depths are back to their old values.
+
+<details><summary>Original report</summary>
+
 
 When a nested function reads a parameter of the function around it,
 `LookupInsert` marks the parameter `StorageLocation::CLOSURE` and the nested
@@ -75,3 +111,5 @@ With this change the PoC passes 7/7, `ortest/decorators/01_functions.orb`
 passes 13/13, and `ortest` and the PoC gate are otherwise unchanged; the probe
 was then reverted. It does not fix reading `self.prop` inside the closure,
 which is IR-012.
+
+</details>

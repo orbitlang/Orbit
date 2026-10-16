@@ -1,0 +1,114 @@
+# Decorators on methods: `@[deco] func m() {}` inside a class binds the member
+# `m` to what `deco` returns, as for a plain function (01_functions.orb).
+#
+# The contract this suite asserts for a wrapper is the one a method needs to be
+# usable: called through an instance, the wrapper receives the receiver as its
+# first argument, followed by the call's own arguments, and it can call the
+# decorated method with that receiver. The decorated method keeps belonging to
+# its class: `self.prop` and private members work inside it.
+#
+# Today only a decorator that returns the method itself works. A wrapper is
+# not bound to the receiver, and the decorated method is never attached to its
+# class (IR-011); the suite dies at the first call that reaches it.
+#
+# EXPECT: contains: ALL TESTS PASSED
+
+import "io"
+
+var fails = 0
+
+func check(name, got, expected) {
+    if got == expected {
+        io.print("OK   ", name)
+    } else {
+        io.print("FAIL ", name, "-- got:", got, "expected:", expected)
+        fails += 1
+    }
+}
+
+func mark(f) { return f }
+
+func plus_one(f) {
+    func w(me) { return f(me) + 1 }
+    return w
+}
+
+func scaled(f, k) {
+    func w(me, x) { return f(me, x) * k }
+    return w
+}
+
+func forward(f) {
+    func w(...args) { return f(args...) }
+    return w
+}
+
+class Counter {
+    pub var v
+    var hidden = 100
+
+    pub init(v) {
+        self.v = v
+    }
+
+    # a decorator that returns the method itself
+    @[mark]
+    pub func same() { return self.v }
+
+    @[mark]
+    func secret() { return self.hidden }
+
+    pub func reveal() { return self.secret() }
+
+    # wrappers
+    @[plus_one]
+    pub func get() { return self.v }
+
+    @[scaled(10)]
+    pub func add(x) { return self.v + x }
+
+    @[forward]
+    pub func sum(a, b) { return self.v + a + b }
+
+    @[plus_one]
+    func peek() { return self.hidden }
+
+    pub func call_peek() { return self.peek() }
+}
+
+c := new Counter(5)
+
+# --- the method itself ------------------------------------------------------
+
+check("an identity decorator on a method", c.same(), 5)
+check("an identity decorator on a private method", c.reveal(), 100)
+
+# --- wrappers, called through an instance -----------------------------------
+
+check("a wrapper on a method, called on an instance", c.get(), 6)
+check("a wrapper with a decorator argument and a call argument", c.add(1), 60)
+check("a forwarding wrapper", c.sum(1, 2), 8)
+check("a wrapper on a private method, called from inside", c.call_peek(), 101)
+
+# --- wrappers, called with an explicit receiver -----------------------------
+
+get := Counter.get
+check("a wrapper taken from the class, called with a receiver", get(c), 6)
+
+# --- inheritance --------------------------------------------------------------
+
+class Derived : Counter {
+    pub init(v) {
+        super.init(v)
+    }
+}
+
+d := new Derived(7)
+check("an inherited identity-decorated method", d.same(), 7)
+check("an inherited wrapper", d.get(), 8)
+
+if fails == 0 {
+    io.print("ALL TESTS PASSED")
+} else {
+    io.print(fails, "TEST(S) FAILED")
+}
