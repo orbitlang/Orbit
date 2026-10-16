@@ -1,0 +1,66 @@
+# PoC ir-012-self-prop-in-nested-func — IR-012: `self.prop` read inside a
+# function nested in a method must load the property.
+#
+# visitSelector lowers `self.<member>` to an inline LDOBJP whenever a class is
+# being built, without checking that the code being compiled is the method
+# itself. At run time the inline path finds the slots through the running
+# function's `shared->owner_type`, which only a method has: for a nested
+# function it is null and `O_SLOT(obj, nullptr)` crashes (SIGSEGV).
+#
+# Reading the property through a local copy of `self` takes the generic path
+# and is the control. Blocked by SYM-001: until it is fixed, capturing `self`
+# crashes before the property is read.
+#
+# A runtime test: prints "ALL TESTS PASSED" only when every check matches.
+# EXPECT: contains: ALL TESTS PASSED
+
+import "io"
+
+var fails = 0
+
+func check(name, got, expected) {
+    if got == expected {
+        io.print("OK   ", name)
+    } else {
+        io.print("FAIL ", name, "-- got:", got, "expected:", expected)
+        fails += 1
+    }
+}
+
+class A {
+    pub var v = 4
+    var hidden = 7
+
+    pub func through_local() {
+        me := self
+        func w() { return me.v }
+        return w()
+    }
+
+    pub func public_prop() {
+        func w() { return self.v }
+        return w()
+    }
+
+    pub func private_prop() {
+        func w() { return self.hidden }
+        return w()
+    }
+
+    pub func returned() {
+        func w() { return self.v }
+        return w
+    }
+}
+
+a := new A()
+check("control: through a local copy of self", a.through_local(), 4)
+check("a public property through self, in a nested function", a.public_prop(), 4)
+check("a private property through self, in a nested function", a.private_prop(), 7)
+check("the nested function called after the method returned", a.returned()(), 4)
+
+if fails == 0 {
+    io.print("ALL TESTS PASSED")
+} else {
+    io.print(fails, "TEST(S) FAILED")
+}

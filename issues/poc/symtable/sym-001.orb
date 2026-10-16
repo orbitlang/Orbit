@@ -1,0 +1,88 @@
+# PoC sym-001 — SYM-001: a nested function that captures a parameter of the
+# function around it must see that parameter's value.
+#
+# ComputeLocalVarOffset gives every parameter its parameter index and moves on,
+# even when the parameter is captured: it never counts it towards the scope's
+# closure slots. The enclosing function therefore creates no closure object,
+# the nested function is built with a null closure, and its first read of the
+# captured value (CLOLDR) dereferences null: SIGSEGV.
+#
+# A captured local variable works and is the control. Every other check
+# crashes today, so the first one ends the run.
+#
+# A runtime test: prints "ALL TESTS PASSED" only when every check matches.
+# EXPECT: contains: ALL TESTS PASSED
+
+import "io"
+
+var fails = 0
+
+func check(name, got, expected) {
+    if got == expected {
+        io.print("OK   ", name)
+    } else {
+        io.print("FAIL ", name, "-- got:", got, "expected:", expected)
+        fails += 1
+    }
+}
+
+func over_local() {
+    n := 3
+    func w() { return n }
+    return w
+}
+check("control: a captured local", over_local()(), 3)
+
+func over_param(n) {
+    func w() { return n }
+    return w
+}
+check("a captured parameter", over_param(4)(), 4)
+
+func over_second_param(a, b) {
+    func w(x) { return x + b }
+    return w
+}
+check("a captured second parameter, beside one of its own", over_second_param(1, 10)(5), 15)
+
+func over_both(a, b) {
+    func w() { return a * b }
+    return w
+}
+check("two captured parameters", over_both(6, 7)(), 42)
+
+func written(n) {
+    func w() {
+        n += 1
+        return n
+    }
+    return w
+}
+counter := written(10)
+counter()
+check("a captured parameter written by the closure", counter(), 12)
+
+func call_it(f) {
+    func w(x) { return f(x) }
+    return w
+}
+func inc(x) { return x + 1 }
+check("a captured function parameter, called", call_it(inc)(1), 2)
+
+# `self` is a parameter too. The closure returns it rather than reading
+# `self.v`, which trips IR-012 instead.
+class A {
+    pub var v = 4
+
+    pub func getter() {
+        func w() { return self }
+        return w
+    }
+}
+check("a captured self", new A().getter()().v, 4)
+
+if fails == 0 {
+    io.print("ALL TESTS PASSED")
+} else {
+    io.print(fails, "TEST(S) FAILED")
+}

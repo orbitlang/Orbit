@@ -1,10 +1,121 @@
 # ir — bug report
 
 **Component:** `orbit/liftoff/ir` (instruction.h, linearscan.cpp, irbuilder.cpp) · **ID prefix:** `IR`
-**PoCs:** [`poc/ir/`](poc/ir/) · **Last reviewed:** 2026-10-14
+**PoCs:** [`poc/ir/`](poc/ir/) · **Last reviewed:** 2026-10-16
 **Status:** OPEN · PARTIAL · FIXED · WONTFIX — see [GUIDE.md](GUIDE.md).
 
 > Imported 2026-06-15 from `orbit/liftoff/ir/KNOWN_ISSUES.md` (ISSUE-001 → IR-001).
+
+---
+
+## IR-012 — `self.prop` in a function nested in a method reads through a null owner type
+**Severity:** High (SIGSEGV) · **Status:** OPEN · **Location:** `orbit/liftoff/ir/irbuilder.cpp:1456` (`visitSelector`, the `self` fast path) → `orbit/orbiter/vm.cpp:1747` (`TARGET_OP(LDOBJP)`, inline path)
+
+`visitSelector` lowers `self.<member>` to an inline `LDOBJP` (the member's
+slot offset, no name lookup) whenever a class is being built:
+
+```cpp
+if (obj_base->kind == scanner::TokenType::SELF
+    && this->ct_active_ != nullptr
+    && ((PhysInstruction *) this->ct_active_->tp_ptr)->opcode == orbiter::OPCode::MKCLZ) {
+    const auto *sym = this->sym_t_->LookupMember(key->value);
+    if (sym != nullptr && ENUMBITMASK_ISFALSE(sym->flags, SymbolFlags::CONST))
+        return this->builder_.LoadObjectProp(base, sym->offset, false, false);
+}
+```
+
+`ct_active_` is still the class inside a function nested in a method, so the
+nested function gets the inline load too. At run time the inline path finds
+the instance slots through the **running** function's class:
+
+```cpp
+auto *slot = O_SLOT(obj, this_func->shared->owner_type);
+```
+
+Only a function attached to the class has an `owner_type`; the nested
+function's is null, and the load crashes (SIGSEGV at address `0x72`,
+confirmed under lldb). Copying `self` into a local first (`me := self;
+... me.v`) takes the generic path and works.
+
+Blocked by SYM-001: `self` is a parameter, so today capturing it crashes
+before the property is read. With the SYM-001 fix applied as a probe, a
+closure that returns `self` works and one that reads `self.v` crashes here.
+
+The same inline path is what crashes a decorated method in IR-011, where the
+method itself is never given its `owner_type`.
+
+**PoC:** [`poc/ir/ir-012-self-prop-in-nested-func.orb`](poc/ir/ir-012-self-prop-in-nested-func.orb)
+*(confirmed live with the SYM-001 probe applied: the control passes, the
+first `self.v` in a nested function crashes)*.
+
+**Fix (suggested, not tried):** take the inline path only when the function
+being compiled is the method, i.e. the IR context is the method's own and not
+a function nested in it; elsewhere fall back to the named lookup. An
+alternative is for the inline path to take the type from the object
+(`O_GET_TYPE(obj)`) when the running function has no owner, at the cost of a
+branch on the fast path.
+
+---
+
+## IR-011 — A method whose decorator returns a wrapper cannot be called
+**Severity:** High (SIGSEGV; a decorated method is unusable) · **Status:** OPEN · **Location:** `orbit/liftoff/ir/irbuilder.cpp:987` (`visitDecorator`), `orbit/orbiter/vm.cpp:1280` (`TARGET_OP(SETPROP)`), `orbit/orbiter/vm.cpp:1416` (`TARGET_OP(PUSHIF)`)
+
+A decorator on a method is lowered like one on a function: the method is
+compiled as an anonymous function, the decorators are called on it, and the
+result is stored in the class member with `SETPROP`. When the decorator returns
+the method itself, nothing changes and the method works. When it returns a
+wrapper, two things go wrong.
+
+**The wrapper is not given the receiver.** It is a plain function, not a
+method, and `PUSHIF` pushes the receiver only for a method (VM-008). So
+`c.get()` calls a wrapper declared `w(me)` with no arguments; Orbit curries a
+call with too few arguments, and `c.get()` returns a `Function` instead of
+calling anything. That is the "not callable" symptom. A forwarding wrapper
+(`w(...args)`) is called, but forwards no receiver, so the method it calls
+curries in turn (observed with the SYM-001 probe applied).
+
+**The method is never attached to its class.** `SETPROP` sets
+`shared->owner_type` only on the value it stores, and only when that value is
+a method:
+
+```cpp
+if (O_IS_OBJECT(value)
+    && O_IS_TYPE(value, InstanceType::FUNCTION)
+    && ((Function *) value)->shared->IsMethod())
+    ((Function *) value)->shared->owner_type = tp;
+```
+
+The wrapper is stored, so the decorated method keeps a null `owner_type`. When
+the wrapper is given a receiver by hand (`Counter.get(c)`, or `h := Counter.get;
+h(c)`) and calls the method, `self.v` takes the inline `LDOBJP` path, which
+reads the slots through `owner_type`: SIGSEGV at address `0x72` (confirmed
+under lldb). The same wrapper applied by hand to an undecorated method
+(`wrap(P.get)(p)`) works, because that method was attached to `P` when the
+class was built. A private member reached by name from the method would also be
+refused, since the access check uses the same `owner_type` (by inspection,
+`vm.cpp:465`).
+
+How a decorated method should receive its receiver is a design choice, to be
+discussed before fixing:
+
+- bind any function stored as a class member when it is reached through an
+  instance, the way Python binds plain functions;
+- mark the decorator's result as a method when the decorated function was one
+  (only possible when the result is a fresh `Function`, and it would rewrite
+  a function the decorator may share);
+- or bind the receiver as the decorator's first argument and leave the wrapper
+  unbound.
+
+Whichever is chosen, the decorated method also has to get its `owner_type`
+from the class, not from whatever the decorator returns.
+
+**Found** from a report by the user (decorated methods are not callable),
+while building `ortest/decorators/02_methods.orb`.
+
+**PoC:** [`poc/ir/ir-011-decorated-method.orb`](poc/ir/ir-011-decorated-method.orb)
+*(confirmed live: the control passes, the call through an instance returns a
+`Function`, the call with an explicit receiver crashes)*. Its wrappers copy the
+decorated function into a local, so they do not depend on SYM-001.
 
 ---
 

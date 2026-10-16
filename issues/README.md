@@ -22,7 +22,8 @@ are resolved.
 | [sbuffer.md](sbuffer.md) | `orbit/liftoff/scanner/sbuffer` | 0/3 |
 | [utf8-stringbuilder.md](utf8-stringbuilder.md) | `orbit/orbiter/datatype/stringbuilder` (UTF-8 codec) | 1/4 |
 | [parser.md](parser.md) | `orbit/liftoff/parser` (parser.cpp, context.h, ast.h) | 13/25 |
-| [ir.md](ir.md) | `orbit/liftoff/ir` (linearscan, intervalspiller, irbuilder, instruction) | 2/10 |
+| [ir.md](ir.md) | `orbit/liftoff/ir` (linearscan, intervalspiller, irbuilder, instruction) | 4/12 |
+| [symtable.md](symtable.md) | `orbit/liftoff/symtable` (scopes, symbol slots, closures) | 1/1 |
 | [compiler.md](compiler.md) | `orbit/liftoff/compiler.cpp` (compile driver) | 1/1 |
 | [ctbuilder.md](ctbuilder.md) | `orbit/orbiter/datatype/ctbuilder.cpp` (class types, blueprint, hook dispatch) | 0/1 |
 | [function.md](function.md) | `orbit/orbiter/datatype/function.cpp` (Function objects, `FuncShared` lifetime) | 1/1 |
@@ -39,6 +40,9 @@ are resolved.
 - ~~**IR-004** — a derived class resolved its own members through its superclass (wrong `init`, shadowed properties)~~ *(FIXED 2026-07-17, `LoadFromObjectProp` searches a class's own chain first)*
 - ~~**IR-005** — instantiating a class three levels deep in an inheritance chain hangs the interpreter~~ *(FIXED 2026-07-22, `super` resolves from the enclosing class, not the receiver's runtime type)*
 - ~~**IR-006** — two calls passing rest/named/keyword arguments collide on R10/R11/R12 (crash or silently wrong rest list)~~ *(FIXED 2026-07-24, the value is copied into the protocol register right before the call instead of the producer being pinned to it)*
+- **SYM-001** — a parameter captured by a nested function gets no closure slot: the closure is null and the first read segfaults (breaks every wrapping decorator); fix verified by probe
+- **IR-011** — a method whose decorator returns a wrapper cannot be called: the wrapper gets no receiver (the call curries) and the method is never attached to its class (segfault on `self.prop`)
+- **IR-012** — `self.prop` in a function nested in a method takes the inline load and reads through a null owner type (segfault); blocked by SYM-001
 - **IR-010** — any block (`if`, `for`) nested in a `catch` body aborts the compiler; root cause PARSE-019 (scope ranges overlap the next token)
 - ~~**OBJ-002** — `GetTypeName` writes its NUL one byte past a `char[24]`: any type error on an instance of a class named with 24+ characters aborts (stack overflow)~~ *(FIXED 2026-10-15, the copy leaves room for the terminator; names past 23 characters are cut short)*
 - ~~**VM-009** — a `try`/`trap` context keeps an absolute address into the VM stack, which `realloc` moves: a `trap` in every frame of a recursion ~1,000 deep segfaults~~ *(FIXED 2026-10-16, CP and the `prev` links are offsets from the stack base, biased by one)*
@@ -88,3 +92,4 @@ are resolved.
 - 2026-10-15: `orbit/orbiter/datatype/oobject.cpp` (`GetTypeName`) — OBJ-002 FIXED: `std::min(length, out_size - 1)`. PoC 5/5, no abort at any name length; every caller checked for a zero size and for use of the return value. The PoC gate is 41/44 until IR-010, VM-009 and OBJ-003 are fixed.
 - 2026-10-15: `orbit/orbiter/datatype/oobject.cpp` (`GetTypeName`) — OBJ-003 FIXED: both booleans are named `Bool`, `nil` keeps `nil` on purpose. PoC 7/7 (pins both names), no suite relied on the old text. The PoC gate is 42/44 until IR-010 and VM-009 are fixed.
 - 2026-10-16: `orbit/orbiter` (`excstack.h`, exception contexts) — VM-009 FIXED: CP and the `prev` links are stack offsets biased by one, `ExContextGet` maps 0 to no context. Stack-move PoC 8/8 (three checks added: two contexts in one frame, a pending `return` across a growth, a `break` replacing it); new PoCs `poc/vm/exception-context-module-slot.orb` (a context at offset 0) and `poc/vm/panic-without-handler.orb`. Each check was mutation-tested against the encoding mistakes met on the way (no bias, no zero check, merged action bits). Open audit item, not filed: a native's `args` pointer across a callback that grows the stack. The PoC gate is 45/46 until IR-010 is fixed.
+- 2026-10-16: decorators (user report: decorated methods are not callable) — new suites `ortest/decorators/01_functions.orb` and `02_methods.orb`, both red. Three findings, all confirmed live: SYM-001 (new component file `symtable.md`; a captured parameter gets no closure slot, so any wrapping decorator crashes; one-branch fix verified by probe, 01_functions then passes 13/13), IR-011 (decorated method: wrapper not bound to the receiver, method never given its `owner_type`; receiver binding left for discussion), IR-012 (`self.prop` in a nested function takes the inline load with a null owner type; blocked by SYM-001). The PoC gate is 45/49 and `ortest` 22/24 until they are fixed.

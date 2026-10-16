@@ -1,0 +1,69 @@
+# PoC ir-011-decorated-method — IR-011: a method whose decorator returns a
+# wrapper must stay callable, both through an instance and with an explicit
+# receiver.
+#
+# visitDecorator stores the decorator's result in the class with SETPROP, and
+# SETPROP attaches a function to its class (shared->owner_type) only when the
+# stored value is itself a method. A wrapper is a plain function, so:
+#   - called through an instance it is not given the receiver: `c.get()`
+#     calls the one-parameter wrapper with no arguments, which curries it, and
+#     returns a Function instead of calling anything;
+#   - the decorated method is never attached to its class, so when the wrapper
+#     calls it, `self.v` takes the inline LDOBJP fast path with a null owner
+#     type: SIGSEGV.
+#
+# The wrappers keep the decorated function in a local (`g := f`) rather than
+# capturing the parameter `f`, so this PoC does not trip over SYM-001. A
+# decorator that returns the method itself works and is the control.
+#
+# A runtime test: prints "ALL TESTS PASSED" only when every check matches.
+# EXPECT: contains: ALL TESTS PASSED
+
+import "io"
+
+var fails = 0
+
+func check(name, got, expected) {
+    if got == expected {
+        io.print("OK   ", name)
+    } else {
+        io.print("FAIL ", name, "-- got:", got, "expected:", expected)
+        fails += 1
+    }
+}
+
+func same(f) { return f }
+
+func plus_one(f) {
+    g := f
+    func w(me) { return g(me) + 1 }
+    return w
+}
+
+class Counter {
+    pub var v
+
+    pub init(v) {
+        self.v = v
+    }
+
+    @[same]
+    pub func kept() { return self.v }
+
+    @[plus_one]
+    pub func get() { return self.v }
+}
+
+c := new Counter(5)
+
+check("control: a decorator that returns the method", c.kept(), 5)
+check("a wrapper called through an instance gets the receiver", c.get(), 6)
+
+get := Counter.get
+check("a wrapper called with an explicit receiver", get(c), 6)
+
+if fails == 0 {
+    io.print("ALL TESTS PASSED")
+} else {
+    io.print(fails, "TEST(S) FAILED")
+}
