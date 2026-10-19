@@ -1,0 +1,169 @@
+# PoC sym-002 — SYM-002: a variable captured two or more levels down, through
+# a nested function that does not use it itself, must be visible to the
+# innermost function.
+#
+# LookupInsert marks the captured variable `CLOSURE` and flags only the scope
+# that reads it (`this->scope`). The functions in between are not flagged, so
+# they never load their closure into their frame, and the innermost function is
+# built by LDFUNC from a closure slot that was never set: SIGSEGV on the first
+# read. It happens with a captured local as with a parameter or `self`.
+#
+# A middle function that copies the value into a local of its own works and is
+# the control.
+#
+# A runtime test: prints "ALL TESTS PASSED" only when every check matches.
+# EXPECT: contains: ALL TESTS PASSED
+
+import "io"
+
+var fails = 0
+
+func check(name, got, expected) {
+    if got == expected {
+        io.print("OK   ", name)
+    } else {
+        io.print("FAIL ", name, "-- got:", got, "expected:", expected)
+        fails += 1
+    }
+}
+
+func copied() {
+    n := 5
+    func mid() {
+        m := n
+        func inner() { return m }
+        return inner()
+    }
+    return mid()
+}
+check("control: the middle function copies the value", copied(), 5)
+
+func local_two_down() {
+    n := 5
+    func mid() {
+        func inner() { return n }
+        return inner()
+    }
+    return mid()
+}
+check("a local captured two levels down", local_two_down(), 5)
+
+func param_two_down(n) {
+    func mid() {
+        func inner() { return n }
+        return inner()
+    }
+    return mid()
+}
+check("a parameter captured two levels down", param_two_down(6), 6)
+
+func three_down() {
+    n := 7
+    func a() {
+        func b() {
+            func c() { return n }
+            return c()
+        }
+        return b()
+    }
+    return a()
+}
+check("a local captured three levels down", three_down(), 7)
+
+func both_levels() {
+    n := 1
+    func mid() {
+        m := 10
+        func inner() { return n + m }
+        return inner()
+    }
+    return mid()
+}
+check("one value from each enclosing level", both_levels(), 11)
+
+class A {
+    pub var v = 4
+
+    pub func outer() {
+        func mid() {
+            func inner() { return self }
+            return inner()
+        }
+        return mid()
+    }
+}
+check("self captured two levels down", new A().outer().v, 4)
+
+# A captured variable of a middle function belongs to each call of that
+# function, not to the enclosing one: two closures made by two calls, or by a
+# recursion, must each see their own value. Storing it in the enclosing
+# function's closure gives every call one shared slot.
+func factory_of_params() {
+    n := 0
+    func make(start) {
+        func get() { return start + n }
+        return get
+    }
+    a := make(1)
+    b := make(2)
+    return (a(), b())
+}
+check("a middle function's parameter, two calls", factory_of_params(), (1, 2))
+
+func factory_of_locals() {
+    n := 100
+    func make(k) {
+        m := k * 10
+        func get() { return n + m }
+        return get
+    }
+    a := make(1)
+    b := make(2)
+    return (a(), b())
+}
+check("a middle function's local, two calls", factory_of_locals(), (110, 120))
+
+func recursive_middle() {
+    n := 0
+    func rec(d) {
+        func get() { return d + n }
+        if d == 0 { return get() }
+        r := rec(d - 1)
+        return get() * 10 + r
+    }
+    return rec(2)
+}
+r_rec := trap recursive_middle()
+check("a middle function that recurses", r_rec.unwrap_or("ERROR"), 210)
+
+# The layout must not depend on the order of the declarations: `b` is declared
+# after the function whose closure captures it.
+func declared_later() {
+    func a(x) {
+        m := x
+        func g() { return b(m) }
+        return g()
+    }
+    func b(y) { return y + 1 }
+    return a(1)
+}
+r_later := trap declared_later()
+check("a function declared after the one that captures it", r_later.unwrap_or("ERROR"), 2)
+
+# A value written by the innermost function is seen by the declaring one.
+func written_two_down() {
+    n := 1
+    func mid() {
+        func inner() { n += 10 }
+        inner()
+    }
+    mid()
+    return n
+}
+check("a write two levels down reaches the declaring function", written_two_down(), 11)
+
+if fails == 0 {
+    io.print("ALL TESTS PASSED")
+} else {
+    io.print(fails, "TEST(S) FAILED")
+}

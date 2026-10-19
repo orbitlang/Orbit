@@ -1,8 +1,128 @@
 # symtable — bug report
 
 **Component:** `orbit/liftoff` (symtable.h, symtable.cpp) · **ID prefix:** `SYM`
-**PoCs:** [`poc/symtable/`](poc/symtable/) · **Last reviewed:** 2026-10-16
+**PoCs:** [`poc/symtable/`](poc/symtable/) · **Last reviewed:** 2026-10-19
 **Status:** OPEN · PARTIAL · FIXED · WONTFIX — see [GUIDE.md](GUIDE.md).
+
+---
+
+## SYM-002 — A variable captured two levels down reaches the innermost function through an unset closure
+**Severity:** High (SIGSEGV on a nested closure) · **Status:** OPEN · **Location:** `orbit/liftoff/symtable.cpp:623` (`LookupInsert`)
+
+When a nested function reads a variable of an enclosing function,
+`LookupInsert` marks the variable `CLOSURE` and flags the scope that reads it:
+
+```cpp
+sym->location = StorageLocation::CLOSURE;
+this->scope->flags |= ScopeFlags::CLOSURE;
+```
+
+Only that scope. When the variable lives two or more levels up, the functions
+in between are not flagged, so none of them loads its closure into its frame
+(`LoadClosureObject`, done only for a `CLOSURE` scope). The innermost function
+is still built with the `CLOSURE` flag, and `LDFUNC` reads the middle
+function's closure slot, which was never set: the innermost function gets no
+usable closure and its first read crashes (SIGSEGV).
+
+```orbit
+func outer() {
+    n := 5
+    func mid() {
+        func inner() { return n }   // mid never reads n itself
+        return inner()
+    }
+    return mid()
+}
+```
+
+A captured local, a parameter and `self` all crash the same way. A middle
+function that copies the value into a local of its own (`m := n`) works.
+
+Not related to SYM-001, which was about one level, and present before it.
+**Found** while checking that functions nested in a method inherit the
+method's class (method-decorator plan, step 1): a closure two levels inside a
+method crashed for this reason.
+
+**PoC:** [`poc/symtable/sym-002.orb`](poc/symtable/sym-002.orb)
+*(confirmed live on HEAD: the control passes, the first two-level capture
+crashes)*.
+
+**Partial fix (2026-10-19, staged):** `LookupInsert` now flags every
+function scope between the reader and the declaring scope, so each middle
+function loads its closure and hands it down:
+
+```cpp
+for (auto *cursor = this->scope; cursor != sym->decl_scope; cursor = cursor->back) {
+    if (cursor->type == ScopeType::FUNCTION)
+        cursor->flags |= ScopeFlags::CLOSURE;
+}
+```
+
+That removes the crash when the middle functions declare no captured
+variables of their own: the first four checks of the PoC pass. It is not
+enough when a middle function declares one, and the PoC gained five checks
+for that case. Six checks fail in all:
+
+| Check | Result | Expected |
+|---|---|---|
+| one value from each enclosing level (`n` in `outer`, `m` in `mid`) | 20 | 11 |
+| a middle function's parameter, two calls | `(0, 0)` | `(1, 2)` |
+| a middle function's local, two calls | `(40, 40)` | `(110, 120)` |
+| a middle function that recurses | error | 210 |
+| a function declared after the one that captures it | error | 2 |
+| a write two levels down reaches the declaring function | 1 | 11 (IR-014) |
+
+The cause is that closures are flat: one object per call of a function that
+declares captured variables, with no link to the closure of the function
+around it. A function that both declares captured variables and reads an
+enclosing one (`mid`) needs two closures and has room for one. Today its
+prologue emits `CLONEW` into the frame's closure slot and then, because the
+scope is flagged `CLOSURE`, `LDCLO` into the same slot
+(`irbuilder.cpp:1099-1114`): the closure it received replaces the one it just
+created, and `m := 10` lands in slot 0 of `outer`'s closure, over `n`.
+
+Giving all the nested variables distinct slots in one shared object does not
+work either: `m` exists once per call of `mid`, and two closures made by two
+calls of `mid` (or a recursion, or two fibers) are alive at the same time,
+each needing its own `m`. A table laid out at compile time has room for one.
+
+**Fix (decided 2026-10-19, not yet implemented): linked closures.** Every
+closure keeps a link to the closure of the function around it, and a captured
+variable is addressed by a pair (depth, index) decided at compile time.
+
+- **`Closure` gets a `parent` field**, and `ClosureTrace`
+  (`closure.cpp:14`) visits it, so a closure keeps the enclosing one alive
+  after the enclosing function has returned.
+- **Only a function that declares captured variables of its own creates a
+  closure**, at every call, in its prologue (`CLONEW`, as today), with
+  `parent` set to the closure it was created with (`this_func->closure`). Its
+  frame's closure slot holds the new closure; the `LDCLO` into the same slot is
+  no longer emitted for it.
+- **A middle function that declares none creates nothing**: it loads the
+  closure it received into its frame (`LDCLO`, as today) and hands it down to
+  the functions it creates.
+- **Each function numbers only its own captured variables**, from 0
+  (`closure_count` per scope, as `ComputeLocalVarOffset` does today): the
+  index of a variable is its slot in the closure of the function that declares
+  it.
+- **The depth is computed by the compiler** for every read and write: walk
+  the scopes from the one that reads up to the one that declares, counting the
+  scopes that create a closure (`closure_count > 0`), the declaring one
+  excluded. A function reading its own captured variable uses depth 0.
+- **`CLOLDR` and `CLOSTR` carry the depth in their 4 reserved bits**
+  (`opcode.h:192-193`): the VM follows `parent` that many times, then reads
+  or writes the slot. That allows 15 levels; deeper nesting should be a
+  compile error rather than a silent wrap.
+
+For the PoC's `outer`/`mid`/`inner`: `outer`'s closure is `[n]`; each call
+of `mid` creates `[m]` with `parent` = `outer`'s closure; `inner` reads `n`
+at (1, 0) and `m` at (0, 0). Two calls of `mid` make two `[m]` closures that
+share one `outer` closure, so each `inner` keeps its own `m` and every one of
+them reads and writes the same `n`.
+
+The write check also needs IR-014, which is independent: the declaring
+function must load the slot again after a call instead of reusing the value
+it stored.
 
 ---
 

@@ -8,6 +8,55 @@
 
 ---
 
+## IR-014 — A captured variable read after a call returns the value stored before it
+**Severity:** High (silent wrong result) · **Status:** OPEN · **Location:** `orbit/liftoff/ir/builder.cpp:519` (`Builder::LoadFromOffset`, store-to-load forwarding)
+
+`LoadFromOffset` walks the current basic block backwards looking for an
+earlier access to the same slot. A matching **load** is reused only when no
+call lies in between (the comment explains why: the callee may change the
+slot). A matching **store** is forwarded unconditionally:
+
+```cpp
+if (last != nullptr && last->r_base == r_base && last->offset == offset && last->flags == flags)
+    return (Instruction *) last->operands->value;   // no check of `call`
+```
+
+For a closure slot (`CLOSTR` then `CLOLDR`) the call in between is exactly how
+a nested function changes the variable, so the function that declares it
+keeps reading the value it stored itself:
+
+```orbit
+func counter() {
+    var count = 0
+    func tick() { count += 1 }
+    tick()
+    tick()
+    tick()
+    return count      // 0
+}
+```
+
+The nested function does see the declaring function's writes, since it loads
+from the closure. Module variables written by a called function were probed
+and are read correctly.
+
+**Found** while verifying the SYM-002 fix: a write two levels down was not
+seen by the declaring function, and the cause turned out to be one level.
+Present before the closure fixes (reproduced on `33611ce`).
+
+**PoC:** [`poc/ir/ir-014-closure-write-after-call.orb`](poc/ir/ir-014-closure-write-after-call.orb)
+*(confirmed live: the control passes, the four reads after a call fail)*.
+
+**Fix (suggested, partly tried):** forward a store only when no call lies in
+between, as for a load (`if (!call || opcode == OPCode::SKLDR)`, else stop the
+search). Probed on 2026-10-19: the PoC's checks then pass, but
+`ortest/oop/02_inheritance_resolution.orb` regresses in one check (the base
+`init` run through two synthesized `init`s is counted once instead of twice),
+so the change has a side effect that needs understanding before it lands; the
+probe was reverted.
+
+---
+
 ## IR-013 — A subclass without an explicit `init` aborts the compiler
 **Severity:** High (compile-time abort on valid source in a debug build; release not tried) · **Status:** FIXED (2026-10-16) · **Location:** `orbit/liftoff/ir/irbuilder.cpp:1065` (`visitFunction`, the synthesized `init` of a subclass)
 
@@ -119,6 +168,14 @@ closure that returns `self` works, and the PoC now crashes at its first
 
 The same inline path is what crashes a decorated method in IR-011, where the
 method itself is never given its `owner_type`.
+
+**Note (2026-10-19):** with `LDFUNC` passing the running method's
+`owner_type` to the functions it creates, the four checks of the PoC pass. A
+check was added for `self.prop` two levels down (a closure inside a closure
+inside a method): it still crashes when the inheritance is conditioned on the
+creating function being a method, since the middle function is not one.
+Conditioning it on the creating function having an `owner_type` covers every
+depth.
 
 **Note (2026-10-16), a constraint on the fix:** whatever IR-011 does to make
 a decorator's result callable as a method of the decorated class, the inline

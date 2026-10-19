@@ -1,0 +1,78 @@
+# PoC ir-014-closure-write-after-call — IR-014: a captured variable read by
+# the function that declares it, after a call that changed it, must give the
+# new value.
+#
+# Builder::LoadFromOffset walks the current block backwards and, on finding a
+# store to the same closure slot (CLOSTR), returns the stored register instead
+# of loading. It does so even when a call lies between the store and the load,
+# and a call is exactly how a nested function writes the slot. The function
+# that declares the variable keeps seeing the value it stored itself.
+#
+# The other direction works and is the control: the nested function sees a
+# write made by the declaring one.
+#
+# A runtime test: prints "ALL TESTS PASSED" only when every check matches.
+# EXPECT: contains: ALL TESTS PASSED
+
+import "io"
+
+var fails = 0
+
+func check(name, got, expected) {
+    if got == expected {
+        io.print("OK   ", name)
+    } else {
+        io.print("FAIL ", name, "-- got:", got, "expected:", expected)
+        fails += 1
+    }
+}
+
+func outer_writes() {
+    n := 1
+    func inner() { return n }
+    n = 5
+    return inner()
+}
+check("control: the nested function sees the declaring one's write", outer_writes(), 5)
+
+func inner_writes() {
+    n := 1
+    func inner() { n = 11 }
+    inner()
+    return n
+}
+check("the declaring function sees the nested one's write", inner_writes(), 11)
+
+func compound() {
+    n := 1
+    func inner() { n += 10 }
+    inner()
+    return n
+}
+check("a compound assignment in the nested function", compound(), 11)
+
+func before_and_after() {
+    n := 1
+    func inner() { n = 11 }
+    a := n
+    inner()
+    b := n
+    return (a, b)
+}
+check("read before and after the call", before_and_after(), (1, 11))
+
+func counter() {
+    var count = 0
+    func tick() { count += 1 }
+    tick()
+    tick()
+    tick()
+    return count
+}
+check("a counter bumped three times", counter(), 3)
+
+if fails == 0 {
+    io.print("ALL TESTS PASSED")
+} else {
+    io.print(fails, "TEST(S) FAILED")
+}

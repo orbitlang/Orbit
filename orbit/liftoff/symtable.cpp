@@ -620,7 +620,13 @@ Symbol *SymbolTable::LookupInsert(ORString *name, const MSize offset) noexcept {
             return sym;
 
         sym->location = StorageLocation::CLOSURE;
-        this->scope->flags |= ScopeFlags::CLOSURE;
+
+        // Walk up the scope chain and mark every intermediate function as a closure
+        // until reaching the scope where the symbol was declared.
+        for (auto *cursor = this->scope; cursor != sym->decl_scope; cursor = cursor->back) {
+            if (cursor->type == ScopeType::FUNCTION)
+                cursor->flags |= ScopeFlags::CLOSURE;
+        }
 
         return sym;
     }

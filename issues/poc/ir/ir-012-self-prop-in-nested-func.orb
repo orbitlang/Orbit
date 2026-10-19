@@ -58,6 +58,22 @@ check("a public property through self, in a nested function", a.public_prop(), 4
 check("a private property through self, in a nested function", a.private_prop(), 7)
 check("the nested function called after the method returned", a.returned()(), 4)
 
+class Deep {
+    pub var v = 4
+    var hidden = 3
+
+    # two levels down: the middle function is not a method, the class must
+    # still reach the innermost one
+    pub func two_down() {
+        func mid() {
+            func inner() { return self.v + self.hidden }
+            return inner()
+        }
+        return mid()
+    }
+}
+check("self properties two levels down", new Deep().two_down(), 7)
+
 if fails == 0 {
     io.print("ALL TESTS PASSED")
 } else {
