@@ -617,11 +617,11 @@ Instruction *Builder::StoreObjectProp(Instruction *obj, Instruction *value, U16 
     return store;
 }
 
-Instruction *Builder::StoreToClosureAtOffset(Instruction *src, I16 offset) {
-    return this->CreateInstruction<OffsetInstruction>(OPCode::CLOSTR, offset, src);
+Instruction *Builder::StoreToClosureAtOffset(Instruction *src, const U8 depth, const I16 offset) {
+    return this->CreateInstruction<OffsetInstruction>(OPCode::CLOSTR, depth, offset, src);
 }
 
-Instruction *Builder::StoreToStackOffset(Instruction *src, U8 r_base, I16 offset) {
+Instruction *Builder::StoreToStackOffset(Instruction *src, const U8 r_base, const I16 offset) {
     return this->CreateInstruction<OffsetInstruction>(OPCode::SKSTR, r_base, offset, src);
 }
 

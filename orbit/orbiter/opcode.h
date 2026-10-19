@@ -8,6 +8,9 @@
 #include <orbit/datatype.h>
 
 namespace orbiter {
+    /// Deepest closure CLOLDR/CLOSTR can reach: the depth is encoded in 4 bits.
+    constexpr U8 kClosureMaxDepth = 0xF;
+
     enum class AllocaFlags : U8 {
         DEFAULT,
         ZERO_INIT
@@ -189,8 +192,8 @@ namespace orbiter {
         POPN, // Pop N values from stack:           OPCODE | 8 RESERVED | 16 UNSIGNED OFFSET
 
         CLONEW, // Create new closure object:       OPCODE | 4 DST | 4 RESERVED | 16 UNSIGNED SLOTS
-        CLOLDR, // Load from closure object:        OPCODE | 4 DST | 4 RESERVED | 16 UNSIGNED OFFSET
-        CLOSTR, // Store to closure object:         OPCODE | 4 RESERVED | 4 SRC | 16 UNSIGNED OFFSET
+        CLOLDR, // Load from closure object:        OPCODE | 4 DST | 4 DEPTH | 16 UNSIGNED OFFSET
+        CLOSTR, // Store to closure object:         OPCODE | 4 DEPTH | 4 SRC | 16 UNSIGNED OFFSET
 
         // Channel Operations
         CHRCV, // Recv from channel:                OPCODE | 4 DST          | 4 SRC     | 16 RESERVED

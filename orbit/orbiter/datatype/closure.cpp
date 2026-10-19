@@ -14,6 +14,9 @@ using namespace orbiter::datatype;
 void ClosureTrace(const Closure *self, const GCTraceCallback callback, const MSize epoch) {
     const auto slots = (OObject **) ((unsigned char *) self + sizeof(Closure));
 
+    if (self->parent != nullptr)
+        callback((OObject *) self, (OObject *) self->parent, epoch);
+
     for (int i = 0; i < self->slots; i++)
         callback((OObject *) self, slots[i], epoch);
 }
@@ -24,11 +27,12 @@ bool orbiter::datatype::ClosureTypeSetup(TypeInfo *self) {
     return true;
 }
 
-HClosure orbiter::datatype::ClosureNew(Isolate *isolate, const U16 slots) {
+HClosure orbiter::datatype::ClosureNew(Isolate *isolate, Closure *parent, const U16 slots) {
     const auto closure = MakeObject<Closure>(isolate, InstanceType::CLOSURE, slots * sizeof(void *));
     if (closure != nullptr) {
         new(&closure->lock)sync::AsyncRWLock();
 
+        closure->parent = parent;
         closure->slots = slots;
 
         stratum::util::MemoryZero(((unsigned char *) closure) + sizeof(Closure), slots * sizeof(void *));
@@ -37,7 +41,10 @@ HClosure orbiter::datatype::ClosureNew(Isolate *isolate, const U16 slots) {
     O_GC_TRACK_RETURN(isolate, closure, true);
 }
 
-HOObject orbiter::datatype::ClosureGet(Closure *closure, const U16 index) {
+HOObject orbiter::datatype::ClosureGet(Closure *closure, const U16 depth, const U16 index) {
+    for (int i = 0; i < depth; i++)
+        closure = closure->parent;
+
     const auto slots = (OObject **) ((unsigned char *) closure + sizeof(Closure));
 
     std::shared_lock _(closure->lock);
@@ -50,7 +57,10 @@ HOType orbiter::datatype::ClosureTypeInit(Isolate *isolate) {
     return closure;
 }
 
-void orbiter::datatype::ClosureSet(Closure *closure, const U16 index, OObject *object) {
+void orbiter::datatype::ClosureSet(Closure *closure, const U16 depth, const U16 index, OObject *object) {
+    for (int i = 0; i < depth; i++)
+        closure = closure->parent;
+
     const auto slots = (OObject **) ((unsigned char *) closure + sizeof(Closure));
 
     std::unique_lock _(closure->lock);

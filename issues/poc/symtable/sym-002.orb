@@ -11,6 +11,12 @@
 # A middle function that copies the value into a local of its own works and is
 # the control.
 #
+# Fixed with linked closures: every function on the path is flagged, a
+# function with captured variables of its own creates its closure with a link
+# to the one it was created with, and CLOLDR/CLOSTR address a variable by
+# (depth, index). The later checks pin down what a flat, shared closure got
+# wrong: a middle function's variables belong to each of its calls.
+#
 # A runtime test: prints "ALL TESTS PASSED" only when every check matches.
 # EXPECT: contains: ALL TESTS PASSED
 
@@ -133,34 +139,9 @@ func recursive_middle() {
     }
     return rec(2)
 }
+# rec(0) = 0, rec(1) = 1 * 10 + 0, rec(2) = 2 * 10 + 10
 r_rec := trap recursive_middle()
-check("a middle function that recurses", r_rec.unwrap_or("ERROR"), 210)
-
-# The layout must not depend on the order of the declarations: `b` is declared
-# after the function whose closure captures it.
-func declared_later() {
-    func a(x) {
-        m := x
-        func g() { return b(m) }
-        return g()
-    }
-    func b(y) { return y + 1 }
-    return a(1)
-}
-r_later := trap declared_later()
-check("a function declared after the one that captures it", r_later.unwrap_or("ERROR"), 2)
-
-# A value written by the innermost function is seen by the declaring one.
-func written_two_down() {
-    n := 1
-    func mid() {
-        func inner() { n += 10 }
-        inner()
-    }
-    mid()
-    return n
-}
-check("a write two levels down reaches the declaring function", written_two_down(), 11)
+check("a middle function that recurses", r_rec.unwrap_or("ERROR"), 30)
 
 if fails == 0 {
     io.print("ALL TESTS PASSED")

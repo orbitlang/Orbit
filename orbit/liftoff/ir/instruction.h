@@ -343,7 +343,15 @@ namespace liftoff::ir {
 
     public:
         U8 flags = 0;
-        U8 r_base = 0;
+
+        union {
+            /// Base register the offset is relative to (stack, global and module slots).
+            U8 r_base = 0;
+
+            /// CLOLDR/CLOSTR: how many parent links to follow before indexing the closure.
+            U8 depth;
+        };
+
         I16 offset = 0;
 
         OffsetInstruction(const orbiter::OPCode opcode, const I16 offset) noexcept : PhysInstruction(opcode),
@@ -358,11 +366,6 @@ namespace liftoff::ir {
         OffsetInstruction(const orbiter::OPCode opcode, const U8 r_base, const I16 offset,
                           Instruction *src) noexcept : PhysInstruction(opcode, 1),
                                                        r_base(r_base), offset(offset) {
-            this->SetOperand(0, src);
-        }
-
-        OffsetInstruction(const orbiter::OPCode opcode, const I16 offset,
-                          Instruction *src) noexcept : PhysInstruction(opcode, 1), offset(offset) {
             this->SetOperand(0, src);
         }
     };

@@ -1459,7 +1459,7 @@ CATCH_FINALLY:
             TARGET_OP(CLONEW) {
                 const auto slots = instr & 0xFFFF;
 
-                auto closure = ClosureNew(fiber->isolate, slots);
+                auto closure = ClosureNew(fiber->isolate, this_func->closure, slots);
                 if (!closure)
                     goto ERROR;
 
@@ -1468,20 +1468,22 @@ CATCH_FINALLY:
                 DISPATCH;
             }
             TARGET_OP(CLOLDR) {
-                auto slot = FETCH_IMM(instr);
+                const auto depth = FETCH_R_SRC(instr);
+                const auto index = FETCH_IMM(instr);
 
                 auto *closure = *(Closure **) (stack->stack + regs->BP.reg + (code->vars_count * sizeof(void *)));
 
-                ACCESS_REG_DST(instr) = (PtrSize) ClosureGet(closure, slot).get();
+                ACCESS_REG_DST(instr) = (PtrSize) ClosureGet(closure, depth, index).get();
 
                 DISPATCH;
             }
             TARGET_OP(CLOSTR) {
-                auto slot = FETCH_IMM(instr);
+                const auto depth = FETCH_R_DST(instr);
+                const auto index = FETCH_IMM(instr);
 
                 auto *closure = *(Closure **) (stack->stack + regs->BP.reg + (code->vars_count * sizeof(void *)));
 
-                ClosureSet(closure, slot, (OObject *) ACCESS_REG_SRC(instr));
+                ClosureSet(closure, depth, index, (OObject *) ACCESS_REG_SRC(instr));
 
                 DISPATCH;
             }

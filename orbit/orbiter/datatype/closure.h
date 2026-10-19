@@ -13,6 +13,8 @@ namespace orbiter::datatype {
     struct Closure {
         OROBJ_HEAD;
 
+        Closure *parent;
+
         sync::AsyncRWLock lock;
 
         U16 slots;
@@ -45,25 +47,27 @@ namespace orbiter::datatype {
      * is tracked appropriately for garbage collection purposes within the isolate.
      *
      * @param isolate Pointer to the isolate context within which the closure will be created
+     * @param parent Closure of the enclosing function, reached by following the parent link; may be null
      * @param slots The number of slots (pointer-sized units) to allocate for the closure object
      *
      * @return A handle to the newly created closure object, or a null handle if allocation fails
      */
-    HClosure ClosureNew(Isolate *isolate, U16 slots);
+    HClosure ClosureNew(Isolate *isolate, Closure *parent, U16 slots);
 
     /**
-     * @brief Retrieves an object from the specified closure at the given index
+     * @brief Retrieves an object from a closure, or from one of its parents
      *
-     * This function accesses a closure's internal slots to retrieve an object
-     * stored at the specified index. The function ensures thread-safe access by
-     * acquiring a shared lock on the closure before performing the retrieval.
+     * This function follows the parent link `depth` times, then reads the slot at
+     * `index` of the closure it reached. The parent links never change once a
+     * closure is created, so only the final read takes the closure's shared lock.
      *
-     * @param closure Pointer to the Closure structure containing the target slots
-     * @param index The zero-based index specifying the position of the object to retrieve
+     * @param closure Pointer to the closure held by the running frame
+     * @param depth How many parent links to follow (0 reads `closure` itself)
+     * @param index The zero-based slot to read in the closure reached
      *
      * @return The retrieved object as an HOObject
      */
-    HOObject ClosureGet(Closure *closure, U16 index);
+    HOObject ClosureGet(Closure *closure, U16 depth, U16 index);
 
     /**
      * @brief Initialize and create the specified type
@@ -78,17 +82,17 @@ namespace orbiter::datatype {
     HOType ClosureTypeInit(Isolate *isolate);
 
     /**
-     * @brief Assigns an object to a specified slot within a closure.
+     * @brief Assigns an object to a slot of a closure, or of one of its parents.
      *
-     * This function updates the slot at the given index within the specified closure
-     * by safely assigning it the provided object. The operation is performed
-     * while holding a lock to ensure thread safety.
+     * This function follows the parent link `depth` times, then updates the slot at
+     * `index` of the closure it reached, holding that closure's lock for the write.
      *
-     * @param closure Pointer to the Closure structure containing the slot array.
-     * @param index The index of the slot within the closure to be updated.
-     * @param object Pointer to the object to be assigned to the specified slot.
+     * @param closure Pointer to the closure held by the running frame.
+     * @param depth How many parent links to follow (0 writes `closure` itself).
+     * @param index The zero-based slot to update in the closure reached.
+     * @param object Pointer to the object to be assigned to the slot.
      */
-    void ClosureSet(Closure *closure, U16 index, OObject *object);
+    void ClosureSet(Closure *closure, U16 depth, U16 index, OObject *object);
 }
 
 #endif // !ORBIT_ORBITER_DATATYPE_CLOSURE_H_

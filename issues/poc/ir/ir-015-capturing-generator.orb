@@ -1,0 +1,91 @@
+# PoC ir-015-capturing-generator — IR-015: a generator that reads a variable
+# of the function around it must still be a generator.
+#
+# visitFunction decides whether a function is a generator with an equality
+# test on the scope flags:
+#
+#     if (node->symbol->defining_scope->flags == ScopeFlags::GENERATOR)
+#
+# A scope that captures a variable also carries ScopeFlags::CLOSURE, so the
+# test fails, the function is compiled as an ordinary one, and its first
+# `yield` returns the value: `for x in gen()` then reports "'Number' object is
+# not iterable". Since SYM-002, every function on the path of a capture is
+# flagged CLOSURE, so a generator in the middle of a two-level capture is hit
+# as well.
+#
+# A generator that captures nothing is the control.
+#
+# A runtime test: prints "ALL TESTS PASSED" only when every check matches.
+# EXPECT: contains: ALL TESTS PASSED
+
+import "io"
+
+var fails = 0
+
+func check(name, got, expected) {
+    if got == expected {
+        io.print("OK   ", name)
+    } else {
+        io.print("FAIL ", name, "-- got:", got, "expected:", expected)
+        fails += 1
+    }
+}
+
+func sum_of(make) {
+    var s = 0
+    for var x in make() { s += x }
+    return s
+}
+
+func plain() {
+    func gen() {
+        loop i := 0; i < 3; i++ { yield i }
+    }
+    return sum_of(gen)
+}
+check("control: a generator that captures nothing", plain(), 3)
+
+func capturing() {
+    n := 3
+    func gen() {
+        loop i := 0; i < n; i++ { yield i }
+    }
+    return sum_of(gen)
+}
+r_cap := trap capturing()
+check("a generator that reads an enclosing variable", r_cap.unwrap_or("ERROR"), 3)
+
+func middle() {
+    n := 2
+    func gen() {
+        func get() { return n }
+        yield get()
+        yield get() * 10
+    }
+    return sum_of(gen)
+}
+r_mid := trap middle()
+check("a generator in the middle of a two-level capture", r_mid.unwrap_or("ERROR"), 22)
+
+class Box {
+    pub var items = nil
+
+    pub init() {
+        self.items = [1, 2, 3]
+    }
+
+    pub func each() {
+        func gen() {
+            for var x in self.items { yield x }
+        }
+        return gen
+    }
+}
+r_self := trap sum_of(new Box().each())
+check("a generator nested in a method, reading self", r_self.unwrap_or("ERROR"), 6)
+
+if fails == 0 {
+    io.print("ALL TESTS PASSED")
+} else {
+    io.print(fails, "TEST(S) FAILED")
+}

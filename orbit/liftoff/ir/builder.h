@@ -330,7 +330,7 @@ namespace liftoff::ir {
 
         Instruction *StoreObjectProp(Instruction *obj, Instruction *value, U16 offset, bool as_key);
 
-        Instruction *StoreToClosureAtOffset(Instruction *src, I16 offset);
+        Instruction *StoreToClosureAtOffset(Instruction *src, U8 depth, I16 offset);
 
         Instruction *StoreToStackOffset(Instruction *src, U8 r_base, I16 offset);
 

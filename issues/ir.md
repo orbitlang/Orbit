@@ -8,6 +8,49 @@
 
 ---
 
+## IR-015 — A generator that captures a variable is compiled as an ordinary function
+**Severity:** High (wrong code; a SIGSEGV in the PoC) · **Status:** OPEN · **Location:** `orbit/liftoff/ir/irbuilder.cpp:1026` (`visitFunction`)
+
+`visitFunction` decides whether a function is a generator with an equality
+test on its scope's flags:
+
+```cpp
+if (node->symbol->defining_scope->flags == ScopeFlags::GENERATOR)
+    f_flags |= orbiter::LoadFuncFlags::GENERATOR;
+```
+
+`ScopeFlags` is a bit set. A generator that reads a variable of the function
+around it also has `ScopeFlags::CLOSURE`, the equality fails, and the
+generator is compiled as an ordinary function: its first `yield` returns the
+value. `for x in gen()` then reports "'Number' object is not iterable", and
+in the PoC's shape (the generator passed to a helper and iterated there) the
+process crashes with SIGSEGV even under `trap`.
+
+The one-level case predates the closure work, since `LookupInsert` always
+flagged the reading scope `CLOSURE`. Since the SYM-002 partial fix every
+function on the path of a capture is flagged, so a generator in the middle of
+a two-level capture is hit as well. Generators nested in methods that read
+`self` are hit too, `self` being a captured parameter.
+
+**Found** while reviewing `ComputeClosureDepth` for SYM-002: it is the only
+`flags ==` comparison on `ScopeFlags` in `orbit/liftoff`.
+
+**PoC:** [`poc/ir/ir-015-capturing-generator.orb`](poc/ir/ir-015-capturing-generator.orb)
+*(confirmed live: the control passes, the first capturing generator crashes)*.
+
+**Fix (suggested, verified by probe):** test the bit:
+
+```cpp
+if (ENUMBITMASK_ISTRUE(node->symbol->defining_scope->flags, ScopeFlags::GENERATOR))
+```
+
+With it the PoC passes 4/4 (a capturing generator, one in the middle of a
+two-level capture, one nested in a method reading `self`), and `ortest`, the
+PoC gate and `phi-regalloc.orb` are otherwise unchanged; the probe was then
+reverted.
+
+---
+
 ## IR-014 — A captured variable read after a call returns the value stored before it
 **Severity:** High (silent wrong result) · **Status:** OPEN · **Location:** `orbit/liftoff/ir/builder.cpp:519` (`Builder::LoadFromOffset`, store-to-load forwarding)
 
@@ -46,6 +89,8 @@ Present before the closure fixes (reproduced on `33611ce`).
 
 **PoC:** [`poc/ir/ir-014-closure-write-after-call.orb`](poc/ir/ir-014-closure-write-after-call.orb)
 *(confirmed live: the control passes, the four reads after a call fail)*.
+A fifth check, a write two levels down, moved here from the SYM-002 PoC on
+2026-10-19; it fails the same way now that closures are linked.
 
 **Fix (suggested, partly tried):** forward a store only when no call lies in
 between, as for a load (`if (!call || opcode == OPCode::SKLDR)`, else stop the

@@ -22,8 +22,8 @@ are resolved.
 | [sbuffer.md](sbuffer.md) | `orbit/liftoff/scanner/sbuffer` | 0/3 |
 | [utf8-stringbuilder.md](utf8-stringbuilder.md) | `orbit/orbiter/datatype/stringbuilder` (UTF-8 codec) | 1/4 |
 | [parser.md](parser.md) | `orbit/liftoff/parser` (parser.cpp, context.h, ast.h) | 13/25 |
-| [ir.md](ir.md) | `orbit/liftoff/ir` (linearscan, intervalspiller, irbuilder, instruction) | 5/14 |
-| [symtable.md](symtable.md) | `orbit/liftoff/symtable` (scopes, symbol slots, closures) | 1/2 |
+| [ir.md](ir.md) | `orbit/liftoff/ir` (linearscan, intervalspiller, irbuilder, instruction) | 6/15 |
+| [symtable.md](symtable.md) | `orbit/liftoff/symtable` (scopes, symbol slots, closures) | 1/3 |
 | [compiler.md](compiler.md) | `orbit/liftoff/compiler.cpp` (compile driver) | 1/1 |
 | [ctbuilder.md](ctbuilder.md) | `orbit/orbiter/datatype/ctbuilder.cpp` (class types, blueprint, hook dispatch) | 0/1 |
 | [function.md](function.md) | `orbit/orbiter/datatype/function.cpp` (Function objects, `FuncShared` lifetime) | 1/1 |
@@ -42,7 +42,9 @@ are resolved.
 - ~~**IR-006** — two calls passing rest/named/keyword arguments collide on R10/R11/R12 (crash or silently wrong rest list)~~ *(FIXED 2026-07-24, the value is copied into the protocol register right before the call instead of the producer being pinned to it)*
 - ~~**SYM-001** — a parameter captured by a nested function gets no closure slot: the closure is null and the first read segfaults (breaks every wrapping decorator)~~ *(FIXED 2026-10-16, a captured parameter gets a closure index beside its parameter index)*
 - ~~**IR-013** — any subclass without an explicit `init` aborts the compiler (synthesized `super.init` call leaves `stack_push_count` at 1)~~ *(FIXED 2026-10-16, the call releases its pushed receiver)*
-- **SYM-002** — a variable captured two or more levels down crashes: only the innermost scope is flagged as a closure, the middle functions never load theirs
+- **SYM-003** — a nested function that uses a name declared later in the enclosing function reads its own frame (a sibling called as `nil`, a local read as garbage)
+- ~~**SYM-002** — a variable captured two or more levels down crashes: only the innermost scope is flagged as a closure, the middle functions never load theirs~~ *(FIXED 2026-10-19, linked closures addressed by (depth, index))*
+- **IR-015** — a generator that captures a variable is compiled as an ordinary function (`flags == GENERATOR` on a bit set); one-line fix verified by probe
 - **IR-014** — a captured variable read after a call returns the value stored before it (store-to-load forwarding ignores calls): a closure counter stays 0
 - **IR-011** — a method whose decorator returns a wrapper cannot be called: the wrapper gets no receiver (the call curries) and the method is never attached to its class (segfault on `self.prop`)
 - **IR-012** — `self.prop` in a function nested in a method takes the inline load and reads through a null owner type (segfault); blocked by SYM-001
@@ -102,3 +104,5 @@ are resolved.
 - 2026-10-16: `orbit/liftoff/ir/irbuilder.cpp` (`visitFunction`) — IR-013 FIXED: the synthesized `super.init` call decreases `stack_push_count` by its arguments. PoC 6/6; `ortest/oop/02_inheritance_resolution.orb` extended with subclasses without `init` (fails with the old code). The PoC gate is 47/52 until IR-010, IR-011, IR-012, VM-010 and VM-011 are fixed.
 - 2026-10-16: `orbit/liftoff/symtable.cpp` (`LookupInsert`) — SYM-002 filed: a variable captured two or more levels down (local, parameter or `self`) crashes, since only the reading scope is flagged `CLOSURE`; present on HEAD, found while checking step 1 of the method-decorator plan. New PoC `poc/symtable/sym-002.orb`.
 - 2026-10-19: closures — SYM-002 partially fixed (staged: `LookupInsert` flags every intermediate function scope; the four checks without a middle function's own captured variable pass). The PoC gained five checks; six fail, since closures are flat. Fix decided: linked closures (`parent` on `Closure`, (depth, index) addressing with the depth in the 4 reserved bits of `CLOLDR`/`CLOSTR`), recorded in `symtable.md`. IR-014 filed (store-to-load forwarding across a call in `LoadFromOffset`: a variable written by a nested function is not seen by the declaring one; reproduced on `33611ce`). IR-012 PoC gained a two-levels-down check. New PoC `poc/ir/ir-014-closure-write-after-call.orb`.
+- 2026-10-19: `orbit/liftoff/ir/irbuilder.cpp` (`visitFunction`) — IR-015 filed: the generator test compares the scope flags for equality, so a generator that captures a variable (also `CLOSURE`) is compiled as an ordinary function; widened by the SYM-002 partial fix to generators in the middle of a capture. One-line bit-test fix verified by probe. New PoC `poc/ir/ir-015-capturing-generator.orb`. The PoC gate is 47/55.
+- 2026-10-19: closures — SYM-002 FIXED with linked closures (`Closure::parent`, `ComputeClosureDepth`, depth in the 4 reserved bits of `CLOLDR`/`CLOSTR`, `assert` above depth 15). PoC 9/9 after correcting the recursion oracle (30, not 210) and moving two checks out: the forward reference became SYM-003 (filed: an `UNKNOWN` resolved to an enclosing declaration by alias is never made a capture; reproduced on `33611ce`), the write two levels down joined IR-014. New PoC `poc/symtable/sym-003.orb`.

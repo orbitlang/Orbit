@@ -707,6 +707,21 @@ SymbolTable *SymbolTable::New(orbiter::Isolate *isolate) noexcept {
     return table;
 }
 
+U16 SymbolTable::ComputeClosureDepth(const Symbol *symbol) const noexcept {
+    if (symbol->location != StorageLocation::CLOSURE)
+        return 0;
+
+    U16 depth = 0;
+    for (const auto *cursor = this->scope; cursor != symbol->decl_scope; cursor = cursor->back) {
+        assert(cursor != nullptr);
+
+        if (cursor->type == ScopeType::FUNCTION && cursor->ShouldCreateClosure())
+            depth += 1;
+    }
+
+    return depth;
+}
+
 void SymbolTable::Delete(SymbolTable *table) noexcept {
     if (table == nullptr)
         return;

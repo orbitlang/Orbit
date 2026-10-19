@@ -439,6 +439,8 @@ namespace liftoff {
          */
         static SymbolTable *New(orbiter::Isolate *isolate) noexcept;
 
+        [[nodiscard]] U16 ComputeClosureDepth(const Symbol *symbol) const noexcept;
+
         /**
          * @brief Deletes the specified symbol table.
          *

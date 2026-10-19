@@ -499,7 +499,12 @@ Instruction *IRBuilder::LoadVariable(const Symbol *symbol) {
 
     // *** CLOSURE ***
     if (symbol->location == StorageLocation::CLOSURE) {
-        ret = this->builder_.LoadFromOffset(orbiter::OPCode::CLOLDR, 0, offset, 0);
+        const auto depth = this->sym_t_->ComputeClosureDepth(symbol);
+
+        // TODO: report it as a compile error once the compiler can raise one
+        assert(depth <= orbiter::kClosureMaxDepth);
+
+        ret = this->builder_.LoadFromOffset(orbiter::OPCode::CLOLDR, (U8) depth, offset, 0);
 
         goto EXIT;
     }
@@ -592,7 +597,12 @@ Instruction *IRBuilder::StoreVariable(const Symbol *symbol, Instruction *value, 
 
     // *** CLOSURE ***
     if (symbol->location == StorageLocation::CLOSURE) {
-        this->builder_.StoreToClosureAtOffset(value, offset);
+        const auto depth = this->sym_t_->ComputeClosureDepth(symbol);
+
+        // TODO: report it as a compile error once the compiler can raise one
+        assert(depth <= orbiter::kClosureMaxDepth);
+
+        this->builder_.StoreToClosureAtOffset(value, (U8) depth, offset);
 
         return value;
     }
@@ -1071,7 +1081,8 @@ Instruction *IRBuilder::visitFunction(const parser::Function *node) {
 
             this->builder_.StackPush(self);
 
-            auto *call = (CallInstr *) this->builder_.CreateCallDetached(orbiter::OPCode::CALL, s_init, 1, orbiter::CallMode::METHOD);
+            auto *call = (CallInstr *) this->builder_.CreateCallDetached(
+                orbiter::OPCode::CALL, s_init, 1, orbiter::CallMode::METHOD);
 
             this->builder_.AddInstruction(call);
 
@@ -1112,7 +1123,8 @@ Instruction *IRBuilder::visitFunction(const parser::Function *node) {
     if (ENUMBITMASK_ISTRUE(this->sym_t_->scope->flags, ScopeFlags::CLOSURE)) {
         f_flags |= orbiter::LoadFuncFlags::CLOSURE;
 
-        this->builder_.LoadClosureObject(kBaseStackPointerReg, (I16) local_vars_count);
+        if (!this->sym_t_->scope->ShouldCreateClosure())
+            this->builder_.LoadClosureObject(kBaseStackPointerReg, (I16) local_vars_count);
     }
 
     if (node->body == nullptr)
