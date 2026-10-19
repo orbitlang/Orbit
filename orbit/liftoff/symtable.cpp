@@ -118,8 +118,17 @@ void SymbolTable::ComputeLocalVarOffset(Scope *scope, const SubScope *s_scope) c
 
         if (symbol->type == SymbolType::UNKNOWN) {
             if (scope->type != ScopeType::MODULE) {
+                // The name was not declared yet where it is used, so whatever the
+                // enclosing scopes hold under it was declared *after* the use.
+                // Inside a function a name is visible only after its declaration:
+                // a later declaration of an enclosing function must not be
+                // reached, and the name falls through to GLOBAL below (a module
+                // name, or NameError at run time). Module names are keys looked up
+                // at run time, so a later declaration there is fine and the alias
+                // is kept; so are class and trait members, which this rule does
+                // not cover.
                 auto *tmp = LookupInEnclosing(symbol->name, scope);
-                if (tmp != nullptr) {
+                if (tmp != nullptr && tmp->decl_scope->type != ScopeType::FUNCTION) {
                     symbol->alias = tmp;
 
                     continue;

@@ -1,17 +1,18 @@
-# PoC sym-003 — SYM-003: a nested function that uses a name declared later in
-# the enclosing function (a sibling function, or a local) must reach that
-# declaration.
+# PoC sym-003 — SYM-003: inside a function, a name is visible only after its
+# declaration. A nested function that uses a name the enclosing function
+# declares later must not reach that declaration: the lookup goes on outwards,
+# to the module, and raises NameError when the name is nowhere.
 #
 # When the reference is parsed the name is not declared yet, so it becomes an
 # UNKNOWN symbol of the nested scope. ComputeLocalVarOffset later resolves it
-# with LookupInEnclosing and makes it an alias of the enclosing declaration,
-# but never marks that declaration CLOSURE nor the scopes in between: the
-# declaration stays a stack local of the enclosing function, and the nested
-# function reads its own frame at that offset. A sibling declared later is
-# called as nil; a local declared later reads whatever its own frame holds.
+# with LookupInEnclosing and makes it an alias of the enclosing function's
+# later declaration, without making it a capture: the nested function reads
+# its own frame at that slot. A sibling declared later is called as nil, a
+# local declared later reads whatever the frame holds (34 instead of an error).
 #
-# The same code with the declaration first works and is the control; so does
-# a forward reference at module level.
+# Module names are keys looked up at run time, so a forward reference at module
+# level keeps working, and a module name is what a nested function reaches
+# when the enclosing function declares the same name only later.
 #
 # A runtime test: prints "ALL TESTS PASSED" only when every check matches.
 # EXPECT: contains: ALL TESTS PASSED
@@ -29,6 +30,13 @@ func check(name, got, expected) {
     }
 }
 
+func kind_of(r) {
+    if r { return "OK" }
+    return r.unwrap_err().kind
+}
+
+# --- what must keep working ---------------------------------------------------
+
 func declared_first() {
     func b() { return 1 }
     func a() { return b() }
@@ -40,21 +48,21 @@ func mod_a() { return mod_b() }
 func mod_b() { return 2 }
 check("control: a forward reference at module level", mod_a(), 2)
 
+# --- a later declaration in the enclosing function is not visible -------------
+
 func sibling_after() {
     func a() { return b() }
     func b() { return 1 }
     return a()
 }
-r_sib := trap sibling_after()
-check("a sibling declared after the function that calls it", r_sib.unwrap_or("ERROR"), 1)
+check("a sibling declared after the function that calls it", kind_of(trap sibling_after()), @NameError)
 
 func local_after() {
     func a() { return k }
     k := 7
     return a()
 }
-r_loc := trap local_after()
-check("a local declared after the function that reads it", r_loc.unwrap_or("ERROR"), 7)
+check("a local declared after the function that reads it", kind_of(trap local_after()), @NameError)
 
 func two_down_after() {
     func a(x) {
@@ -65,8 +73,18 @@ func two_down_after() {
     func b(y) { return y + 1 }
     return a(1)
 }
-r_two := trap two_down_after()
-check("a function declared later, used two levels down", r_two.unwrap_or("ERROR"), 2)
+check("a function declared later, used two levels down", kind_of(trap two_down_after()), @NameError)
+
+# --- the lookup goes on outwards: a module name is found ----------------------
+
+func shadowed_later() { return "module" }
+
+func reaches_module() {
+    func a() { return shadowed_later() }
+    func shadowed_later() { return "local" }
+    return a()
+}
+check("a later local leaves the module name visible", reaches_module(), "module")
 
 if fails == 0 {
     io.print("ALL TESTS PASSED")

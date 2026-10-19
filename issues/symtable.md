@@ -6,55 +6,91 @@
 
 ---
 
-## SYM-003 — A nested function that uses a name declared later in the enclosing function reads its own frame
-**Severity:** High (silent wrong value, or a call to `nil`) · **Status:** OPEN · **Location:** `orbit/liftoff/symtable.cpp:119` (`ComputeLocalVarOffset`, the `UNKNOWN` branch)
+## SYM-003 — A nested function reaches a name the enclosing function declares only later
+**Severity:** High (silent wrong value, or a call to `nil`) · **Status:** FIXED (2026-10-19) · **Location:** `orbit/liftoff/symtable.cpp:121` (`ComputeLocalVarOffset`, the `UNKNOWN` branch)
 
-When a nested function uses a name that the enclosing function declares
-**later** (a sibling function, or a local), the name is not declared yet at
+**Fix verified (PoC `poc/symtable/sym-003.orb` — prints `ALL TESTS PASSED`,
+6 of 6; `ortest` 24/26 and the PoC gate 49/56, the failures being open
+findings; `phi-regalloc.orb` green).** The `UNKNOWN` branch of
+`ComputeLocalVarOffset` no longer aliases a name to a declaration of an
+enclosing **function**; the name falls through to `GLOBAL`, which finds a
+module name at run time or raises `NameError`:
+
+```cpp
+auto *tmp = LookupInEnclosing(symbol->name, scope);
+if (tmp != nullptr && tmp->decl_scope->type != ScopeType::FUNCTION) {
+    symbol->alias = tmp;
+    continue;
+}
+```
+
+A comment above the test explains why: a name that was not declared where
+it is used can only match a declaration that comes after the use, and inside
+a function a name is visible only after its declaration. Aliases to module
+declarations (keys looked up at run time) and to class and trait members are
+kept, so module-level forward references still work.
+
+The PoC checks that a sibling function and a local declared later, and a
+function declared later used two levels down, now raise `NameError` (they
+were a `TypeError` on `nil` and a value read from the wrong frame), and that a
+module name stays visible when the enclosing function declares the same name
+only later. Before the fix the three later-declaration checks fail.
+
+The rule has a consequence to accept knowingly: two nested functions that call
+each other cannot both be declared directly; one has to be declared as a
+variable first (`var is_odd = nil`) and assigned after. At module level mutual
+recursion keeps working.
+
+<details><summary>Original report</summary>
+
+The rule in Orbit's function scopes (user, 2026-10-19): a name is visible
+only after its declaration. A name used before it is declared is looked up in
+the enclosing scopes, out to the module; if it is nowhere, it is an error.
+Modules are the exception by nature: their names are keys looked up at run
+time, so a forward reference at module level works, and is expected to.
+
+Inside functions the rule is broken. When a nested function uses a name that
+the enclosing function declares **later**, the name is not declared yet at
 the point of use, so `LookupInsert` makes it an `UNKNOWN` symbol of the nested
-scope. `ComputeLocalVarOffset` resolves it afterwards:
+scope. `ComputeLocalVarOffset` then resolves it anyway:
 
 ```cpp
 if (symbol->type == SymbolType::UNKNOWN) {
     if (scope->type != ScopeType::MODULE) {
         auto *tmp = LookupInEnclosing(symbol->name, scope);
         if (tmp != nullptr) {
-            symbol->alias = tmp;
+            symbol->alias = tmp;   // also for a later declaration in a function
             continue;
         }
     }
-    ...
+    symbol->location = StorageLocation::GLOBAL;
+}
 ```
 
-The alias points at the enclosing declaration, but nothing marks that
-declaration `CLOSURE` or flags the scopes in between, as `LookupInsert` does
-for a name already declared. The declaration stays a stack local of the
-enclosing function, and the nested function, following the alias, reads its
-**own** frame at that offset:
+`LookupInEnclosing` finds the later declaration, and the alias makes the
+nested function use it. Nothing turns it into a capture either, so the
+declaration stays a stack local of the enclosing function and the nested
+function reads **its own** frame at that slot:
 
-- a sibling declared later is called as `nil` ("invalid call to a
-  non-callable object('nil')");
-- a local declared later reads whatever the nested function's frame holds
-  (`34` instead of `7` in the PoC).
+- a sibling declared later is called as `nil` (`TypeError`: "invalid call to
+  a non-callable object('nil')");
+- a local declared later reads whatever the nested frame holds (`34` in the
+  PoC).
 
-The same code with the declaration first works, and so does a forward
-reference at module level, where names are globals.
+A name declared nowhere already behaves as the rule wants: it falls through to
+`GLOBAL` and raises `NameError: name '...' is not defined` at run time.
 
 **Found** while verifying SYM-002: its "function declared after the one that
-captures it" check failed for this reason, at one level as at two. Present
-before the closure work (reproduced on `33611ce`).
+captures it" check failed for this reason. Present before the closure work
+(reproduced on `33611ce`).
 
 **PoC:** [`poc/symtable/sym-003.orb`](poc/symtable/sym-003.orb)
-*(confirmed live: both controls pass, the three forward references fail)*.
+*(confirmed live: the controls pass; the three later declarations give a
+`TypeError` or a wrong value instead of `NameError`)*. It also pins down that a
+module name stays visible when the enclosing function declares the same name
+only later.
 
-**Fix (suggested, not tried):** when the `UNKNOWN` branch resolves a name to a
-declaration of an enclosing **function**, treat it as a capture: mark the
-declaration `CLOSURE` and flag the scopes from the reading one up to the
-declaring one, as `LookupInsert` does. The catch is ordering:
-`ComputeLocalVarOffset` lays out the enclosing scope's slots while walking
-its symbols, so a declaration that becomes `CLOSURE` must not already have
-been given a stack slot; resolving the aliases in a pass before the layout
-avoids that.
+</details>
 
 ---
 
