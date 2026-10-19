@@ -9,7 +9,25 @@
 ---
 
 ## IR-015 — A generator that captures a variable is compiled as an ordinary function
-**Severity:** High (wrong code; a SIGSEGV in the PoC) · **Status:** OPEN · **Location:** `orbit/liftoff/ir/irbuilder.cpp:1026` (`visitFunction`)
+**Severity:** High (wrong code; a SIGSEGV in the PoC) · **Status:** FIXED (2026-10-19) · **Location:** `orbit/liftoff/ir/irbuilder.cpp:1036` (`visitFunction`)
+
+**Fix verified (PoC `poc/ir/ir-015-capturing-generator.orb` — prints
+`ALL TESTS PASSED`, 4 of 4; `ortest` 24/26 and the PoC gate 50/56, the
+failures being open findings; `phi-regalloc.orb` green).** The generator test
+checks the bit instead of comparing the whole flag set:
+
+```cpp
+if (ENUMBITMASK_ISTRUE(node->symbol->defining_scope->flags, ScopeFlags::GENERATOR))
+    f_flags |= orbiter::LoadFuncFlags::GENERATOR;
+```
+
+A generator that reads an enclosing variable, one in the middle of a
+two-level capture and one nested in a method reading `self` are compiled as
+generators again; with the old equality test the PoC crashes at the first of
+them. It was the only `==`/`!=` comparison on `ScopeFlags` in
+`orbit/liftoff`, and none is left.
+
+<details><summary>Original report</summary>
 
 `visitFunction` decides whether a function is a generator with an equality
 test on its scope's flags:
@@ -38,16 +56,7 @@ a two-level capture is hit as well. Generators nested in methods that read
 **PoC:** [`poc/ir/ir-015-capturing-generator.orb`](poc/ir/ir-015-capturing-generator.orb)
 *(confirmed live: the control passes, the first capturing generator crashes)*.
 
-**Fix (suggested, verified by probe):** test the bit:
-
-```cpp
-if (ENUMBITMASK_ISTRUE(node->symbol->defining_scope->flags, ScopeFlags::GENERATOR))
-```
-
-With it the PoC passes 4/4 (a capturing generator, one in the middle of a
-two-level capture, one nested in a method reading `self`), and `ortest`, the
-PoC gate and `phi-regalloc.orb` are otherwise unchanged; the probe was then
-reverted.
+</details>
 
 ---
 

@@ -22,7 +22,7 @@ are resolved.
 | [sbuffer.md](sbuffer.md) | `orbit/liftoff/scanner/sbuffer` | 0/3 |
 | [utf8-stringbuilder.md](utf8-stringbuilder.md) | `orbit/orbiter/datatype/stringbuilder` (UTF-8 codec) | 1/4 |
 | [parser.md](parser.md) | `orbit/liftoff/parser` (parser.cpp, context.h, ast.h) | 13/25 |
-| [ir.md](ir.md) | `orbit/liftoff/ir` (linearscan, intervalspiller, irbuilder, instruction) | 6/15 |
+| [ir.md](ir.md) | `orbit/liftoff/ir` (linearscan, intervalspiller, irbuilder, instruction) | 5/15 |
 | [symtable.md](symtable.md) | `orbit/liftoff/symtable` (scopes, symbol slots, closures) | 0/3 |
 | [compiler.md](compiler.md) | `orbit/liftoff/compiler.cpp` (compile driver) | 1/1 |
 | [ctbuilder.md](ctbuilder.md) | `orbit/orbiter/datatype/ctbuilder.cpp` (class types, blueprint, hook dispatch) | 0/1 |
@@ -44,7 +44,7 @@ are resolved.
 - ~~**IR-013** — any subclass without an explicit `init` aborts the compiler (synthesized `super.init` call leaves `stack_push_count` at 1)~~ *(FIXED 2026-10-16, the call releases its pushed receiver)*
 - ~~**SYM-003** — a nested function reaches a name the enclosing function declares only later, and reads its own frame for it (a sibling called as `nil`, a local read as garbage) instead of a `NameError`~~ *(FIXED 2026-10-19, no alias to a later declaration of an enclosing function)*
 - ~~**SYM-002** — a variable captured two or more levels down crashes: only the innermost scope is flagged as a closure, the middle functions never load theirs~~ *(FIXED 2026-10-19, linked closures addressed by (depth, index))*
-- **IR-015** — a generator that captures a variable is compiled as an ordinary function (`flags == GENERATOR` on a bit set); one-line fix verified by probe
+- ~~**IR-015** — a generator that captures a variable is compiled as an ordinary function (`flags == GENERATOR` on a bit set)~~ *(FIXED 2026-10-19, the generator bit is tested on its own)*
 - **IR-014** — a captured variable read after a call returns the value stored before it (store-to-load forwarding ignores calls): a closure counter stays 0
 - **IR-011** — a method whose decorator returns a wrapper cannot be called: the wrapper gets no receiver (the call curries) and the method is never attached to its class (segfault on `self.prop`)
 - **IR-012** — `self.prop` in a function nested in a method takes the inline load and reads through a null owner type (segfault); blocked by SYM-001
@@ -108,3 +108,4 @@ are resolved.
 - 2026-10-19: closures — SYM-002 FIXED with linked closures (`Closure::parent`, `ComputeClosureDepth`, depth in the 4 reserved bits of `CLOLDR`/`CLOSTR`, `assert` above depth 15). PoC 9/9 after correcting the recursion oracle (30, not 210) and moving two checks out: the forward reference became SYM-003 (filed: an `UNKNOWN` resolved to an enclosing declaration by alias is never made a capture; reproduced on `33611ce`), the write two levels down joined IR-014. New PoC `poc/symtable/sym-003.orb`.
 - 2026-10-19: `orbit/liftoff/symtable.cpp` (`ComputeLocalVarOffset`) — SYM-003 restated after the user set the rule (inside functions a name is visible only after its declaration; modules keep run-time lookup): the expected outcome is `NameError`, not hoisting. PoC rewritten (6 checks); fix verified by probe (no alias to a declaration of an enclosing function).
 - 2026-10-19: `orbit/liftoff/symtable.cpp` (`ComputeLocalVarOffset`) — SYM-003 FIXED: an `UNKNOWN` is not aliased to a declaration of an enclosing function, so a later declaration is not reached and the name falls through to run-time lookup (`NameError`); explanatory comment added. PoC 6/6. The PoC gate is 49/56.
+- 2026-10-19: `orbit/liftoff/ir/irbuilder.cpp` (`visitFunction`) — IR-015 FIXED: `ENUMBITMASK_ISTRUE(..., ScopeFlags::GENERATOR)` instead of an equality on the flag set. PoC 4/4; no other equality test on `ScopeFlags` left in `orbit/liftoff`. The PoC gate is 50/56.

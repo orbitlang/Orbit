@@ -1033,7 +1033,7 @@ Instruction *IRBuilder::visitFunction(const parser::Function *node) {
     if (node->node_type == parser::NodeType::INIT)
         f_flags |= orbiter::LoadFuncFlags::INIT;
 
-    if (node->symbol->defining_scope->flags == ScopeFlags::GENERATOR)
+    if (ENUMBITMASK_ISTRUE(node->symbol->defining_scope->flags, ScopeFlags::GENERATOR))
         f_flags |= orbiter::LoadFuncFlags::GENERATOR;
 
     const auto params_count = this->ProcessFunctionParams(node, def_args, f_flags);
