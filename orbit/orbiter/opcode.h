@@ -203,7 +203,7 @@ namespace orbiter {
         // Format: OPCODE | 4 RESERVED | 4 FLAGS(AllocaFlags) | 16 UNSIGNED SLOTS
         ALLOCA,
 
-        LDFUNC, // Create function from Code object:    OPCODE | 4 DST | 4 SRC_CODE | 4 SRC_DARGS | 8 FLAGS | 4 RESERVED
+        LDFUNC, // Create function from Code object:    OPCODE | 4 DST | 4 SRC_CODE | 4 SRC_DARGS | 4 SRC_CLASS | 8 FLAGS
         LDMOD, // Load module:                          OPCODE | 4 DST | 4 SRC_PATH | 16 RESERVED
         LDNAT, // Load native:                          OPCODE | 4 DST | 4 FLAGS    | 16 UNSIGNED OFFSET
 

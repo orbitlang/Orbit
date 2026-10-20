@@ -262,7 +262,7 @@ namespace liftoff::ir {
 
         Instruction *LoadFromStackOffset(U8 r_base, I16 offset, bool force_load);
 
-        Instruction *LoadFunction(Instruction *src, Instruction *def_args, orbiter::LoadFuncFlags flags);
+        Instruction *LoadFunction(Instruction *src, Instruction *def_args, Instruction *ct, orbiter::LoadFuncFlags flags);
 
         Instruction *LoadGlobal(orbiter::datatype::ORString *id);
 

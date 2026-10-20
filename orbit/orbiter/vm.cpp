@@ -662,7 +662,7 @@ CGOTO
 #define NEXT_IP                 (regs->IP.reg += sizeof(MachineWord))
 #define JMP_TO(offset)          (regs->IP.reg = (PtrSize) code->m_code + offset)
 
-#define REGISTER_PTR(registers, n)  ((PtrSize *) (((Register *) (registers)) + n))
+#define REGISTER_PTR(registers, n)  ((PtrSize *) (((Register *) (registers)) + (n)))
 #define REGISTER(registers, n)      (*REGISTER_PTR(registers, n))
 
 #define REG_N(n)                REGISTER(regs, n)
@@ -1292,11 +1292,6 @@ CATCH_FINALLY:
 
                 assert(prop->value==nullptr);
 
-                if (O_IS_OBJECT(value)
-                    && O_IS_TYPE(value, InstanceType::FUNCTION)
-                    && ((Function *) value)->shared->IsMethod())
-                    ((Function *) value)->shared->owner_type = tp;
-
                 prop->value = O_INCREF(value);
 
                 DISPATCH;
@@ -1570,7 +1565,8 @@ CATCH_FINALLY:
                 DISPATCH;
             }
             TARGET_OP(LDFUNC) {
-                const auto flags = (LoadFuncFlags) (instr & 0xFFF);
+                const auto flags = (LoadFuncFlags) (instr & 0xFF);
+                const auto clazz = (TypeInfo *) REG_N((instr >> 8) & 0xF);
 
                 Closure *closure = nullptr;
                 Tuple *defs = nullptr;
@@ -1585,7 +1581,9 @@ CATCH_FINALLY:
                 if (!func)
                     goto ERROR;
 
-                if (this_func != nullptr)
+                if (func->shared->IsMethod())
+                    func->shared->owner_type = clazz;
+                else if (this_func != nullptr)
                     func->shared->owner_type = this_func->shared->owner_type;
 
                 ACCESS_REG_DST(instr) = (PtrSize) func.get();

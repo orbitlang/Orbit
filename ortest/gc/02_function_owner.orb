@@ -3,8 +3,8 @@
 # A function's `owner_type` (the class its code was written in) is not
 # reference-counted, since class -> method -> owner_type -> class would be a
 # cycle of counts the collector treats as roots forever; FunctionTrace visits
-# it instead. Every function nested in a method inherits it (method-decorator
-# plan, step 1). So: dropping nested functions must never release the class,
+# it instead. Every function nested in a method inherits it. So: dropping
+# nested functions must never release the class,
 # and a live function must keep its class alive through a collection, for
 # classes and for the builtin types native methods belong to.
 #

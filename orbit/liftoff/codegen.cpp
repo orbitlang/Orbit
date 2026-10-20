@@ -93,6 +93,11 @@ using namespace liftoff::ir;
 #define EMIT_DSSFE(opcode, dst, src_l, src_r, flags) \
     (((U32)(opcode) << 24) | ((dst) << 20) | ((src_l) << 16) | ((src_r) << 12) | ((flags) & 0xFFF))
 
+// Emit macro with opcode, destination register, left and right source registers, an extra source
+// register in bits 8-11 and 8 bits of flags
+#define EMIT_DSSFES(opcode, dst, src_l, src_r, flags, src_ex) \
+    (((U32)(opcode) << 24) | ((dst) << 20) | ((src_l) << 16) | ((src_r) << 12) | (((src_ex) & 0xF) << 8) | ((flags) & 0xFF))
+
 // Simplified Emit macro with opcode, destination register, left and right source registers (flags set to 0)
 #define EMIT_DSS(opcode, dst, src_l, src_r) \
     EMIT_DSSF(opcode, dst, src_l, src_r, 0)
@@ -338,11 +343,14 @@ unsigned char *Codegen::EmitOpcodes(const BasicBlock *block, unsigned char *m_co
                 break;
             case orbiter::OPCode::LDFUNC: {
                 const auto *def_args = ((Instruction *) instr->operands[1].value);
-                *(orbiter::MachineWord *) m_code = EMIT_DSSFE(instr->opcode,
-                                                              instr->assigned_reg,
-                                                              ((Instruction*)instr->operands[0].value)->assigned_reg,
-                                                              def_args!=nullptr ? def_args->assigned_reg:0,
-                                                              ((ir::LoadFunc*)instr)->flags);
+                const auto *ct = ((Instruction *) instr->operands[2].value);
+
+                *(orbiter::MachineWord *) m_code = EMIT_DSSFES(instr->opcode,
+                                                               instr->assigned_reg,
+                                                               ((Instruction*)instr->operands[0].value)->assigned_reg,
+                                                               def_args!=nullptr ? def_args->assigned_reg:0,
+                                                               ((ir::LoadFunc*)instr)->flags,
+                                                               ct!=nullptr ? ct->assigned_reg : 0);
                 break;
             }
             case orbiter::OPCode::ADDELEM:

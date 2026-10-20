@@ -179,8 +179,7 @@ function that copies the value into a local of its own (`m := n`) works.
 
 Not related to SYM-001, which was about one level, and present before it.
 **Found** while checking that functions nested in a method inherit the
-method's class (method-decorator plan, step 1): a closure two levels inside a
-method crashed for this reason.
+method's class: a closure two levels inside a method crashed for this reason.
 
 **PoC:** [`poc/symtable/sym-002.orb`](poc/symtable/sym-002.orb)
 *(confirmed live on HEAD: the control passes, the first two-level capture

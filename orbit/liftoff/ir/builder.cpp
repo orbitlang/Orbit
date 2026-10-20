@@ -437,8 +437,8 @@ Instruction *Builder::LoadFromStackOffset(U8 r_base, I16 offset, bool force_load
     return this->LoadFromOffset(OPCode::SKLDR, r_base, offset, 0);
 }
 
-Instruction *Builder::LoadFunction(Instruction *src, Instruction *def_args, LoadFuncFlags flags) {
-    return this->CreateInstruction<LoadFunc>(src, def_args, flags);
+Instruction *Builder::LoadFunction(Instruction *src, Instruction *def_args, Instruction *ct, const LoadFuncFlags flags) {
+    return this->CreateInstruction<LoadFunc>(src, def_args, ct, flags);
 }
 
 Instruction *Builder::LoadGlobal(datatype::ORString *id) {

@@ -1139,7 +1139,11 @@ Instruction *IRBuilder::visitFunction(const parser::Function *node) {
 
     this->sym_t_->LeaveScope();
 
-    auto *func = this->builder_.LoadFunction(this->builder_.LoadLastCodeObject(), def_args, f_flags);
+    auto *func = this->builder_.LoadFunction(
+        this->builder_.LoadLastCodeObject(),
+        def_args,
+        node->method ? this->ct_active_->tp_ptr : nullptr,
+        f_flags);
 
     if (node->anon)
         return func;

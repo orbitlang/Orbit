@@ -257,11 +257,12 @@ namespace liftoff::ir {
         friend Builder;
 
     protected:
-        explicit LoadFunc(Instruction *src, Instruction *def_args,
-                          orbiter::LoadFuncFlags flags) noexcept : PhysInstruction(orbiter::OPCode::LDFUNC, 2),
+        explicit LoadFunc(Instruction *src, Instruction *def_args, Instruction *ct,
+                          orbiter::LoadFuncFlags flags) noexcept : PhysInstruction(orbiter::OPCode::LDFUNC, 3),
                                                                    flags((U16) flags) {
             this->SetOperand(0, src);
             this->SetOperand(1, def_args);
+            this->SetOperand(2, ct);
         }
 
     public:

@@ -269,8 +269,8 @@ original checks pass, including two levels down, and `super` and private
 members work inside closures. Not closed: the copy takes no reference while
 `FunSharedDel` still releases one, so collecting a few closures created in a
 method corrupts the class (3 are enough). A check for it was added to the PoC;
-the reference-count part of plan step 1 (no incref, no decref, trace
-`owner_type` in `FunctionTrace`) is what makes it pass.
+what makes it pass is not counting `owner_type` at all (no incref, no decref)
+and visiting it in `FunctionTrace`.
 
 **Note (2026-10-16), a constraint on the fix:** whatever IR-011 does to make
 a decorator's result callable as a method of the decorated class, the inline
@@ -363,6 +363,20 @@ a method of another object that returns an anonymous function closing over
 `self` and `f`, and one that returns a curried private method of its own
 (`self.wrapper(f)`). Today the first returns a `Function` from `h.handle()`,
 and the second crashes in the decorated method, which has no `owner_type`.
+
+**Note (2026-10-20), first half fixed:** a
+method gets its class from `LDFUNC` when it is created, through a third
+operand carrying the class being built (`OPCODE | 4 DST | 4 SRC_CODE |
+4 SRC_DARGS | 4 SRC_CLASS | 8 FLAGS`), so a decorated method has its
+`owner_type` before the decorators run; `SETPROP` no longer assigns it. The
+crash with an explicit receiver is gone (the PoC's third check passes, and so
+does `Counter.get` taken into a variable in the suites). Still open: the
+wrapper is not given the receiver when called through an instance, and a
+curried method returned by a decorator (`Server.decorator2`) is refused as a
+method of the class it is installed in. The latter briefly seemed to
+work while `SETPROP` still set `owner_type`, because it rewrote the shared
+`FuncShared` of `Server.wrapper` to `Handler`; removing that is part of the
+fix.
 
 **Decisions (2026-10-16, user):**
 - A decorator's result installed in a `func` member is callable as a method of
