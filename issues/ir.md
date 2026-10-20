@@ -184,7 +184,39 @@ otherwise unchanged; the probe was then reverted.
 ---
 
 ## IR-012 — `self.prop` in a function nested in a method reads through a null owner type
-**Severity:** High (SIGSEGV) · **Status:** OPEN · **Location:** `orbit/liftoff/ir/irbuilder.cpp:1456` (`visitSelector`, the `self` fast path) → `orbit/orbiter/vm.cpp:1747` (`TARGET_OP(LDOBJP)`, inline path)
+**Severity:** High (SIGSEGV) · **Status:** FIXED (2026-10-20) · **Location:** `orbit/liftoff/ir/irbuilder.cpp:1456` (`visitSelector`, the `self` fast path) → `orbit/orbiter/vm.cpp:1747` (`TARGET_OP(LDOBJP)`, inline path)
+
+**Fix verified (PoC `poc/ir/ir-012-self-prop-in-nested-func.orb` — prints
+`ALL TESTS PASSED`, 6 of 6; new suite `ortest/gc/02_function_owner.orb`;
+`ortest` 25/27 and the PoC gate 51/56, the failures being open findings;
+`phi-regalloc.orb` green).** A function now carries the class its code was
+written in, whether it is a method or a function nested in one, and that
+class is held through the GC trace rather than by reference count:
+
+- `LDFUNC` copies the running function's `owner_type` into every function it
+  creates (`vm.cpp:1588`). Only the class: not the METHOD flag, which decides
+  whether a call gets a receiver, so a closure stored in a property and called
+  as `obj.cb(x)` still gets none. A closure nested in a closure inherits too.
+- `owner_type` takes no reference anywhere: `FunctionNew` no longer increfs it
+  for native methods and `FunSharedDel` no longer releases it. A class and its
+  methods point at each other, and the hybrid collector treats any object
+  with a count above zero as a root, so counted references would keep both
+  alive forever. `FunctionTrace` visits `shared->owner_type` instead, so a
+  reachable function keeps its class alive.
+
+With the class in place, the inline `self.prop` load in a nested function
+reads the right slots, and the code-class users work inside closures as well:
+private members (read and written), and `super`.
+
+The first version copied the class but left `FunSharedDel` releasing it:
+every nested function freed released a class it never took. Three closures
+created in a method and collected were enough for `new A()` to fail with
+"'Class' object has no property 'init'" (the count also shares its word with
+`kIsInstanceMask`, so going below zero turns a class into an "instance"). The
+PoC's last check and `ortest/gc/02_function_owner.orb` guard against it; both
+fail on that version.
+
+<details><summary>Original report and notes</summary>
 
 `visitSelector` lowers `self.<member>` to an inline `LDOBJP` (the member's
 slot offset, no name lookup) whenever a class is being built:
@@ -231,6 +263,15 @@ creating function being a method, since the middle function is not one.
 Conditioning it on the creating function having an `owner_type` covers every
 depth.
 
+**Note (2026-10-20):** `LDFUNC` now copies the running function's
+`owner_type` into every function it creates (uncommitted). All the PoC's
+original checks pass, including two levels down, and `super` and private
+members work inside closures. Not closed: the copy takes no reference while
+`FunSharedDel` still releases one, so collecting a few closures created in a
+method corrupts the class (3 are enough). A check for it was added to the PoC;
+the reference-count part of plan step 1 (no incref, no decref, trace
+`owner_type` in `FunctionTrace`) is what makes it pass.
+
 **Note (2026-10-16), a constraint on the fix:** whatever IR-011 does to make
 a decorator's result callable as a method of the decorated class, the inline
 path must not take the slot layout from that class. In
@@ -251,6 +292,8 @@ a function nested in it; elsewhere fall back to the named lookup. An
 alternative is for the inline path to take the type from the object
 (`O_GET_TYPE(obj)`) when the running function has no owner, at the cost of a
 branch on the fast path.
+
+</details>
 
 ---
 

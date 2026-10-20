@@ -22,7 +22,7 @@ are resolved.
 | [sbuffer.md](sbuffer.md) | `orbit/liftoff/scanner/sbuffer` | 0/3 |
 | [utf8-stringbuilder.md](utf8-stringbuilder.md) | `orbit/orbiter/datatype/stringbuilder` (UTF-8 codec) | 1/4 |
 | [parser.md](parser.md) | `orbit/liftoff/parser` (parser.cpp, context.h, ast.h) | 13/25 |
-| [ir.md](ir.md) | `orbit/liftoff/ir` (linearscan, intervalspiller, irbuilder, instruction) | 5/15 |
+| [ir.md](ir.md) | `orbit/liftoff/ir` (linearscan, intervalspiller, irbuilder, instruction) | 4/15 |
 | [symtable.md](symtable.md) | `orbit/liftoff/symtable` (scopes, symbol slots, closures) | 0/3 |
 | [compiler.md](compiler.md) | `orbit/liftoff/compiler.cpp` (compile driver) | 1/1 |
 | [ctbuilder.md](ctbuilder.md) | `orbit/orbiter/datatype/ctbuilder.cpp` (class types, blueprint, hook dispatch) | 0/1 |
@@ -47,7 +47,7 @@ are resolved.
 - ~~**IR-015** — a generator that captures a variable is compiled as an ordinary function (`flags == GENERATOR` on a bit set)~~ *(FIXED 2026-10-19, the generator bit is tested on its own)*
 - **IR-014** — a captured variable read after a call returns the value stored before it (store-to-load forwarding ignores calls): a closure counter stays 0
 - **IR-011** — a method whose decorator returns a wrapper cannot be called: the wrapper gets no receiver (the call curries) and the method is never attached to its class (segfault on `self.prop`)
-- **IR-012** — `self.prop` in a function nested in a method takes the inline load and reads through a null owner type (segfault); blocked by SYM-001
+- ~~**IR-012** — `self.prop` in a function nested in a method takes the inline load and reads through a null owner type (segfault)~~ *(FIXED 2026-10-20, nested functions inherit their class; `owner_type` held by the GC trace, not by reference count)*
 - **IR-010** — any block (`if`, `for`) nested in a `catch` body aborts the compiler; root cause PARSE-019 (scope ranges overlap the next token)
 - ~~**OBJ-002** — `GetTypeName` writes its NUL one byte past a `char[24]`: any type error on an instance of a class named with 24+ characters aborts (stack overflow)~~ *(FIXED 2026-10-15, the copy leaves room for the terminator; names past 23 characters are cut short)*
 - ~~**VM-009** — a `try`/`trap` context keeps an absolute address into the VM stack, which `realloc` moves: a `trap` in every frame of a recursion ~1,000 deep segfaults~~ *(FIXED 2026-10-16, CP and the `prev` links are offsets from the stack base, biased by one)*
@@ -109,3 +109,4 @@ are resolved.
 - 2026-10-19: `orbit/liftoff/symtable.cpp` (`ComputeLocalVarOffset`) — SYM-003 restated after the user set the rule (inside functions a name is visible only after its declaration; modules keep run-time lookup): the expected outcome is `NameError`, not hoisting. PoC rewritten (6 checks); fix verified by probe (no alias to a declaration of an enclosing function).
 - 2026-10-19: `orbit/liftoff/symtable.cpp` (`ComputeLocalVarOffset`) — SYM-003 FIXED: an `UNKNOWN` is not aliased to a declaration of an enclosing function, so a later declaration is not reached and the name falls through to run-time lookup (`NameError`); explanatory comment added. PoC 6/6. The PoC gate is 49/56.
 - 2026-10-19: `orbit/liftoff/ir/irbuilder.cpp` (`visitFunction`) — IR-015 FIXED: `ENUMBITMASK_ISTRUE(..., ScopeFlags::GENERATOR)` instead of an equality on the flag set. PoC 4/4; no other equality test on `ScopeFlags` left in `orbit/liftoff`. The PoC gate is 50/56.
+- 2026-10-20: `orbit/orbiter` (`LDFUNC`, `FunctionTrace`, `FunSharedDel`) — IR-012 FIXED (method-decorator plan, step 1): every function created by a running function inherits its `owner_type`; `owner_type` is no longer reference-counted and is visited by `FunctionTrace`. A first version without the reference-count part corrupted classes after 3 collected closures; the PoC gained a check for it and `ortest/gc/02_function_owner.orb` was added. The PoC gate is 51/56, `ortest` 25/27.

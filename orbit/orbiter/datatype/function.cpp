@@ -96,7 +96,6 @@ void FunSharedDel(orbiter::Isolate *isolate, FuncShared *shared) {
     O_FAST_DECREF(shared->module);
 
     O_FAST_DECREF(shared->defaults);
-    O_FAST_DECREF(shared->owner_type);
 
     O_FAST_DECREF(shared->name);
     O_FAST_DECREF(shared->doc);
@@ -116,6 +115,8 @@ bool FunctionDtor(const Function *self) {
 void FunctionTrace(const Function *self, const GCTraceCallback callback, const MSize epoch) {
     callback((OObject *) self, (OObject *) self->closure, epoch);
     callback((OObject *) self, (OObject *) self->currying, epoch);
+
+    callback((OObject *) self, (OObject *) self->shared->owner_type, epoch);
 }
 
 // *********************************************************************************************************************
@@ -170,7 +171,7 @@ HFunction orbiter::datatype::FunctionNew(Isolate *isolate, Module *module, TypeI
     f_shared->module = O_FAST_INCREF(module);
 
     if (def->method)
-        f_shared->owner_type = O_INCREF(owner);
+        f_shared->owner_type = owner;
 
     auto *fn = MakeObject<Function>(isolate, InstanceType::FUNCTION);
     if (fn != nullptr) {

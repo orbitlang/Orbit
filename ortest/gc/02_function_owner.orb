@@ -1,0 +1,123 @@
+# GC suite 02 -- a function keeps the class its code belongs to alive.
+#
+# A function's `owner_type` (the class its code was written in) is not
+# reference-counted, since class -> method -> owner_type -> class would be a
+# cycle of counts the collector treats as roots forever; FunctionTrace visits
+# it instead. Every function nested in a method inherits it (method-decorator
+# plan, step 1). So: dropping nested functions must never release the class,
+# and a live function must keep its class alive through a collection, for
+# classes and for the builtin types native methods belong to.
+#
+# EXPECT: contains: ALL TESTS PASSED
+
+import "gc"
+import "io"
+
+var fails = 0
+
+func check(name, got, expected) {
+    if got == expected {
+        io.print("OK   ", name)
+    } else {
+        io.print("FAIL ", name, "-- got:", got, "expected:", expected)
+        fails += 1
+    }
+}
+
+# --- dropping nested functions does not release their class -----------------
+
+class Churned {
+    pub var v = 3
+
+    pub func make() {
+        return func () { return 1 }
+    }
+
+    pub func get() { return self.v }
+}
+
+func churn(n) {
+    c := new Churned()
+    loop i := 0; i < n; i++ {
+        f := c.make()
+        f()
+    }
+}
+
+churn(1000)
+gc.collect()
+r_churn := trap new Churned().get()
+check("a class survives 1000 of its nested functions being collected", r_churn.unwrap_or("CORRUPTED"), 3)
+
+# --- a native method kept across collections (owner: a builtin type) --------
+
+append := List.append
+
+func garbage(n) {
+    loop i := 0; i < n; i++ {
+        x := [i, i + 1]
+        append(x, i)
+    }
+}
+
+garbage(2000)
+gc.collect()
+gc.collect()
+l := [1]
+append(l, 2)
+check("a native method kept across collections", l, [1, 2])
+
+# --- a local class reachable only through a closure of its own --------------
+
+func make_counter() {
+    class Local {
+        var n = 0
+
+        pub func bumper() {
+            return func () {
+                self.n += 1
+                return self.n
+            }
+        }
+    }
+
+    return new Local().bumper()
+}
+
+bump := make_counter()
+gc.collect()
+gc.collect()
+bump()
+check("a local class kept alive by a closure of its own", bump(), 2)
+
+# --- many short-lived local classes ------------------------------------------
+
+func one_class(k) {
+    class Tmp {
+        pub var v = 0
+
+        pub init(v) {
+            self.v = v
+        }
+
+        pub func get() {
+            return func () { return self.v }
+        }
+    }
+
+    return new Tmp(k).get()()
+}
+
+var total = 0
+loop i := 0; i < 300; i++ {
+    total += one_class(i)
+    if i % 50 == 0 { gc.collect() }
+}
+gc.collect()
+check("300 local classes created and collected", total, 44850)
+
+if fails == 0 {
+    io.print("ALL TESTS PASSED")
+} else {
+    io.print(fails, "TEST(S) FAILED")
+}

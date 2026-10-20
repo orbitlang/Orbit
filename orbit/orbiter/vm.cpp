@@ -1585,6 +1585,9 @@ CATCH_FINALLY:
                 if (!func)
                     goto ERROR;
 
+                if (this_func != nullptr)
+                    func->shared->owner_type = this_func->shared->owner_type;
+
                 ACCESS_REG_DST(instr) = (PtrSize) func.get();
 
                 DISPATCH;

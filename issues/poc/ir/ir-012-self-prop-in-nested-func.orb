@@ -10,9 +10,13 @@
 # Reading the property through a local copy of `self` takes the generic path
 # and is the control. Capturing `self` itself works since SYM-001 was fixed.
 #
+# The last check guards the fix itself: a nested function takes its class
+# without a reference, so freeing it must not release the class either.
+#
 # A runtime test: prints "ALL TESTS PASSED" only when every check matches.
 # EXPECT: contains: ALL TESTS PASSED
 
+import "gc"
 import "io"
 
 var fails = 0
@@ -73,6 +77,33 @@ class Deep {
     }
 }
 check("self properties two levels down", new Deep().two_down(), 7)
+
+# The class a nested function inherits must stay alive and intact however
+# many of those functions are created and collected: owner_type is not
+# reference-counted (the class <-> method cycle), so dropping a nested function
+# must not release the class.
+class Churned {
+    pub var v = 3
+
+    pub func make() {
+        return func () { return 1 }
+    }
+
+    pub func get() { return self.v }
+}
+
+func churn(n) {
+    c := new Churned()
+    loop i := 0; i < n; i++ {
+        f := c.make()
+        f()
+    }
+}
+
+churn(1000)
+gc.collect()
+r_churn := trap new Churned().get()
+check("the class survives its nested functions being collected", r_churn.unwrap_or("CORRUPTED"), 3)
 
 if fails == 0 {
     io.print("ALL TESTS PASSED")
