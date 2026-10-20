@@ -1,8 +1,56 @@
 # vm — bug report
 
 **Component:** `orbit/orbiter` (interpreter: trap/panic unwind, register file) · **ID prefix:** `VM`
-**PoCs:** [`poc/vm/`](poc/vm/) · **Last reviewed:** 2026-10-16
+**PoCs:** [`poc/vm/`](poc/vm/) · **Last reviewed:** 2026-10-20
 **Status:** OPEN · PARTIAL · FIXED · WONTFIX — see [GUIDE.md](GUIDE.md).
+
+---
+
+## VM-012 — A method called without a selector does not check its receiver
+**Severity:** High (reads the wrong slots of a foreign object; SIGSEGV with a non-object) · **Status:** OPEN · **Location:** `orbit/orbiter/orbcall.cpp:193` (`ArgumentBinder::Bind`), `orbit/orbiter/orbcall.cpp:128` (`NormalizeMethod`)
+
+A method is an ordinary function whose first parameter is `self`, and it can
+be taken out of its class and called without a selector:
+
+```orbit
+get := A.get
+get(new A())     // 4
+```
+
+`Bind` checks the receiver against the method's class only for a call in
+`CallMode::METHOD`, the mode of a selector call:
+
+```cpp
+if (ENUMBITMASK_ISTRUE(mode, CallMode::METHOD) && !this->NormalizeMethod()) {
+```
+
+A call without a selector is not in that mode, so its first positional
+argument becomes `self` with no check. The method's code reads `self` with its
+own class's slot layout (the inline `self.x` path), so:
+
+- an instance of an unrelated class is read at the wrong offsets:
+  `get(new Other())` returns `Other`'s first slot as if it were `A.v`, with no
+  error;
+- a number as receiver crashes the process: `get(5)` is a SIGSEGV.
+
+Native methods are not affected: `pcheck.cpp` checks `argv[0]` against the
+owner type of every native method, whatever the call mode.
+
+**Found** while weighing how a function promoted to a method by a decorator
+should check its receiver: whether it can skip the check depends on the
+methods it calls checking theirs, and a plain call of a method does not.
+
+**PoC:** [`poc/vm/method-receiver-plain-call.orb`](poc/vm/method-receiver-plain-call.orb)
+*(confirmed live: the four controls pass — right receiver, subclass, call
+through an instance, a curried method with `self` bound — the unrelated
+instance is accepted, and the number crashes)*.
+
+**Fix (suggested, not tried):** check the receiver of a method in `Bind`
+whatever the call mode, when `self` is not already bound by currying: in
+`CallMode::METHOD` it is the receiver slot `NormalizeMethod` already looks at,
+otherwise it is the first positional argument. A curried method whose
+currying is not empty already had its `self` checked by the call that bound
+it.
 
 ---
 

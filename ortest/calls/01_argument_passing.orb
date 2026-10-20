@@ -210,6 +210,36 @@ class NeedsTwo {
 r_ctor := trap (new NeedsTwo(1))
 check("ctor not curryable", r_ctor.unwrap_or("NO-CURRY"), "NO-CURRY")
 
+# A method called without a selector and without arguments is curried with
+# nothing bound, not even `self`. Called later through a selector, the object
+# before the dot becomes its receiver and is checked like any receiver; with
+# an empty currying there is no bound `self` to check instead (reading one
+# crashed).
+class Getter {
+    pub var v = 4
+    pub var g = nil
+
+    pub func get() { return self.v }
+}
+
+class GetterHolder {
+    pub var g = nil
+
+    pub init(g) {
+        self.g = g
+    }
+}
+
+get_m := Getter.get
+nothing_bound := get_m()
+
+getter := new Getter()
+getter.g = nothing_bound
+check("curried with nothing bound, receiver of the right class", getter.g(), 4)
+
+r_wrong := trap new GetterHolder(nothing_bound).g()
+check("curried with nothing bound, receiver of another class", r_wrong.unwrap_err().kind, @TypeError)
+
 # ---------------------------------------------------------------------------
 # Consecutive calls -- regression guard for IR-006 (R10/R11/R12 collision)
 # ---------------------------------------------------------------------------

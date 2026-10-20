@@ -28,7 +28,7 @@ are resolved.
 | [ctbuilder.md](ctbuilder.md) | `orbit/orbiter/datatype/ctbuilder.cpp` (class types, blueprint, hook dispatch) | 0/1 |
 | [function.md](function.md) | `orbit/orbiter/datatype/function.cpp` (Function objects, `FuncShared` lifetime) | 1/1 |
 | [oobject.md](oobject.md) | `orbit/orbiter/datatype/oobject.cpp` (object/type core, type lifecycle, type names) | 1/3 |
-| [vm.md](vm.md) | `orbit/orbiter` (interpreter: trap unwind, registers, stack) | 2/11 |
+| [vm.md](vm.md) | `orbit/orbiter` (interpreter: trap unwind, registers, stack) | 3/12 |
 | [number.md](number.md) | `orbit/orbiter/datatype/number.cpp` (integer literals & representation) | 2/2 |
 
 ## Top priorities (High severity, quick wins)
@@ -45,6 +45,7 @@ are resolved.
 - ~~**SYM-003** — a nested function reaches a name the enclosing function declares only later, and reads its own frame for it (a sibling called as `nil`, a local read as garbage) instead of a `NameError`~~ *(FIXED 2026-10-19, no alias to a later declaration of an enclosing function)*
 - ~~**SYM-002** — a variable captured two or more levels down crashes: only the innermost scope is flagged as a closure, the middle functions never load theirs~~ *(FIXED 2026-10-19, linked closures addressed by (depth, index))*
 - ~~**IR-015** — a generator that captures a variable is compiled as an ordinary function (`flags == GENERATOR` on a bit set)~~ *(FIXED 2026-10-19, the generator bit is tested on its own)*
+- **VM-012** — a method called without a selector (`m := A.get; m(x)`) does not check its receiver: a foreign instance is read at the wrong offsets, a number segfaults
 - **IR-014** — a captured variable read after a call returns the value stored before it (store-to-load forwarding ignores calls): a closure counter stays 0
 - **IR-011** — a method whose decorator returns a wrapper cannot be called: the wrapper gets no receiver (the call curries) and the method is never attached to its class (segfault on `self.prop`)
 - ~~**IR-012** — `self.prop` in a function nested in a method takes the inline load and reads through a null owner type (segfault)~~ *(FIXED 2026-10-20, nested functions inherit their class; `owner_type` held by the GC trace, not by reference count)*
@@ -110,3 +111,4 @@ are resolved.
 - 2026-10-19: `orbit/liftoff/symtable.cpp` (`ComputeLocalVarOffset`) — SYM-003 FIXED: an `UNKNOWN` is not aliased to a declaration of an enclosing function, so a later declaration is not reached and the name falls through to run-time lookup (`NameError`); explanatory comment added. PoC 6/6. The PoC gate is 49/56.
 - 2026-10-19: `orbit/liftoff/ir/irbuilder.cpp` (`visitFunction`) — IR-015 FIXED: `ENUMBITMASK_ISTRUE(..., ScopeFlags::GENERATOR)` instead of an equality on the flag set. PoC 4/4; no other equality test on `ScopeFlags` left in `orbit/liftoff`. The PoC gate is 50/56.
 - 2026-10-20: `orbit/orbiter` (`LDFUNC`, `FunctionTrace`, `FunSharedDel`) — IR-012 FIXED: every function created by a running function inherits its `owner_type`; `owner_type` is no longer reference-counted and is visited by `FunctionTrace`. A first version without the reference-count part corrupted classes after 3 collected closures; the PoC gained a check for it and `ortest/gc/02_function_owner.orb` was added. The PoC gate is 51/56, `ortest` 25/27.
+- 2026-10-20: `orbit/orbiter/orbcall.cpp` (`ArgumentBinder::Bind`) — VM-012 filed: the receiver of a method is checked only for selector calls (`CallMode::METHOD`); a plain call takes its first argument as `self` unchecked (wrong slots of a foreign instance, SIGSEGV with a number). Native methods check theirs in `pcheck.cpp`. New PoC `poc/vm/method-receiver-plain-call.orb`. The PoC gate is 51/57.

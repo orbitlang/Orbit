@@ -133,7 +133,11 @@ bool ArgumentBinder::NormalizeMethod() {
     }
 
     // Check object is instance. The receiver is the first of the bound arguments.
-    const auto receiver = *this->ArgsBase();
+    auto receiver = *this->ArgsBase();
+
+    if (this->func->currying != nullptr && this->func->currying->length > 0)
+        receiver = this->func->currying->objects[0];
+
     const auto *type = GetTypeInfoFromObject(this->fiber->isolate, receiver);
 
     if (O_IS_OBJECT(receiver) && !O_GET_RC(receiver).IsInstance())

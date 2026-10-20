@@ -1,0 +1,74 @@
+# PoC method-receiver-plain-call — VM-012: a method called without a selector
+# (taken into a variable, `m := A.get; m(x)`) must refuse a receiver that is
+# not an instance of its class, as a call through a selector does.
+#
+# ArgumentBinder::Bind checks the receiver only in CallMode::METHOD, through
+# NormalizeMethod, and a call without a selector is not in that mode: the first
+# positional argument becomes `self` unchecked. The method's code then reads
+# `self` with its own class's slot layout: an instance of another class is read
+# at the wrong offsets (a wrong value, no error), and a number crashes the
+# process (SIGSEGV). Native methods do not have the problem: they check argv[0]
+# against their owner type (pcheck.cpp).
+#
+# Controls: the right receiver, an instance of a subclass, a call through an
+# instance, and a curried method whose `self` is already bound.
+#
+# A runtime test: prints "ALL TESTS PASSED" only when every check matches.
+# EXPECT: contains: ALL TESTS PASSED
+
+import "io"
+
+var fails = 0
+
+func check(name, got, expected) {
+    if got == expected {
+        io.print("OK   ", name)
+    } else {
+        io.print("FAIL ", name, "-- got:", got, "expected:", expected)
+        fails += 1
+    }
+}
+
+func kind_of(r) {
+    if r { return "OK" }
+    return r.unwrap_err().kind
+}
+
+class A {
+    pub var v = 4
+
+    pub init() { }
+
+    pub func get() { return self.v }
+
+    pub func add(x) { return self.v + x }
+}
+
+class Sub : A {
+    pub init() {
+        super.init()
+    }
+}
+
+class Other {
+    pub var x = 1
+    pub var y = 2
+}
+
+get := A.get
+
+check("control: the right receiver", get(new A()), 4)
+check("control: an instance of a subclass", get(new Sub()), 4)
+check("control: a call through an instance", new A().get(), 4)
+
+bound := new A().add()
+check("control: a curried method with self bound", bound(1), 5)
+
+check("an instance of an unrelated class is refused", kind_of(trap get(new Other())), @TypeError)
+check("a number is refused", kind_of(trap get(5)), @TypeError)
+
+if fails == 0 {
+    io.print("ALL TESTS PASSED")
+} else {
+    io.print(fails, "TEST(S) FAILED")
+}
