@@ -1,0 +1,90 @@
+# GC suite 03 -- what a function's shared data points to survives collections.
+#
+# The objects a function's shared data refers to (its code, name, doc, default
+# values, module, context and owner class) take no reference count; the
+# collector reaches them by tracing the function. A default tuple built at run
+# time is the sharpest case: nothing but the function points to it. So a
+# function, a partial application sharing its data, and a decorated method's
+# copy must all keep their defaults through collections, also after the
+# original function is gone.
+#
+# EXPECT: contains: ALL TESTS PASSED
+
+import "gc"
+import "io"
+
+var fails = 0
+
+func check(name, got, expected) {
+    if got == expected {
+        io.print("OK   ", name)
+    } else {
+        io.print("FAIL ", name, "-- got:", got, "expected:", expected)
+        fails += 1
+    }
+}
+
+func garbage(n) {
+    loop i := 0; i < n; i++ {
+        x := [i, i + 1, "s" + "t"]
+    }
+}
+
+func collect_hard() {
+    loop i := 0; i < 5; i++ {
+        garbage(2000)
+        gc.collect()
+    }
+}
+
+# --- defaults built at run time, reachable only through the function -------
+
+func make(base) {
+    return func (x, y = [base, base + 1]) { return y[0] + y[1] + x }
+}
+
+f := make(10)
+collect_hard()
+check("run-time defaults survive collections", f(1), 22)
+
+# --- a partial application outlives the function it came from ---------------
+
+func make_partial() {
+    g := func (a, b, y = [100, 200]) { return a + b + y[0] + y[1] }
+    return g(1)
+}
+
+p := make_partial()
+collect_hard()
+check("a partial application keeps the shared defaults", p(2), 303)
+
+# --- a decorated method's copy keeps the original's defaults ----------------
+
+func deco(fn) { return fn }
+
+class K {
+    pub var v = 7
+
+    @[deco]
+    pub func get(a = [1, 2]) { return self.v + a[0] + a[1] }
+}
+
+k := new K()
+collect_hard()
+check("a decorated method keeps its defaults", k.get(), 10)
+
+# --- many short-lived functions, interleaved with collections ---------------
+
+func churn(n) {
+    total := 0
+    loop i := 0; i < n; i++ {
+        h := make(i)
+        if i % 100 == 0 { gc.collect() }
+        total += h(0)
+    }
+    return total
+}
+
+check("1000 functions with defaults, collected along the way", churn(1000), 1000 * 999 + 1000)
+
+if fails == 0 { io.print("ALL TESTS PASSED") }

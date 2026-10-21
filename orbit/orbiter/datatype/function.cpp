@@ -16,30 +16,15 @@ using namespace orbiter::datatype;
 // INTERNAL
 // *********************************************************************************************************************
 
-FuncShared *FunSharedNew(orbiter::Isolate *isolate, const char *name, const char *doc,
-                         const U16 arity, const FunctionPtr func, const FunctionKind kind) {
-    Handle<ORString> s_name;
-    Handle<ORString> s_doc;
-
-    if (name != nullptr) {
-        s_name = ORStringNew(isolate, name);
-        if (!s_name)
-            return nullptr;
-    }
-
-    if (doc != nullptr) {
-        s_doc = ORStringNew(isolate, doc);
-        if (!s_doc)
-            return nullptr;
-    }
-
+FuncShared *FunSharedNew(orbiter::Isolate *isolate, ORString *name, ORString *doc, const U16 arity,
+                         const FunctionPtr func, const FunctionKind kind) {
     orbiter::memory::IsolateAllocator allocator(isolate);
     auto *shared = allocator.calloc<FuncShared>(sizeof(FuncShared));
     if (shared != nullptr) {
         new(&shared->refs) std::atomic_uint(1);
 
-        shared->name = s_name.release();
-        shared->doc = s_doc.release();
+        shared->name = name;
+        shared->doc = doc;
 
         shared->func = func;
 
@@ -53,18 +38,11 @@ FuncShared *FunSharedNew(orbiter::Isolate *isolate, const char *name, const char
 FuncShared *FunSharedNew(orbiter::Isolate *isolate, const FuncShared *origin) {
     orbiter::memory::IsolateAllocator allocator(isolate);
 
-    auto *shared = allocator.calloc<FuncShared>(sizeof(FuncShared));
+    auto *shared = allocator.alloc<FuncShared>(sizeof(FuncShared));
     if (shared != nullptr) {
         stratum::util::MemoryCopy(shared, origin, sizeof(FuncShared));
 
-        shared->refs.store(1);
-
-        O_FAST_INCREF(shared->context);
-        O_INCREF(shared->module);
-        O_FAST_INCREF(shared->name);
-        O_FAST_INCREF(shared->doc);
-        O_FAST_INCREF(shared->code);
-        O_INCREF(shared->defaults);
+        new(&shared->refs) std::atomic_uint(1);
     }
 
     return shared;
@@ -112,18 +90,35 @@ void FunSharedDel(orbiter::Isolate *isolate, FuncShared *shared) {
     if (shared == nullptr || shared->refs.fetch_sub(1) > 1)
         return;
 
-    O_FAST_DECREF(shared->context);
-    O_FAST_DECREF(shared->module);
-
-    O_FAST_DECREF(shared->defaults);
-
-    O_FAST_DECREF(shared->name);
-    O_FAST_DECREF(shared->doc);
-
-    if (shared->IsInterpreted())
-        O_FAST_DECREF(shared->code);
-
     orbiter::memory::IsolateAllocator(isolate).free(shared);
+}
+
+/**
+ * @brief Wrap a FuncShared in a new, GC-tracked Function object.
+ *
+ * Takes over the caller's reference to `shared`: it moves into the Function, or is released on failure.
+ *
+ * @param isolate Pointer to the Isolate used to allocate the function.
+ * @param shared Shared function data, with a reference owned by the caller.
+ * @param closure Captured variables, or nullptr.
+ * @param currying Values for partial application, or nullptr.
+ *
+ * @return Handle to the new Function, or an empty handle on failure.
+ */
+HFunction MakeFunction(orbiter::Isolate *isolate, FuncShared *shared, Closure *closure, Tuple *currying) {
+    auto *fn = MakeObject<Function>(isolate, InstanceType::FUNCTION);
+    if (fn != nullptr) {
+        fn->shared = shared;
+
+        fn->closure = closure;
+        fn->currying = currying;
+
+        O_GC_TRACK_RETURN(isolate, fn, true);
+    }
+
+    FunSharedDel(isolate, shared);
+
+    return {};
 }
 
 bool FunctionDtor(const Function *self) {
@@ -136,7 +131,18 @@ void FunctionTrace(const Function *self, const GCTraceCallback callback, const M
     callback((OObject *) self, (OObject *) self->closure, epoch);
     callback((OObject *) self, (OObject *) self->currying, epoch);
 
-    callback((OObject *) self, (OObject *) self->shared->owner_type, epoch);
+    // Trace shared
+    const auto *shared = self->shared;
+
+    callback((OObject *) self, (OObject *) shared->context, epoch);
+    callback((OObject *) self, (OObject *) shared->module, epoch);
+    callback((OObject *) self, (OObject *) shared->defaults, epoch);
+    callback((OObject *) self, (OObject *) shared->owner_type, epoch);
+    callback((OObject *) self, (OObject *) shared->name, epoch);
+    callback((OObject *) self, (OObject *) shared->doc, epoch);
+
+    if (shared->IsInterpreted())
+        callback((OObject *) self, (OObject *) shared->code, epoch);
 }
 
 // *********************************************************************************************************************
@@ -175,37 +181,39 @@ HFunction orbiter::datatype::FunctionNew(Isolate *isolate, Module *module, TypeI
     if (def->kwargs)
         kind |= FunctionKind::KWARGS;
 
-    auto *f_shared = FunSharedNew(isolate, def->name, def->doc, def->params, def->func, kind);
+    HORString s_name;
+    HORString s_doc;
+    HTuple defaults;
+
+    if (def->name != nullptr) {
+        s_name = ORStringNew(isolate, def->name);
+        if (!s_name)
+            return {};
+    }
+
+    if (def->doc != nullptr) {
+        s_doc = ORStringNew(isolate, def->doc);
+        if (!s_doc)
+            return {};
+    }
+
+    if (def->defaults != nullptr) {
+        defaults = MakeDefaultTuple(isolate, def->defaults, strlen(def->defaults));
+        if (!defaults)
+            return {};
+    }
+
+    auto *f_shared = FunSharedNew(isolate, s_name.get(), s_doc.get(), def->params, def->func, kind);
     if (f_shared == nullptr)
         return {};
 
-    if (def->defaults != nullptr) {
-        f_shared->defaults = MakeDefaultTuple(isolate, def->defaults, strlen(def->defaults)).release();
-        if (f_shared->defaults == nullptr) {
-            FunSharedDel(isolate, f_shared);
-
-            return {};
-        }
-    }
-
-    f_shared->module = O_FAST_INCREF(module);
+    f_shared->defaults = defaults.get();
+    f_shared->module = module;
 
     if (def->method)
         f_shared->owner_type = owner;
 
-    auto *fn = MakeObject<Function>(isolate, InstanceType::FUNCTION);
-    if (fn != nullptr) {
-        fn->shared = f_shared;
-
-        fn->closure = nullptr;
-        fn->currying = nullptr;
-
-        O_GC_TRACK_RETURN(isolate, fn, true);
-    }
-
-    FunSharedDel(isolate, f_shared);
-
-    return {};
+    return MakeFunction(isolate, f_shared, nullptr, nullptr);
 }
 
 HFunction orbiter::datatype::FunctionNew(Code *code, Closure *closure, Tuple *defaults, const LoadFuncFlags flags) {
@@ -215,32 +223,18 @@ HFunction orbiter::datatype::FunctionNew(Code *code, Closure *closure, Tuple *de
     // Since we're creating an interpreted function here (not a native one), we can safely mask out and remove this flag.
     const auto fn_kind = (FunctionKind) (flags & ~LoadFuncFlags::NPARAMS);
 
-    auto *f_shared = FunSharedNew(isolate, nullptr, nullptr, code->params_count, nullptr, fn_kind);
+    auto *f_shared = FunSharedNew(isolate, code->name, code->doc, code->params_count, nullptr, fn_kind);
     if (f_shared == nullptr)
         return {};
 
-    f_shared->name = O_FAST_INCREF(code->name);
-    f_shared->doc = O_FAST_INCREF(code->doc);
-    f_shared->code = O_FAST_INCREF(code);
-    f_shared->defaults = O_INCREF(defaults);
+    const auto *fiber = Fiber::Current();
 
-    auto *fn = MakeObject<Function>(isolate, InstanceType::FUNCTION);
-    if (fn != nullptr) {
-        const auto fiber = Fiber::Current();
+    f_shared->context = fiber->context.context;
+    f_shared->module = fiber->context.module;
+    f_shared->code = code;
+    f_shared->defaults = defaults;
 
-        fn->shared = f_shared;
-        fn->shared->context = O_FAST_INCREF(fiber->context.context);
-        fn->shared->module = O_INCREF(fiber->context.module);
-
-        fn->closure = closure;
-        fn->currying = nullptr;
-
-        O_GC_TRACK_RETURN(isolate, fn, true);
-    }
-
-    FunSharedDel(isolate, f_shared);
-
-    return {};
+    return MakeFunction(isolate, f_shared, closure, nullptr);
 }
 
 HFunction orbiter::datatype::FunctionNew(const Function *func, OObject **args, const U16 argc) {
@@ -251,28 +245,14 @@ HFunction orbiter::datatype::FunctionNew(const Function *func, OObject **args, c
     if (!currying)
         return {};
 
-    const auto r_curring = currying.get();
-
-    if (func->currying != nullptr) {
-        // To make the linter happy :)
-        for (auto i = 0; i < prev_len; i++)
-            TupleAppend(r_curring, func->currying->objects[i]);
-    }
+    // prev_len is 0 when there is no previous currying, so the first loop never touches it
+    for (U32 i = 0; i < prev_len; i++)
+        TupleAppend(currying.get(), func->currying->objects[i]);
 
     for (auto i = 0; i < argc; i++)
-        TupleAppend(r_curring, args[i]);
+        TupleAppend(currying.get(), args[i]);
 
-    auto *fn = MakeObject<Function>(isolate, InstanceType::FUNCTION);
-    if (fn != nullptr) {
-        fn->shared = func->shared->GetRef();
-
-        fn->closure = func->closure;
-        fn->currying = currying.get();
-
-        O_GC_TRACK_RETURN(isolate, fn, true);
-    }
-
-    return {};
+    return MakeFunction(isolate, func->shared->GetRef(), func->closure, currying.get());
 }
 
 HFunction orbiter::datatype::FunctionNew(const Function *func) {
@@ -282,22 +262,9 @@ HFunction orbiter::datatype::FunctionNew(const Function *func) {
     if (shared == nullptr)
         return {};
 
-    auto *fn = MakeObject<Function>(isolate, InstanceType::FUNCTION);
-    if (fn != nullptr) {
-        fn->shared = shared;
-
-        fn->closure = func->closure;
-        fn->currying = func->currying;
-
-        O_GC_TRACK_RETURN(isolate, fn, true);
-    }
-
-    FunSharedDel(isolate, shared);
-
-    return {};
+    return MakeFunction(isolate, shared, func->closure, func->currying);
 }
 
 HOType orbiter::datatype::FunctionTypeInit(Isolate *isolate) {
-    auto func = MakeType(isolate, "Function", InstanceType::FUNCTION, sizeof(Function) - sizeof(OObject), 0, 0);
-    return func;
+    return MakeType(isolate, "Function", InstanceType::FUNCTION, sizeof(Function) - sizeof(OObject), 0, 0);
 }

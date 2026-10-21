@@ -1,0 +1,37 @@
+# PoC func-001-module-cycle — FUNC-001: a module that defines functions must be
+# reclaimed once nothing refers to it.
+#
+# A module's functions live in its slots and point back to the module through
+# their shared data. While that backpointer held a reference count, the module
+# and its functions were roots forever: an evaluated module with functions was
+# never reclaimed, one without functions was. The check is differential, so it
+# does not depend on how many objects the rest of the runtime allocates: N
+# evaluated modules with two functions each must give back at least N more
+# objects than N evaluated modules with none (each has two more functions to
+# free). With the counted backpointer they give back fewer (the module itself
+# stays too).
+#
+# EXPECT: contains: ALL TESTS PASSED
+
+import "gc"
+import "io"
+
+let N = 200
+
+func run(src) {
+    gc.collect()
+    loop i := 0; i < N; i++ {
+        await eval("m", src)
+    }
+    return gc.collect()
+}
+
+empty := run(b"pub var v = 1\n")
+with_funcs := run(b"pub var v = 1\npub func f() { return 1 }\npub func g() { return 2 }\n")
+
+if with_funcs - empty >= N {
+    io.print("OK   modules with functions are reclaimed:", with_funcs, "vs", empty)
+    io.print("ALL TESTS PASSED")
+} else {
+    io.print("FAIL modules with functions are not reclaimed:", with_funcs, "vs", empty)
+}

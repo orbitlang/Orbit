@@ -1,13 +1,63 @@
 # function — bug report
 
 **Component:** `orbit/orbiter/datatype/function.cpp` (Function objects, `FuncShared` lifetime) · **ID prefix:** `FUNC`
-**PoCs:** none (leak, not observable through the available tooling) · **Last reviewed:** 2026-09-23
+**PoCs:** [`poc/function/`](poc/function/) · **Last reviewed:** 2026-10-21
 **Status:** OPEN · PARTIAL · FIXED · WONTFIX — see [GUIDE.md](GUIDE.md).
 
 ---
 
 ## FUNC-001 — Strong backpointers in `FuncShared` make modules and class types immortal
-**Severity:** Low (leak; unbounded under repeated failed imports or dynamic type creation) · **Status:** OPEN · **Location:** `orbit/orbiter/datatype/function.cpp:170` (native), `:173` (`owner_type`), `:210-211` (interpreted)
+**Severity:** Low (leak; unbounded under repeated failed imports or dynamic type creation) · **Status:** FIXED (2026-10-21) · **Location:** `orbit/orbiter/datatype/function.cpp` (`FunctionNew`, `FunSharedNew`, `FunSharedDel`, `FunctionTrace`)
+
+**Fix verified (PoC `poc/function/func-001-module-cycle.orb` — prints `ALL
+TESTS PASSED`; `ortest` 28/28 and the PoC gate 53/58, the failures being open
+findings; `phi-regalloc.orb` green).** No field of `FuncShared` takes a
+reference count any more: `context`, `module`, `defaults`, `owner_type`,
+`name`, `doc` and `code` are plain pointers, `FunSharedDel` only frees the
+structure, and `FunctionTrace` reports them all (`code` only for an
+interpreted function, where the union holds a `Code`):
+
+```cpp
+callback((OObject *) self, (OObject *) self->shared->context, epoch);
+callback((OObject *) self, (OObject *) self->shared->module, epoch);
+callback((OObject *) self, (OObject *) self->shared->defaults, epoch);
+callback((OObject *) self, (OObject *) self->shared->owner_type, epoch);
+callback((OObject *) self, (OObject *) self->shared->name, epoch);
+callback((OObject *) self, (OObject *) self->shared->doc, epoch);
+
+if (self->shared->IsInterpreted())
+    callback((OObject *) self, (OObject *) self->shared->code, epoch);
+```
+
+The cycle module → function → module is now made of traced edges, so the
+collector reclaims it once nothing else holds the module.
+
+The two checks the report asked for:
+
+1. **No window without a root.** The native `FunctionNew` creates the name,
+   the doc string and the default tuple itself and keeps their handles until
+   it returns; `FunSharedNew` takes them as plain pointers. The handle
+   `O_GC_TRACK_RETURN` returns roots the new `Function` before those handles
+   drop, so there is no allocation (each one may start a collection) during
+   which they are neither counted nor traced. Taking a plain pointer inside
+   `FunSharedNew` instead would leave them unrooted across the
+   `MakeObject<Function>` call. In the interpreted overload, `code` and the
+   defaults are in the caller's registers and the context and module in the
+   fiber's context, both scanned as roots.
+2. **Sharing.** A `FuncShared` reached from several `Function` objects
+   (currying) is traced once per function; tracing is idempotent. The copy
+   made for a decorated method is a plain `memcpy` with `refs` reset to 1.
+
+The PoC compares what a collection gives back after 200 evaluated modules
+with two functions each against 200 with none: 1000 against 690 objects with
+the fix, 400 against 690 with the counted backpointers (the modules with
+functions are never reclaimed), so it fails on the old code.
+`ortest/gc/03_function_shared.orb` covers the other direction: defaults built
+at run time, reachable only through the function, survive collections for a
+function, a partial application that outlives its original, and a decorated
+method's copy; without the `defaults` edge in `FunctionTrace` it crashes.
+
+<details><summary>Original report</summary>
 
 A function keeps a **strong** reference to the context it belongs to:
 
@@ -78,5 +128,7 @@ Two things to check before making that change:
    and closures bump `refs`), so the edge would be reported once per `Function`
    that shares it. Tracing is idempotent, so that is harmless, but the DECREF
    removal has to stay symmetric with the `refs` bookkeeping.
+
+</details>
 
 ---
