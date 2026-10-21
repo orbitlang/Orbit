@@ -7,9 +7,12 @@
 # decorated method with that receiver. The decorated method keeps belonging to
 # its class: `self.prop` and private members work inside it.
 #
-# Today only a decorator that returns the method itself works. A wrapper is
-# not bound to the receiver, and the decorated method is never attached to its
-# class (IR-011); the suite dies at the first call that reaches it.
+# What a decorator returns for a method is installed as follows: a plain
+# function becomes a method of the class through a copy (the function itself,
+# possibly used elsewhere, is never changed); the method itself, a method of a
+# superclass, or a method whose `self` is already bound stays as it is; a
+# value that is not a function, and a native function, stay as they are; a
+# method of an unrelated class is refused when the class is built.
 #
 # EXPECT: contains: ALL TESTS PASSED
 
@@ -106,6 +109,97 @@ class Derived : Counter {
 d := new Derived(7)
 check("an inherited identity-decorated method", d.same(), 7)
 check("an inherited wrapper", d.get(), 8)
+
+# --- what the decorator returns ----------------------------------------------
+
+# a plain function used elsewhere too: the method is a copy of it, and the
+# function itself is not turned into a method
+func helper(me) { return "helper" }
+
+class FnHolder {
+    pub var f = nil
+
+    pub init(f) {
+        self.f = f
+    }
+}
+
+fn_holder := new FnHolder(helper)
+
+func give_helper(f) { return helper }
+
+class UsesHelper {
+    pub init() { }
+
+    @[give_helper]
+    pub func m() { }
+}
+
+check("a shared function installed as a method", new UsesHelper().m(), "helper")
+check("the shared function is left unchanged", fn_holder.f("x"), "helper")
+
+# the method itself: it keeps checking its receiver
+class Getter {
+    pub var v = 4
+
+    pub init() { }
+
+    @[mark]
+    pub func get() { return self.v }
+}
+
+class GetHolder {
+    pub var g = nil
+
+    pub init(g) {
+        self.g = g
+    }
+}
+
+r_recv := trap new GetHolder(Getter.get).g()
+check("an identity-decorated method still checks its receiver", r_recv.unwrap_err().kind, @TypeError)
+
+# a value that is not a function is installed as a value
+func replace(f) { return 42 }
+
+class Replaced {
+    @[replace]
+    pub func gone() { }
+}
+
+check("a decorator may replace a method with a value", Replaced.gone, 42)
+
+# a native function (tostr is a builtin) is installed as it is, and stays
+# usable elsewhere; io.print, by contrast, is an Orbit function and would be
+# copied like `helper` above
+func to_native(f) { return tostr }
+
+class UsesNative {
+    @[to_native]
+    pub func say() { }
+}
+
+check("a native function installed as it is", UsesNative.say == tostr, true)
+check("and still works elsewhere", tostr(5), "5")
+
+# a method of an unrelated class, still waiting for its own self, is refused
+class Foreign {
+    pub func other() { return 0 }
+}
+
+func give_foreign(f) { return Foreign.other }
+
+func build_with_foreign() {
+    class Takes {
+        @[give_foreign]
+        pub func m() { }
+    }
+
+    return Takes
+}
+
+r_foreign := trap build_with_foreign()
+check("a method of an unrelated class is refused", r_foreign.unwrap_err().kind, @TypeError)
 
 if fails == 0 {
     io.print("ALL TESTS PASSED")

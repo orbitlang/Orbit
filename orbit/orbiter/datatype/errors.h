@@ -269,6 +269,7 @@ namespace orbiter::datatype {
             NO_KWARGS,
             INIT_NO_CURRY,
             IS_NON_TYPE,
+            DECORATED_FOREIGN_METHOD,
         };
 
         static constexpr const char *Details[] = {
@@ -292,6 +293,7 @@ namespace orbiter::datatype {
             (const char *) "'%s' does not accept keyword arguments",
             (const char *) "constructor of '%s' cannot be partially applied",
             (const char *) "right-hand operand of 'is' must be a type, got '%s'",
+            (const char *) "a decorator of a method of '%s' returned a method of '%s'",
         };
     };
 

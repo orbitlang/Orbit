@@ -143,7 +143,7 @@ bool ArgumentBinder::NormalizeMethod() {
     if (O_IS_OBJECT(receiver) && !O_GET_RC(receiver).IsInstance())
         type = O_GET_TYPE(type);
 
-    if (!IsTypeExtends(type, this->func->shared->owner_type)) {
+    if (!this->func->shared->NotCheck() && !IsTypeExtends(type, this->func->shared->owner_type)) {
         SetTypeErrorWithObj(this->fiber->isolate, TypeError::Reason::METHOD_RECEIVER, receiver);
 
         return false;

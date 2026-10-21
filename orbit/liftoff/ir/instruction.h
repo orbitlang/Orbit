@@ -585,6 +585,7 @@ namespace liftoff::ir {
             case orbiter::OPCode::LDOBJP:
             case orbiter::OPCode::LDFUNC:
             case orbiter::OPCode::LDEXC:
+            case orbiter::OPCode::MKMETH:
                 return true;
 
             default:

@@ -1800,6 +1800,54 @@ CATCH_FINALLY:
 
                 DISPATCH;
             }
+            TARGET_OP(MKMETH) {
+                auto *tp = (TypeInfo *) REG_N(FETCH_R_RSRC(instr));
+                auto *value = (OObject *) REG_N(FETCH_R_SRC(instr));
+
+                // Anything but an Orbit function (a plain value, a type, a native function) is installed as it is
+                if (!O_IS_OBJECT(value)
+                    || !O_IS_TYPE(value, InstanceType::FUNCTION)
+                    || !((Function *) value)->shared->IsInterpreted()) {
+                    ACCESS_REG_DST(instr) = (PtrSize) value;
+
+                    DISPATCH;
+                }
+
+                auto *target = (Function *) value;
+
+                // A method (not one promoted by an earlier MKMETH, which is a plain function underneath)
+                if (target->shared->IsMethod() && !target->shared->NotCheck()) {
+                    const auto *owner = target->shared->owner_type;
+
+                    // Its self is already bound by currying, or it belongs to this class or to a superclass:
+                    // it is a method of this class as it is
+                    if ((target->currying != nullptr && target->currying->length > 0) || IsTypeExtends(tp, owner)) {
+                        ACCESS_REG_DST(instr) = (PtrSize) value;
+
+                        DISPATCH;
+                    }
+
+                    // A method of an unrelated class, still waiting for its own self
+                    ErrorSet(fiber->isolate,
+                             TypeError::Details[TypeError::Reason::ID],
+                             nullptr,
+                             TypeError::Details[TypeError::Reason::DECORATED_FOREIGN_METHOD],
+                             tp->name,
+                             owner != nullptr ? owner->name : "?");
+
+                    goto ERROR;
+                }
+
+                auto func = FunctionNew(target);
+                if (!func)
+                    goto ERROR;
+
+                func->shared->kind |= FunctionKind::METHOD | FunctionKind::NOT_CHECK;
+
+                ACCESS_REG_DST(instr) = (PtrSize) func.get();
+
+                DISPATCH;
+            }
             TARGET_OP(MKTRT) {
                 const auto impls = FETCH_IMM(instr);
 

@@ -1015,6 +1015,15 @@ Instruction *IRBuilder::visitDecorator(const parser::Decorator *node) {
     if (sym == nullptr)
         throw SymbolTableException();
 
+    if (decorate->method) {
+        auto *deco = this->builder_.CreateManipType(orbiter::OPCode::MKMETH,
+                                                    first_param,
+                                                    this->ct_active_->tp_ptr,
+                                                    0);
+
+        return this->StoreVariable(sym, deco, true);
+    }
+
     return this->StoreVariable(sym, first_param, true);
 }
 

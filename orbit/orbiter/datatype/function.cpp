@@ -50,6 +50,26 @@ FuncShared *FunSharedNew(orbiter::Isolate *isolate, const char *name, const char
     return shared;
 }
 
+FuncShared *FunSharedNew(orbiter::Isolate *isolate, const FuncShared *origin) {
+    orbiter::memory::IsolateAllocator allocator(isolate);
+
+    auto *shared = allocator.calloc<FuncShared>(sizeof(FuncShared));
+    if (shared != nullptr) {
+        stratum::util::MemoryCopy(shared, origin, sizeof(FuncShared));
+
+        shared->refs.store(1);
+
+        O_FAST_INCREF(shared->context);
+        O_INCREF(shared->module);
+        O_FAST_INCREF(shared->name);
+        O_FAST_INCREF(shared->doc);
+        O_FAST_INCREF(shared->code);
+        O_INCREF(shared->defaults);
+    }
+
+    return shared;
+}
+
 HTuple MakeDefaultTuple(orbiter::Isolate *isolate, const char *defaults, const MSize length) {
     const auto comma_count = support::Count((const unsigned char *) defaults, length, (const unsigned char *) ",", 1);
 
@@ -251,6 +271,28 @@ HFunction orbiter::datatype::FunctionNew(const Function *func, OObject **args, c
 
         O_GC_TRACK_RETURN(isolate, fn, true);
     }
+
+    return {};
+}
+
+HFunction orbiter::datatype::FunctionNew(const Function *func) {
+    auto *isolate = O_GET_ISOLATE(func);
+
+    auto *shared = FunSharedNew(isolate, func->shared);
+    if (shared == nullptr)
+        return {};
+
+    auto *fn = MakeObject<Function>(isolate, InstanceType::FUNCTION);
+    if (fn != nullptr) {
+        fn->shared = shared;
+
+        fn->closure = func->closure;
+        fn->currying = func->currying;
+
+        O_GC_TRACK_RETURN(isolate, fn, true);
+    }
+
+    FunSharedDel(isolate, shared);
 
     return {};
 }

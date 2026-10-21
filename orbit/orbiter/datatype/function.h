@@ -17,7 +17,7 @@
 #include <orbit/orbiter/datatype/tuple.h>
 
 namespace orbiter::datatype {
-    enum class FunctionKind : U8 {
+    enum class FunctionKind : U16 {
         SIMPLE = 0x0,
 
         ASYNC = 0x1,
@@ -27,7 +27,9 @@ namespace orbiter::datatype {
         METHOD = 0x1 << 4,
         NATIVE = 0x1 << 5,
         KWARGS = 0x1 << 6,
-        REST = 0x1 << 7
+        REST = 0x1 << 7,
+
+        NOT_CHECK = 0x1 << 8
     };
 }
 
@@ -173,6 +175,10 @@ namespace orbiter::datatype {
             return ENUMBITMASK_ISTRUE(this->kind, FunctionKind::REST);
         }
 
+        [[nodiscard]] bool NotCheck() const {
+            return ENUMBITMASK_ISTRUE(this->kind, FunctionKind::NOT_CHECK);
+        }
+
         /**
          * @brief Increments the reference count for the shared function data
          * and returns the current instance.
@@ -219,7 +225,7 @@ namespace orbiter::datatype {
      * @return true if setup was successful, false otherwise
      */
     bool FunctionTypeSetup(TypeInfo *self);
-    
+
     /**
      * @brief Look up the Function instance registered on a type from its definition.
      *
@@ -289,6 +295,8 @@ namespace orbiter::datatype {
      * @return A handle to the newly created function object, or an empty handle if the creation fails.
      */
     HFunction FunctionNew(const Function *func, OObject **args, U16 argc);
+
+    HFunction FunctionNew(const Function *func);
 
     /**
      * @brief Initialize and create the specified type
