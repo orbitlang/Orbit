@@ -69,7 +69,7 @@ namespace orbiter {
 
         bool FinalizeRestArgs();
 
-        bool NormalizeMethod();
+        [[nodiscard]] bool CheckReceiver() const;
 
         void LoadCurrying();
 
@@ -81,7 +81,7 @@ namespace orbiter {
          * Note this builds only the argument region: the call frame proper (BP,
          * prologue) is set up later by the caller.
          *
-         * Resolves the callee, normalizes a method receiver, applies currying,
+         * Resolves the callee, checks a method's receiver, applies currying,
          * fills from the rest list, expands defaults and finalizes rest/kwargs.
          *
          * @param fiber   Fiber owning the stack the arguments are laid out on.

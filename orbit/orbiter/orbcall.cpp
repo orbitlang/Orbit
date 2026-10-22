@@ -59,7 +59,7 @@ bool ArgumentBinder::ExpandDefaultArgs() {
     }
 
     const auto defaults = this->func->shared->defaults;
-    for (auto i = 0; i < defaults->length; i += 2) {
+    for (MSize i = 0; i < defaults->length; i += 2) {
         HOObject out;
 
         this->stack_args += 1;
@@ -85,8 +85,8 @@ bool ArgumentBinder::ExpandDefaultArgs() {
 
 bool ArgumentBinder::FinalizeKwargs() {
     if (this->call_mode_is_kwarg) {
-        if (ENUMBITMASK_ISFALSE(this->func->shared->kind, FunctionKind::KWARGS)) {
-            SetTypeError(this->fiber->isolate, TypeError::Reason::NO_KWARGS,ORSTRING_TO_CSTR(this->func->shared->name));
+        if (!this->func->shared->IsKWargs()) {
+            SetTypeError(this->fiber->isolate, TypeError::Reason::NO_KWARGS, ORSTRING_TO_CSTR(this->func->shared->name));
 
             return false;
         }
@@ -125,31 +125,38 @@ bool ArgumentBinder::FinalizeRestArgs() {
     return true;
 }
 
-bool ArgumentBinder::NormalizeMethod() {
-    if (!this->func->shared->IsMethod()) {
-        this->stack_args -= 1;
+bool ArgumentBinder::CheckReceiver() const {
+    const auto *shared = this->func->shared;
 
+    if (!shared->IsMethod() || shared->IsPromoted())
         return true;
-    }
 
-    // Check object is instance. The receiver is the first of the bound arguments.
-    auto receiver = *this->ArgsBase();
+    // self is the first argument: bound by currying, pushed by a selector, passed first, or the first of a rest
+    // list. A call with none of them binds only other arguments, and self is checked when a later call brings it
+    OObject *receiver;
 
     if (this->func->currying != nullptr && this->func->currying->length > 0)
         receiver = this->func->currying->objects[0];
+    else if (this->stack_args > 0)
+        receiver = *this->ArgsBase();
+    else if (this->call_mode_is_rest && this->rest->length > 0)
+        receiver = this->rest->objects[0];
+    else
+        return true;
 
     const auto *type = GetTypeInfoFromObject(this->fiber->isolate, receiver);
 
     if (O_IS_OBJECT(receiver) && !O_GET_RC(receiver).IsInstance())
         type = O_GET_TYPE(type);
 
-    if (!this->func->shared->IsPromoted() && !IsTypeExtends(type, this->func->shared->owner_type)) {
-        SetTypeErrorWithObj(this->fiber->isolate, TypeError::Reason::METHOD_RECEIVER, receiver);
+    if (IsTypeExtends(type, shared->owner_type))
+        return true;
 
-        return false;
-    }
+    SetTypeError(this->fiber->isolate,
+                 TypeError::Reason::METHOD_RECEIVER,
+                 shared->owner_type != nullptr ? shared->owner_type->name : "?");
 
-    return true;
+    return false;
 }
 
 void ArgumentBinder::LoadCurrying() {
@@ -160,7 +167,7 @@ void ArgumentBinder::LoadCurrying() {
     for (auto i = (int) this->stack_args - 1; i >= 0; i--)
         args[offset + i] = args[i];
 
-    for (auto i = 0; i < this->func->currying->length; i++)
+    for (MSize i = 0; i < this->func->currying->length; i++)
         args[i] = this->func->currying->objects[i];
 
     this->stack_args += this->func->currying->length;
@@ -194,14 +201,18 @@ CallResult ArgumentBinder::Bind(Fiber *fiber, Function *&func, const U16 p_count
     this->call_mode_is_nargs = ENUMBITMASK_ISTRUE(mode, CallMode::NARGS);
     this->call_mode_is_rest = ENUMBITMASK_ISTRUE(mode, CallMode::REST_ARG);
 
-    if (ENUMBITMASK_ISTRUE(mode, CallMode::METHOD) && !this->NormalizeMethod()) {
+    // A selector call pushes a receiver, which a function that is not a method does not take. A method is checked
+    // in every call mode, before a partial application can bind its self
+    if (ENUMBITMASK_ISTRUE(mode, CallMode::METHOD) && !this->func->shared->IsMethod())
+        this->stack_args -= 1;
+    else if (!this->CheckReceiver()) {
         fiber->vm.regs.SP.reg -= (this->stack_args * sizeof(void *));
 
         return CallResult::ERROR;
     }
 
     // The bottom of the region the CALLEE owns, fixed before anything pushes:
-    // NormalizeMethod may already have dropped a receiver the caller keeps, and
+    // a receiver the caller keeps may already have been dropped above, and
     // every later push happens above this point.
     this->base_sp = fiber->vm.regs.SP.reg - (this->stack_args * sizeof(void *));
 
@@ -219,7 +230,7 @@ CallResult ArgumentBinder::Bind(Fiber *fiber, Function *&func, const U16 p_count
         total_args += this->func->currying->length;
 
     if (total_args < this->func->shared->arity) {
-        const auto args_diff = this->func->shared->arity - total_args;
+        const MSize args_diff = this->func->shared->arity - total_args;
 
         if (!this->call_mode_is_rest || this->rest->length < args_diff) {
             if (this->func->shared->IsInit()) {
@@ -252,7 +263,7 @@ CallResult ArgumentBinder::Bind(Fiber *fiber, Function *&func, const U16 p_count
             currying_pushed = true;
         }
 
-        for (auto i = 0; i < args_diff; i++) {
+        for (MSize i = 0; i < args_diff; i++) {
             fiber->vm.Push(this->rest->objects[i]);
 
             this->stack_args += 1;

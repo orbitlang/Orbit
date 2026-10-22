@@ -10,6 +10,13 @@
 # process (SIGSEGV). Native methods do not have the problem: they check argv[0]
 # against their owner type (pcheck.cpp).
 #
+# The receiver can arrive without a selector in four ways, all unchecked: as
+# the first argument, as the first element of a rest list (`m([x, 1]...)`),
+# through a pipe (`x |> m(1)`), and through a partial application
+# (`p := m(x)`). The last one is the worst: the currying then holds `self`,
+# and a bound `self` is trusted later (a selector call checks the bound value,
+# but it was never checked against the method's class when it was bound).
+#
 # Controls: the right receiver, an instance of a subclass, a call through an
 # instance, and a curried method whose `self` is already bound.
 #
@@ -65,6 +72,11 @@ bound := new A().add()
 check("control: a curried method with self bound", bound(1), 5)
 
 check("an instance of an unrelated class is refused", kind_of(trap get(new Other())), @TypeError)
+add := A.add
+
+check("an unrelated instance in a rest list is refused", kind_of(trap add([new Other(), 3]...)), @TypeError)
+check("an unrelated instance through a pipe is refused", kind_of(trap (new Other() |> add(5))), @TypeError)
+check("an unrelated instance bound by a partial application is refused", kind_of(trap add(new Other())), @TypeError)
 check("a number is refused", kind_of(trap get(5)), @TypeError)
 
 if fails == 0 {

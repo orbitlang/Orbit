@@ -1,13 +1,47 @@
 # vm — bug report
 
 **Component:** `orbit/orbiter` (interpreter: trap/panic unwind, register file) · **ID prefix:** `VM`
-**PoCs:** [`poc/vm/`](poc/vm/) · **Last reviewed:** 2026-10-20
+**PoCs:** [`poc/vm/`](poc/vm/) · **Last reviewed:** 2026-10-22
 **Status:** OPEN · PARTIAL · FIXED · WONTFIX — see [GUIDE.md](GUIDE.md).
 
 ---
 
 ## VM-012 — A method called without a selector does not check its receiver
-**Severity:** High (reads the wrong slots of a foreign object; SIGSEGV with a non-object) · **Status:** OPEN · **Location:** `orbit/orbiter/orbcall.cpp:193` (`ArgumentBinder::Bind`), `orbit/orbiter/orbcall.cpp:128` (`NormalizeMethod`)
+**Severity:** High (reads the wrong slots of a foreign object; SIGSEGV with a non-object) · **Status:** FIXED (2026-10-22) · **Location:** `orbit/orbiter/orbcall.cpp:128` (`ArgumentBinder::CheckReceiver`), `orbit/orbiter/orbcall.cpp:204` (`ArgumentBinder::Bind`)
+
+**Fix verified (PoC `poc/vm/method-receiver-plain-call.orb` — prints `ALL
+TESTS PASSED`, 9 of 9; `ortest` 30/30 and the PoC gate 54/58, the failures
+being open findings; `phi-regalloc.orb` green).** The receiver check runs in
+every call mode, not only for selector calls. `NormalizeMethod` became
+`CheckReceiver`, which finds `self` wherever the call carries it: bound by
+currying, pushed by a selector, passed as the first argument, or the first
+element of a rest list. A call that carries none of them (`add()`,
+`add(x=1)`) binds only other arguments, and `self` is checked when a later
+call brings it. `Bind` calls it before the partial-application branch:
+
+```cpp
+if (ENUMBITMASK_ISTRUE(mode, CallMode::METHOD) && !this->func->shared->IsMethod())
+    this->stack_args -= 1;
+else if (!this->CheckReceiver()) {
+```
+
+So a `self` is checked when a partial application binds it, and a currying
+that holds one can be trusted afterwards. A promoted method (a function a
+decorator turned into a method of a class) is still exempt: the method it
+wraps checks its own receiver, which this fix makes true for every call.
+Native methods are checked here too now when called without a selector;
+`pcheck.cpp` checks them again, with the same message.
+
+The error now names the class the method expects ("method call requires 'A'
+instance as receiver"), as `pcheck.cpp` does; it used to name the type of the
+rejected receiver, which read backwards.
+
+The PoC gained the three other ways in (a rest list, a pipe, a partial
+application). With the check restricted to selector calls again, four of them
+fail and the number crashes. The VM-011 PoC gives the same output before and
+after the change.
+
+<details><summary>Original report</summary>
 
 A method is an ordinary function whose first parameter is `self`, and it can
 be taken out of its class and called without a selector:
@@ -33,6 +67,14 @@ own class's slot layout (the inline `self.x` path), so:
   error;
 - a number as receiver crashes the process: `get(5)` is a SIGSEGV.
 
+The first argument is not the only way in. A rest list (`add([o, 3]...)`) and
+a pipe (`o |> add(5)`) deliver the receiver unchecked too, and so does a
+partial application: `p := add(new Other())` has too few arguments, so `Bind`
+returns a curried function holding the unchecked `self`. From then on that
+`self` counts as bound: a selector call checks the bound value only against
+the class of the method it calls through, and a decorator that returns such a
+function has it installed as it is. *(Added 2026-10-22.)*
+
 Native methods are not affected: `pcheck.cpp` checks `argv[0]` against the
 owner type of every native method, whatever the call mode.
 
@@ -48,14 +90,18 @@ instance is accepted, and the number crashes)*.
 **Fix (suggested, not tried):** check the receiver of a method in `Bind`
 whatever the call mode, when `self` is not already bound by currying: in
 `CallMode::METHOD` it is the receiver slot `NormalizeMethod` already looks at,
-otherwise it is the first positional argument. A curried method whose
-currying is not empty already had its `self` checked by the call that bound
-it.
+otherwise it is the first positional argument, or the first element of the
+rest list when there are no positional arguments. The check has to come
+before the partial-application branch of `Bind`, so that a `self` is checked
+when it is bound; a curried method whose currying is not empty then had its
+`self` checked by the call that bound it.
+
+</details>
 
 ---
 
 ## VM-011 — A method called through its type receives the type as its receiver
-**Severity:** Medium (a normal call form is refused) · **Status:** OPEN · **Location:** `orbit/orbiter/vm.cpp:1416` (`TARGET_OP(PUSHIF)`), `orbit/orbiter/orbcall.cpp:128` (`ArgumentBinder::NormalizeMethod`)
+**Severity:** Medium (a normal call form is refused) · **Status:** OPEN · **Location:** `orbit/orbiter/vm.cpp:1416` (`TARGET_OP(PUSHIF)`), `orbit/orbiter/orbcall.cpp:128` (`ArgumentBinder::CheckReceiver`)
 
 `Type.method(obj, args...)` should run `method` with `obj` as its receiver,
 as the same method taken into a variable does (`m := Type.method; m(obj)`,
@@ -69,7 +115,7 @@ List.append(l, 3)   -> TypeError: method call requires 'List' instance as receiv
 A selector call emits `PUSHIF`, which pushes the selector's base as the
 receiver whenever the callee is a method. Here the base is the type object, so
 the type is pushed and `obj` becomes the first ordinary argument;
-`NormalizeMethod` then checks the type object against `owner_type` and refuses
+`CheckReceiver` then checks the type object against `owner_type` and refuses
 it. The explicit receiver never takes the receiver's place.
 
 The user confirmed (2026-10-16) that this is a defect: calling a method
@@ -84,9 +130,9 @@ refused; a receiver of the wrong type is refused, as it must stay)*.
 
 **Fix (suggested, not tried):** in `PUSHIF`, do not push the base when it is a
 type object and the callee is a method of that type or of a supertype, so the
-first explicit argument becomes the receiver and `NormalizeMethod` checks it.
+first explicit argument becomes the receiver and `CheckReceiver` checks it.
 Before changing it, find what relies on a type receiver today:
-`NormalizeMethod` has an explicit branch for a receiver that is not an
+`CheckReceiver` (`NormalizeMethod` when this was filed) has an explicit branch for a receiver that is not an
 instance (`type = O_GET_TYPE(type)`), so some call does pass a type on purpose
 (by inspection; not traced yet).
 
