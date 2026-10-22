@@ -120,7 +120,11 @@ kwargs_arg = "*", identifier;
    one to the function itself: `@[a, b]` binds `b(a(f))`. A call is not evaluated
    on its own: the function is prepended to its arguments, so `@[d(x, y)]` applies
    `d(f, x, y)`, and `@[d]` and `@[d()]` are the same decorator. An empty list
-   `@[]` is allowed and leaves the function as it is. *)
+   `@[]` is allowed and leaves the function as it is. The list comes before the
+   visibility keyword (`@[d] pub func f()`); a doc comment may come before the
+   list or right before `func`. A trait method takes no decorators: it is copied
+   into every class that implements the trait, and whether its decorators would
+   run once for the trait or once per class is left undecided. *)
 decorator_list = "@[", [decorator, {",", decorator}], "]";
 decorator = expression;
 
@@ -129,8 +133,8 @@ inline_function = "func", "(", [parameter_list], ")", [return_type], [async_keyw
 return_type = ":", type;
 
 (* Statements *)
-common_statement = labeled_statement | loop_statement | for_in_statement | if_statement | switch_statement | sync_statement | try_statement | defer_statement | function_definition | short_var_declaration | var_declaration | expression | return_statement;
-module_level_statement = import_statement | module_when_block | native_declaration | [pub_keyword], (function_definition | short_var_declaration | var_declaration | const_declaration | trait_definition | class_definition) | common_statement;
+common_statement = labeled_statement | loop_statement | for_in_statement | if_statement | switch_statement | sync_statement | try_statement | defer_statement | [decorator_list], function_definition | short_var_declaration | var_declaration | expression | return_statement;
+module_level_statement = import_statement | module_when_block | native_declaration | [decorator_list], [pub_keyword], function_definition | [pub_keyword], (short_var_declaration | var_declaration | const_declaration | trait_definition | class_definition) | common_statement;
 local_statement = common_statement | break_statement | continue_statement | yield_statement;
 function_level_statement = common_statement | yield_statement;
 
@@ -177,9 +181,9 @@ native_block_member = ("func", identifier, "(", [native_parameter_list], ")", ":
 native_type = "bool" | "byte" | "i8" | "i16" | "i32" | "i64" | "iSize" | "u8" | "u16" | "u32" | "u64" | "uSize" | "unit" | "opaque" | "ptr" |"f32" | "f64";
 
 (* Function definitions *)
-function_definition = [doc_comment], [decorator_list], "func", identifier, "(", [parameter_list], ")", [return_type], [async_keyword], block_function;
-class_function_definition = [doc_comment], [decorator_list], "func", identifier, "(", [parameter_list], ")", [return_type], [async_keyword], [const_keyword], block_function;
-trait_function_definition = [doc_comment], [decorator_list], "func", identifier, "(", [parameter_list], ")", [return_type], [async_keyword], [const_keyword], [block_function];
+function_definition = [doc_comment], "func", identifier, "(", [parameter_list], ")", [return_type], [async_keyword], block_function;
+class_function_definition = [doc_comment], "func", identifier, "(", [parameter_list], ")", [return_type], [async_keyword], [const_keyword], block_function;
+trait_function_definition = [doc_comment], "func", identifier, "(", [parameter_list], ")", [return_type], [async_keyword], [const_keyword], [block_function];
 
 parameter_list = parameter, {",", parameter}, [",", variadic_param], [",", kwargs_param];
 parameter = simple_param | default_param;
@@ -244,7 +248,8 @@ class_inheritance = ":", class_trait_extension;
 class_body = "{", {class_member}, "}";
 class_init = [doc_comment], "init", "(", [parameter_list], ")", block_function;
 class_cleanup = [doc_comment], "cleanup", block_function;
-class_member = [(pub_keyword | prot_keyword)], ([weak_keyword], var_declaration | const_declaration | class_function_definition | class_init | class_cleanup);
+class_member = [decorator_list], [(pub_keyword | prot_keyword)], class_function_definition
+             | [(pub_keyword | prot_keyword)], ([weak_keyword], var_declaration | const_declaration | class_init | class_cleanup);
 
 class_trait_extension = identifier | identifier, {selector};
 

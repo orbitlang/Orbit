@@ -201,6 +201,31 @@ func build_with_foreign() {
 r_foreign := trap build_with_foreign()
 check("a method of an unrelated class is refused", r_foreign.unwrap_err().kind, @TypeError)
 
+# traits: a trait method takes no decorators (05_traits.orb), but a function
+# nested in one can be decorated, and so can the method of a class that
+# implements the trait
+func twice(f) { return func () { return f() * 2 } }
+
+trait Nesting {
+    pub func nested() {
+        @[twice]
+        func inner() { return 21 }
+
+        return inner()
+    }
+}
+
+class ImplNesting impl Nesting {
+    pub var v = 10
+
+    @[plus_one]
+    pub func own() { return self.v }
+}
+
+impl_nesting := new ImplNesting()
+check("a decorated function nested in a trait method", impl_nesting.nested(), 42)
+check("a decorated method of a class that implements a trait", impl_nesting.own(), 11)
+
 if fails == 0 {
     io.print("ALL TESTS PASSED")
 } else {

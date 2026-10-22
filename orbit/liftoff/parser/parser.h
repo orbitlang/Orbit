@@ -112,7 +112,8 @@ namespace liftoff::parser {
         "Invalid label target: only an identifier can be used as a label (e.g., 'outer: loop { ... }')",
         "Invalid modifier list: 'pub' and 'prot' are mutually exclusive, and no modifier can be repeated",
         "Invalid access modifier: 'pub'/'prot' can only be applied to declarations (var, let, func, class, trait, init, cleanup, import)",
-        "Invalid 'weak' usage: can only be applied to variable declarations"
+        "Invalid 'weak' usage: can only be applied to variable declarations",
+        "Invalid decorator placement: decorators are not allowed in a trait, decorate the method in the class that implements it"
     };
 
     constexpr auto kInitMethodName = "init";

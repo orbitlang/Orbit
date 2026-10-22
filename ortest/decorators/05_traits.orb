@@ -1,0 +1,19 @@
+# A trait method takes no decorators. It is copied into every class that
+# implements the trait, so its decorators could run once for the trait or once
+# per class, and the two give different results (a decorator that registers
+# or counts); the choice is left open until a real need settles it. The method
+# can be decorated in the class that implements the trait instead, and a
+# function nested in a trait method can still be decorated (both checked in
+# 02_methods.orb).
+#
+# Today the error is reported through the COMP-001 assert in file mode; the
+# message is checked, not the way the process exits.
+#
+# EXPECT: error: decorators are not allowed in a trait
+
+func d(f) { return f }
+
+trait Decorated {
+    @[d]
+    pub func m() { return 1 }
+}

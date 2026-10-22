@@ -1215,6 +1215,11 @@ ASTHandle<ASTNode *> Parser::ParseBlock(const bool nested) {
                              TokenType::KW_WEAK))
                 throw ParserException(71);
         } else if (this->context_->Check(ContextType::TRAIT)) {
+            // A trait method is copied into every class that implements the trait, so it is unclear whether its
+            // decorators should run once for the trait or once per class: refused until a real need settles it
+            if (this->Match(TokenType::DECORATOR))
+                throw ParserException(101);
+
             if (!this->Match(TokenType::KW_FUNC, TokenType::KW_LET, TokenType::KW_PUB, TokenType::KW_PROT))
                 throw ParserException(72);
         }
