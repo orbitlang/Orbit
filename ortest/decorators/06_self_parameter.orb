@@ -1,0 +1,24 @@
+# `self` cannot name a parameter, also not the first parameter of a wrapper
+# that a decorator returns for a method. `self` is always an instance of the
+# class the code is written in: access checks, `super` and the inline slot
+# layout of `self.x` rely on it. A wrapper written in another class (a server
+# that decorates a handler's method) receives an instance of the decorated
+# class, and inside a method `self` is already the captured object of the
+# enclosing class, which such a parameter would hide. The receiver takes
+# another name (`me` in 02_methods.orb and 04_decorator_objects.orb).
+#
+# Today the error is reported through the COMP-001 assert in file mode; the
+# message is checked, not the way the process exits.
+#
+# EXPECT: error: 'self' is reserved for the receiver of a method
+
+func wrap(f) {
+    return func (self) { return f(self) }
+}
+
+class A {
+    pub var v = 1
+
+    @[wrap]
+    pub func m() { return self.v }
+}

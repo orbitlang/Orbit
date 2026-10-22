@@ -113,7 +113,8 @@ namespace liftoff::parser {
         "Invalid modifier list: 'pub' and 'prot' are mutually exclusive, and no modifier can be repeated",
         "Invalid access modifier: 'pub'/'prot' can only be applied to declarations (var, let, func, class, trait, init, cleanup, import)",
         "Invalid 'weak' usage: can only be applied to variable declarations",
-        "Invalid decorator placement: decorators are not allowed in a trait, decorate the method in the class that implements it"
+        "Invalid decorator placement: decorators are not allowed in a trait, decorate the method in the class that implements it",
+        "Invalid parameter name: 'self' is reserved for the receiver of a method, use another name (e.g. 'me')"
     };
 
     constexpr auto kInitMethodName = "init";

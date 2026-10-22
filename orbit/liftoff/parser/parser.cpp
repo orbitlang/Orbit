@@ -2395,7 +2395,10 @@ ASTHandle<Function *> Parser::ParseFunction(const Position &start, const bool mu
     return func;
 }
 
-ASTHandle<Parameter *> Parser::ParseParameter(const Position &start, NodeType type) {
+ASTHandle<Parameter *> Parser::ParseParameter(const Position &start, const NodeType type) {
+    if (this->Match(TokenType::SELF))
+        throw ParserException(102);
+
     if (!this->Match(TokenType::IDENTIFIER))
         throw ParserException(16);
 
