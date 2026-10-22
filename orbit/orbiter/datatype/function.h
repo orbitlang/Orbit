@@ -29,7 +29,8 @@ namespace orbiter::datatype {
         KWARGS = 0x1 << 6,
         REST = 0x1 << 7,
 
-        NOT_CHECK = 0x1 << 8
+        /// A function promoted to a method by a decorator: it takes any receiver, the method it wraps checks its own
+        PROMOTED = 0x1 << 8
     };
 }
 
@@ -175,8 +176,15 @@ namespace orbiter::datatype {
             return ENUMBITMASK_ISTRUE(this->kind, FunctionKind::REST);
         }
 
-        [[nodiscard]] bool NotCheck() const {
-            return ENUMBITMASK_ISTRUE(this->kind, FunctionKind::NOT_CHECK);
+        /**
+         * @brief Checks whether the function was promoted to a method by a decorator.
+         *
+         * A promoted function skips the receiver check: the method it wraps checks the receiver itself.
+         *
+         * @return true if the function is a promoted method, false otherwise.
+         */
+        [[nodiscard]] bool IsPromoted() const {
+            return ENUMBITMASK_ISTRUE(this->kind, FunctionKind::PROMOTED);
         }
 
         /**

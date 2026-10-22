@@ -1816,7 +1816,7 @@ CATCH_FINALLY:
                 auto *target = (Function *) value;
 
                 // A method (not one promoted by an earlier MKMETH, which is a plain function underneath)
-                if (target->shared->IsMethod() && !target->shared->NotCheck()) {
+                if (target->shared->IsMethod() && !target->shared->IsPromoted()) {
                     const auto *owner = target->shared->owner_type;
 
                     // Its self is already bound by currying, or it belongs to this class or to a superclass:
@@ -1842,7 +1842,7 @@ CATCH_FINALLY:
                 if (!func)
                     goto ERROR;
 
-                func->shared->kind |= FunctionKind::METHOD | FunctionKind::NOT_CHECK;
+                func->shared->kind |= FunctionKind::METHOD | FunctionKind::PROMOTED;
 
                 ACCESS_REG_DST(instr) = (PtrSize) func.get();
 
