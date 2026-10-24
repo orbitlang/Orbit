@@ -1408,32 +1408,6 @@ CATCH_FINALLY:
 
                 DISPATCH;
             }
-            TARGET_OP(PUSHIF) {
-                const auto value = (OObject *) ACCESS_REG_DST(instr);
-                auto target = (Function *) ACCESS_REG_SRC(instr);
-
-                const auto flags = (PushIfFlags) (instr & 0xFu);
-                if (flags == PushIfFlags::METHOD) {
-                    target = ResolveCallable(fiber->isolate, target);
-                    if (target == nullptr)
-                        goto ERROR;
-
-                    if (!target->shared->IsMethod()) {
-                        DISPATCH;
-                    }
-                } else {
-                    // TODO: other flags
-                    assert(false);
-                }
-
-                if (!stack->Check(fiber->isolate, regs->SP.reg, sizeof(void *)))
-                    goto ERROR;
-
-                *ACCESS_STACK_SP(0) = (PtrSize) value;
-                REG_SP += sizeof(void *);
-
-                DISPATCH;
-            }
             TARGET_OP(POP) {
                 const auto target = (OObject **) LOAD_FROM_STACK;
                 auto value = *target;

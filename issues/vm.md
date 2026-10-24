@@ -181,9 +181,12 @@ only; `PUSHIF` and the compiler are unchanged.
    superclass): a type object is `self` only for a method of a metatype
    (`Type`, or `Class` for classes; none has methods today).
 
-`PUSHIF` stays: it still saves the push, and with it a shift of every
+`PUSHIF` stayed at first: it saved the push, and with it a shift of every
 argument, for the common selector call of a function that is not a method
-(`io.print(...)`, a callback in a property).
+(`io.print(...)`, a callback in a property). *(2026-10-24: removed after all.
+A selector call now pushes its base with a plain `PUSH`, and `Bind` removes
+the slot with `DropReceiver` for a callee that is not a method too, so the
+decision lives in one place.)*
 
 The PoC passes in full: calls through a class, a subclass and a builtin type;
 `D.get(new P())` runs (checked against `P`); `P.get()` is a partial

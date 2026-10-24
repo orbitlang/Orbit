@@ -591,14 +591,6 @@ Instruction *Builder::StackPush(Instruction *s_reg) {
     return this->CreateInstruction<UnaryOpInstr>(OPCode::PUSH, s_reg);
 }
 
-Instruction *Builder::StackPushIF(Instruction *s_reg, Instruction *target, Instruction *against,
-                                  const PushIfFlags flags) {
-    this->UpdateStackSize();
-
-    return this->CreateInstruction<TernaryOpImmInstr>(OPCode::PUSHIF, s_reg, target, against, (U8) flags);
-}
-
-
 Instruction *Builder::GetStoreObjectProp(Instruction *obj, Instruction *value, U16 offset, bool as_key) {
     return this->CreateObject<LSObjectProp>(OPCode::STOBJP, obj, value, offset,
                                             as_key ? LoadObjectPropFlags::KEY : LoadObjectPropFlags::INLINE);

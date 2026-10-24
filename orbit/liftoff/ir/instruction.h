@@ -120,26 +120,6 @@ namespace liftoff::ir {
         U16 imm = 0;
     };
 
-    // TernaryOp
-    class TernaryOpImmInstr final : public PhysInstruction {
-        friend Builder;
-
-    protected:
-        explicit TernaryOpImmInstr(const orbiter::OPCode opcode, Instruction *dst, Instruction *l_src,
-                                   Instruction *d_src, const U8 flags) noexcept : PhysInstruction(opcode, 3),
-            flags(flags) {
-            if (opcode == orbiter::OPCode::PUSHIF)
-                this->assigned_reg = kDoNotAllocateReg;
-
-            this->SetOperand(0, dst);
-            this->SetOperand(1, l_src);
-            this->SetOperand(2, d_src);
-        }
-
-    public:
-        U8 flags = 0;
-    };
-
     // Branch
     class BranchInstruction final : public PhysInstruction {
         friend Builder;

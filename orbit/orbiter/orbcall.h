@@ -102,16 +102,15 @@ namespace orbiter {
         /**
          * @brief The stack offset where the callee's argument region begins.
          *
-         * Fixed once, after the receiver has been normalized and before the binder
-         * pushes anything of its own, so none of what follows can move it: defaults,
-         * currying, the rest list and the kwargs dict are all laid down above this
-         * point.
+         * Fixed once, after the receiver slot has been removed or checked and
+         * before the binder pushes anything of its own, so none of what follows
+         * can move it: defaults, currying, the rest list and the kwargs dict are
+         * all laid down above this point.
          *
          * This is the value SP goes back to when the call returns, and it is NOT
          * derivable from StackArgs(). The binder pushes slots it deliberately does
-         * not count, the rest list and the kwargs dict among them, and it drops the
-         * receiver of a method-mode call whose callee turns out not to be a method,
-         * because that slot belongs to the caller. A count reconstructs neither.
+         * not count, the rest list and the kwargs dict among them. A count does not
+         * reconstruct them.
          *
          * @return The offset into the VM stack, in bytes, of the bottom of the
          *         argument region.

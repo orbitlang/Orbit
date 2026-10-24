@@ -890,7 +890,7 @@ Instruction *IRBuilder::visitCallPrepend(const parser::Call *node, Instruction *
 
         assert(obj->type() == ObjectType::INSTRUCTION);
 
-        this->builder_.StackPushIF(obj, func, nullptr, orbiter::PushIfFlags::METHOD);
+        this->builder_.StackPush(obj);
 
         if (p_arg != nullptr)
             this->builder_.StackPush(p_arg);

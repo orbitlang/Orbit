@@ -44,7 +44,6 @@ bool Optimizer::HasSideEffects(const orbiter::OPCode opcode) {
 
         // Stack manipulation
         case orbiter::OPCode::PUSH:
-        case orbiter::OPCode::PUSHIF:
         case orbiter::OPCode::POP:
         case orbiter::OPCode::POPN:
         case orbiter::OPCode::ALLOCA:

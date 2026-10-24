@@ -89,10 +89,6 @@ using namespace liftoff::ir;
 #define EMIT_DSSF(opcode, dst, src_l, src_r, flags) \
     (((U32)(opcode) << 24) | ((dst) << 20) | ((src_l) << 16) | ((src_r) << 12) | ((flags) << 8))
 
-// Emit macro with opcode, destination register, left and right source registers, and extended flags
-#define EMIT_DSSFE(opcode, dst, src_l, src_r, flags) \
-    (((U32)(opcode) << 24) | ((dst) << 20) | ((src_l) << 16) | ((src_r) << 12) | ((flags) & 0xFFF))
-
 // Emit macro with opcode, destination register, left and right source registers, an extra source
 // register in bits 8-11 and 8 bits of flags
 #define EMIT_DSSFES(opcode, dst, src_l, src_r, flags, src_ex) \
@@ -319,19 +315,6 @@ unsigned char *Codegen::EmitOpcodes(const BasicBlock *block, unsigned char *m_co
                                                            ((Instruction*)instr->operands[0].value)->assigned_reg,
                                                            0);
                 break;
-            case orbiter::OPCode::PUSHIF: {
-                const auto *test = (const Instruction *) instr->operands[1].value;
-                const auto *against = (const Instruction *) instr->operands[2].value;
-
-                assert(test!=nullptr);
-
-                *(orbiter::MachineWord *) m_code = EMIT_DSSFE(instr->opcode,
-                                                              ((Instruction*)instr->operands[0].value)->assigned_reg,
-                                                              test->assigned_reg,
-                                                              against!=nullptr ? against->assigned_reg:0,
-                                                              ((TernaryOpImmInstr*)instr)->flags);
-                break;
-            }
             case orbiter::OPCode::POP:
                 *(orbiter::MachineWord *) m_code = EMIT_DO(instr->opcode, instr->assigned_reg, 0);
                 break;

@@ -1,0 +1,85 @@
+# Calls suite 02 -- calls through a selector to something that is not a method.
+#
+# A selector call `obj.f(args)` always pushes `obj` as the receiver; when `f` is
+# not a method (a callback stored in a property, a module function, a
+# generator or async function in a property) ArgumentBinder::Bind removes that
+# slot and moves the explicit arguments down. The region the callee sees and
+# the stack the caller gets back must both be exact, so the calls are nested in
+# the arguments of another call, where a slot left behind would shift them.
+# Every call path that reads the bound region is covered: plain, generator,
+# async, defer.
+#
+# The callee is resolved only when the call is made, after the arguments are
+# evaluated: calling a property that is not callable evaluates the arguments,
+# then raises a TypeError, like a call without a selector.
+#
+# EXPECT: contains: ALL TESTS PASSED
+
+import "io"
+
+var fails = 0
+
+func check(name, got, expected) {
+    if got == expected {
+        io.print("OK   ", name)
+    } else {
+        io.print("FAIL ", name, "-- got:", got, "expected:", expected)
+        fails += 1
+    }
+}
+
+func pair(a, b) { return (a, b) }
+
+class Holder {
+    pub var cb = nil
+    pub var gen = nil
+    pub var job = nil
+    pub var x = 5
+    pub func m(k) { return k * 10 }
+}
+
+func gen_fn(n) {
+    yield n
+    yield n + 1
+}
+
+func job_fn(n) async { return n * 2 }
+
+h := new Holder()
+h.cb = func (v) { return v + 1 }
+h.gen = gen_fn
+h.job = job_fn
+
+check("a callback in a property, nested in the arguments", pair(1, h.cb(2)), (1, 3))
+check("a method, nested in the arguments", pair(1, h.m(2)), (1, 20))
+check("a module function through its module, nested", pair(1, io.print != nil), (1, true))
+
+func collect(g) {
+    out := []
+    for var v in g {
+        out.append(v)
+    }
+    return out
+}
+check("a generator through a property", collect(h.gen(7)), [7, 8])
+check("an async function through a property", await h.job(21), 42)
+
+var deferred = 0
+func with_defer() {
+    defer h.cb(deferred)
+    deferred = 1
+    return pair(2, h.cb(3))
+}
+check("defer through a property", with_defer(), (2, 4))
+
+var ran = 0
+func side() { ran += 1; return 1 }
+r := trap h.x(side())
+check("calling a non-callable property is an error", r ? "OK" : r.unwrap_err().kind, @TypeError)
+check("the arguments are evaluated first", ran, 1)
+check("and the stack stays balanced", pair(1, h.cb(2)), (1, 3))
+
+loop i := 0; i < 1000; i++ { h.cb(i) }
+check("1000 selector calls to a non-method", pair(1, h.cb(2)), (1, 3))
+
+if fails == 0 { io.print("ALL TESTS PASSED") } else { io.print(fails, "TEST(S) FAILED") }

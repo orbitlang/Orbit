@@ -22,16 +22,6 @@ static void SetTypeError(Isolate *isolate, const TypeError::Reason reason, Args.
              args...);
 }
 
-/// Whether `type` is a metatype (`Type`, or `Class` for classes): only its methods take a type object as self.
-static bool IsMetatype(const Isolate *isolate, const TypeInfo *type) {
-    return type == isolate->primitive[(int) InstanceType::TYPE] || type == isolate->primitive[(int) InstanceType::CLASS];
-}
-
-/// Whether `object` is a type object rather than an instance.
-static bool IsTypeObject(const OObject *object) {
-    return O_IS_OBJECT(object) && !O_GET_RC(object).IsInstance();
-}
-
 /// Raise a TypeError whose message names the type of the offending object.
 static void SetTypeErrorWithObj(Isolate *isolate, const TypeError::Reason reason, const OObject *target) {
     ErrorSetWithObjType(isolate,
@@ -39,6 +29,16 @@ static void SetTypeErrorWithObj(Isolate *isolate, const TypeError::Reason reason
                         TypeError::Details[reason],
                         nullptr,
                         target);
+}
+
+/// Whether `object` is a type object that cannot be self for a method of `owner`. A type object reaches its own
+/// class through its supertypes, yet it is not an instance of it: it is self only for a method of a metatype (`Type`,
+/// or `Class` for classes).
+static bool IsTypeNotSelf(const Isolate *isolate, const OObject *object, const TypeInfo *owner) {
+    if (!O_IS_OBJECT(object) || O_GET_RC(object).IsInstance())
+        return false;
+
+    return owner != isolate->primitive[(int) InstanceType::TYPE] && owner != isolate->primitive[(int) InstanceType::CLASS];
 }
 
 bool ArgumentBinder::EnsureStack() const {
@@ -154,14 +154,8 @@ bool ArgumentBinder::CheckReceiver() const {
     else
         return true;
 
-    const auto *type = GetTypeInfoFromObject(this->fiber->isolate, receiver);
-
-    // A type object reaches its own class through its supertypes, yet it is not an instance of it: it is self only
-    // for a method of a metatype
-    if (IsTypeObject(receiver) && !IsMetatype(this->fiber->isolate, shared->owner_type))
-        type = nullptr;
-
-    if (IsTypeExtends(type, shared->owner_type))
+    if (!IsTypeNotSelf(this->fiber->isolate, receiver, shared->owner_type)
+        && IsTypeExtends(GetTypeInfoFromObject(this->fiber->isolate, receiver), shared->owner_type))
         return true;
 
     SetTypeError(this->fiber->isolate,
@@ -206,7 +200,7 @@ CallResult ArgumentBinder::Bind(Fiber *fiber, Function *&func, const U16 p_count
 
     auto *callee = ResolveCallable(fiber->isolate, func);
     if (callee == nullptr) {
-        fiber->vm.regs.SP.reg -= (total_args * sizeof(void *));
+        fiber->vm.regs.SP.reg -= (p_count * sizeof(void *));
 
         return CallResult::ERROR;
     }
@@ -223,15 +217,13 @@ CallResult ArgumentBinder::Bind(Fiber *fiber, Function *&func, const U16 p_count
     this->call_mode_is_nargs = ENUMBITMASK_ISTRUE(mode, CallMode::NARGS);
     this->call_mode_is_rest = ENUMBITMASK_ISTRUE(mode, CallMode::REST_ARG);
 
-    // A selector call counts a slot for the receiver, which PUSHIF fills only for a method: for anything else the
-    // count is one too many. A type used as selector is not a receiver either (`Type.method(obj)`, where obj is),
-    // except for a method of a metatype, so its slot is removed and the explicit arguments move down
-    if (ENUMBITMASK_ISTRUE(mode, CallMode::METHOD)) {
-        if (!this->func->shared->IsMethod())
-            this->stack_args -= 1;
-        else if (IsTypeObject(*this->ArgsBase()) && !IsMetatype(fiber->isolate, this->func->shared->owner_type))
-            this->DropReceiver();
-    }
+    // A selector call pushes its base as the receiver. A callee that is not a method takes none, and a type used as
+    // selector is not a receiver either (`Type.method(obj)`, where obj is) unless the method belongs to a metatype:
+    // then the slot is removed and the explicit arguments move down
+    if (ENUMBITMASK_ISTRUE(mode, CallMode::METHOD)
+        && (!this->func->shared->IsMethod()
+            || IsTypeNotSelf(fiber->isolate, *this->ArgsBase(), this->func->shared->owner_type)))
+        this->DropReceiver();
 
     // A method is checked in every call mode, before a partial application can bind its self
     if (!this->CheckReceiver()) {
@@ -241,8 +233,8 @@ CallResult ArgumentBinder::Bind(Fiber *fiber, Function *&func, const U16 p_count
     }
 
     // The bottom of the region the CALLEE owns, fixed before anything pushes:
-    // a receiver slot may already have been discounted or removed above, and
-    // every later push happens above this point.
+    // a receiver slot may already have been removed above, and every later
+    // push happens above this point.
     this->base_sp = fiber->vm.regs.SP.reg - (this->stack_args * sizeof(void *));
 
     if (!this->EnsureStack()) {

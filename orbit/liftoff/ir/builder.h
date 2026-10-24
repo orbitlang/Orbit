@@ -321,9 +321,6 @@ namespace liftoff::ir {
 
         Instruction *StackPush(Instruction *s_reg);
 
-        Instruction *StackPushIF(Instruction *s_reg, Instruction *target, Instruction *against,
-                                 orbiter::PushIfFlags flags);
-
         Instruction *GetStoreObjectProp(Instruction *obj, Instruction *value, U16 offset, bool as_key);
 
         Instruction *StoreGlobal(orbiter::datatype::ORString *id, Instruction *value);
