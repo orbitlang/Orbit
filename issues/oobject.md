@@ -1,8 +1,74 @@
 # oobject — bug report
 
 **Component:** `orbit/orbiter/datatype/oobject.cpp` (object/type core: `MakeType`, property tables, type lifecycle) · **ID prefix:** `OBJ`
-**PoCs:** [`poc/oobject/`](poc/oobject/) (OBJ-002, OBJ-003; OBJ-001 has none, see below) · **Last reviewed:** 2026-10-15
+**PoCs:** [`poc/oobject/`](poc/oobject/) (OBJ-002, OBJ-003, OBJ-004; OBJ-001 has none, see below) · **Last reviewed:** 2026-10-22
 **Status:** OPEN · PARTIAL · FIXED · WONTFIX — see [GUIDE.md](GUIDE.md).
+
+---
+
+## OBJ-004 — A trait implemented by a superclass is not seen by `IsTypeExtends`
+**Severity:** High (a normal call form is refused: the methods of a trait cannot be called on an instance of a subclass) · **Status:** OPEN · **Location:** `orbit/orbiter/datatype/oobject.cpp:13` (`IsTypeExtends`), `orbit/orbiter/datatype/c3/c3.cpp:134` (`C3::BuildMRO`)
+
+A subclass of a class that implements a trait is an instance of that trait,
+but the runtime does not see it:
+
+```orbit
+trait T { pub func twice() { return self.v * 2 } }
+class A impl T { pub var v = 21 }
+class B : A { }
+
+new A().twice()   // 42
+new B().twice()   // TypeError: method call requires 'T' instance as receiver
+new B() is T      // false
+```
+
+`C3::BuildMRO` returns at once when a class lists no traits of its own
+(`if (length == 0) return true;`), so `B` has no MRO; a class that lists its
+own traits (`class C : A impl U`) gets an MRO built from those alone. Neither
+includes the traits of the superclass. `IsTypeExtends` reads the MRO of the
+type it starts from only, then walks the superclass chain comparing the types
+themselves, never their MROs, so `T` (in `A`'s MRO) is not found from `B`.
+Property lookup walks the MRO of every type in the chain, which is why
+`new B().twice()` finds the method and then refuses the receiver.
+
+Every user of `IsTypeExtends` is affected: the receiver check of a method
+(`CheckReceiver`, `pcheck.cpp`), `is` (`vm.cpp:953`), the protected-access
+checks (`vm.cpp:467`, `vm.cpp:625`) and `MKMETH`.
+
+**Found** while checking that VM-011's fix works for a trait method called
+through a subclass (`B.twice(b)`); it fails the same way before that fix.
+
+**PoC:** [`poc/oobject/obj-004.orb`](poc/oobject/obj-004.orb) *(confirmed
+live: the three controls pass; the inherited trait method is refused through
+an instance, a subclass with traits of its own, and a variable, and `is`
+answers false twice)*.
+
+**Fix (suggested, verified by probe, then reverted):** have `IsTypeExtends`
+look in the MRO of every type along the superclass chain, not only the first:
+
+```cpp
+for (const auto *cursor = type; cursor != nullptr; cursor = O_GET_TYPE(cursor)) {
+    if (cursor == target)
+        return true;
+
+    if (cursor->mro != nullptr) {
+        const auto *mro = (Tuple *) cursor->mro;
+
+        for (auto i = 0; i < mro->length; i++) {
+            if (mro->objects[i] == (OObject *) target)
+                return true;
+        }
+    }
+}
+
+return false;
+```
+
+With it the PoC passes 8/8 and the gates stay as they are (`ortest` 30/30,
+the PoC gate unchanged apart from this PoC). The other way, making
+`BuildMRO` merge the superclass's MRO into every class's, would also fix it,
+but it changes the method resolution order that property lookup follows,
+which needs its own review.
 
 ---
 

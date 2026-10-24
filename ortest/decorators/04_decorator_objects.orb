@@ -87,6 +87,8 @@ check("a curried-method decorator, called through an instance", h.handle2(), 50)
 
 handle := Handler.handle
 check("taken from the class, called with a receiver", handle(h), 4)
+check("called through the class", Handler.handle(h), 4)
+check("a curried-method decorator, called through the class", Handler.handle2(h), 50)
 
 class Special : Handler {
     pub init() {

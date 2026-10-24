@@ -4,9 +4,21 @@
 #
 # The selector call emits PUSHIF, which pushes the selector's base as the
 # receiver whenever the callee is a method. When the base is the type object
-# itself, the type is pushed, NormalizeMethod refuses it ("method call
-# requires 'P' instance as receiver"), and the explicit receiver never takes
-# its place. Builtin types and classes behave the same.
+# itself, the type is pushed, CheckReceiver refuses it ("method call requires
+# 'P' instance as receiver"), and the explicit receiver never takes its place.
+# Builtin types and classes behave the same.
+#
+# The other half: a type object is never a valid `self` (no method of the
+# metatypes `Class` and `Type` exists), but CheckReceiver checks a type
+# receiver through its superclass, so a subclass passes as `self` for the
+# methods of its superclass. `D.who()` returns the class `D` itself, and
+# `D.get()` or `get(D)` read `self.v` out of the type object with `P`'s
+# layout, without an error.
+#
+# Decided (2026-10-22): with no receiver left (`P.get()`) the call is a
+# partial application, as `get := P.get; get()` is; the receiver is checked
+# against the method's class, not the type used as selector, so
+# `D.get(new P())` runs.
 #
 # The variable form works and is the control. A receiver of the wrong type
 # must still be refused.
@@ -33,6 +45,8 @@ class P {
     pub func get() { return self.v }
 
     pub func add(x) { return self.v + x }
+
+    pub func who() { return self }
 }
 
 class D : P {
@@ -69,6 +83,20 @@ check("a builtin method called through its type", (r_list.unwrap_or("REFUSED") !
 
 r_bad := trap P.get(5)
 check("a receiver of the wrong type is still refused", r_bad.unwrap_err().kind, @TypeError)
+
+r_base := trap D.get(new P())
+check("the method's class is checked, not the selector's type", r_base.unwrap_or("REFUSED"), 5)
+
+r_partial := trap P.get()
+r_partial_call := trap (r_partial.unwrap_or(nil))(p)
+check("no receiver left: a partial application", r_partial_call.unwrap_or("REFUSED"), 5)
+
+# a type object is never self
+r_who := trap D.who()
+check("a subclass is not self through its type", r_who.unwrap_or(nil) != D, true)
+
+r_type_plain := trap get(D)
+check("a subclass is not self without a selector", r_type_plain ? "ACCEPTED" : r_type_plain.unwrap_err().kind, @TypeError)
 
 if fails == 0 {
     io.print("ALL TESTS PASSED")

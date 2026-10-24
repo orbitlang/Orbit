@@ -79,7 +79,7 @@ check("many too many", seen_mid("A", trap one(1, 2, 3, 4), "C"), ("A", "C"))
 # ResolveCallable: the callee is not callable at all
 check("not callable", seen_mid("A", trap notfn(1, 2), "C"), ("A", "C"))
 
-# NormalizeMethod: a method called with a receiver of the wrong type
+# CheckReceiver: a method called with a receiver of the wrong type
 check("wrong receiver", seen_mid("A", trap K.get(42), "C"), ("A", "C"))
 
 # a constructor cannot be partially applied

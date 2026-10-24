@@ -6,6 +6,58 @@
 
 ---
 
+## VM-013 — `CallNative` reads rest and kwargs above SP and pops only the counted arguments
+**Severity:** Low (latent: no native is variadic or takes keyword arguments today) · **Status:** OPEN · **Location:** `orbit/orbiter/vm.cpp:486` (`CallNative`), callers `vm.cpp:123` (`Call`) and `vm.cpp:91` (`ExecDefer`)
+
+`CallNative` finds the arguments of a native function from SP and the bound
+count alone, and hands the two slots after them to the native as the rest
+list and the kwargs dict:
+
+```cpp
+const auto offset = argc * sizeof(void *);
+auto **args = (OObject **) (stack->stack + (regs->SP.reg - offset));
+
+const auto result = func->shared->func(func, args, args[argc], args[argc + 1], argc);
+...
+regs->SP.reg -= offset;
+```
+
+`ArgumentBinder::Bind` lays out a call as the counted parameters followed by
+the rest list and the kwargs dict, which it pushes without counting them in
+`StackArgs()` (`FinalizeRestArgs`, `FinalizeKwargs`). The two layouts disagree
+whenever either slot is pushed:
+
+- with no rest list and no kwargs dict on the stack (every call today),
+  `args[argc]` and `args[argc + 1]` are the two slots **above** SP: stale
+  values from earlier calls, or past the end of the stack buffer when the
+  stack is full;
+- with them pushed (a native declared variadic or taking `*kwargs`), `args`
+  starts one or two slots too high, so every argument is read shifted, and
+  `SP -= offset` leaves the uncounted slots on the stack, which corrupts the
+  caller's frame the way a leaked argument slot does.
+
+Nothing triggers it now: all 215 native functions and methods are declared
+with `varargs` and `kwargs` false, so `Bind` never pushes the two slots for a
+native (a rest list is consumed into the declared parameters or refused, a
+kwargs dict is refused with `NO_KWARGS`), and no native reads its `rest` or
+`kwargs` arguments. The first native that declares either would hit it.
+
+**Found** while checking how the rest list and the kwargs dict reach the
+callee, for VM-011's `DropReceiver`.
+
+**PoC:** none — not triggerable from Orbit while no native is variadic or takes
+keyword arguments; verified by inspection (`CallNative`, `FinalizeRestArgs`,
+`FinalizeKwargs`, and the `varargs`/`kwargs` flags of every `RUNTIME_FUNCTION`
+and `RUNTIME_METHOD`).
+
+**Fix (suggested, not tried):** take the region from the binder instead of
+recomputing it: the arguments start at `ArgsBaseSP()`, the rest list and the
+kwargs dict are passed only when the function is variadic or takes kwargs
+(`nullptr` otherwise), and SP goes back to `ArgsBaseSP()`. `ExecDefer` calls
+`CallNative` with a saved `argc` and also has `restorable_SP`, the same value.
+
+---
+
 ## VM-012 — A method called without a selector does not check its receiver
 **Severity:** High (reads the wrong slots of a foreign object; SIGSEGV with a non-object) · **Status:** FIXED (2026-10-22) · **Location:** `orbit/orbiter/orbcall.cpp:128` (`ArgumentBinder::CheckReceiver`), `orbit/orbiter/orbcall.cpp:204` (`ArgumentBinder::Bind`)
 
@@ -101,7 +153,51 @@ when it is bound; a curried method whose currying is not empty then had its
 ---
 
 ## VM-011 — A method called through its type receives the type as its receiver
-**Severity:** Medium (a normal call form is refused) · **Status:** OPEN · **Location:** `orbit/orbiter/vm.cpp:1416` (`TARGET_OP(PUSHIF)`), `orbit/orbiter/orbcall.cpp:128` (`ArgumentBinder::CheckReceiver`)
+**Severity:** High (a normal call form is refused; a type object passes as `self` and is read with an instance layout) · **Status:** FIXED (2026-10-22) · **Location:** `orbit/orbiter/orbcall.cpp:228` (`ArgumentBinder::Bind`), `orbit/orbiter/orbcall.cpp:138` (`ArgumentBinder::CheckReceiver`)
+
+**Fix verified (PoC `poc/vm/method-through-type.orb` — prints `ALL TESTS
+PASSED`, 12 of 12; `ortest` 30/30 and the PoC gate 55/58, the failures being
+open findings; `phi-regalloc.orb` green).** Both halves, in `orbcall.cpp`
+only; `PUSHIF` and the compiler are unchanged.
+
+1. In the `CallMode::METHOD` block of `Bind`, a type used as selector is not
+   a receiver: when the pushed slot holds a type object and the callee is a
+   method of anything but a metatype, `DropReceiver` removes it (the explicit
+   arguments move down by one, SP and `stack_args` decrease) before `base_sp`
+   is fixed, and the first explicit argument is checked as in any other call:
+
+   ```cpp
+   if (!this->func->shared->IsMethod())
+       this->stack_args -= 1;
+   else if (IsTypeObject(*this->ArgsBase()) && !IsMetatype(fiber->isolate, this->func->shared->owner_type))
+       this->DropReceiver();
+   ```
+
+   The test is on the selector, not on the method's class: `Handler.handle(h)`
+   (a method promoted from `Server`) and `Handler.handle2(h)` (a curried
+   method of `Server`) drop `Handler` too, and `h` arrives as `me`. A check
+   against the method's class would have left `Handler` on the stack as `me`.
+2. `CheckReceiver` no longer checks a type receiver through `O_GET_TYPE` (its
+   superclass): a type object is `self` only for a method of a metatype
+   (`Type`, or `Class` for classes; none has methods today).
+
+`PUSHIF` stays: it still saves the push, and with it a shift of every
+argument, for the common selector call of a function that is not a method
+(`io.print(...)`, a callback in a property).
+
+The PoC passes in full: calls through a class, a subclass and a builtin type;
+`D.get(new P())` runs (checked against `P`); `P.get()` is a partial
+application; `D.who()` no longer returns the class; `get(D)` is refused.
+`ortest/decorators/04_decorator_objects.orb` gained the two decorated methods
+called through their class. Mutation-tested: without `DropReceiver` seven
+checks fail again, without the type refusal in `CheckReceiver` `get(D)` is
+accepted again. `poc/vm/trap-bind-error-argpos.orb` still passes.
+
+Found on the way, filed apart: OBJ-004 (a trait implemented by a superclass
+is not seen by `IsTypeExtends`, so its methods refuse instances of a
+subclass).
+
+<details><summary>Original report</summary>
 
 `Type.method(obj, args...)` should run `method` with `obj` as its receiver,
 as the same method taken into a variable does (`m := Type.method; m(obj)`,
@@ -121,20 +217,65 @@ it. The explicit receiver never takes the receiver's place.
 The user confirmed (2026-10-16) that this is a defect: calling a method
 through its type is meant to work, with the first argument as the receiver.
 
+**Second half (added 2026-10-22): a type object passes as `self`.**
+`CheckReceiver` treats a receiver that is not an instance as a type and checks
+it through `O_GET_TYPE`, which for a `TypeInfo` is its superclass. So a
+subclass is accepted as `self` for every method of its superclass:
+
+```orbit
+class P { pub var v = 5; pub func get() { return self.v }; pub func who() { return self } }
+class D : P { }
+
+D.who()        // ok<D>: self is the class D
+D.get()        // reads self.v out of the type object with P's layout, no error
+get := P.get
+get(D)         // the same, without a selector
+```
+
+No method takes a type as `self` on purpose: `Class` and `Type` have no
+methods. Instrumenting the check over every `ortest` suite and PoC showed type
+receivers in two files only, both expecting the refusal (this PoC and
+`poc/vm/trap-bind-error-argpos.orb`, which uses `K.get(42)` to raise a binding
+error).
+
+**Decided (2026-10-22):**
+
+- `P.get()` with no receiver left is a partial application, as
+  `get := P.get; get()` is, not an error;
+- the receiver is checked against the method's class, not against the type
+  used as selector: `D.get(new P())` runs.
+
 **Found** while discussing decorated methods (IR-011), where calling a
 decorated method with an explicit receiver is one of the shapes to support.
 
 **PoC:** [`poc/vm/method-through-type.orb`](poc/vm/method-through-type.orb)
 *(confirmed live: both controls pass, the five calls through a type are
-refused; a receiver of the wrong type is refused, as it must stay)*.
+refused; a receiver of the wrong type is refused, as it must stay. Since
+2026-10-22 also: `D.get(new P())` is refused, `P.get()` is refused instead of
+being a partial application, and `D.who()` and `get(D)` accept the class as
+`self`)*.
 
-**Fix (suggested, not tried):** in `PUSHIF`, do not push the base when it is a
-type object and the callee is a method of that type or of a supertype, so the
-first explicit argument becomes the receiver and `CheckReceiver` checks it.
-Before changing it, find what relies on a type receiver today:
-`CheckReceiver` (`NormalizeMethod` when this was filed) has an explicit branch for a receiver that is not an
-instance (`type = O_GET_TYPE(type)`), so some call does pass a type on purpose
-(by inspection; not traced yet).
+**Fix (suggested, not tried):** two parts.
+
+1. In `Bind`, not in `PUSHIF`. A selector call always counts a receiver slot
+   (`arguments = n + 1`); `PUSHIF` pushes it only for a method, and `Bind`
+   infers it was pushed from the same `IsMethod()`. If `PUSHIF` skipped the
+   push for a type base, `Bind` could not tell and would read a caller's slot
+   as `self`. So `PUSHIF` stays as it is, and in the `CallMode::METHOD` block
+   of `Bind`: when the pushed receiver is a type object and the method belongs
+   to it or to a supertype (`IsTypeExtends(base, owner)`), drop that slot —
+   move the explicit arguments down by one, then decrease SP and
+   `stack_args` — before `base_sp` is fixed. `CheckReceiver` then sees the
+   first explicit argument, as in any other call. This covers classes,
+   subclasses, traits (`T.m(obj)`) and natives (`List.append(l, 3)`).
+2. In `CheckReceiver`, drop the `O_GET_TYPE` branch: a type object is not a
+   valid receiver, except for a method of `Class` or `Type` (none exists
+   today; the rule covers them if they come).
+
+`poc/vm/trap-bind-error-argpos.orb` keeps working: `K.get(42)` then has `42`
+as its receiver, which is refused.
+
+</details>
 
 ---
 

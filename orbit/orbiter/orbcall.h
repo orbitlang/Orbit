@@ -70,6 +70,7 @@ namespace orbiter {
         bool FinalizeRestArgs();
 
         [[nodiscard]] bool CheckReceiver() const;
+        void DropReceiver();
 
         void LoadCurrying();
 

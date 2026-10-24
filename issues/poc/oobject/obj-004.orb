@@ -1,0 +1,61 @@
+# PoC OBJ-004 — a subclass of a class that implements
+# a trait is an instance of that trait too, so the trait's methods accept it as
+# receiver and `is` says so.
+#
+# C3::BuildMRO returns early when a class lists no traits of its own, so
+# `class B : A` gets no MRO at all, and a class that lists its own traits gets
+# an MRO built from those alone. IsTypeExtends reads only the MRO of the type
+# it starts from and then walks the superclass chain, never the MROs along it:
+# a trait implemented by a superclass is not found. Property lookup walks every
+# MRO in the chain, so `b.twice()` finds the method and then refuses the
+# receiver ("method call requires 'T' instance as receiver").
+#
+# A runtime test: prints "ALL TESTS PASSED" only when every check matches.
+# EXPECT: contains: ALL TESTS PASSED
+
+import "io"
+
+var fails = 0
+
+func check(name, got, expected) {
+    if got == expected {
+        io.print("OK   ", name)
+    } else {
+        io.print("FAIL ", name, "-- got:", got, "expected:", expected)
+        fails += 1
+    }
+}
+
+trait T {
+    pub func twice() { return self.v * 2 }
+}
+
+trait U {
+    pub func one() { return 1 }
+}
+
+class A impl T {
+    pub var v = 21
+}
+
+class B : A { }
+
+class C : A impl U { }
+
+check("control: the class that implements the trait", new A().twice(), 42)
+check("control: is, on that class", new A() is T, true)
+check("control: a subclass is its superclass", new B() is A, true)
+
+check("a subclass calls the inherited trait method", (trap new B().twice()).unwrap_or("REFUSED"), 42)
+check("is, on a subclass", new B() is T, true)
+check("a subclass with traits of its own", (trap new C().twice()).unwrap_or("REFUSED"), 42)
+check("is, on a subclass with traits of its own", new C() is T, true)
+
+twice := T.twice
+check("the trait method taken into a variable", (trap twice(new B())).unwrap_or("REFUSED"), 42)
+
+if fails == 0 {
+    io.print("ALL TESTS PASSED")
+} else {
+    io.print(fails, "TEST(S) FAILED")
+}
