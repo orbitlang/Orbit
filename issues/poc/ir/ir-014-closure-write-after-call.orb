@@ -83,6 +83,84 @@ func written_two_down() {
 }
 check("a write two levels down reaches the declaring function", written_two_down(), 11)
 
+# a suspension runs other code too: a generator that reads a captured variable
+# on both sides of a `yield` must see a change made while it was suspended
+func make_gen() {
+    n := 1
+    func gen() {
+        yield n
+        yield n
+    }
+    func set(v) { n = v }
+    return (gen(), set)
+}
+
+gen_and_set := make_gen()
+seen := []
+for var v in gen_and_set[0] {
+    seen.append(v)
+    gen_and_set[1](42)
+}
+check("a captured variable read across a yield", seen, [1, 42])
+
+# module variables: the module code reads them after calls too. A store
+# forwarded across a call returns the value from before it, and the register a
+# variable was loaded into must not be reused after a call either
+var hits = 0
+
+class Base {
+    pub init() {
+        hits += 1
+    }
+}
+
+class Mid : Base { }
+
+class Leaf : Mid { }
+
+new Mid()
+h1 := hits
+new Leaf()
+h2 := hits
+check("a module variable bumped by two calls, read after each", (h1, h2), (1, 2))
+
+func set_a() { a = 9 }
+
+var a = 5
+b := a
+set_a()
+check("a module variable copied before a call keeps the old value", (a, b), (9, 5))
+
+# synchronization points: after an `await`, or a receive from a channel, the
+# code must see what the other fiber wrote before it finished or sent. Only
+# the value read after them is checked: the one read before depends on
+# scheduling when fibers run in parallel
+var m = 0
+
+func job() async { m = 5 }
+
+f_job := job()
+m_before := m
+await f_job
+check("a module variable read after an await", m, 5)
+
+var k = 0
+ch := Chan(capacity=1)
+
+func producer() {
+    k = 7
+    ch <- 1
+}
+
+func after_spawn() { }
+
+spawn producer()
+# a call right after the spawn keeps `ch` from being live across it (IR-016)
+after_spawn()
+k_before := k
+<- ch
+check("a module variable read after a channel receive", k, 7)
+
 if fails == 0 {
     io.print("ALL TESTS PASSED")
 } else {

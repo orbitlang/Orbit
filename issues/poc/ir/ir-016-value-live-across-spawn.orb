@@ -1,0 +1,50 @@
+# PoC ir-016-value-live-across-spawn — IR-016: a value computed before a
+# `spawn` and used after it must survive the spawn.
+#
+# The VM's SPWN sets RR (the result register) to nil, and binds its arguments
+# like a call, but the compiler does not treat it as one: `spawn f()` is built
+# as a CALL whose opcode is then changed to SPWN, and
+# IRContext::CallerSaveSpiller saves the registers live across CALL, EXECSUB
+# and NTCALL only. A value that the allocator kept in RR across the spawn (the
+# result of the call just before it) reads back as nil: a channel created by
+# `Chan(...)` and received from after the spawn crashes the process
+# (ChannelRecv on a null channel).
+#
+# A runtime test: prints "ALL TESTS PASSED" only when every check matches.
+# EXPECT: contains: ALL TESTS PASSED
+
+import "io"
+
+var fails = 0
+
+func check(name, got, expected) {
+    if got == expected {
+        io.print("OK   ", name)
+    } else {
+        io.print("FAIL ", name, "-- got:", got, "expected:", expected)
+        fails += 1
+    }
+}
+
+func noop() { }
+
+func id(v) { return v }
+
+v := id(41)
+spawn noop()
+check("a call's result used after a spawn", (trap (v + 1)).unwrap_or("CLOBBERED"), 42)
+
+ch := Chan(capacity=1)
+
+func producer() {
+    ch <- 7
+}
+
+spawn producer()
+check("a channel created before a spawn, received from after it", <- ch, 7)
+
+if fails == 0 {
+    io.print("ALL TESTS PASSED")
+} else {
+    io.print(fails, "TEST(S) FAILED")
+}

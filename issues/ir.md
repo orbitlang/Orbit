@@ -8,6 +8,54 @@
 
 ---
 
+## IR-016 — A value live across a `spawn` is not saved, and reads back as nil
+**Severity:** High (silent nil; a SIGSEGV when the value is a channel) · **Status:** FIXED (2026-10-26) · **Location:** `orbit/liftoff/ir/ircontext.cpp:226` (`IRContext::CallerSaveSpiller`)
+
+**Fix verified (PoC `poc/ir/ir-016-value-live-across-spawn.orb` — prints
+`ALL TESTS PASSED`, 2 of 2; `ortest` 31/31 and the PoC gate 58/60, the
+failures being open findings; `phi-regalloc.orb` green).**
+`CallerSaveSpiller` counts `SPWN` among the instructions that clobber the
+registers, next to `CALL`, `EXECSUB` and `NTCALL`, and its comment says why
+(it binds its arguments like a call and sets `RR` to nil). A value live
+across a spawn is saved to the stack before it and reloaded after. Without
+the line the PoC fails both checks, the second as a crash. `DEFER` is left
+out: its VM handler does not write `RR`.
+
+<details><summary>Original report</summary>
+
+`spawn f()` is compiled as a call whose opcode is then changed to `SPWN`, and
+the VM's `SPWN` binds the arguments like a call and sets `RR`, the result
+register, to nil. The caller-save spiller does not know: it saves the
+registers live across `CALL`, `EXECSUB` and `NTCALL`, not `SPWN`. A value the
+allocator keeps in `RR` across the spawn, typically the result of the call
+just before it, reads back as nil:
+
+```orbit
+v := id(41)
+spawn noop()
+v + 1             // NotImplementedError: '+' between 'nil' and 'Number'
+
+ch := Chan(capacity=1)
+spawn producer()
+<- ch             // SIGSEGV: ChannelRecv on a null channel (asyncrwlock.cpp:86)
+```
+
+**Found** while adding a channel case to the IR-014 PoC: the receive crashed
+the process, with the builder of `HEAD` too, in `ChannelRecv(channel=0x0)`.
+
+**PoC:** [`poc/ir/ir-016-value-live-across-spawn.orb`](poc/ir/ir-016-value-live-across-spawn.orb)
+*(confirmed live: the call's result reads back as nil, then the receive
+crashes)*.
+
+**Fix (suggested, verified by probe 2026-10-26, then reverted):** add `SPWN`
+to the instructions `CallerSaveSpiller` treats as clobbering the registers.
+With it the PoC passes and the gates are unchanged. Whether `DEFER`, built
+the same way, needs it too is open: its VM handler does not write `RR`.
+
+</details>
+
+---
+
 ## IR-015 — A generator that captures a variable is compiled as an ordinary function
 **Severity:** High (wrong code; a SIGSEGV in the PoC) · **Status:** FIXED (2026-10-19) · **Location:** `orbit/liftoff/ir/irbuilder.cpp:1036` (`visitFunction`)
 
@@ -61,7 +109,52 @@ a two-level capture is hit as well. Generators nested in methods that read
 ---
 
 ## IR-014 — A captured variable read after a call returns the value stored before it
-**Severity:** High (silent wrong result) · **Status:** OPEN · **Location:** `orbit/liftoff/ir/builder.cpp:519` (`Builder::LoadFromOffset`, store-to-load forwarding)
+**Severity:** High (silent wrong result) · **Status:** FIXED (2026-10-26) · **Location:** `orbit/liftoff/ir/builder.cpp:16` (`MayRunOtherCode`), `:34` (`Builder::AddInstruction`), `:516` (`Builder::LoadFromOffset`)
+
+**Fix verified (PoC `poc/ir/ir-014-closure-write-after-call.orb` — prints
+`ALL TESTS PASSED`, 11 of 11; `ortest` 31/31 and the PoC gate 58/60, the
+failures being open findings; `phi-regalloc.orb` green).** Both reuse
+mechanisms of the IR builder now stop at the same set of instructions,
+`MayRunOtherCode`: the ones that run other code (`CALL`, `NTCALL`,
+`EXECSUB`) and the synchronization points, where the fiber waits while other
+code runs (`YLD`, `AWAIT`, `CHRCV`, `CHSND`, `SYNC_ENTER`). After any of them
+another piece of code may have changed any variable except the frame's own
+slots.
+
+1. `LoadFromOffset` stops its backward search at such an instruction for
+   every opcode but `SKLDR`, so neither a store nor a load of a closure,
+   module or global slot is reused across it:
+
+   ```cpp
+   if (opcode != OPCode::SKLDR && MayRunOtherCode(instr->opcode))
+       break;
+   ```
+
+2. `AddInstruction` clears `IRContext::active_regs_`, the symbol-to-register
+   cache `LoadVariable` consults first, whenever it appends such an
+   instruction. Without this the module code kept reading a register loaded
+   before the call (part 1 alone regressed `oop/02` and the IR-013 PoC, see
+   the report).
+
+`SPWN` is not in the set: reading a variable another fiber writes, with no
+synchronization in between, is a race in the program, and closure variables
+are never cached. A related defect found on the way, a value kept in `RR`
+across a spawn, was IR-016.
+
+The PoC covers closures (a write, a compound assignment, a read before and
+after, a counter, a write two levels down, a read across a `yield`) and
+module variables (bumped by two calls and read after each, copied before a
+call, read after an `await`, read after a channel receive). The old code
+fails nine checks; part 1 alone fails the first module case; stopping only at
+`CALL`/`NTCALL` fails the `yield`, `await` and receive cases.
+
+Known limit, by inspection: class hooks (`compare`, `equal`, `str`, `repr`,
+`hash`) run Orbit code through `EvalSync` inside instructions outside the set
+(comparisons, equality, hashing). A hook that changes a module variable the
+calling code then reads is not covered; adding those instructions would drop
+the cache at nearly every comparison.
+
+<details><summary>Original report</summary>
 
 `LoadFromOffset` walks the current basic block backwards looking for an
 earlier access to the same slot. A matching **load** is reused only when no
@@ -89,8 +182,30 @@ func counter() {
 ```
 
 The nested function does see the declaring function's writes, since it loads
-from the closure. Module variables written by a called function were probed
-and are read correctly.
+from the closure.
+
+*(2026-10-26)* Module variables have the same defect; it was hidden, not
+absent. In module code a read is forwarded from a store across a call just
+the same, and what made the probed cases come out right is the caller-save
+spiller: a value live across a call whose next use is a `STGOFF` is reloaded
+from that global slot (`intervalspiller.cpp:61`), which happens to give the
+variable's current value. When the two differ, the module reads the wrong
+one:
+
+```orbit
+func set_a() { a = 9 }
+
+var a = 5
+b := a
+set_a()
+io.print(a, b)    // 9 9, not 9 5
+```
+
+There is a second cache on top of `LoadFromOffset`: `IRContext::active_regs_`,
+which `IRBuilder::LoadVariable` consults first and which maps a symbol to the
+last load of it. It is cleared by a store to the symbol, a new basic block or
+a new IR context, never by a call; closures are kept out of it
+(`AddActiveVar`), module and global variables are not.
 
 **Found** while verifying the SYM-002 fix: a write two levels down was not
 seen by the declaring function, and the cause turned out to be one level.
@@ -101,13 +216,58 @@ Present before the closure fixes (reproduced on `33611ce`).
 A fifth check, a write two levels down, moved here from the SYM-002 PoC on
 2026-10-19; it fails the same way now that closures are linked.
 
-**Fix (suggested, partly tried):** forward a store only when no call lies in
-between, as for a load (`if (!call || opcode == OPCode::SKLDR)`, else stop the
-search). Probed on 2026-10-19: the PoC's checks then pass, but
-`ortest/oop/02_inheritance_resolution.orb` regresses in one check (the base
-`init` run through two synthesized `init`s is counted once instead of twice),
-so the change has a side effect that needs understanding before it lands; the
-probe was reverted.
+**Fix (suggested, verified by probe 2026-10-26):** two parts, both needed,
+built on one predicate, `MayRunOtherCode`: an instruction after which other
+code may have changed any variable except the frame's own slots. That is
+every instruction that runs other code (`CALL`, `NTCALL`, `EXECSUB`) and
+every synchronization point, where the fiber waits and other code runs
+before it goes on (`YLD`, `AWAIT`, `CHRCV`, `CHSND`, `SYNC_ENTER`). `AWAIT`
+runs nothing itself, but `x = await f` must see what `f` wrote, and a channel
+receive must see what the sender wrote before sending: without them the
+module reads 0 instead of 5 after an `await`, and 0 instead of 7 after a
+receive (both added to the PoC, which checks only the value read after them,
+since the one read before depends on scheduling). `SPWN` is not needed:
+reading a variable another fiber writes, with no synchronization in
+between, is a race in the program, and closures are never cached anyway.
+
+1. In `LoadFromOffset`, reuse only frame slots (`SKLDR`): a store or a load of
+   a closure, module or global slot is never forwarded. A `yield` is not a
+   call, so stopping at calls alone would miss a generator reading a captured
+   variable on both sides of it (`[1, 1]` instead of `[1, 42]`, added to the
+   PoC).
+2. In `Builder::AddInstruction`, clear `IRContext::active_regs_` whenever an
+   instruction of the predicate is appended. It is then the only reuse left
+   for module and global variables, valid between two such instructions,
+   with no exception per storage location.
+
+With both parts the PoC passes, `ortest` is 31/31, and the PoC gate drops to
+IR-010 and VM-010 only. Part 1 alone (probed on 2026-10-19 and again on
+2026-10-26) passes the closure checks but regresses
+`ortest/oop/02_inheritance_resolution.orb` and
+`poc/ir/ir-013-subclass-without-init.orb`: a module variable bumped by an
+`init` reached through two synthesized `init`s reads 1 after the second `new`
+instead of 2, because the read after the first `new` lands in `active_regs_`
+and the next read reuses that register, which the spiller saves before the
+call and reloads after it, old value included. Before part 1 the read was
+forwarded from the module's initial store instead, and the spiller's reload
+from the global slot made it right by accident. Keeping module and global
+variables out of `active_regs_` (as closures already are) was probed too and
+also passes; clearing the cache at those instructions is the same rule as
+part 1, without a list of storage locations.
+
+Known limit, by inspection: class hooks (`compare`, `equal`, `str`, `repr`,
+`hash`) run Orbit code through `EvalSync` inside instructions that are not in
+the predicate (comparisons, equality, hashing). A hook that changes a module
+variable the calling code then reads is not covered; adding those
+instructions would drop the cache at nearly every comparison.
+
+The PoC gained the two module-variable cases (a variable bumped by two calls
+and read after each; a variable copied before a call), the `yield` case and
+the two synchronization cases.
+The old code fails the second module case and the `yield` case; part 1 alone
+fails the first module case.
+
+</details>
 
 ---
 

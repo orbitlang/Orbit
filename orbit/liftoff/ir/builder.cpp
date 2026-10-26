@@ -11,12 +11,36 @@
 using namespace liftoff::ir;
 using namespace orbiter;
 
+/// Whether other code may have run by the time the instruction completes, and changed any variable but the frame's
+/// own slots. Loads of such variables are not reused across it: see LoadFromOffset and AddInstruction.
+static bool MayRunOtherCode(const OPCode opcode) {
+    switch (opcode) {
+        // Run other code
+        case OPCode::CALL:
+        case OPCode::NTCALL:
+        case OPCode::EXECSUB:
+        // Synchronization points: the fiber waits while other code runs
+        case OPCode::YLD:
+        case OPCode::AWAIT:
+        case OPCode::CHRCV:
+        case OPCode::CHSND:
+        case OPCode::SYNC_ENTER:
+            return true;
+        default:
+            return false;
+    }
+}
+
 BasicBlock *Builder::AddInstruction(Instruction *instruction) {
     auto *bb = this->context->current_;
     if (bb == nullptr)
         bb = this->CreateAppendBasicBlock();
 
     bb->AddInstruction(instruction);
+
+    // The registers cached for variable loads no longer hold the variables' values once other code may have run
+    if (instruction->type() == ObjectType::INSTRUCTION && MayRunOtherCode(((PhysInstruction *) instruction)->opcode))
+        this->context->InvalidateActiveVar(nullptr);
 
     return bb;
 }
@@ -437,7 +461,8 @@ Instruction *Builder::LoadFromStackOffset(U8 r_base, I16 offset, bool force_load
     return this->LoadFromOffset(OPCode::SKLDR, r_base, offset, 0);
 }
 
-Instruction *Builder::LoadFunction(Instruction *src, Instruction *def_args, Instruction *ct, const LoadFuncFlags flags) {
+Instruction *Builder::LoadFunction(Instruction *src, Instruction *def_args, Instruction *ct,
+                                   const LoadFuncFlags flags) {
     return this->CreateInstruction<LoadFunc>(src, def_args, ct, flags);
 }
 
@@ -492,13 +517,16 @@ Instruction *Builder::LoadFromOffset(const OPCode opcode, const U8 r_base, const
     if (this->context->current_ != nullptr) {
         const OffsetInstruction *last = nullptr;
 
-        bool call = false;
-
         for (auto cursor = this->context->current_->instr.tail; cursor != nullptr; cursor = cursor->prev) {
             const auto *instr = (OffsetInstruction *) cursor;
 
             if (cursor->type() != ObjectType::INSTRUCTION)
                 continue;
+
+            // Nothing before an instruction that may run other code can be reused, except for a frame slot (SKLDR):
+            // no other code can change the current frame's slots
+            if (opcode != OPCode::SKLDR && MayRunOtherCode(instr->opcode))
+                break;
 
             switch (opcode) {
                 case OPCode::CLOLDR:
@@ -517,31 +545,14 @@ Instruction *Builder::LoadFromOffset(const OPCode opcode, const U8 r_base, const
                     break;
             }
 
-            if (last != nullptr
-                && last->r_base == r_base
-                && last->offset == offset
-                && last->flags == flags)
+            // Store-load reuse: the value last stored to the same slot
+            if (last != nullptr && last->r_base == r_base && last->offset == offset && last->flags == flags)
                 return (Instruction *) last->operands->value;
 
-            if (instr->opcode == OPCode::CALL || instr->opcode == OPCode::NTCALL)
-                call = true;
-
-            // Load-load reuse: if no matching store was found, look for a previous load
-            // with the same opcode/base/offset/flags and reuse its result.
-            // SKLDR (stack frame local load) is always safe to reuse since calls cannot
-            // modify the current frame's local slots. For all other locations (globals,
-            // closures, module vars), a call in between invalidates the previous load
-            // because the callee may have modified the underlying memory.
+            // Load-load reuse: if no matching store was found, a previous load of the same opcode/base/offset/flags
             last = instr->opcode == opcode ? instr : nullptr;
-            if (last != nullptr
-                && last->r_base == r_base
-                && last->offset == offset
-                && last->flags == flags) {
-                if (!call || opcode == OPCode::SKLDR)
-                    return (Instruction *) last;
-
-                break;
-            }
+            if (last != nullptr && last->r_base == r_base && last->offset == offset && last->flags == flags)
+                return (Instruction *) last;
         }
     }
 

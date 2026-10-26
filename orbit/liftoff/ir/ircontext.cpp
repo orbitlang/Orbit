@@ -210,7 +210,8 @@ void IRContext::CallerSaveSpiller() {
 
     // Pre-scan: collect the instruction offset of every call site, in program
     // order. CALL/EXECSUB/NTCALL are caller-clobbered in Orbit's VM — the callee
-    // may overwrite every general-purpose register — so any value that is live
+    // may overwrite every general-purpose register — and so is SPWN, which binds
+    // its arguments like a call and sets RR to nil. Any value that is live
     // across one of these sites must be saved to the stack beforehand and
     // reloaded at each use that follows the call. The offsets come out ascending
     // because we walk blocks and instructions in layout order, which lets the
@@ -221,7 +222,8 @@ void IRContext::CallerSaveSpiller() {
                 const auto opcode = ((PhysInstruction *) instr)->opcode;
                 if (opcode == orbiter::OPCode::CALL
                     || opcode == orbiter::OPCode::EXECSUB
-                    || opcode == orbiter::OPCode::NTCALL) {
+                    || opcode == orbiter::OPCode::NTCALL
+                    || opcode == orbiter::OPCode::SPWN) {
                     callers.push_back(instr->instr_offset);
                 }
             }
