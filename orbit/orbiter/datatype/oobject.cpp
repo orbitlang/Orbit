@@ -14,31 +14,21 @@ bool orbiter::datatype::IsTypeExtends(const TypeInfo *type, const TypeInfo *targ
     if (type == nullptr || target == nullptr)
         return false;
 
-    if (type == target)
-        return true;
+    for (auto *cursor = type; cursor != nullptr; cursor = O_GET_TYPE(cursor)) {
+        if (cursor == target)
+            return true;
 
-    auto *cursor = type;
+        if (cursor->mro == nullptr)
+            continue;
 
-    if (cursor->mro != nullptr) {
         const auto *mro = (Tuple *) cursor->mro;
-
-        for (auto i = 0; i < mro->length; i++) {
-            if (mro->objects[i] == (OObject *) target) {
-                cursor = target;
-
-                break;
-            }
+        for (MSize i = 0; i < mro->length; i++) {
+            if (mro->objects[i] == (OObject *) target)
+                return true;
         }
     }
 
-    while (cursor != nullptr) {
-        if (cursor == target)
-            break;
-
-        cursor = O_GET_TYPE(cursor);
-    }
-
-    return cursor != nullptr;
+    return false;
 }
 
 bool orbiter::datatype::TIPropertyAdd(TypeInfo *type, const char *name, OObject *value, const U16 slot,
@@ -274,7 +264,7 @@ PropertyDescriptor *orbiter::datatype::TIFindProperty(const TypeInfo *type, cons
             const auto *mro = (Tuple *) type->mro;
 
             // Iterate through all traits in MRO order until property is found
-            for (auto i = 0; i < mro->length && prop == nullptr; i++)
+            for (MSize i = 0; i < mro->length && prop == nullptr; i++)
                 prop = TIFindLocalProperty((TypeInfo *) mro->objects[i], name);
         }
 

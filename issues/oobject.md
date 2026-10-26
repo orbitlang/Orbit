@@ -1,13 +1,56 @@
 # oobject — bug report
 
 **Component:** `orbit/orbiter/datatype/oobject.cpp` (object/type core: `MakeType`, property tables, type lifecycle) · **ID prefix:** `OBJ`
-**PoCs:** [`poc/oobject/`](poc/oobject/) (OBJ-002, OBJ-003, OBJ-004; OBJ-001 has none, see below) · **Last reviewed:** 2026-10-22
+**PoCs:** [`poc/oobject/`](poc/oobject/) (OBJ-002, OBJ-003, OBJ-004; OBJ-001 has none, see below) · **Last reviewed:** 2026-10-26
 **Status:** OPEN · PARTIAL · FIXED · WONTFIX — see [GUIDE.md](GUIDE.md).
 
 ---
 
 ## OBJ-004 — A trait implemented by a superclass is not seen by `IsTypeExtends`
-**Severity:** High (a normal call form is refused: the methods of a trait cannot be called on an instance of a subclass) · **Status:** OPEN · **Location:** `orbit/orbiter/datatype/oobject.cpp:13` (`IsTypeExtends`), `orbit/orbiter/datatype/c3/c3.cpp:134` (`C3::BuildMRO`)
+**Severity:** High (a normal call form is refused: the methods of a trait cannot be called on an instance of a subclass) · **Status:** FIXED (2026-10-26) · **Location:** `orbit/orbiter/datatype/oobject.cpp:13` (`IsTypeExtends`)
+
+**Fix verified (PoC `poc/oobject/obj-004.orb` — prints `ALL TESTS PASSED`,
+16 of 16; `ortest` 31/31 and the PoC gate 56/59, the failures being open
+findings; `phi-regalloc.orb` green).** `IsTypeExtends` looks in the MRO of
+every type along the superclass chain, as `TIFindProperty` and `GetSuper`
+already do:
+
+```cpp
+for (auto *cursor = type; cursor != nullptr; cursor = O_GET_TYPE(cursor)) {
+    if (cursor == target)
+        return true;
+
+    if (cursor->mro == nullptr)
+        continue;
+
+    const auto *mro = (Tuple *) cursor->mro;
+    for (MSize i = 0; i < mro->length; i++) {
+        if (mro->objects[i] == (OObject *) target)
+            return true;
+    }
+}
+
+return false;
+```
+
+The C3 code is left as it is, and that is the model, not an oversight: a
+type's MRO holds the linearization of its own traits only (`BuildBasesList`
+asserts every base is a trait), the superclasses form the separate chain
+`O_GET_TYPE` walks, and a class with no traits of its own has no MRO.
+`IsTypeExtends` was the only reader that did not follow it. Copying the
+superclass's traits into every MRO instead would change the order
+`TIFindProperty` searches in, so a trait's method would win over the
+superclass's own override of it (`class A impl T { func f() }`,
+`class B : A`: `new B().f()` would run `T.f`), and `GetSuper` would need
+rework.
+
+The PoC gained the cases the fix must cover without side effects: a trait
+extended by the superclass's trait is seen from a subclass (`is` and a call),
+a class's override still wins over its trait, `super` from a subclass still
+reaches the override, and a superclass is still not its subclass. Run against
+the old `IsTypeExtends`, 8 checks fail.
+
+<details><summary>Original report</summary>
 
 A subclass of a class that implements a trait is an instance of that trait,
 but the runtime does not see it:
@@ -69,6 +112,8 @@ the PoC gate unchanged apart from this PoC). The other way, making
 `BuildMRO` merge the superclass's MRO into every class's, would also fix it,
 but it changes the method resolution order that property lookup follows,
 which needs its own review.
+
+</details>
 
 ---
 

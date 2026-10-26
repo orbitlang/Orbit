@@ -42,6 +42,30 @@ class B : A { }
 
 class C : A impl U { }
 
+trait T1 {
+    pub func base() { return "T1" }
+}
+
+trait T2 impl T1 {
+    pub func two() { return "T2" }
+}
+
+class E impl T2 { }
+
+class G : E { }
+
+trait F {
+    pub func f() { return "F" }
+}
+
+class Over impl F {
+    pub func f() { return "Over" }
+}
+
+class SubOver : Over {
+    pub func f() { return "Sub+" + super.f() }
+}
+
 check("control: the class that implements the trait", new A().twice(), 42)
 check("control: is, on that class", new A() is T, true)
 check("control: a subclass is its superclass", new B() is A, true)
@@ -53,6 +77,17 @@ check("is, on a subclass with traits of its own", new C() is T, true)
 
 twice := T.twice
 check("the trait method taken into a variable", (trap twice(new B())).unwrap_or("REFUSED"), 42)
+
+# a trait extended by the superclass's trait
+check("is, on a trait the superclass's trait extends", new G() is T1, true)
+check("a method of that trait", (trap new G().base()).unwrap_or("REFUSED"), "T1")
+
+# what must not change: a class's own method still wins over its trait's,
+# `super` from a subclass still reaches it, and unrelated types stay apart
+check("an override in the class still wins", new Over().f(), "Over")
+check("super from a subclass reaches the override", new SubOver().f(), "Sub+Over")
+check("is, on a subclass of the overriding class", new SubOver() is F, true)
+check("a superclass is not its subclass", new A() is B, false)
 
 if fails == 0 {
     io.print("ALL TESTS PASSED")
