@@ -1580,7 +1580,8 @@ Instruction *IRBuilder::visitSwitchBlock(const parser::SwitchBlock *node) {
 
         this->builder_.AppendBasicBlock(bodies[case_index++]);
 
-        if (!this->sym_t_->EnterNestedScope(case_node->body->loc.start.offset))
+        // The case's scope spans the whole case, so its first token is inside it even when the body is empty
+        if (!this->sym_t_->EnterNestedScope(case_node->loc.start.offset))
             throw SymbolTableException();
 
         this->visit(case_node->body);

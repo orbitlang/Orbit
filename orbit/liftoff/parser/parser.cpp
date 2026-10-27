@@ -93,12 +93,9 @@ int PeekPrecedence(const TokenType token) {
     }
 }
 
-ASTHandle<ASTNode *> Parser::InjectInit(Loc loc) const {
-    loc.end.offset += 1;
-
-    auto func = MakeFunction(this->isolate_, TKCUR_LOC, NodeType::INIT);
-
-    func->loc.start = loc.start;
+ASTHandle<ASTNode *> Parser::InjectInit(const Loc loc) const {
+    // The synthesized constructor spans the whole class, and its scope ends where the class's does
+    auto func = MakeFunction(this->isolate_, loc, NodeType::INIT);
 
     func->name = ORStringNew(this->isolate_, kInitMethodName).release();
     func->body = MakeBlock(this->isolate_, loc).release();
@@ -751,22 +748,39 @@ ASTHandle<ASTNode *> Parser::ParseSwitchCase(const bool as_if) {
         } while (this->MatchEat(TokenType::SEMICOLON, true));
     }
 
-    if (!this->MatchEat(TokenType::COLON, true))
+    if (!this->Match(TokenType::COLON))
         throw ParserException(37);
 
-    auto block = MakeBlock(this->isolate_, TKCUR_LOC);
+    const auto colon_end = TKCUR_END;
 
-    if (!this->sym_t_->CreateNestedScope(TKCUR_START.offset))
+    this->Eat(true);
+
+    // A case has no closing token: its body ends with its last statement (or `fallthrough`), and an empty body
+    // takes no room at all. The case's scope spans the whole case, from `case`/`default`, so it is never empty;
+    // it is opened after the tests, which belong to the enclosing scope
+    auto block = MakeBlock(this->isolate_, TKCUR_LOC);
+    block->loc.end = block->loc.start;
+
+    if (!this->sym_t_->CreateNestedScope(sw_case->loc.start.offset))
         throw SymbolTableException();
 
     while (!this->Match(TokenType::KW_CASE, TokenType::KW_DEFAULT, TokenType::RIGHT_BRACES)) {
-        if (!this->MatchEat(TokenType::KW_FALLTHROUGH, false)) {
+        if (this->Match(TokenType::KW_FALLTHROUGH)) {
+            block->loc.end = TKCUR_END;
+
+            this->Eat(false);
+
+            fallthrough = true;
+        } else {
             if (fallthrough)
                 throw ParserException(38);
 
-            block->statements.push_back(this->ParseStatement());
-        } else
-            fallthrough = true;
+            auto stmt = this->ParseStatement();
+
+            block->loc.end = stmt->loc.end;
+
+            block->statements.push_back(std::move(stmt));
+        }
 
         if (!this->Match(TokenType::END_OF_LINE, TokenType::SEMICOLON))
             throw ParserException(0);
@@ -774,11 +788,11 @@ ASTHandle<ASTNode *> Parser::ParseSwitchCase(const bool as_if) {
         this->Eat(true);
     }
 
-    this->sym_t_->LeaveNestedScope(block->loc.end.offset);
+    sw_case->loc.end = fallthrough || !block->statements.empty() ? block->loc.end : colon_end;
+
+    this->sym_t_->LeaveNestedScope(sw_case->loc.end.offset);
 
     sw_case->body = block.release();
-
-    sw_case->loc.end = sw_case->body->loc.end;
 
     sw_case->fallthrough = fallthrough;
 
@@ -852,6 +866,9 @@ ASTHandle<ASTNode *> Parser::ParseTryCatchFinally() {
     while (this->Match(TokenType::KW_CATCH)) {
         auto cb = MakeCatchBlock(this->isolate_, TKCUR_LOC);
 
+        if (!this->sym_t_->CreateNestedScope(cb->loc.start.offset))
+            throw SymbolTableException();
+
         this->Eat(true);
 
         if (this->MatchEat(TokenType::LEFT_ROUND, true)) {
@@ -868,9 +885,6 @@ ASTHandle<ASTNode *> Parser::ParseTryCatchFinally() {
             cb->catches.emplace_back(this->ParseLiteral());
 
         this->EatNL();
-
-        if (!this->sym_t_->CreateNestedScope(cb->loc.start.offset))
-            throw SymbolTableException();
 
         if (this->Match(TokenType::IDENTIFIER)) {
             auto err_name = ORStringNew(this->isolate_, this->tkcur_.buffer, this->tkcur_.length);
@@ -893,6 +907,7 @@ ASTHandle<ASTNode *> Parser::ParseTryCatchFinally() {
             cb->body = this->ParseBlock(false).release();
 
         cb->loc.end = cb->body->loc.end;
+        tryb->loc.end = cb->loc.end;
 
         this->sym_t_->LeaveNestedScope(cb->loc.end.offset);
 
@@ -1034,7 +1049,7 @@ ASTHandle<ASTNode *> Parser::ParseWhenStatement() {
 
     branch->body = this->ParseBlock(false).release();
 
-    if (!this->sym_t_->LeaveMergeNestedScope(TKCUR_START.offset, when_start.offset))
+    if (!this->sym_t_->LeaveMergeNestedScope(branch->body->loc.end.offset, when_start.offset))
         throw SymbolTableException();
 
     auto end = branch->body->loc.end;
@@ -1051,7 +1066,7 @@ ASTHandle<ASTNode *> Parser::ParseWhenStatement() {
 
             branch->orelse = this->ParseBlock(false).release();
 
-            if (!this->sym_t_->LeaveMergeNestedScope(TKCUR_START.offset, when_start.offset))
+            if (!this->sym_t_->LeaveMergeNestedScope(branch->orelse->loc.end.offset, when_start.offset))
                 throw SymbolTableException();
 
             end = branch->orelse->loc.end;
@@ -1234,13 +1249,12 @@ ASTHandle<ASTNode *> Parser::ParseBlock(const bool nested) {
 
     this->EatNL();
 
-    block->loc.end = TKCUR_START;
-
+    block->loc.end = TKCUR_END;
     if (!this->MatchEat(TokenType::RIGHT_BRACES, false))
         throw ParserException(19);
 
     if (nested)
-        this->sym_t_->LeaveNestedScope(TKCUR_END.offset);
+        this->sym_t_->LeaveNestedScope(block->loc.end.offset);
 
     return block;
 }
@@ -2361,7 +2375,12 @@ ASTHandle<Function *> Parser::ParseFunction(const Position &start, const bool mu
     this->IgnoreNewLineIF(TokenType::KW_ASYNC);
     this->IgnoreNewLineIF(TokenType::KW_CONST);
 
+    // The last token of the signature: where a method without a body ends
+    auto signature_end = last_param.end;
+
     while (TKCUR_TYPE > TokenType::KEYWORD_BEGIN && TKCUR_TYPE < TokenType::KEYWORD_END) {
+        signature_end = TKCUR_END;
+
         if (this->MatchEat(TokenType::KW_ASYNC, true))
             func->async = true;
         else if (this->MatchEat(TokenType::KW_CONST, true)) {
@@ -2382,7 +2401,7 @@ ASTHandle<Function *> Parser::ParseFunction(const Position &start, const bool mu
         if (!this->context_->CheckBack(ContextType::CLASS) && !this->context_->CheckBack(ContextType::TRAIT))
             throw ParserException(68);
 
-        func->loc.end = TKCUR_START;
+        func->loc.end = signature_end;
     }
 
     func->symbol = sym;
