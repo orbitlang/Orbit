@@ -1,0 +1,51 @@
+# PoC ir-019-block-in-when — IR-019: a block nested in a `when` branch (an
+# `if`) must leave the compiler able to find the scopes that come after it.
+# Today an `if` in a `when` followed by another `if`, after the `when` or in
+# its `else`, aborts the compiler with `Assertion failed: (false), function
+# Generate, file irbuilder.cpp`.
+#
+# visitWhen visits the branches without entering their scopes. The `if`'s
+# EnterNestedScope walks from the module down through the `when` scope to the
+# `if`'s, and the matching LeaveNestedScope climbs one level only, to the
+# `when` scope; the next `if` is outside that scope and is not found.
+#
+# The file aborts as a whole until this is fixed. `when` is allowed only at
+# module scope.
+#
+# A runtime test: prints "ALL TESTS PASSED" only when every check matches.
+# EXPECT: contains: ALL TESTS PASSED
+
+import "io"
+import "runtime"
+
+var fails = 0
+
+func check(name, got, expected) {
+    if got == expected {
+        io.print("OK   ", name)
+    } else {
+        io.print("FAIL ", name, "-- got:", got, "expected:", expected)
+        fails += 1
+    }
+}
+
+var a = 0
+when runtime.os != "" {
+    if true { a = 1 }
+}
+if true { a += 10 }
+check("an if in a when, then an if after it", a, 11)
+
+var b = 0
+when runtime.os == "" {
+    if true { b = 1 }
+} else {
+    if true { b = 2 }
+}
+check("an if in both branches of a when", b, 2)
+
+if fails == 0 {
+    io.print("ALL TESTS PASSED")
+} else {
+    io.print(fails, "TEST(S) FAILED")
+}

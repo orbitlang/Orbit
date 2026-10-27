@@ -1,8 +1,77 @@
 # symtable — bug report
 
 **Component:** `orbit/liftoff` (symtable.h, symtable.cpp) · **ID prefix:** `SYM`
-**PoCs:** [`poc/symtable/`](poc/symtable/) · **Last reviewed:** 2026-10-19
+**PoCs:** [`poc/symtable/`](poc/symtable/) · **Last reviewed:** 2026-10-27
 **Status:** OPEN · PARTIAL · FIXED · WONTFIX — see [GUIDE.md](GUIDE.md).
+
+---
+
+## SYM-004 — A named scope's root starts at offset 0
+**Severity:** Low (a range check that accepts too much; no wrong behavior observed) · **Status:** FIXED (2026-10-27) · **Location:** `orbit/liftoff/symtable.cpp:12` (`Scope::New`), `:489` (`DeclareSymbolScope`), `:707` (`SymbolTable::New`)
+
+**Fix verified (`tools/astdump --scopes` shows every named scope's root
+starting at its declaration; `ortest` 31/31, the PoC gate 60/64 with the open
+IR-018, IR-019, PARSE-026 and VM-010; every file under `stdlib/` compiles).**
+`Scope::New` takes the offset where the scope starts and gives it to the
+root, so no scope can be built without one:
+
+```cpp
+static Scope *New(orbiter::Isolate *isolate, MSize offset_start, MSize line_start) noexcept;
+
+// DeclareSymbolScope: the scope starts where its construct is declared
+auto *new_scope = Scope::New(this->isolate, offset, line_start);
+
+// SymbolTable::New: the module starts at the beginning of the file
+table->scope = Scope::New(isolate, 0, 0);
+```
+
+`function f` declared at 21 now has its root at `[21, 208)`, a class and its
+synthesized `init` at the class's range. `EnterNestedScope`'s range check on
+a named scope's root now refuses an offset that lies before the scope.
+
+<details><summary>Original report</summary>
+
+The scope of a function, method, class, trait or native function covers
+`[0, end)` instead of `[declaration, end)`. `Scope::New` builds the root
+`SubScope` with `offset{}`, and `DeclareSymbolScope` uses the offset it is
+given only for the symbol, never for the new scope's root; `LeaveScope` sets
+the end only. The module's scope starts at 0 rightly.
+
+```
+$ orbit-astdump --scopes file.orb
+    f func/module @21
+      function f, lines 5-16
+        root [0, 208)          <- f starts at 21
+```
+
+The only reader of a root's start is `EnterNestedScope`
+(`symtable.cpp:280`), which checks that the offset it is given falls in the
+active scope before walking its children. With the root starting at 0, any
+offset before the function's end passes, including one that lies before the
+function: a wrong offset from the IR builder is then taken for the function's
+own root instead of failing, which is how the scope bugs fixed on 2026-10-27
+(IR-010, IR-017) stayed hidden. Nothing misbehaves today because the IR
+enters a named scope by name (`EnterScope`), not by offset.
+
+**Found** with `tools/astdump`, on its first run.
+
+**PoC:** none at run time, since nothing misbehaves; `tools/astdump --scopes`
+shows it on any file that declares a function or a class.
+
+**Fix (suggested, verified by probe 2026-10-27, then reverted):** set the root's
+start where the scope's symbol is declared:
+
+```cpp
+// DeclareSymbolScope, after Scope::New
+new_scope->back = this->scope;
+new_scope->scope.offset.start = offset;
+```
+
+With it every named scope's root runs from its declaration (`function f` →
+`[21, 208)`, `class C` and its synthesized `init` → `[210, 243)`), `ortest` is
+31/31, the PoC gate is unchanged and every file under `stdlib/` compiles.
+
+</details>
 
 ---
 

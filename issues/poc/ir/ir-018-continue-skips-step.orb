@@ -1,0 +1,100 @@
+# PoC ir-018-continue-skips-step — IR-018: `continue` in a
+# `loop init; cond; step` must run the step before testing the condition
+# again. Today it jumps straight back to the condition, so the step is
+# skipped and the loop never ends; with a label (`continue outer`) the outer
+# loop's step is skipped the same way.
+#
+# visitLoop puts the condition in the loop's begin block and emits the step
+# after the body, in the same flow; visitJump sends `continue` to the begin
+# block. A labeled loop shares its label's begin and end blocks, so it has the
+# same target.
+#
+# Every loop here counts its iterations and gives up after 50, so a failure
+# reports STUCK instead of hanging.
+#
+# Controls: the same loop without `continue`, a `while`-style loop and a
+# for-in loop with `continue`.
+#
+# A runtime test: prints "ALL TESTS PASSED" only when every check matches.
+# EXPECT: contains: ALL TESTS PASSED
+
+import "io"
+
+var fails = 0
+
+func check(name, got, expected) {
+    if got == expected {
+        io.print("OK   ", name)
+    } else {
+        io.print("FAIL ", name, "-- got:", got, "expected:", expected)
+        fails += 1
+    }
+}
+
+func no_continue() {
+    r := 0
+    loop i := 0; i < 3; i++ {
+        r += i
+    }
+    return r
+}
+check("control: the loop without continue", no_continue(), 3)
+
+func while_style() {
+    r := 0
+    i := 0
+    n := 0
+    loop i < 3 {
+        n += 1
+        if n > 50 { return "STUCK" }
+        i++
+        if i == 2 { continue }
+        r += i
+    }
+    return r
+}
+check("control: continue in a while-style loop", while_style(), 4)
+
+func for_in() {
+    r := 0
+    for var x in [1, 2, 3] {
+        if x == 2 { continue }
+        r += x
+    }
+    return r
+}
+check("control: continue in a for-in loop", for_in(), 4)
+
+func c_style() {
+    r := 0
+    n := 0
+    loop i := 0; i < 3; i++ {
+        n += 1
+        if n > 50 { return "STUCK" }
+        if i == 1 { continue }
+        r += i
+    }
+    return r
+}
+check("continue in a loop with a step", c_style(), 2)
+
+func labeled() {
+    r := []
+    n := 0
+    outer: loop i := 0; i < 2; i++ {
+        n += 1
+        if n > 50 { return "STUCK" }
+        loop j := 0; j < 2; j++ {
+            if j == 1 { continue outer }
+            r.append((i, j))
+        }
+    }
+    return r
+}
+check("continue to a labeled loop with a step", labeled(), [(0, 0), (1, 0)])
+
+if fails == 0 {
+    io.print("ALL TESTS PASSED")
+} else {
+    io.print(fails, "TEST(S) FAILED")
+}

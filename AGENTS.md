@@ -106,6 +106,7 @@ differs from `issues/poc/` (bug reproducers).
 | FFI | `orbit/orbiter/native/` |
 | Event-loop bridge (fibers <-> Gyro) | `orbit/orbiter/evloop.{h,cpp}`, `orbit/orbiter/module/chrono.cpp` as the reference user |
 | Standard library (`.orb`) | `stdlib/` |
+| Inspect the AST and scopes the parser builds | `tools/astdump/` (`orbit-astdump file.orb`, see [`tools/README.md`](tools/README.md)) |
 
 ## Conventions you must follow
 

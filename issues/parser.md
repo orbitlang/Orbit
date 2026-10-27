@@ -423,7 +423,47 @@ message (34/35 family).
 ---
 
 ## PARSE-019 — Location/scope offsets use the token *after* the construct
-**Severity:** Info (diagnostics/scopes) · **Status:** OPEN · **Location:** `parser.cpp:1107-1113, 708-712, 278-279`
+**Severity:** Info (diagnostics/scopes) · **Status:** FIXED (2026-10-27) · **Location:** `orbit/liftoff/parser/parser.cpp` (every `Parse*` function that builds a location or closes a scope)
+
+**Fix verified (`ortest` 31/31, the PoC gate 60/64 with the four open
+findings IR-018, IR-019, PARSE-026 and VM-010, every file under `stdlib/`
+compiles; `phi-regalloc.orb` green).** The whole parser follows one rule,
+`ParseBlock`'s: a node's `loc.end` is the end of its last token, read before
+consuming it, or the `loc.end` of its last child; a scope tied to a node closes
+at that node's `loc.end.offset`; and a declaration's location starts where its
+symbol is declared. The three original points and every point of the audit
+below are fixed:
+
+- **scopes:** blocks (`ParseBlock`, IR-010), switch cases (whole-case scope,
+  IR-017), `when` branches, the synthesized `init` (no `+1`), bodiless methods
+  (end at their signature);
+- **locations:** a call ends with its `)`; `var x` with no value ends with its
+  last name; `native var` has an end; a `native from` block starts at `native`
+  and ends with its `}`, and its functions start at `func`; a decorator ends
+  with its function; `break` / `continue` include their label; an imported
+  name includes its alias; the for-in variable starts at `var`; the module
+  spans its statements;
+- **access modifiers** are part of the declaration for every kind (`pub
+  class`, `pub trait`, `pub import`, `pub x := 1`, as `pub func` already was).
+  For classes, traits and imports the symbol is declared at that start too:
+  `visitConstruct` looks a class up by its node's start offset, and a name is
+  visible only after its declaration, so moving the node's start alone broke
+  every `pub class` (seen while fixing: the whole of `stdlib/io` stopped
+  compiling).
+
+Found and filed during the audit: IR-017 (fixed), IR-019 and PARSE-026. There
+is no tool to print the AST with its locations, so the location-only points
+are verified by reading and by the gates, not by inspecting the positions.
+
+<details><summary>Original report and audit</summary>
+
+**First point fixed (2026-10-27), with IR-010.** `ParseBlock` sets
+`block->loc.end` to the end of the `}` (`TKCUR_END`) before consuming it and
+closes the scope at that offset, so a block's location and its scope both end
+with its `}`; adjacent blocks no longer overlap. `ParseTryCatchFinally` now also sets
+the end of the whole try statement. Verified through the IR-010 PoC and the
+gates. The two other points below (`ParseSwitchCase`, `ParseForInStatement`)
+are untouched.
 
 - `ParseBlock`: `block->loc.end = TKCUR_START` and
   `LeaveNestedScope(TKCUR_END.offset)` run *after* `MatchEat(RIGHT_BRACES)`,
@@ -438,6 +478,61 @@ message (34/35 family).
 **Note (2026-10-14):** no longer only cosmetic. The try block's scope covering
 the `catch` keyword makes the IR builder enter it for the catch body, and any
 block nested there aborts the compiler: see [IR-010](ir.md).
+
+**Note (2026-10-27):** the second point is not cosmetic either. The case's
+scope is closed at that stale `loc.end`, so it covers only the first token
+after the colon, and an `if` in a case aborts the compiler: see
+[IR-017](ir.md).
+
+**Full audit (2026-10-27, by inspection of every `Parse*` function).** The
+reference is `ParseBlock`: a node's `loc.end` is the end (`TKCUR_END`) of its
+last token, read before consuming it, or the `loc.end` of its last child; a
+scope tied to a node closes at that node's `loc.end.offset`. Departures found,
+the ones that move a scope first:
+
+*Scopes (all four fixed 2026-10-27):*
+- ~~`ParseSwitchCase`: the case block's `loc.end` is never updated, and the
+  case scope closes there (IR-017).~~ The case ends with its last statement
+  (or `fallthrough`), or with the colon when the body is empty, and its scope
+  spans the whole case, from `case` / `default`, so it is never empty; the IR
+  enters it through the case's first token. See IR-017.
+- ~~`ParseWhenStatement`: both the `when` and the `else` scopes close at
+  `TKCUR_START`, the token after the `}`.~~ They close at their block's
+  `loc.end.offset`. (The IR still does not enter them: IR-019.)
+- ~~`InjectInit`: `loc.end.offset += 1` compensated for blocks that used to
+  end at the start of their `}`, and its node took the token after the
+  class.~~ The synthesized `init` takes the class's location and closes its
+  scope where the class's ends.
+- ~~`ParseFunction`: a method without a body ends at `TKCUR_START`, the token
+  after its signature.~~ It ends with the last token of its signature: the
+  `)`, or a trailing `async` / `const`. (A trailing modifier still swallows
+  the next member: PARSE-026.)
+
+*Locations only:*
+- `ParseFuncCall` (`:1609`): a call ends with its last argument, not with its
+  `)`; `f()` ends with the `(`.
+- `ParseVarDecl` (`:975`): with no value (`var x`, and the `var` of a for-in),
+  the declaration ends with the token after the names (`=`, a newline, `in`).
+- `ParseNativeVarStatement` (`:660`): `loc.end` is never set; it stays the end
+  of `var` / `let`.
+- `ParseNativeBlock` (`:479`, `:517`): starts at the module name instead of
+  `native`, and ends at the start of its `}`; the functions declared inside
+  it start at their name (`:497`) where a standalone one starts at `native`.
+- `ParseDecorator` (`:199`): `loc.end` is never set; it should be the
+  decorated function's.
+- `ParseStatement`, `break` / `continue` (`:2063`): a label (`continue
+  outer`) is not part of the jump's location.
+- `ParseImportStatement` (`:387`): an imported name with an alias
+  (`a as b`) ends at `a`.
+- `ParseForInStatement` (`:282`): the loop variable's declaration starts at
+  `{0, 0, 0}` (`constexpr Position end{}` passed as its start).
+- Access modifiers: `pub func`, `pub var`, `pub init` start at the modifier,
+  `pub class`, `pub trait`, `pub import` and `pub x := 1` at the keyword or
+  name after it.
+- `Parse` (`:2766`): the module node keeps the location of its first token;
+  the computed range is used only to close the module scope.
+
+</details>
 ---
 
 ## PARSE-020 — Meaningless access modifiers silently accepted
@@ -569,3 +664,64 @@ class C {
 **Fix:** add `TokenType::KW_INIT` and `TokenType::KW_CLEANUP` to the retention
 whitelist in `Eat`, so a doc comment survives until `ParseCleanupInit` consumes
 it.
+
+---
+
+## PARSE-026 — A bodiless method ending in `async`/`const` swallows the next member
+**Severity:** Medium (valid source refused) · **Status:** FIXED (2026-10-27) · **Location:** `orbit/liftoff/parser/parser.cpp:2396` (`ParseFunction`, the trailing-modifier loop)
+
+**Fix verified (live: the PoC passes; it fails again with the old
+`MatchEat(KW_ASYNC, true)` put back, and with the newline skipped only before
+the loop; `ortest` 31/31, the PoC gate 61/64 with the open IR-018, IR-019 and
+VM-010; every file under `stdlib/` parses).** The loop reads a trailing
+modifier without the newline after it, and skips a newline only when the next
+line starts with another modifier:
+
+```cpp
+while (true) {
+    this->IgnoreNewLineIF(TokenType::KW_ASYNC);
+    this->IgnoreNewLineIF(TokenType::KW_CONST);
+
+    if (TKCUR_TYPE <= TokenType::KEYWORD_BEGIN || TKCUR_TYPE >= TokenType::KEYWORD_END)
+        break;
+    ...
+    if (this->MatchEat(TokenType::KW_ASYNC, false))
+```
+
+so a newline followed by anything else ends the signature, and the next member
+is parsed on its own. Every modifier may start a line of its own, as the first
+one already could, and the newline before a body's `{` is still skipped. Also
+checked with `orbit-astdump`: `async const` on one line, each modifier on a
+line of its own (with and without a body, in both orders), a bodiless method
+followed by one with no modifiers, and a body whose `{` is on the next line
+all parse, and each method ends with its last modifier or its `}`. The PoC
+covers modifiers on lines of their own as well.
+
+<details><summary>Original report</summary>
+
+```orbit
+trait Job {
+    pub func run() async
+    pub func name() { return "job" }
+}
+```
+
+is refused with "Invalid syntax: unexpected token or expression". The loop
+that reads the trailing modifiers consumes `async` / `const` with
+`MatchEat(..., true)`, which also eats the newline. The next token is then the
+following member's `pub` or `func`, a keyword, and the loop takes it for one
+more modifier and throws. A method with a body is not affected, since its `{`
+stops the loop first.
+
+**Found** while checking that a bodiless method now ends with its signature
+(PARSE-019's audit); the loop is older than that change.
+
+**PoC:** [`poc/parser/parse-026.orb`](poc/parser/parse-026.orb) *(confirmed
+live: the file is refused)*.
+
+**Fix (suggested, not tried):** consume a trailing modifier without the
+newline (`MatchEat(..., false)`), with `IgnoreNewLineIF` before each further
+one as the code already does before the loop, so a newline ends the
+signature.
+
+</details>

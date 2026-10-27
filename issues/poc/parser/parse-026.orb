@@ -1,0 +1,53 @@
+# PoC PARSE-026 — a method without a body whose signature ends with `async` or
+# `const` must not swallow the member on the next line. Today it is a syntax
+# error ("unexpected token or expression").
+#
+# ParseFunction reads the trailing modifiers with MatchEat(..., true), which
+# also consumes the newline; the next member's `pub` (or `func`) is a keyword,
+# so the modifier loop takes it for one more modifier and refuses it. With a
+# body the `{` stops the loop first, so only bodiless methods are affected.
+#
+# A modifier on a line of its own still belongs to the signature, before
+# another member and before a body.
+#
+# The file is refused as a whole until this is fixed.
+#
+# A runtime test: prints "ALL TESTS PASSED" only when every check matches.
+# EXPECT: contains: ALL TESTS PASSED
+
+import "io"
+
+var fails = 0
+
+func check(name, got, expected) {
+    if got == expected {
+        io.print("OK   ", name)
+    } else {
+        io.print("FAIL ", name, "-- got:", got, "expected:", expected)
+        fails += 1
+    }
+}
+
+trait Job {
+    pub func run() async
+    pub func name() { return "job" }
+    pub func stop()
+        async
+        const
+    pub func kind() { return "task" }
+}
+
+class Task impl Job {
+    pub func run() async { return 1 }
+    pub func stop() async
+        const { return 2 }
+}
+
+check("a bodiless async method followed by another member", new Task().name(), "job")
+check("modifiers on lines of their own, then another member", new Task().kind(), "task")
+
+if fails == 0 {
+    io.print("ALL TESTS PASSED")
+} else {
+    io.print(fails, "TEST(S) FAILED")
+}

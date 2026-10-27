@@ -1,10 +1,229 @@
 # ir — bug report
 
 **Component:** `orbit/liftoff/ir` (instruction.h, linearscan.cpp, irbuilder.cpp) · **ID prefix:** `IR`
-**PoCs:** [`poc/ir/`](poc/ir/) · **Last reviewed:** 2026-10-16
+**PoCs:** [`poc/ir/`](poc/ir/) · **Last reviewed:** 2026-10-27
 **Status:** OPEN · PARTIAL · FIXED · WONTFIX — see [GUIDE.md](GUIDE.md).
 
 > Imported 2026-06-15 from `orbit/liftoff/ir/KNOWN_ISSUES.md` (ISSUE-001 → IR-001).
+
+---
+
+## IR-019 — A block in a `when` branch leaves the IR in the wrong scope
+**Severity:** High (compile-time abort on valid source) · **Status:** OPEN · **Location:** `orbit/liftoff/ir/irbuilder.cpp` (`visitWhen`)
+
+An `if` in a `when` branch followed by another `if`, after the `when` or in
+its `else`, aborts the compiler:
+
+```orbit
+when runtime.os != "" {
+    if true { a = 1 }
+}
+if true { a += 10 }
+```
+
+```
+Assertion failed: (false), function Generate, file irbuilder.cpp, line 2102.
+```
+
+`visitWhen` visits the branches without entering their scopes, which the
+parser creates (`ParseWhenStatement`) and merges into the module's
+(`LeaveMergeNestedScope`). For the inner `if`, `EnterNestedScope` walks from
+the module down through the `when`'s scope to the `if`'s; the matching
+`LeaveNestedScope` climbs one level, to the `when`'s scope, not to the module.
+The next `if` lies outside that scope and is not found. An `if` alone in a
+`when`, or any number of them followed by nothing that opens a scope, gets
+through.
+
+**Found** while checking that the `when` scopes now close at their blocks'
+ends (PARSE-019's audit); present before that change too.
+
+**PoC:** [`poc/ir/ir-019-block-in-when.orb`](poc/ir/ir-019-block-in-when.orb)
+*(confirmed live: the compile aborts)*.
+
+**Fix (suggested, verified by probe 2026-10-27, then reverted):** enter and
+leave the branch's scope around each branch, as `visitBranch` does for an
+`if`: `EnterNestedScope(node->body->loc.start.offset)` /
+`LeaveNestedScope()` around the body, and the same around an `else` block
+(an `else when` recurses). With the probe both checks of the PoC pass,
+`stdlib/readline.orb` (a `when` / `else`) compiles, `ortest` is 31/31 and the
+PoC gate is unchanged.
+
+**Direction (user, 2026-10-27):** rather than the fix above, restrict a
+`when` branch to declarations (`var`, `let`, `:=`, `func`, `class`, `trait`,
+`native`, `import`, decorators, `else when`), which is what `when` is for:
+choosing which definitions exist. Control flow in a branch becomes a syntax
+error with its own message, and this abort cannot happen. The PoC will then
+be rewritten as an error test. Not scheduled yet.
+
+---
+
+## IR-018 — `continue` in a loop with a step skips the step, and the loop never ends
+**Severity:** High (a hang on valid source) · **Status:** FIXED (2026-10-27) · **Location:** `orbit/liftoff/ir/irbuilder.cpp:1339` (`visitLoop`, the `init; cond; step` form)
+
+**Fix verified (live: PoC `poc/ir/ir-018-continue-skips-step.orb` prints
+`ALL TESTS PASSED`, 5 of 5, and reports both loops STUCK again with the old
+`visitLoop` put back; `phi-regalloc.orb` green; `ortest` 31/31 and the PoC
+gate 62/64, with the open IR-019 and VM-010, on five runs in a row; every
+`stdlib` module imports).** The step now lives in the loop's `begin` block,
+where `continue` lands, and the first iteration jumps past it to the
+condition:
+
+```cpp
+auto *cond = this->builder_.CreateBasicBlock();
+
+this->builder_.CreateJump(cond);
+
+this->builder_.AppendBasicBlock(jb.begin);
+
+if (node->inc != nullptr)
+    this->visit(node->inc);
+
+this->builder_.AppendBasicBlock(cond);
+// test, JF end, body, JMP begin
+```
+
+A labeled loop shares its label's `begin` block, so `continue outer` runs the
+outer loop's step with no change to `visitJump`. Also checked by probe: a step
+that calls a closure, a closure made in the body, a loop that never runs,
+`break` and `continue` together, nested loops with plain and labeled
+`continue`, a labeled `break`, `continue` in a generator, a body that moves
+the variable before `continue`, and the loop at module scope. The
+`ir-004-derived-ctor-body.orb` failure seen once with the probe did not come
+back in the five gate runs.
+
+<details><summary>Original report</summary>
+
+`continue` in a `loop init; cond; step` goes back to the condition without
+running the step, so the loop variable never moves:
+
+```orbit
+loop i := 0; i < 3; i++ {
+    if i == 1 { continue }    // i stays 1 forever
+    r += i
+}
+```
+
+`visitLoop` puts the condition in the loop's `begin` block and emits the step
+after the body, in the same flow; `visitJump` sends a `continue` to
+`GetJBlockBegin`, the condition. A labeled loop shares its label's `begin`
+and `end` blocks (`JBlockTarget`'s constructor), so `continue outer` skips
+the outer loop's step the same way. `break`, the `while`-style
+`loop cond { }` and for-in loops are fine.
+
+**Found** while checking that IR-010's fix holds for adjacent blocks: a loop
+with a `continue` in the test never returned. Present on the code before that
+fix too.
+
+**PoC:** [`poc/ir/ir-018-continue-skips-step.orb`](poc/ir/ir-018-continue-skips-step.orb)
+*(confirmed live: the three controls pass; the loop with a step and the
+labeled one report STUCK, each loop giving up after 50 iterations instead of
+hanging)*.
+
+**Fix (suggested, probed 2026-10-27, then reverted):** put the step in the
+`begin` block, where `continue` lands, and have the first iteration jump
+past it:
+
+```cpp
+if (node->init != nullptr)
+    this->visit(node->init);
+
+auto *cond = this->builder_.CreateBasicBlock();
+this->builder_.CreateJump(cond);                 // the first iteration skips the step
+
+this->builder_.AppendBasicBlock(jb.begin);       // `continue` lands here, labeled or not
+if (node->inc != nullptr)
+    this->visit(node->inc);
+
+this->builder_.AppendBasicBlock(cond);
+// test, JF end, body, JMP begin as today
+```
+
+Labeled loops are covered with no change, since they share `begin`. With the
+probe both checks pass and `ortest` is 31/31. One run of the PoC gate
+reported `ir-004-derived-ctor-body.orb` failed; the PoC passed on its own and
+five more runs of the IR PoCs passed, so it is unexplained rather than
+reproduced: rerun the gate a few times when the fix lands.
+
+</details>
+
+---
+
+## IR-017 — An `if` in a `switch` case aborts the compiler
+**Severity:** High (compile-time abort on valid source) · **Status:** FIXED (2026-10-27) · **Location:** `orbit/liftoff/parser/parser.cpp:764` (`ParseSwitchCase`), `orbit/liftoff/ir/irbuilder.cpp:1584` (`visitSwitchBlock`)
+
+**Fix verified (PoC `poc/ir/ir-017-if-in-switch-case.orb` — prints `ALL
+TESTS PASSED`, 5 of 5; `ortest` 31/31 and the PoC gate 60/62, the failures
+being IR-018 and VM-010; `phi-regalloc.orb` green).** A case has no closing
+token, so its end is the end of its last statement (or of `fallthrough`), and
+the colon's when the body is empty. The case's scope now spans the whole case,
+from `case`/`default` to that end, and the IR enters it through the case's
+first token:
+
+```cpp
+// ParseSwitchCase: opened after the tests, which belong to the enclosing scope
+if (!this->sym_t_->CreateNestedScope(sw_case->loc.start.offset))
+...
+sw_case->loc.end = fallthrough || !block->statements.empty() ? block->loc.end : colon_end;
+this->sym_t_->LeaveNestedScope(sw_case->loc.end.offset);
+
+// visitSwitchBlock
+if (!this->sym_t_->EnterNestedScope(case_node->loc.start.offset))
+```
+
+A scope that covers only the case's body would be empty for an empty case
+(`case 1:` followed by `case 2:`), and that is not harmless:
+`EnterNestedScope` with an offset no child contains stays in the active scope
+and still succeeds, the matching `LeaveNestedScope` then leaves one level too
+many, and the program crashes later (seen while fixing this: SIGSEGV on an
+empty case). Starting the scope at `case` keeps it from ever being empty. The
+PoC gained that case and a `fallthrough`.
+
+<details><summary>Original report</summary>
+
+An `if` anywhere in the body of a `case` or of the `default`, in a function
+or at module scope, aborts the compile:
+
+```orbit
+switch v {
+    case 1:
+        if true { r = 1 }
+}
+```
+
+```
+Assertion failed: (false), function Generate, file irbuilder.cpp, line 2101.
+```
+
+`ParseSwitchCase` creates the case's scope at the first token after the
+colon and closes it with `LeaveNestedScope(block->loc.end.offset)`, but
+`block->loc.end` is never updated after the case's statements are read: it is
+still the end of that first token. The case's scope covers that single token,
+the `if`'s scope (its child) lies outside it, and `EnterNestedScope` cannot
+reach it from the case's scope, so `visitBranch` throws
+`SymbolTableException`. Plain statements in a case, a `for` in a case and an
+`if` after the switch compile. It is the second point of PARSE-019 (the case's
+`loc.end` is never updated), filed there as Info before its effect was known.
+
+**Found** while checking that IR-010's fix holds for adjacent blocks. Present
+on the code before that fix too.
+
+**PoC:** [`poc/ir/ir-017-if-in-switch-case.orb`](poc/ir/ir-017-if-in-switch-case.orb)
+*(confirmed live: the compile aborts)*.
+
+**Fix (suggested, verified by probe 2026-10-27, then reverted):** set the end
+of the case's block to the token that ends the case (the next `case`,
+`default` or `}`) before closing its scope:
+
+```cpp
+block->loc.end = TKCUR_START;
+
+this->sym_t_->LeaveNestedScope(block->loc.end.offset);
+```
+
+With it an `if` in a case and in the default compiles and runs, `ortest` is
+31/31 and the PoC gate is unchanged.
+
+</details>
 
 ---
 
@@ -458,7 +677,53 @@ branch on the fast path.
 ---
 
 ## IR-011 — A method whose decorator returns a wrapper cannot be called
-**Severity:** High (SIGSEGV; a decorated method is unusable) · **Status:** OPEN · **Location:** `orbit/liftoff/ir/irbuilder.cpp:987` (`visitDecorator`), `orbit/orbiter/vm.cpp:1280` (`TARGET_OP(SETPROP)`), `orbit/orbiter/vm.cpp:1416` (`TARGET_OP(PUSHIF)`)
+**Severity:** High (SIGSEGV; a decorated method is unusable) · **Status:** FIXED (2026-10-27) · **Location:** `orbit/liftoff/ir/irbuilder.cpp:1018` (`visitDecorator`, `MKMETH`), `orbit/orbiter/vm.cpp:1777` (`TARGET_OP(MKMETH)`), `:1541` (`TARGET_OP(LDFUNC)`), `orbit/orbiter/orbcall.cpp:138` (`CheckReceiver`)
+
+**Fix verified (live: PoC `poc/ir/ir-011-decorated-method.orb` prints `ALL
+TESTS PASSED`, 3 of 3; the acceptance suites
+`ortest/decorators/02_methods.orb` and `04_decorator_objects.orb` pass, as do
+the rest of `ortest/decorators/`; `ortest` 31/31, the PoC gate 62/64 with the
+open IR-019 and VM-010; `phi-regalloc.orb` green).** A decorated method is
+callable like any other method, with the receiver as its wrapper's first
+argument, following the decisions below. The fix landed in steps between
+2026-10-20 and 2026-10-24, each verified when it landed:
+
+- **The code class is lexical.** A function created by `LDFUNC` inherits the
+  `owner_type` of the function that creates it, and a method gets the class
+  being built from `LDFUNC`'s third operand (`OPCODE | 4 DST | 4 SRC_CODE |
+  4 SRC_DARGS | 4 SRC_CLASS | 8 FLAGS`), before its decorators run. `SETPROP`
+  no longer assigns `owner_type`, so it never rewrites a function shared with
+  another class. `owner_type` is held by the GC trace, not by the reference
+  count (IR-012).
+- **A decorator's result is installed by `MKMETH`** (`OPCODE | 4 DST |
+  4 SRC_VALUE | 4 SRC_CLASS | 12 RESERVED`), emitted by `visitDecorator` only
+  for a method, after the decorators and before the store:
+  - anything but an Orbit function (a value, a type, a native function, a
+    callable instance) is installed as it is and gets no receiver;
+  - a method whose `self` is bound by currying (`Server.decorator2`), or a
+    method of this class or of a superclass, is installed as it is;
+  - a method of an unrelated class still waiting for its `self` is refused
+    when the class is built (`TypeError`, "a decorator of a method of '%s'
+    returned a method of '%s'");
+  - anything else (a plain function such as `Server.decorator`'s anonymous
+    function) is **cloned** with a new `FuncShared`, the same code, closure
+    and currying, and promoted: the METHOD flag and `FunctionKind::PROMOTED`.
+    A function shared elsewhere is never turned into a method.
+- **Receivers are checked in every call mode** (`CheckReceiver`, VM-012). A
+  curried method checks its bound `self`; a promoted clone checks nothing,
+  since called through an instance its receiver is the object that holds it,
+  and the method it forwards to checks its own. A type used as selector is
+  dropped unless the callee is a metatype method (VM-011), and `PUSHIF` is
+  gone: a selector call always pushes the receiver.
+- **Limits, decided:** no decorators in a trait (the parser refuses them),
+  and `self` is reserved and cannot name a parameter (a wrapper calls its
+  receiver otherwise, e.g. `me`); both pinned by `ortest/decorators/05_traits.orb`
+  and `06_self_parameter.orb`.
+
+Configuration passed by name to a curried decorator (`times(n=7)`) is VM-010,
+tracked on its own.
+
+<details><summary>Original report</summary>
 
 A decorator on a method is lowered like one on a function: the method is
 compiled as an anonymous function, the decorators are called on it, and the
@@ -557,10 +822,44 @@ fix.
 Still open: what a decorator may return besides a function (a type, a native
 function, a callable instance): refuse it, or wrap it in an adapter.
 
+</details>
+
 ---
 
 ## IR-010 — Any block nested in a `catch` body aborts the compiler
-**Severity:** High (compile-time abort on valid source; release: the `assert` is gone and `Generate` returns an empty handle) · **Status:** OPEN · **Location:** `orbit/liftoff/ir/irbuilder.cpp:1722` (`visitTryBlock`, catch body) → `:838` (`visitBranch`); root cause `orbit/liftoff/parser/parser.cpp` (`ParseBlock`, PARSE-019)
+**Severity:** High (compile-time abort on valid source; release: the `assert` is gone and `Generate` returns an empty handle) · **Status:** FIXED (2026-10-27) · **Location:** `orbit/liftoff/parser/parser.cpp:1238` (`ParseBlock`), `:840` (`ParseTryCatchFinally`)
+
+**Fix verified (PoC `poc/ir/ir-010-block-in-catch.orb` — prints `ALL TESTS
+PASSED`, 4 of 4; `ortest` 31/31 and the PoC gate 59/60, the failure being
+VM-010; `phi-regalloc.orb` green).** The fix is at the root, in the parser
+(the first point of PARSE-019): `ParseBlock` ends the block's location at the
+end of its `}`, read before consuming it, and closes the block's scope at the
+same offset, so neither covers the token that follows, and a `try` block's
+scope stops before the `catch` keyword:
+
+```cpp
+block->loc.end = TKCUR_END;
+if (!this->MatchEat(TokenType::RIGHT_BRACES, false))
+    throw ParserException(19);
+
+if (nested)
+    this->sym_t_->LeaveNestedScope(block->loc.end.offset);
+```
+
+A block's location now includes its `}`, and everything that closes a scope
+at a block's `loc.end` (the catch, a function body) ends at the same offset
+as a block scope does.
+
+`EnterNestedScope(catch offset)` then finds the catch scope, and the scopes
+nested in the catch body are reachable. Since every pair of adjacent blocks
+had the same overlap, the fix covers them all, not the catch alone. In the
+same change `ParseTryCatchFinally` sets the end of the whole try statement's
+location to the end of its last catch or of its `finally`; it used to keep the
+end of the `try` keyword.
+
+Before the fix the PoC aborted the compiler.
+
+<details><summary>Original report</summary>
 
 An `if` or a `for` inside a `catch` body is enough:
 
@@ -610,6 +909,8 @@ rather than at the token after it (PARSE-019), which keeps sibling scopes from
 overlapping. Fixing only the catch, by entering its scope through something
 other than an offset that a neighbour may cover, would leave the overlap in
 place for every other pair of adjacent blocks.
+
+</details>
 
 ---
 
