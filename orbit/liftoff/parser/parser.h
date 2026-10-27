@@ -251,7 +251,7 @@ namespace liftoff::parser {
 
         [[nodiscard]] ASTHandle<ASTNode *> InjectInit(scanner::Loc loc) const;
 
-        [[nodiscard]] ASTHandle<ASTNode *> ParseClassTrait(AccessModifier access);
+        [[nodiscard]] ASTHandle<ASTNode *> ParseClassTrait(const scanner::Position &start, AccessModifier access);
 
         [[nodiscard]] ASTHandle<ASTNode *> ParseDecorator();
 
@@ -263,11 +263,11 @@ namespace liftoff::parser {
 
         [[nodiscard]] ASTHandle<ASTNode *> ParseIfStatement();
 
-        [[nodiscard]] ASTHandle<ASTNode *> ParseImportStatement(AccessModifier access);
+        [[nodiscard]] ASTHandle<ASTNode *> ParseImportStatement(const scanner::Position &start, AccessModifier access);
 
         [[nodiscard]] ASTHandle<ASTNode *> ParseLoopStatement();
 
-        [[nodiscard]] ASTHandle<ASTNode *> ParseNativeBlock();
+        [[nodiscard]] ASTHandle<ASTNode *> ParseNativeBlock(const scanner::Position &start);
 
         [[nodiscard]] ASTHandle<ASTNode *> ParseNativeStatement();
 

@@ -119,7 +119,7 @@ ASTHandle<ASTNode *> Parser::InjectInit(const Loc loc) const {
     return func;
 }
 
-ASTHandle<ASTNode *> Parser::ParseClassTrait(const AccessModifier access) {
+ASTHandle<ASTNode *> Parser::ParseClassTrait(const Position &start, const AccessModifier access) {
     Context isolate(this, TKCUR_TYPE == TokenType::KW_CLASS ? ContextType::CLASS : ContextType::TRAIT);
 
     auto ct = MakeConstruct(this->isolate_,
@@ -128,8 +128,11 @@ ASTHandle<ASTNode *> Parser::ParseClassTrait(const AccessModifier access) {
                                 ? NodeType::CLASS
                                 : NodeType::TRAIT);
 
-    const auto tk_s_offset = TKCUR_LOC.start.offset;
-    const auto tk_s_line = TKCUR_LOC.start.line;
+    // A modifier is part of the declaration, as for `pub func`: the node and its symbol both start with it
+    ct->loc.start = start;
+
+    const auto tk_s_offset = start.offset;
+    const auto tk_s_line = start.line;
 
     ct->doc = this->GetDocString(false).release();
 
@@ -223,6 +226,8 @@ ASTHandle<ASTNode *> Parser::ParseDecorator() {
     if (deco->func->node_type != NodeType::FUNCTION)
         throw ParserException(45);
 
+    deco->loc.end = deco->func->loc.end;
+
     ((Function *) deco->func)->doc = doc.release();
 
     return deco;
@@ -276,8 +281,8 @@ ASTHandle<ASTNode *> Parser::ParseForInStatement() {
     this->Eat(true);
 
     if (this->Match(TokenType::KW_VAR)) {
-        constexpr Position end{};
-        forIn->init = this->ParseVarDecl(end, AccessModifier::PRIVATE, false, false, true).release();
+        const auto var_start = TKCUR_START;
+        forIn->init = this->ParseVarDecl(var_start, AccessModifier::PRIVATE, false, false, true).release();
     } else {
         std::vector<ASTHandle<ASTNode *> > ids;
 
@@ -336,8 +341,11 @@ ASTHandle<ASTNode *> Parser::ParseIfStatement() {
     return branch;
 }
 
-ASTHandle<ASTNode *> Parser::ParseImportStatement(const AccessModifier access) {
+ASTHandle<ASTNode *> Parser::ParseImportStatement(const Position &start, const AccessModifier access) {
     auto imp = MakeImport(this->isolate_, TKCUR_LOC, NodeType::IMPORT);
+
+    // A modifier is part of the declaration; the imported names are declared at this start
+    imp->loc.start = start;
 
     this->Eat(true);
 
@@ -400,6 +408,8 @@ ASTHandle<ASTNode *> Parser::ParseImportStatement(const AccessModifier access) {
             alias = ORStringNew(this->isolate_, this->tkcur_.buffer, this->tkcur_.length);
             if (!alias)
                 throw DatatypeException();
+
+            imp_name->loc.end = TKCUR_END;
 
             this->Eat(true);
         }
@@ -472,8 +482,10 @@ ASTHandle<ASTNode *> Parser::ParseLoopStatement() {
     return loop;
 }
 
-ASTHandle<ASTNode *> Parser::ParseNativeBlock() {
+ASTHandle<ASTNode *> Parser::ParseNativeBlock(const Position &start) {
     auto block = MakeBlock(this->isolate_, TKCUR_LOC);
+
+    block->loc.start = start;
 
     if (!this->Match(TokenType::STRING))
         throw ParserException(59);
@@ -490,12 +502,14 @@ ASTHandle<ASTNode *> Parser::ParseNativeBlock() {
 
         this->EatNL();
 
+        const auto stmt_start = TKCUR_START;
+
         if (this->MatchEat(TokenType::KW_FUNC, false)) {
-            tmp = this->ParseNativeFuncStatement(TKCUR_START, true);
+            tmp = this->ParseNativeFuncStatement(stmt_start, true);
 
             ((NativeFunc *) tmp.get())->mod_name = mod_name.get_inc();
         } else if (this->Match(TokenType::KW_VAR, TokenType::KW_LET)) {
-            tmp = this->ParseNativeVarStatement(TKCUR_START, true);
+            tmp = this->ParseNativeVarStatement(stmt_start, true);
 
             ((NativeVariable *) tmp.get())->mod_name = mod_name.get_inc();
         } else
@@ -511,7 +525,7 @@ ASTHandle<ASTNode *> Parser::ParseNativeBlock() {
 
     this->EatNL();
 
-    block->loc.end = TKCUR_START;
+    block->loc.end = TKCUR_END;
 
     if (!this->MatchEat(TokenType::RIGHT_BRACES, false))
         throw ParserException(94);
@@ -526,7 +540,7 @@ ASTHandle<ASTNode *> Parser::ParseNativeStatement() {
     this->Eat(true);
 
     if (this->MatchEat(TokenType::KW_FROM, true))
-        return this->ParseNativeBlock();
+        return this->ParseNativeBlock(start);
 
     if (this->MatchEat(TokenType::KW_FUNC, true)) {
         auto func = this->ParseNativeFuncStatement(start, false);
@@ -681,6 +695,7 @@ ASTHandle<ASTNode *> Parser::ParseNativeVarStatement(const Position &start, cons
         throw ParserException(63);
 
     variable->kind = TKCUR_TYPE;
+    variable->loc.end = TKCUR_END;
 
     this->Eat(false);
 
@@ -696,6 +711,8 @@ ASTHandle<ASTNode *> Parser::ParseNativeVarStatement(const Position &start, cons
         variable->alias = this->sym_t_->Declare(alias.get(), SymbolType::NATIVE_VAR, TKCUR_LOC.start.offset);
         if (variable->alias == nullptr)
             throw SymbolTableException();
+
+        variable->loc.end = TKCUR_END;
 
         this->Eat(false);
     } else {
@@ -719,6 +736,7 @@ ASTHandle<ASTNode *> Parser::ParseNativeVarStatement(const Position &start, cons
             throw ParserException(65);
 
         variable->mod_name = ORStringNew(this->isolate_, this->tkcur_.buffer, this->tkcur_.length).release();
+        variable->loc.end = TKCUR_END;
 
         this->Eat(false);
     }
@@ -991,8 +1009,9 @@ ASTHandle<ASTNode *> Parser::ParseVarDecl(const Position &start, const AccessMod
         TKCUR_LOC,
         identifiers.size() > 1 ? NodeType::VAR_DECLARATIONS : NodeType::VAR_DECLARATION);
 
-
+    // Without a value the declaration ends with its last name
     decl->loc.start = start;
+    decl->loc.end = identifiers.back()->loc.end;
 
     if (!decl_only) {
         if (!this->Match(TokenType::END_OF_LINE, TokenType::END_OF_FILE, TokenType::SEMICOLON)) {
@@ -1546,7 +1565,6 @@ ASTHandle<ASTNode *> Parser::ParseFuncCall(ASTHandle<ASTNode *> &left) {
     this->Eat(true);
 
     if (!this->Match(TokenType::RIGHT_ROUND)) {
-        Position end{};
         int mode = 0;
 
         do {
@@ -1558,7 +1576,6 @@ ASTHandle<ASTNode *> Parser::ParseFuncCall(ASTHandle<ASTNode *> &left) {
                 unary->value = this->ParseExpression(TokenType::COMMA).release();
                 unary->loc.end = unary->value->loc.end;
 
-                end = unary->loc.end;
                 call->kwargs = unary.release();
 
                 break;
@@ -1577,7 +1594,6 @@ ASTHandle<ASTNode *> Parser::ParseFuncCall(ASTHandle<ASTNode *> &left) {
                 unary->loc.start = arg->loc.start;
                 unary->value = arg.release();
 
-                end = unary->loc.end;
                 call->rest = unary.release();
 
                 mode = 2;
@@ -1608,20 +1624,17 @@ ASTHandle<ASTNode *> Parser::ParseFuncCall(ASTHandle<ASTNode *> &left) {
 
                 mode = 1;
 
-                end = named_param->loc.end;
-
                 call->nargs.emplace_back(std::move(named_param));
             } else {
                 if (mode > 0)
                     throw ParserException(21);
 
-                end = arg->loc.end;
                 call->args.emplace_back(std::move(arg));
             }
         } while (this->MatchEat(TokenType::COMMA, true));
-
-        call->loc.end = end;
     }
+
+    call->loc.end = TKCUR_END;
 
     if (!this->MatchEat(TokenType::RIGHT_ROUND, false))
         throw ParserException(22);
@@ -2089,6 +2102,8 @@ ASTHandle<ASTNode *> Parser::ParseStatement() {
                     if (sym == nullptr || sym->type != SymbolType::LABEL)
                         throw ParserException(67);
 
+                    bc->loc.end = TKCUR_END;
+
                     this->Eat(false);
                 }
 
@@ -2101,7 +2116,7 @@ ASTHandle<ASTNode *> Parser::ParseStatement() {
                 return this->ParseDecorator();
             case TokenType::KW_CLASS:
             case TokenType::KW_TRAIT:
-                return this->ParseClassTrait(access);
+                return this->ParseClassTrait(start, access);
             case TokenType::KW_CLEANUP:
             case TokenType::KW_INIT:
                 return this->ParseCleanupInit(start, access);
@@ -2123,7 +2138,7 @@ ASTHandle<ASTNode *> Parser::ParseStatement() {
             case TokenType::KW_IF:
                 return this->ParseIfStatement();
             case TokenType::KW_IMPORT:
-                return this->ParseImportStatement(access);
+                return this->ParseImportStatement(start, access);
             case TokenType::KW_LET:
                 return this->ParseVarDecl(start, access, true, false, false);
             case TokenType::KW_LOOP:
@@ -2220,8 +2235,11 @@ ASTHandle<ASTNode *> Parser::ParseStatement() {
         return lbl;
     }
 
-    if (stmt->node_type == NodeType::VAR_DECLARATION || stmt->node_type == NodeType::VAR_DECLARATIONS)
+    if (stmt->node_type == NodeType::VAR_DECLARATION || stmt->node_type == NodeType::VAR_DECLARATIONS) {
         this->AdjustInlineExport((Assignment *) stmt.get(), access, weak);
+
+        stmt->loc.start = start;
+    }
     else if (stmt->node_type != NodeType::FUNCTION && (access != AccessModifier::PRIVATE || weak))
         throw ParserException(weak ? 100 : 99);
 
@@ -2816,6 +2834,12 @@ ASTHandle<liftoff::parser::Module *> Parser::Parse() noexcept {
         }
 
         this->sym_t_->LeaveScope(loc.end.offset, loc.end.line);
+
+        // The module spans its statements; its scope above runs to the token that ends the file
+        if (!r_module->statements.empty()) {
+            r_module->loc.start = loc.start;
+            r_module->loc.end = r_module->statements.back()->loc.end;
+        }
 
         module->sym_t = this->sym_t_;
         this->sym_t_ = nullptr;
