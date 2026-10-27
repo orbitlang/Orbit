@@ -2252,8 +2252,7 @@ ASTHandle<ASTNode *> Parser::ParseStatement() {
         this->AdjustInlineExport((Assignment *) stmt.get(), access, weak);
 
         stmt->loc.start = start;
-    }
-    else if (stmt->node_type != NodeType::FUNCTION && (access != AccessModifier::PRIVATE || weak))
+    } else if (stmt->node_type != NodeType::FUNCTION && (access != AccessModifier::PRIVATE || weak))
         throw ParserException(weak ? 100 : 99);
 
     return stmt;
@@ -2333,7 +2332,16 @@ ASTHandle<ASTNode *> Parser::ParseWalrus(ASTHandle<ASTNode *> &left) {
             if (sym == nullptr)
                 throw SymbolTableException();
 
+            sym->flags |= SymbolFlags::INITIALIZED;
+
             id->symbol = sym;
+        }
+    } else {
+        for (const auto &cursor: ((ListExpression *) decl->name)->elements) {
+            const auto &id = (Identifier *) cursor.get();
+
+            if (id->symbol != nullptr)
+                id->symbol->flags |= SymbolFlags::INITIALIZED;
         }
     }
 

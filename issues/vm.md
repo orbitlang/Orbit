@@ -1,8 +1,87 @@
 # vm — bug report
 
 **Component:** `orbit/orbiter` (interpreter: trap/panic unwind, register file) · **ID prefix:** `VM`
-**PoCs:** [`poc/vm/`](poc/vm/) · **Last reviewed:** 2026-10-22
+**PoCs:** [`poc/vm/`](poc/vm/) · **Last reviewed:** 2026-10-27
 **Status:** OPEN · PARTIAL · FIXED · WONTFIX — see [GUIDE.md](GUIDE.md).
+
+---
+
+## VM-014 — The end of a module pops a frame state from below the VM stack: intermittent SIGBUS at exit
+**Severity:** High (out-of-bounds read; intermittent crash after the program has run) · **Status:** OPEN · **Location:** `orbit/orbiter/vm.cpp:255` (`UnwindStack`, the `BP == barrier` branch), `orbit/orbiter/fiber.cpp:119` (`PopStateNoCtxRestore`), reached from `vm.cpp:2095` (`ERROR:`)
+
+The root frame of a fiber started by the scheduler (`eval(fiber, 0)`,
+`runtime.cpp:282`) runs with `BP == 0` and has no saved state under it: no
+`PushState` precedes it. `Return` knows this and handles `BP == 0` on its own
+(it moves IP to `m_end`). `UnwindStack` does not:
+
+```cpp
+while (regs->SP.reg > 0) {
+    ...
+    if (regs->BP.reg == barrier) {
+        fiber->PopState();   // BP == barrier == 0: reads below the stack base
+
+        return false;
+    }
+```
+
+The dispatch loop falls into `ERROR:` when IP reaches `m_end`, so every
+module that ends with `SP > 0` (a module-level `try`, a loop, any reserved
+slot; the `io` module itself when imported) takes this branch, as does an
+uncaught panic at module level. `PopStateNoCtxRestore` then reads IP, BP and
+SP from the three words before `stack.stack`, and `PopState` copies a
+`FiberContext` from below them into `fiber->context`. Usually that memory is
+mapped and the garbage goes unnoticed, because the fiber is finished; when
+the stack buffer starts right after an unmapped page the read faults
+(`EXC_BAD_ACCESS code=2`, the address 8 bytes below a page boundary) and the
+process dies with SIGBUS (exit 138) after printing all its output.
+
+Backtrace of the faulting (scheduler) thread, caught under lldb:
+
+```
+orbiter::Fiber::PopStateNoCtxRestore  fiber.cpp:132
+orbiter::Fiber::PopState              fiber.cpp:187
+UnwindStack(fiber, barrier=0)         vm.cpp:256
+orbiter::eval(fiber, barrier=0)       vm.cpp:2122
+orbiter::Orbiter::Scheduler           runtime.cpp:282
+```
+
+At that moment the main thread is still in `FutureAwait` (`Orbiter::Eval`)
+and the I/O loop thread is idle in `Orbiter::IOLoop`: the crash is not in
+the event loop's cleanup.
+
+**Found** while checking the gates for PARSE-027: a full PoC run failed
+`vm/exception-context-module-slot.orb` and `vm/method-receiver-plain-call.orb`,
+which then passed 40 times out of 40 run alone. Run 300 times each with 8 in
+parallel they printed `ALL TESTS PASSED` every time but exited with SIGBUS 3
+times out of 600. It is a plausible cause of the single intermittent
+failures recorded in the README log on 2026-10-27 (`ir-004`,
+`ortest/operators/01_is.orb`, `ortest/gc/02_function_owner.orb`), not
+confirmed for them.
+
+**PoC:** none: the read only faults depending on where the stack buffer
+lands, so a PoC would pass almost every time. Confirmed live with a probe log
+in `PopStateNoCtxRestore` (`BP < kStackPrologueOffset`): it fires at the end
+of `poc/vm/exception-context-module-slot.orb` (`BP=0 SP=48`),
+`poc/vm/method-receiver-plain-call.orb` (`SP=80`) and
+`ortest/operators/01_is.orb` (`SP=56`), and once more in each for the
+imported `io` module (`SP=8`).
+
+**Fix (suggested, verified by probe 2026-10-27, then reverted):** pop only a
+frame that has a saved state, as `Return` does:
+
+```cpp
+if (regs->BP.reg == barrier) {
+    if (regs->BP.reg > 0)
+        fiber->PopState();
+
+    return false;
+}
+```
+
+With the probe the log stays silent for every file under `ortest/` and
+`issues/poc/` (`ortest/net/` left out) and for every `stdlib` import, the
+two PoCs above exit 0 in 1,200 runs (8 in parallel), `ortest` is 34/34, the
+PoC gate 64/65 with the open VM-010, and `phi-regalloc.orb` passes.
 
 ---
 

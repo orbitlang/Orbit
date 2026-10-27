@@ -10,7 +10,40 @@
 ---
 
 ## PARSE-027 — A short declaration that shadows a name is never read: later uses reach the outer variable
-**Severity:** High (silent wrong result; writes land on the outer variable) · **Status:** OPEN · **Location:** `orbit/liftoff/parser/parser.cpp:2283` (`ParseWalrus`), `orbit/liftoff/symtable.cpp:56` (`SymbolNew`), `:573` (`Lookup`), `:373` (`LeaveMergeNestedScope`)
+**Severity:** High (silent wrong result; writes land on the outer variable) · **Status:** FIXED (2026-10-27) · **Location:** `orbit/liftoff/parser/parser.cpp:2335`, `:2340` (`ParseWalrus`)
+
+**Fix verified (live: the PoC prints `ALL TESTS PASSED`; it is refused again,
+"symbol already exists", with either half of the fix taken out; `ortest`
+34/34, the PoC gate 64/65 with the open VM-010, `phi-regalloc.orb` passes,
+every `stdlib` module imports).** `ParseWalrus` marks the declared symbols
+INITIALIZED once the value is parsed, as `ParseVarDecl` does for `var`:
+
+```cpp
+if (node_type == NodeType::VAR_DECLARATION) {
+    ...
+        sym->flags |= SymbolFlags::INITIALIZED;
+} else {
+    for (const auto &cursor: ((ListExpression *) decl->name)->elements) {
+        const auto &id = (Identifier *) cursor.get();
+
+        if (id->symbol != nullptr)
+            id->symbol->flags |= SymbolFlags::INITIALIZED;
+    }
+}
+```
+
+A shadowing declaration is now found by every use after it, in the single
+and the tuple form, in a block, in a nested function and in a loop header.
+The tuple form declares its names before the value but flags them only after
+it, so the right-hand side still reads the outer names (`a, b := (a + 1, 5)`
+reads the module's `a`, like `var x = x + 1`); a blank (`_`) has no symbol
+and is skipped. The module slot that a `when` publishes copies a flagged
+symbol, so `:=` of one name in two branches works, tuple form included. The
+PoC gained those cases (a write after a tuple `:=`, the right-hand side in
+both forms, a blank, a loop header, a shadow of a shadow, a tuple in two
+`when` branches).
+
+<details><summary>Original report</summary>
 
 A short declaration of a name that an enclosing scope already has declares a
 new variable that no later use ever finds. Reads and writes resolve to the
@@ -73,6 +106,8 @@ declared before the value, keeps the right-hand side reading the outer names:
 see PARSE-010). With the probe the PoC prints `ALL TESTS PASSED`, `ortest` is
 34/34, the PoC gate is unchanged (63/64 with the open VM-010, the PoC not
 counted) and `phi-regalloc.orb` passes.
+
+</details>
 
 ---
 
