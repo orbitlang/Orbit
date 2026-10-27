@@ -1336,16 +1336,22 @@ Instruction *IRBuilder::visitLoop(const parser::Loop *node) {
     if (node->init != nullptr)
         this->visit(node->init);
 
+    auto *cond = this->builder_.CreateBasicBlock();
+
+    this->builder_.CreateJump(cond);
+
     this->builder_.AppendBasicBlock(jb.begin);
+
+    if (node->inc != nullptr)
+        this->visit(node->inc);
+
+    this->builder_.AppendBasicBlock(cond);
 
     auto *test = this->visit(node->test);
 
     this->builder_.CreateBranch(orbiter::OPCode::JF, test, nullptr, jb.end);
 
     this->visit(node->body);
-
-    if (node->inc != nullptr)
-        this->visit(node->inc);
 
     this->builder_.CreateJump(jb.begin);
 
