@@ -9,7 +9,49 @@
 ---
 
 ## IR-019 — A block in a `when` branch leaves the IR in the wrong scope
-**Severity:** High (compile-time abort on valid source) · **Status:** OPEN · **Location:** `orbit/liftoff/ir/irbuilder.cpp` (`visitWhen`)
+**Severity:** High (compile-time abort on valid source) · **Status:** FIXED (2026-10-27) · **Location:** `orbit/liftoff/parser/parser.cpp:1259` (`ParseBlock`, declarations only), `:1069` / `:1086` (`ParseWhenStatement`)
+
+**Fixed by restricting `when` (verified live: PoC
+`poc/ir/ir-019-block-in-when.orb`, rewritten as an error test, is refused with
+"Invalid statement in a 'when' branch" instead of reaching the IR builder; the
+new suites `ortest/when/01_declarations.orb`, `02_no_control_flow.orb` and
+`03_no_expressions.orb` pass, and the two refusal suites fail with the check
+removed; `ortest` 34/34, the PoC gate 63/64 with the open VM-010,
+`phi-regalloc.orb` green, every `stdlib` module imports).** A `when` branch now
+holds declarations only, as the user decided: `ParseWhenStatement` parses each
+branch with `ParseBlock(false, true)`, which refuses any statement that does
+not start like a declaration (`var`, `let`, `func`, `class`, `trait`,
+`native`, `import`, a decorator, `pub`, a nested `when`, or an identifier or
+`_` for `:=`) and, once parsed, any expression statement or labeled loop:
+
+```cpp
+} else if (declarations_only) {
+    if (!this->Match(TokenType::BLANK, TokenType::DECORATOR, TokenType::IDENTIFIER, TokenType::KW_CLASS,
+                     TokenType::KW_FUNC, TokenType::KW_IMPORT, TokenType::KW_LET, TokenType::KW_NATIVE,
+                     TokenType::KW_PUB, TokenType::KW_TRAIT, TokenType::KW_VAR, TokenType::KW_WHEN))
+        throw ParserException(103);
+}
+
+auto stmt = this->ParseStatement();
+
+if (declarations_only && (stmt->is_expr || stmt->node_type == NodeType::LABEL))
+    throw ParserException(103);
+```
+
+A declaration opens no nested scope in the branch (functions and classes are
+named scopes, entered by name), so `visitWhen` has nothing to enter and the
+abort cannot happen. Code with control flow goes in a function declared in
+the branches; the suite checks such a function, followed by an `if` after
+the `when`. Also checked by probe: eighteen statements refused (`if`, `loop`,
+`for`, `switch`, `try`, `sync`, `defer`, `return`, a labeled loop, an
+assignment, `+=`, a call, an anonymous function, a bare name or literal, in
+the `else` branch and in a nested `when`). The grammar says the same
+(`when_block = "{", {module_declaration}, "}"`).
+
+Found on the way: PARSE-027 (`:=` of the same name in two branches, or any
+shadowing `:=`, is never read).
+
+<details><summary>Original report</summary>
 
 An `if` in a `when` branch followed by another `if`, after the `when` or in
 its `else`, aborts the compiler:
@@ -54,6 +96,8 @@ PoC gate is unchanged.
 choosing which definitions exist. Control flow in a branch becomes a syntax
 error with its own message, and this abort cannot happen. The PoC will then
 be rewritten as an error test. Not scheduled yet.
+
+</details>
 
 ---
 

@@ -1,0 +1,110 @@
+# A `when` picks, once at module load, which declarations a module has: its
+# branches may only declare, and every declaration lands in the module, filled
+# by the branch that ran. Covered: `var`, `let`, `:=` (single and tuple),
+# `pub`, functions (with a docstring, decorated, with control flow in their
+# body), classes, traits, `native func`, `import`, a nested `when`, and
+# `else when` / `else` chains where the taken branch is the first, a middle
+# or the last one.
+#
+# A runtime test: prints "ALL TESTS PASSED" only when every check matches.
+# EXPECT: contains: ALL TESTS PASSED
+
+import "io"
+
+var fails = 0
+
+func check(name, got, expected) {
+    if got == expected {
+        io.print("OK   ", name)
+    } else {
+        io.print("FAIL ", name, "-- got:", got, "expected:", expected)
+        fails += 1
+    }
+}
+
+func twice(f) {
+    return func () { return f() * 2 }
+}
+
+when true {
+    var v = 1
+    let k = 2
+    s := 3
+    _, t := (40, 4)
+    pub p := 5
+
+    /** A function declared in a branch. */
+    func f() {
+        r := 0
+        loop i := 0; i < 3; i++ {
+            if i == 1 { continue }
+            r += i
+        }
+        return r
+    }
+
+    @[twice]
+    pub func g() { return 7 }
+
+    class Box {
+        pub var n
+        pub init(n) { self.n = n }
+        pub func get() { return self.n }
+    }
+
+    trait Named {
+        pub func name() { return "named" }
+    }
+
+    native func getpid(): i32 from "libc"
+
+    import "chrono"
+
+    when false {
+        var inner = 0
+    } else {
+        var inner = 10
+    }
+} else {
+    var v = -1
+}
+
+check("var", v, 1)
+check("let", k, 2)
+check(":=", s, 3)
+check(":= with a tuple", t, 4)
+check("pub :=", p, 5)
+check("a function with control flow in its body", f(), 2)
+check("a decorated function", g(), 14)
+check("a class", new Box(8).get(), 8)
+
+class Tag impl Named {}
+check("a trait", new Tag().name(), "named")
+
+check("a native function", getpid() > 0, true)
+check("an import", chrono != nil, true)
+check("a nested when", inner, 10)
+
+when false {
+    var pick = "first"
+} else when true {
+    var pick = "middle"
+} else {
+    var pick = "last"
+}
+check("else when: the middle branch", pick, "middle")
+
+when false {
+    func which() { return "first" }
+} else when false {
+    func which() { return "middle" }
+} else {
+    func which() { return "last" }
+}
+check("else: the last branch", which(), "last")
+
+if fails == 0 {
+    io.print("ALL TESTS PASSED")
+} else {
+    io.print(fails, "TEST(S) FAILED")
+}

@@ -1,0 +1,21 @@
+# A `when` branch holds only declarations: an expression statement (a call, an
+# assignment to an existing name) is refused, even in a nested `when`. An
+# identifier may start a branch statement only as a short declaration
+# (`x := 1`).
+#
+# Today the error is reported through the COMP-001 assert in file mode; the
+# message is checked, not the way the process exits.
+#
+# EXPECT: error: Invalid statement in a 'when' branch
+
+var a = 0
+
+func setup() { a = 1 }
+
+when true {
+    var b = 1
+
+    when true {
+        setup()
+    }
+}

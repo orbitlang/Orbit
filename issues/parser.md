@@ -9,6 +9,73 @@
 
 ---
 
+## PARSE-027 — A short declaration that shadows a name is never read: later uses reach the outer variable
+**Severity:** High (silent wrong result; writes land on the outer variable) · **Status:** OPEN · **Location:** `orbit/liftoff/parser/parser.cpp:2283` (`ParseWalrus`), `orbit/liftoff/symtable.cpp:56` (`SymbolNew`), `:573` (`Lookup`), `:373` (`LeaveMergeNestedScope`)
+
+A short declaration of a name that an enclosing scope already has declares a
+new variable that no later use ever finds. Reads and writes resolve to the
+outer variable:
+
+```orbit
+x := 1
+func f() {
+    x := 2
+    x += 1
+    return x      // 2: reads the module's x, which `x += 1` changed from 1 to 2
+}
+```
+
+The same happens with the tuple form (`a, b := (5, 6)`), with a block in a
+function (`y := 2` inside an `if`, where the function has a `y`) and with a
+nested function (`z := 2`, where the enclosing function has a `z`). With
+`var` instead of `:=` every case is right.
+
+`ParseWalrus` declares the symbol with `SymbolType::VARIABLE` and never sets
+`SymbolFlags::INITIALIZED` on it (`ParseVarDecl` sets it once the value is
+parsed, `parser.cpp:1034`), and `Lookup` skips a symbol without the flag.
+When the name is new the problem is hidden: the identifier on the left was
+first parsed as an expression, which inserted an UNKNOWN placeholder at the
+same offset, and `SymbolNew` gives every non-VARIABLE symbol the flag; the
+declaration reuses that placeholder and keeps it. When an enclosing scope has
+the name, `LookupInsert` returns the outer symbol instead, the declaration
+creates a fresh one without the flag, and every use after it skips it.
+
+In a `when`, the flag is what `LeaveMergeNestedScope` copies onto the module
+slot it publishes (`canonical->flags = sym->flags`). The second branch's `:=`
+finds the slot published by the first, so it declares a fresh symbol, and its
+merge clears the slot's flag. The first use after the `when` then fails to
+find the slot, tries to insert a placeholder in the module and stops the
+compile with "symbol already exists":
+
+```orbit
+when false {
+    w := "first"
+} else {
+    w := "second"
+}
+io.print(w)       // symbol already exists
+```
+
+**Found** while writing the suite for `when` blocks restricted to
+declarations: a nested `when` declaring the same name with `:=` in both
+branches was refused.
+
+**PoC:** [`poc/parser/parse-027.orb`](poc/parser/parse-027.orb) *(confirmed
+live: the file is refused because of its `when` check; without it, the two
+controls pass and the six shadowing checks fail)*.
+
+**Fix (suggested, verified by probe 2026-10-27, then reverted):** mark the
+declared symbols INITIALIZED in `ParseWalrus` once the value is parsed:
+`sym->flags |= SymbolFlags::INITIALIZED` after the single-name `Declare`, and
+for the tuple form a loop over the `VAR_DECLARATIONS` elements after
+`decl->value` is parsed (setting the flag there, not when the tuple is
+declared before the value, keeps the right-hand side reading the outer names:
+see PARSE-010). With the probe the PoC prints `ALL TESTS PASSED`, `ortest` is
+34/34, the PoC gate is unchanged (63/64 with the open VM-010, the PoC not
+counted) and `phi-regalloc.orb` passes.
+
+---
+
 ## PARSE-026 — A bodiless method ending in `async`/`const` swallows the next member
 **Severity:** Medium (valid source refused) · **Status:** FIXED (2026-10-27) · **Location:** `orbit/liftoff/parser/parser.cpp:2396` (`ParseFunction`, the trailing-modifier loop)
 

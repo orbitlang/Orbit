@@ -1,0 +1,102 @@
+# PoC PARSE-027 — a short declaration (`x := ...`) of a name that an
+# enclosing scope already has must declare a new variable, and every later use
+# in its scope must read and write that variable. Today the uses resolve to
+# the outer one: `x := 2; return x` returns the outer `x`, and `x += 1`
+# writes it.
+#
+# ParseWalrus declares the new symbol without INITIALIZED (a `var` gets it
+# once its value is parsed), and Lookup skips a symbol without it. When the
+# name is new, the identifier on the left was first inserted as an UNKNOWN
+# placeholder, which is born INITIALIZED, and the declaration reuses it, so
+# only a shadowing declaration is hit. The same flag, copied onto the module
+# slot that a `when` publishes, makes a name declared with `:=` in two
+# branches fail with "symbol already exists" at its first use after the
+# `when`.
+#
+# Controls: the same names declared with `var`, and `:=` of a new name.
+#
+# The file is refused as a whole ("symbol already exists") until this is
+# fixed, because of the `when` check at the end.
+#
+# A runtime test: prints "ALL TESTS PASSED" only when every check matches.
+# EXPECT: contains: ALL TESTS PASSED
+
+import "io"
+
+var fails = 0
+
+func check(name, got, expected) {
+    if got == expected {
+        io.print("OK   ", name)
+    } else {
+        io.print("FAIL ", name, "-- got:", got, "expected:", expected)
+        fails += 1
+    }
+}
+
+x := 1
+a := 1
+
+func with_var() {
+    var x = 2
+    return x
+}
+check("control: var shadows a module name", with_var(), 2)
+
+func new_name() {
+    fresh := 3
+    return fresh
+}
+check("control: := of a new name", new_name(), 3)
+
+func shadow_module() {
+    x := 2
+    return x
+}
+check(":= shadows a module name", shadow_module(), 2)
+
+func shadow_tuple() {
+    a, b := (5, 6)
+    return a
+}
+check(":= with a tuple shadows a module name", shadow_tuple(), 5)
+
+func shadow_block() {
+    y := 1
+    if true {
+        y := 2
+        return y
+    }
+}
+check(":= in a block shadows the function's name", shadow_block(), 2)
+
+func shadow_enclosing() {
+    z := 1
+    func inner() {
+        z := 2
+        return z
+    }
+    return inner()
+}
+check(":= in a nested function shadows the enclosing one's name", shadow_enclosing(), 2)
+
+func write_shadow() {
+    x := 2
+    x += 1
+    return x
+}
+check("a write after := goes to the new variable", write_shadow(), 3)
+check("the module names are left alone", (x, a), (1, 1))
+
+when false {
+    w := "first"
+} else {
+    w := "second"
+}
+check("a name declared with := in two branches of a when", w, "second")
+
+if fails == 0 {
+    io.print("ALL TESTS PASSED")
+} else {
+    io.print(fails, "TEST(S) FAILED")
+}

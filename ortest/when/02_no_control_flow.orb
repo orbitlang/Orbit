@@ -1,0 +1,17 @@
+# A `when` branch holds only declarations: control flow (`if`, `loop`, `for`,
+# `switch`, `try`, `sync`, `defer`, `return`) has no place in a construct that
+# chooses which definitions a module has. Here an `if` in the `else` branch is
+# refused, although that branch is not the one taken.
+#
+# Today the error is reported through the COMP-001 assert in file mode; the
+# message is checked, not the way the process exits.
+#
+# EXPECT: error: Invalid statement in a 'when' branch
+
+var a = 0
+
+when true {
+    var b = 1
+} else {
+    if a == 0 { a = 1 }
+}

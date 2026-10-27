@@ -114,7 +114,8 @@ namespace liftoff::parser {
         "Invalid access modifier: 'pub'/'prot' can only be applied to declarations (var, let, func, class, trait, init, cleanup, import)",
         "Invalid 'weak' usage: can only be applied to variable declarations",
         "Invalid decorator placement: decorators are not allowed in a trait, decorate the method in the class that implements it",
-        "Invalid parameter name: 'self' is reserved for the receiver of a method, use another name (e.g. 'me')"
+        "Invalid parameter name: 'self' is reserved for the receiver of a method, use another name (e.g. 'me')",
+        "Invalid statement in a 'when' branch: a branch may only declare (var, let, ':=', func, class, trait, native, import) or nest another 'when'"
     };
 
     constexpr auto kInitMethodName = "init";
@@ -296,7 +297,9 @@ namespace liftoff::parser {
 
         [[nodiscard]] ASTHandle<ASTNode *> ParseAssignment(ASTHandle<ASTNode *> &left);
 
-        [[nodiscard]] ASTHandle<ASTNode *> ParseBlock(bool nested);
+        /// Parse a `{ ... }` block. @p nested opens a scope of its own for it; @p declarations_only refuses
+        /// every statement that is not a declaration (the branches of a `when`).
+        [[nodiscard]] ASTHandle<ASTNode *> ParseBlock(bool nested, bool declarations_only = false);
 
         [[nodiscard]] ASTHandle<ASTNode *> ParseCleanupInit(const scanner::Position &start, AccessModifier access);
 

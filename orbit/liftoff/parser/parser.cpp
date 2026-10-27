@@ -1066,7 +1066,7 @@ ASTHandle<ASTNode *> Parser::ParseWhenStatement() {
     if (!this->sym_t_->CreateNestedScope(TKCUR_START.offset))
         throw SymbolTableException();
 
-    branch->body = this->ParseBlock(false).release();
+    branch->body = this->ParseBlock(false, true).release();
 
     if (!this->sym_t_->LeaveMergeNestedScope(branch->body->loc.end.offset, when_start.offset))
         throw SymbolTableException();
@@ -1083,7 +1083,7 @@ ASTHandle<ASTNode *> Parser::ParseWhenStatement() {
             if (!this->sym_t_->CreateNestedScope(TKCUR_START.offset))
                 throw SymbolTableException();
 
-            branch->orelse = this->ParseBlock(false).release();
+            branch->orelse = this->ParseBlock(false, true).release();
 
             if (!this->sym_t_->LeaveMergeNestedScope(branch->orelse->loc.end.offset, when_start.offset))
                 throw SymbolTableException();
@@ -1233,7 +1233,7 @@ ASTHandle<ASTNode *> Parser::ParseAssignment(ASTHandle<ASTNode *> &left) {
     return assign;
 }
 
-ASTHandle<ASTNode *> Parser::ParseBlock(const bool nested) {
+ASTHandle<ASTNode *> Parser::ParseBlock(const bool nested, const bool declarations_only) {
     auto block = MakeBlock(this->isolate_, TKCUR_LOC);
 
     if (!this->MatchEat(TokenType::LEFT_BRACES, true))
@@ -1256,9 +1256,22 @@ ASTHandle<ASTNode *> Parser::ParseBlock(const bool nested) {
 
             if (!this->Match(TokenType::KW_FUNC, TokenType::KW_LET, TokenType::KW_PUB, TokenType::KW_PROT))
                 throw ParserException(72);
+        } else if (declarations_only) {
+            // A `when` picks which declarations exist, so it holds nothing that runs: an identifier may only
+            // start a short declaration (`x := 1`), checked on the parsed node below
+            if (!this->Match(TokenType::BLANK, TokenType::DECORATOR, TokenType::IDENTIFIER, TokenType::KW_CLASS,
+                             TokenType::KW_FUNC, TokenType::KW_IMPORT, TokenType::KW_LET, TokenType::KW_NATIVE,
+                             TokenType::KW_PUB, TokenType::KW_TRAIT, TokenType::KW_VAR, TokenType::KW_WHEN))
+                throw ParserException(103);
         }
 
-        block->statements.push_back(this->ParseStatement());
+        auto stmt = this->ParseStatement();
+
+        // An expression (a call, an assignment, an anonymous function) or a labeled loop
+        if (declarations_only && (stmt->is_expr || stmt->node_type == NodeType::LABEL))
+            throw ParserException(103);
+
+        block->statements.push_back(std::move(stmt));
 
         if (!this->Match(TokenType::END_OF_LINE, TokenType::SEMICOLON, TokenType::RIGHT_BRACES))
             throw ParserException(0);
