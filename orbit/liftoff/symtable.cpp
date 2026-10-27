@@ -9,7 +9,7 @@
 using namespace liftoff;
 using namespace orbiter::datatype;
 
-Scope *Scope::New(orbiter::Isolate *isolate, const MSize line_start) noexcept {
+Scope *Scope::New(orbiter::Isolate *isolate, const MSize offset_start, const MSize line_start) noexcept {
     orbiter::memory::IsolateAllocator allocator(isolate);
 
     auto *scope = allocator.alloc<Scope>(sizeof(Scope));
@@ -22,6 +22,7 @@ Scope *Scope::New(orbiter::Isolate *isolate, const MSize line_start) noexcept {
             return nullptr;
         }
 
+        scope->scope.offset.start = offset_start;
         scope->active = &scope->scope;
     }
 
@@ -485,7 +486,7 @@ Symbol *SymbolTable::DeclareSymbolScope(ORString *name, const SymbolType type, c
     if (sym == nullptr)
         return nullptr;
 
-    auto *new_scope = Scope::New(this->isolate, line_start);
+    auto *new_scope = Scope::New(this->isolate, offset, line_start);
     if (new_scope == nullptr) {
         STHEntry *entry;
 
@@ -703,7 +704,7 @@ SymbolTable *SymbolTable::New(orbiter::Isolate *isolate) noexcept {
     if (table != nullptr) {
         new(table)SymbolTable(isolate);
 
-        table->scope = Scope::New(isolate, 0);
+        table->scope = Scope::New(isolate, 0, 0);
         if (table->scope == nullptr) {
             allocator.free(table);
 

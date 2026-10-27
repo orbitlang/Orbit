@@ -104,6 +104,29 @@ namespace liftoff {
         friend class Scope;
 
         friend class SymbolTable;
+
+    public:
+        // Read-only views, for tools that inspect a parsed module (tools/astdump)
+
+        [[nodiscard]] const SubScope *Child() const noexcept {
+            return this->child;
+        }
+
+        [[nodiscard]] const SubScope *NextSibling() const noexcept {
+            return this->next_sibling;
+        }
+
+        [[nodiscard]] MSize OffsetStart() const noexcept {
+            return this->offset.start;
+        }
+
+        [[nodiscard]] MSize OffsetEnd() const noexcept {
+            return this->offset.end;
+        }
+
+        [[nodiscard]] const STHMap &Symbols() const noexcept {
+            return this->symbols;
+        }
     };
 
     /**
@@ -133,7 +156,8 @@ namespace liftoff {
             this->line.start = line_start;
         }
 
-        static Scope *New(orbiter::Isolate *isolate, MSize line_start) noexcept;
+        /// The root SubScope starts at `offset_start`, where the scope's construct is declared (0 for the module).
+        static Scope *New(orbiter::Isolate *isolate, MSize offset_start, MSize line_start) noexcept;
 
         friend class SymbolTable;
 
@@ -169,6 +193,11 @@ namespace liftoff {
 
         [[nodiscard]] U16 GetSlotsCount() const {
             return this->slot_count;
+        }
+
+        /// The root SubScope, read-only (for tools that inspect a parsed module).
+        [[nodiscard]] const SubScope *Root() const noexcept {
+            return &this->scope;
         }
     };
 

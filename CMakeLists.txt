@@ -17,6 +17,7 @@ option(ORBIT_BUILD_UNIT_TESTS "Build the GoogleTest unit-test executable" OFF)
 option(ORBIT_INSTALL "Generate the install target" ${PROJECT_IS_TOP_LEVEL})
 option(ORBIT_FF_CGOTO "Compile the VM dispatch loop with the computed-goto extension" OFF)
 option(ORBIT_WERROR "Treat compiler warnings as errors" OFF)
+option(ORBIT_BUILD_TOOLS "Build the developer tools under tools/" ${PROJECT_IS_TOP_LEVEL})
 
 # ---------------------------------------------------------------------------
 # Global configuration; when Orbit is the top-level project, so that a
@@ -57,6 +58,13 @@ add_executable(Orbit orbit/main.cpp)
 add_executable(Orbit::Orbit ALIAS Orbit)
 
 target_link_libraries(Orbit PRIVATE Orbit::Orbiter)
+
+# ---------------------------------------------------------------------------
+# Developer tools
+# ---------------------------------------------------------------------------
+if (ORBIT_BUILD_TOOLS)
+    add_subdirectory(tools)
+endif ()
 
 # ---------------------------------------------------------------------------
 # Tests
