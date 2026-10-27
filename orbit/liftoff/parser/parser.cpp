@@ -2390,18 +2390,21 @@ ASTHandle<Function *> Parser::ParseFunction(const Position &start, const bool mu
         throw ParserException(70);
     }
 
-    this->IgnoreNewLineIF(TokenType::KW_ASYNC);
-    this->IgnoreNewLineIF(TokenType::KW_CONST);
-
     // The last token of the signature: where a method without a body ends
     auto signature_end = last_param.end;
 
-    while (TKCUR_TYPE > TokenType::KEYWORD_BEGIN && TKCUR_TYPE < TokenType::KEYWORD_END) {
+    while (true) {
+        this->IgnoreNewLineIF(TokenType::KW_ASYNC);
+        this->IgnoreNewLineIF(TokenType::KW_CONST);
+
+        if (TKCUR_TYPE <= TokenType::KEYWORD_BEGIN || TKCUR_TYPE >= TokenType::KEYWORD_END)
+            break;
+
         signature_end = TKCUR_END;
 
-        if (this->MatchEat(TokenType::KW_ASYNC, true))
+        if (this->MatchEat(TokenType::KW_ASYNC, false))
             func->async = true;
-        else if (this->MatchEat(TokenType::KW_CONST, true)) {
+        else if (this->MatchEat(TokenType::KW_CONST, false)) {
             if (!this->context_->CheckBack(ContextType::CLASS) && !this->context_->CheckBack(ContextType::TRAIT))
                 throw ParserException(17);
 
