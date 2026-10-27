@@ -1,0 +1,128 @@
+# PoC VM-015 — a deferred call must run when a panic unwinds its frame, the
+# same as on a normal return, and the panic must then go on to the handler
+# that catches it.
+#
+# Today a deferred call run by UnwindStack is lost in three ways:
+#
+#   - its first call of a native function (or any other check of a pending
+#     panic) sees the panic being unwound and takes it for a new failure, so
+#     the deferred function stops there;
+#   - when the panic came from a callee, the deferred function's frame lands
+#     on the BP the callee had, which is `panic->frame`, so it is taken for
+#     the panicking frame and never runs;
+#   - when the deferred function does run after a callee's frame was unwound,
+#     it returns into the caller's frame with the callee's code (UnwindStack
+#     moves to the caller without restoring the fiber context): the VM
+#     executes from a wrong address and aborts on an unknown opcode. The last
+#     check is that case; until it is fixed the file aborts there.
+#
+# Control: a deferred call on a normal return, and a deferred function that
+# makes no call, run by a panic raised in its own frame.
+#
+# A runtime test: prints "ALL TESTS PASSED" only when every check matches.
+# EXPECT: contains: ALL TESTS PASSED
+
+import "io"
+
+var fails = 0
+
+func check(name, got, expected) {
+    if got == expected {
+        io.print("OK   ", name)
+    } else {
+        io.print("FAIL ", name, "-- got:", got, "expected:", expected)
+        fails += 1
+    }
+}
+
+var log = []
+var count = 0
+
+func mark(t) { log.append(t) }
+func bump() { count += 1 }
+func fail() { panic Error(@Deep, "raised by a callee") }
+
+func returns() {
+    defer mark("returns")
+    return 1
+}
+log = []
+returns()
+check("control: a defer runs on a normal return", log, ["returns"])
+
+func own_frame_no_call() {
+    defer bump()
+    panic Error(@Own, "raised in this frame")
+}
+count = 0
+trap own_frame_no_call()
+check("control: a defer without calls runs on a panic in its frame", count, 1)
+
+func own_frame() {
+    defer mark("own")
+    panic Error(@Own, "raised in this frame")
+}
+log = []
+trap own_frame()
+check("a defer that calls a native runs on a panic in its frame", log, ["own"])
+
+func from_callee() {
+    defer mark("caller")
+    fail()
+}
+log = []
+r := trap from_callee()
+check("a defer runs on a panic raised by a callee", log, ["caller"])
+check("the panic reaches the trap after the defer", r ? nil : r.unwrap_err().kind, @Deep)
+
+func middle() {
+    defer mark("middle")
+    fail()
+}
+func top() {
+    defer mark("top")
+    middle()
+}
+log = []
+trap top()
+check("every frame's defer runs, innermost first", log, ["middle", "top"])
+
+func two() {
+    defer mark("first")
+    defer mark("second")
+    fail()
+}
+log = []
+trap two()
+check("two defers in one frame run in reverse order", log, ["second", "first"])
+
+func runtime_error() {
+    defer mark("runtime")
+    return 1 + "a"
+}
+log = []
+trap runtime_error()
+check("a defer runs on an error raised by the runtime", log, ["runtime"])
+
+log = []
+try {
+    from_callee()
+} catch e {
+    log.append(e.kind)
+}
+check("a defer runs before the catch", log, ["caller", @Deep])
+
+func fail_with(a, b) { panic Error(@Deep, "raised by a callee with arguments") }
+func callee_with_args() {
+    defer bump()
+    fail_with(1, 2)
+}
+count = 0
+trap callee_with_args()
+check("a defer reached after a callee's frame is unwound returns to its caller", count, 1)
+
+if fails == 0 {
+    io.print("ALL TESTS PASSED")
+} else {
+    io.print(fails, "TEST(S) FAILED")
+}

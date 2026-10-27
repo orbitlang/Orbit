@@ -6,8 +6,130 @@
 
 ---
 
+## VM-015 — A deferred call is lost when a panic unwinds its frame, and can resume its caller with the wrong code
+**Severity:** High (cleanup silently skipped; the VM executes from a wrong address) · **Status:** OPEN · **Location:** `orbit/orbiter/vm.cpp:244` (`UnwindStack`), `:79` (`ExecDefer`), `:723` (the `panic->frame` check at `BEGIN`), `:1127` and every other pending-panic check; `orbit/orbiter/fiber.cpp:209` (`RaisePanic`)
+
+A `defer` must run however its frame is left. On a normal return it does;
+when a panic unwinds the frame, `UnwindStack` pops the deferred call and
+starts it (`ExecDefer`), but the call is lost in three ways, and in a fourth
+shape it corrupts the caller:
+
+```orbit
+var log = []
+func mark(t) { log.append(t) }
+func fail() { panic Error(@Deep, "x") }
+func f() { defer mark("f"); fail() }
+trap f()          // log is still []
+```
+
+1. **The pending panic reads as a new failure.** The panic being unwound
+   stays in `fiber->panic` while the deferred function runs. The VM detects a
+   failed operation by looking for a pending panic (`if
+   (fiber->IsPanicking()) goto ERROR` after a call, `panic.current_ !=
+   nullptr` after a non-inline property load or store, `TEND`, ...), so the
+   first such check in the deferred function jumps to `ERROR:` and its frame
+   is unwound as if it had failed. A deferred function that calls a native
+   (`log.append`, `io.print`) never gets past that call; one that only does
+   arithmetic on a module variable runs (the PoC's control).
+2. **The deferred frame is taken for the panicking frame.** `RaisePanic`
+   records the panicking frame by its BP (`p->frame`), and `BEGIN` resumes
+   unwinding when it enters a frame with that BP. `ExecDefer` places the
+   deferred frame at `defer->SP + kStackPrologueOffset`. When the panic came
+   from a callee called with no arguments, the callee's frame sat at exactly
+   that BP, so the deferred function is sent to `ERROR:` before its first
+   instruction.
+3. **The caller resumes with the callee's code.** When `UnwindStack` moves to
+   the caller it uses `PopStateNoCtxRestore` and copies the caller's
+   `FiberContext` only when a handler is found, so `fiber->context` is still
+   the callee's when the caller's defers run. `ExecDefer` saves that context
+   with `PushState`; when the deferred function returns, `PopState` puts the
+   callee's code back under the caller's BP, with IP set to the caller's
+   `m_end`. `BEGIN` does not recognise the frame (its BP is not
+   `panic->frame`), so the loop executes the callee's code from the caller's
+   address: in the debug build it aborts on `assert(false)` for an unknown
+   opcode, in a release build it runs whatever words are there. Reached when
+   the deferred function survives points 1 and 2 (it makes no call, and the
+   callee took arguments, so the BPs differ):
+
+   ```orbit
+   var count = 0
+   func bump() { count += 1 }
+   func fail_with(a, b) { panic Error(@Deep, "x") }
+   func f() { defer bump(); fail_with(1, 2) }
+   trap f()          // Assertion failed: (false), function eval, file vm.cpp
+   ```
+
+A panic not caught anywhere loses its defers the same way, before the
+process exits. The behavior is the same with the VM at HEAD (`13f0ccd`);
+the VM-014 fix only touches the root frame.
+
+**Found** while checking VM-014's fix through the panic paths: a
+`defer io.print(...)` in a function that called a panicking function printed
+nothing. Traced with probe prints in `ExecDefer`, `UnwindStack`, `BEGIN` and
+`RET`: the deferred frame's BP equal to `panic->frame` (point 2), the
+deferred function's frame unwound from inside after `log.append` (point 1),
+and `BEGIN` entering the caller's BP with an IP 61,300 bytes before the code
+it runs (point 3).
+
+**PoC:** [`poc/vm/defer-during-unwind.orb`](poc/vm/defer-during-unwind.orb)
+*(confirmed live: the two controls pass, six checks fail, and the file aborts
+on the last check, point 3)*.
+
+**Fix (suggested, not tried):** the three points need one design: an
+unwinding that a deferred call can interrupt and resume.
+
+- Resume by frame, not by BP: before `UnwindStack` starts a deferred call,
+  set `panic->frame` to the frame being unwound (the one that owns the
+  defer). Every frame the deferred call creates sits above that frame's SP,
+  so none can have its BP until the deferred call has returned into it.
+- Restore the caller's `FiberContext` whenever `UnwindStack` moves to a
+  previous frame (`PopState` instead of `PopStateNoCtxRestore`, after the
+  generator check that reads the old context), so a deferred call saves and
+  restores the right code; the copy made when a handler is found becomes
+  redundant.
+- Hide the unwound panic while the deferred call runs, so the pending-panic
+  checks see only a panic raised by the deferred call itself: for example
+  detach the chain from `fiber->panic` into the frame being unwound and put it
+  back when `BEGIN` resumes the unwinding there. A panic raised by the
+  deferred function then has to be chained onto it (`CreatePanic` links
+  `prev`, printed as "while handling"), and the detached chain has to stay
+  reachable by the GC.
+
+---
+
 ## VM-014 — The end of a module pops a frame state from below the VM stack: intermittent SIGBUS at exit
-**Severity:** High (out-of-bounds read; intermittent crash after the program has run) · **Status:** OPEN · **Location:** `orbit/orbiter/vm.cpp:255` (`UnwindStack`, the `BP == barrier` branch), `orbit/orbiter/fiber.cpp:119` (`PopStateNoCtxRestore`), reached from `vm.cpp:2095` (`ERROR:`)
+**Severity:** High (out-of-bounds read; intermittent crash after the program has run) · **Status:** FIXED (2026-10-27) · **Location:** `orbit/orbiter/vm.cpp:255` (`UnwindStack`)
+
+**Fix verified (live: a probe log in `PopStateNoCtxRestore` for `BP <
+kStackPrologueOffset` stays silent on all 89 files under `ortest/` and
+`issues/poc/` (`ortest/net/` left out), on every `stdlib` import and on
+uncaught and trapped panics at module level, in a function, in a `__tostr`
+hook and in a spawned fiber, where the HEAD VM fires at every module end; the
+two PoCs that crashed exit 0 in 1,200 runs, 8 in parallel, against 3 SIGBUS in
+600 before; `ortest` 34/34, the PoC gate 64/65 with the open VM-010,
+`phi-regalloc.orb` passes).** `UnwindStack` stops at the root frame before it
+looks at the barrier, so a frame with `BP == 0` is never popped:
+
+```cpp
+if (ExecDefer(fiber))
+    return true;
+
+if (regs->BP.reg == 0)
+    break;
+
+if (regs->BP.reg == barrier) {
+    fiber->PopState();
+
+    return false;
+}
+```
+
+The check used to come after `regs->SP.reg = regs->BP.reg`, where it was
+never reached with `BP == 0`: the root frame runs with `barrier == 0`, so the
+barrier branch took it first. The output of the panic paths above is the same
+as with the HEAD VM, apart from the out-of-bounds reads.
+
+<details><summary>Original report</summary>
 
 The root frame of a fiber started by the scheduler (`eval(fiber, 0)`,
 `runtime.cpp:282`) runs with `BP == 0` and has no saved state under it: no
@@ -82,6 +204,8 @@ With the probe the log stays silent for every file under `ortest/` and
 `issues/poc/` (`ortest/net/` left out) and for every `stdlib` import, the
 two PoCs above exit 0 in 1,200 runs (8 in parallel), `ortest` is 34/34, the
 PoC gate 64/65 with the open VM-010, and `phi-regalloc.orb` passes.
+
+</details>
 
 ---
 

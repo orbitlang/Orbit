@@ -252,6 +252,9 @@ bool UnwindStack(Fiber *fiber, const PtrSize barrier) {
         if (ExecDefer(fiber))
             return true;
 
+        if (regs->BP.reg == 0)
+            break;
+
         if (regs->BP.reg == barrier) {
             fiber->PopState();
 
@@ -259,9 +262,6 @@ bool UnwindStack(Fiber *fiber, const PtrSize barrier) {
         }
 
         regs->SP.reg = regs->BP.reg;
-
-        if (regs->BP.reg == 0)
-            break;
 
         // Load previous frame
         const auto *p_ctx = fiber->PopStateNoCtxRestore();
