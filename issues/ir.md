@@ -1083,6 +1083,386 @@ excluding everything that is not `IDENTIFIER`: `ParseIdentifier` also sets
 
 ---
 
+## IR-006 — The call-protocol registers (R10/R11/R12) are pinned on the value's producer, so two such values collide
+**Severity:** High (silent miscompile + interpreter crash) · **Status:** FIXED (2026-07-24) · **Location:** `SetNargs`/`SetRest`/`SetKwargs` (`orbit/liftoff/ir/instruction.h:170-186`), fixed in `IRBuilder::CreateCall` (`orbit/liftoff/ir/irbuilder.cpp`)
+
+Named, rest and keyword arguments reach the callee through fixed registers —
+`kCallNArgsReg = 10`, `kCallRestReg = 11`, `kCallKWArgsReg = 12` — read back by
+`ArgumentBinder::Bind` from `regs.r10/r11/r12`.
+
+`SetRest` (and its siblings) applied the pin to the **producing** instruction:
+
+```cpp
+void SetRest(Instruction *instr) const {
+    instr->assigned_reg = kCallRestReg;   // the producer is homed in R11 for its whole life
+    this->SetOperand(2, instr);
+}
+```
+
+so the value stayed homed in R11 for its entire live range rather than just
+around the call. With two spread calls whose operands are live at the same time,
+**both producers were homed to R11** — two overlapping intervals sharing one
+register, the exact invariant violation of [IR-003](#ir-003--two-call-results-live-simultaneously-collide-in-the-return-register-r13),
+only on R11 instead of RR.
+
+`AllocateSpecificRegister` does handle pins on pool registers (it spills both and
+keeps the longer-lived as owner-of-record, "*from interval.start onward the
+register is shared scratch*"), but that only works when the uses are separated.
+Two long, interleaved live ranges sharing a home register cannot both be correct:
+the reloads overwrite each other.
+
+```orb
+func f(a, ...rest) { return tostr(a) + "|" + tostr(rest) }
+
+x := [1, 2, 3]
+y := [7, 8, 9]
+
+f(x...)   # ok
+f(y...)   # assertion, or silently receives the previous call's rest list
+```
+
+Two symptoms, depending on what the clobbered register held:
+
+- **crash** — a container under construction lived in R11, the call wrote the
+  rest list over it, and `ADDELEM` asserted on a non-object (`vm.cpp`, `assert(O_IS_OBJECT(obj))`);
+- **silent miscompile** — a later call read a stale R11 and received the
+  *previous* call's rest list (`h(args...)` returned `7,99|[8]` instead of `1,99|[2, 3, 4, 5]`).
+
+Confirmed in the IR dump: both list literals were assigned `REG: 11`.
+
+**Fix.** Keep the pin, but shorten its live range: copy the value into the
+protocol register immediately before the call instead of homing the producer
+there. In `IRBuilder::CreateCall` the call is still *detached* at that point
+(`CreateCallDetached` uses `CreateObject`, which does not attach) while
+`CreateMove` attaches immediately, so the moves land right in front of the call:
+
+```cpp
+if (nargs != nullptr)  call->SetNargs(this->builder_.CreateMove(nargs));
+if (rest != nullptr)   call->SetRest(this->builder_.CreateMove(rest));
+if (kwargs != nullptr) call->SetKwargs(this->builder_.CreateMove(kwargs));
+```
+
+The pinned interval now spans only `MOV -> CALL` and cannot overlap another
+call's. R10/R11/R12 stay general-purpose in the allocator's pool, and neither
+LinearScan, the codegen (which only ever emitted `operands[0]` for a call) nor
+the VM needed changing.
+
+```
+before:  NLIST REG:11 · NLIST REG:11 · ... · CALL
+after:   NLIST REG:0  · NLIST REG:2  · ... · MOV REG:11 · CALL · MOV REG:11 · CALL
+```
+
+**PoC:** [`poc/ir/ir-006-spread-reg-collision.orb`](poc/ir/ir-006-spread-reg-collision.orb)
+`(fixed)` — 12 checks; verified red (assertion) before the fix and green after.
+
+**Note.** Found while testing the rest-argument paths of `ArgumentBinder`; no
+suite covered argument passing at the time, so the gate was green with this bug
+live. Call-mechanics coverage now lives in `ortest/calls/`.
+
+---
+
+## IR-005 — Instantiating a class three levels deep in an inheritance chain hangs
+**Severity:** High (interpreter hang) · **Status:** FIXED (2026-07-22) · **Location:** `LoadFromObjectProp` SUPER branch (`orbit/orbiter/vm.cpp:779`)
+
+**Root cause (confirmed).** `super.m()` resolved the lookup base from the
+*receiver's runtime type* (`GetTypeInfoFromObject(self)` — always the most-derived
+class) rather than from the class that lexically defines the running method. As
+the constructor chain runs, `self`'s type never changes, so `super.init()` inside
+an inherited `init` re-resolved to that same `init`: `B.init` reached during
+`new C()` computed `super` off `C` and got `B` again → unbounded recursion, which
+grew the VMStack without limit (the sample showed the thread permanently inside
+`VMStack::Grow`/`MemoryCopy`, not a C++ loop). Two levels worked only by
+coincidence — the top method's owner equals the receiver type.
+
+**Fix.** In the SUPER branch, walk from the enclosing class instead:
+`type = O_GET_TYPE(func->shared->owner_type)`. The earlier `TIFindProperty`
+cycle-guard hypothesis was wrong (the chain terminates at nullptr). Regression
+guard: `ortest/oop/02_inheritance_resolution.orb` now exercises 3- and 4-level
+chains (fields + `super.who()` method chain).
+
+`A <- B` constructs fine; `A <- B <- C` makes `new C()` spin forever. The hang is
+at **runtime** — compilation completes and statements before the construction run
+and print normally.
+
+```orb
+class A  { pub init() { } }
+class B : A { pub init() { super.init() } }
+class C : B { pub init() { super.init() } }
+
+new B()   # ok
+new C()   # hangs
+```
+
+**Pre-existing**, and independent of IR-004: reproduces identically with the
+`LoadFromObjectProp` fix reverted (verified by stashing it and rebuilding).
+
+**Hypothesis (unverified).** `TIFindProperty` (`oobject.cpp:262`) walks the chain
+with `type = O_GET_TYPE(type)` and has **no cycle guard**. If the metatype root is
+self-referential (`Type`'s type being `Type`, the usual arrangement), then any
+lookup that misses all the way up loops forever. A two-level chain may always find
+its target before reaching the root, while a three-level one does not. Worth
+checking that root link first — a cycle guard there would be a cheap fix if so.
+
+**PoC:** [`poc/ir/ir-005-three-level-chain-hang.orb`](poc/ir/ir-005-three-level-chain-hang.orb)
+`(fixed)` — now terminates and passes; kept in the poc gate as a regression guard.
+
+**Test suite:** `ortest/oop/02_inheritance_resolution.orb` now exercises 3- and
+4-level chains (previously capped at two while this was live).
+
+<details><summary>Original report (2026-07-15, OPEN)</summary>
+
+Every `CALL` result is pinned to the return register R13 and *keeps* R13 as its
+`assigned_reg`. When two call results are bound to locals and stay live together,
+the allocator ends up with **two overlapping intervals both assigned R13** — a
+violation of the core invariant that overlapping intervals never share a
+register. Both are spilled across the intervening call and, at their shared use,
+both reload into R13 back-to-back; the second reload overwrites the first.
+
+Post-linearscan bytecode of `two_call` (`a := id(7); b := id(9); return a + b`):
+
+```
+CALL  R13        # a
+...
+CALL  R13        # b
+SKLDR R13        # reload a into R13
+SKLDR R13        # reload b into R13   <-- overwrites a
+ADD   R0         # R0 = R13 + R13 = b + b
+```
+
+So `a + b` evaluates to `b + b` (7+9 → 18). The reload strategy
+(`load->assigned_reg = instruction->assigned_reg`) faithfully reloads each value
+into its own home register, which is correct *unless* two live values were given
+the same home — which R13 pinning does.
+
+**Scope.** Only triggers when ≥2 call results are **bound and kept live** into a
+later op. Results consumed immediately (pushed as call args, folded once) are
+fine, because they never co-reside in R13 — so `add(add(1,2), add(3,4))` and
+`sq(add(2,3))` are correct. `three_call` (`a*100 + b*10 + c`) happens to pass
+because its arithmetic forces the results out of R13. Present at HEAD,
+independent of the register-leak fix.
+
+**PoC:** [`poc/ir/ir-003-r13-crosscall.orb`](poc/ir/ir-003-r13-crosscall.orb)
+`(confirmed live)` — RED until fixed. Broader tiered coverage lives in
+`ortest/regalloc/*.orb` (suite 04 isolates this; 01–03, 05 stay green), run via
+`ortest/run.sh`.
+
+**Fix (suggested).** Model the call result as an ordinary SSA value instead of
+leaving it pinned to R13. The cleanest form is a dedicated pre-pass after
+`ComputeLiveIntervals` — find calls, materialise the spill store/reload of every
+interval that spans them as real IR, re-run `ComputeLiveIntervals`, then
+allocate — which makes every reloaded value first-class and dissolves the R13
+special case (it also removes the fragile mutate-IR-during-allocation coupling).
+Since the VM clobbers all registers on a call (no callee-saved), spilling every
+spanning value is optimal, not wasteful. *(This is the path that was taken.)*
+
+</details>
+
+---
+
+## IR-004 — A derived class resolves its own members through its superclass (wrong `init`, shadowed properties)
+**Severity:** High (silent wrong behaviour) · **Status:** FIXED (2026-07-17) · **Location:** `orbit/orbiter/vm.cpp` (`LoadFromObjectProp`)
+
+**Fix verified (`poc/ir/ir-004-derived-ctor-body.orb` GREEN — full tracker suite
+21/21, `ortest/run.sh` 7/7).** Root cause found by the project author: the
+`type_` field is **overloaded**. For a builtin type object it points at the
+*metatype* (`O_GET_TYPE(String)` → `Type`), but for a user class it points at the
+*superclass* (`O_GET_TYPE(Derived)` → `Base`). `LoadFromObjectProp` resolved a
+type object through `O_GET_TYPE(obj)` first:
+
+```cpp
+const bool obj_is_type = O_IS_OBJECT(obj) && !O_GET_RC(obj).IsInstance();
+const auto *type = obj_is_type ? O_GET_TYPE(obj) : GetTypeInfoFromObject(...);
+```
+
+so `new Derived()` looked up `init` starting at `Base` and got **Base's**
+constructor. The derived constructor never ran at all — which is why its field
+defaults, its explicit assignments and every statement after `super.init(...)`
+appeared to be dead code.
+
+The metatype-first order exists for a reason and was kept: for a builtin like
+`String` it prevents an *instance* method being picked up and applied to the
+non-instance type object. The fix only special-cases classes, where `type_` is an
+inheritance link rather than a metatype link: for a `CLASS` type object (outside a
+`SUPER` lookup) the class's **own** chain is searched first. `TIFindProperty`
+already walks up to the super and on to the metatype, so inherited members still
+resolve normally.
+
+Not limited to constructors: before the fix, *any* member read off a derived
+class type object returned the super's version — `D.who == B.who` evaluated to
+`true` (same Function object) with `who` overridden in `D`; it is `false` now.
+
+<details><summary>Original report (2026-07-17, OPEN)</summary>
+
+The parser *requires* `super.init(...)` to be the first statement of a derived
+class constructor (`parser.h:95`). Everything after it is then silently dead: the
+constructor body simply does not run past that point. No error, no diagnostic.
+
+Consequences, all silent:
+
+- a derived class's own field defaults (`pub var b = 20`) stay `nil`;
+- explicit assignments in the constructor (`self.c = 30`) are lost;
+- any other constructor logic (side effects, validation) is skipped.
+
+```orb
+class Base    { pub var a = 10   pub init() { } }
+class Derived : Base {
+    pub var b = 20
+    pub init() { super.init()   self.b = 99 }   # neither the default nor the assignment lands
+}
+new Derived().b   # -> nil (expected 99)
+```
+
+Storage and slot resolution are **not** at fault: the identical write from an
+ordinary method works (`p.setd()` → `p.d == 7` in the PoC), and the inherited
+field set by the super's constructor is correct.
+
+`EXECSUB` (`vm.cpp:1540`) looks like a proper call: it `PushState()`s, switches
+the context to the super's `Code`, and `goto BEGIN`; the super's `RET` →
+`PopState()` restores the whole `FiberContext` (code object included) plus IP/BP,
+so control *should* resume right after the `EXECSUB`. That points at the IR
+builder not emitting the trailing statements of a derived constructor at all,
+rather than at the VM — worth confirming with an IR/bytecode dump of the derived
+`init` before fixing.
+
+**PoC:** [`poc/ir/ir-004-derived-ctor-body.orb`](poc/ir/ir-004-derived-ctor-body.orb)
+`(confirmed live)` — 3 checks RED, 2 control checks green.
+
+**Fix.** Determine whether the derived-constructor lowering emits the statements
+following the `super.init(...)` call; if it does not, emit them after the
+`EXECSUB` and keep the constructor's own `RET` as the terminator. If it does emit
+them, the return path from `EXECSUB` is not resuming the caller's code object as
+`PopState` suggests, and the VM side needs the fix instead.
+*(2026-07-17: both hypotheses were wrong — the lowering and `EXECSUB`/`PopState`
+are fine. The derived constructor was never invoked in the first place: the
+`init` lookup resolved to the superclass. See the update above.)*
+
+</details>
+
+---
+
+## IR-003 — Two call results live simultaneously collide in the return register R13
+**Severity:** High (silent miscompile) · **Status:** FIXED (2026-07-17) · **Location:** `orbit/liftoff/ir/linearscan.cpp`, `orbit/liftoff/ir/intervalspiller.{h,cpp}`, `orbit/liftoff/ir/ircontext.cpp` (`CallerSaveSpiller`)
+
+**Fix verified (`poc/ir/ir-003-r13-crosscall.orb` GREEN — full tracker suite
+20/20; tiered battery `ortest/regalloc/01..05` all green, including suite 04
+which isolates this bug: `two_call`=16, `mul_call`=12, `sum_call`=32,
+`three_call`=123).** Resolved by restructuring the allocation pipeline
+(essentially the pre-pass path suggested in the original report):
+
+- **`IRContext::CallerSaveSpiller`** — new pre-pass between the two liveness
+  computations (`ComputeLiveIntervals` → spill pass → `ComputeLiveIntervals` →
+  `LinearScan`, see `compiler.cpp`). It collects every call site
+  (CALL/EXECSUB/NTCALL, caller-clobbered in Orbit's VM) and, for each interval
+  spanning one, materialises the stack save/reload as real IR via
+  `IntervalSpiller::Spill(interval, call_offset)`. After the re-run of liveness,
+  no interval spans a call, and each reload is a **fresh, unpinned SSA value**
+  the allocator assigns normally — two call results never co-reside in R13.
+- **`IntervalSpiller`** — extracted spill mechanism (slot allocation with
+  expiry-driven reuse, SKSTR/SKLDR emission, STGOFF store-to-load forwarding,
+  operand rewrite). Ctor flag `inherit_reg`: `false` in the pre-pass (reloads
+  left unassigned so they get their own intervals/registers — the crux of this
+  fix), `true` inside `LinearScan` (no liveness re-run there, reloads must
+  inherit the home register).
+- **`LinearScan`** hardening found during review: on register contention
+  (`SpillAndAssignRegister`, and the true-overlap path of
+  `AllocateSpecificRegister`) **both** sharers are spilled from
+  `interval.start` — the incoming def writes the register regardless, so a
+  one-sided spill silently clobbers the "stable" value — and the longer-lived
+  of the two stays in `active_` as the register's owner-of-record (freeing at
+  the shorter end would let a future interval claim the register while the
+  survivor's reloads still write it).
+
+A residual limit initially noted here — R13 sat in `free_registers_` (the pool
+was built from `kGeneralPurposeRegistersCount` = 14), so under full pressure an
+ordinary value could receive it and later collide with a pinned call result on
+one instruction — was **also closed (2026-07-17)**: the allocator is now built
+with `kAllocatableRegistersCount` = 13 (`vm.h`; R0–R12, RR excluded — the
+runtime constant stays 14 because GC root scanning and the generator
+`regs_dump` size the register file with it). Companion changes in `LinearScan`:
+out-of-pool pinned registers are claimed directly by `AllocateSpecificRegister`
+(conflict scan first) instead of hitting the logic-error throw; an expiring
+pinned interval no longer leaks RR into the pool (`ExpireOldIntervals`); the
+"all registers busy" test reads `free_registers_.empty()` rather than
+`active_.size() == total_regs_` (active_ also tracks pinned intervals); and
+`SpillAndAssignRegister` picks its victim only among pool-register holders.
+Verified: full battery green plus a targeted stress (pinned RR result held live
+across 16 temporaries exhausting the pool, and two call results with 14 live
+temporaries in between).
+
+---
+
+## IR-002 — `trap new X()` asserts in `AddInstructionBefore` (compile-time crash)
+**Severity:** High (silent wrong codegen — panics swallowed) · **Status:** FIXED (2026-07-13) · **Location:** `orbit/liftoff/ir/basicblock.h:126` (`AddInstructionBefore`), `basicblock.h:101` (`AddInstructionAfter`)
+
+**Fix verified (`poc/ir/ir-002-trap-new.orb` — full suite 19/19 green,
+including `phi-regalloc`).** `AddInstructionBefore` now updates the block's
+list head when inserting before the head instruction, and
+`AddInstructionAfter` symmetrically updates the tail:
+
+```cpp
+if (instr->prev != nullptr)
+    instr->prev->next = before;
+else
+    this->instr.head = before;   // instr was the head
+```
+
+Root cause (confirmed with lldb; the original hypothesis was wrong): NOT the
+trap guard insertion. LinearScan spills the `NOBJ` result of `new`, and
+`SpillToStackAndReloadUses` (`linearscan.cpp:256`) inserts the `SKLDR` reload
+before its use `STRES` — the store-result of `trap`, which is the **first
+instruction of the trap's finally block** (`prev == nullptr` → assert).
+
+An intermediate fix that merely dropped the assert (guarding the
+`instr->prev->next` write) traded the crash for a **silent miscompile**,
+verified live: the reload stayed linked in the `prev` chain but was invisible
+to every forward walk from `instr.head` (codegen, LinearScan, `SlotIndexes`),
+while `size += 4` still counted it — so all block offsets from
+`CalculateCodeSize` (`codegen.cpp:483`) drifted +4 past the emitted layout,
+the trap handler offset landed one instruction past `STRES`, and on the panic
+path the panic was swallowed (`trap` yielded a stale non-Result value).
+Updating `instr.head` fixes both modes at once; the PoC covers success-path
+value integrity and panic-path catching under register pressure.
+
+The `AddInstructionAfter` tail update fixes the symmetric latent flaw
+(insert-after-tail left `instr.tail` stale; a later `AddInstruction` append
+would relink through the stale tail and silently drop the inserted
+instruction — reachable in principle via `AllocStackSlots`'
+insert-after-`last_alloca`, `builder.cpp:108`). Never reproduced; fixed
+preventively for the invariant.
+
+Note for PoC writers, found while verifying: a bare property access used as a
+statement (`q.boom`) is a use-less pure producer and gets removed by DCE — it
+never panics at runtime. Use a call (`q.boom()`) to make a panic real.
+
+<details><summary>Original report (2026-07-06, OPEN)</summary>
+
+**Reproducer (minimal, 1 line — crashes at compile time, no execution needed):**
+
+```orb
+trap new A()
+```
+
+Any variant crashes identically: `err := trap new Error(@x, "y")`,
+parenthesized `trap (new ...)`, inside a function body, with any class.
+`trap` on a plain call (`trap f()`) is fine; `new` without `trap` is fine.
+The combination is what breaks: first observed via
+`err := trap new Pattern("(unclosed")` in a regex test.
+
+```
+Assertion failed: (instr->prev != nullptr), function AddInstructionBefore,
+file basicblock.h, line 131.
+```
+
+**Hypothesis:** the trap lowering inserts its guard instruction *before* the
+first instruction of the trapped expression; the `new` lowering starts a
+sequence whose first instruction is at the head of its basic block
+(`prev == nullptr`), a case `AddInstructionBefore` does not handle.
+*(2026-07-13: hypothesis disproved — right method, wrong caller; see update.)*
+
+</details>
+
+---
+
 ## IR-001 — Phi targets bypass live-range conflict detection in LinearScan
 **Severity:** High (silent miscompile) · **Status:** FIXED (imported 2026-06-15; fix predates the tracker) · **Location:** `orbit/liftoff/ir/linearscan.cpp` (`LinearScan::Allocate`), `instruction.h` (`PhiInstr::AddTarget`/`SetRegister`), `irbuilder.cpp` (join sites)
 
@@ -1200,385 +1580,3 @@ layer fix #2 later as an optimization once move-coalescing exists. *(This is the
 path that was taken.)*
 
 </details>
-
----
-
-## IR-002 — `trap new X()` asserts in `AddInstructionBefore` (compile-time crash)
-**Severity:** High (silent wrong codegen — panics swallowed) · **Status:** FIXED (2026-07-13) · **Location:** `orbit/liftoff/ir/basicblock.h:126` (`AddInstructionBefore`), `basicblock.h:101` (`AddInstructionAfter`)
-
-**Fix verified (`poc/ir/ir-002-trap-new.orb` — full suite 19/19 green,
-including `phi-regalloc`).** `AddInstructionBefore` now updates the block's
-list head when inserting before the head instruction, and
-`AddInstructionAfter` symmetrically updates the tail:
-
-```cpp
-if (instr->prev != nullptr)
-    instr->prev->next = before;
-else
-    this->instr.head = before;   // instr was the head
-```
-
-Root cause (confirmed with lldb; the original hypothesis was wrong): NOT the
-trap guard insertion. LinearScan spills the `NOBJ` result of `new`, and
-`SpillToStackAndReloadUses` (`linearscan.cpp:256`) inserts the `SKLDR` reload
-before its use `STRES` — the store-result of `trap`, which is the **first
-instruction of the trap's finally block** (`prev == nullptr` → assert).
-
-An intermediate fix that merely dropped the assert (guarding the
-`instr->prev->next` write) traded the crash for a **silent miscompile**,
-verified live: the reload stayed linked in the `prev` chain but was invisible
-to every forward walk from `instr.head` (codegen, LinearScan, `SlotIndexes`),
-while `size += 4` still counted it — so all block offsets from
-`CalculateCodeSize` (`codegen.cpp:483`) drifted +4 past the emitted layout,
-the trap handler offset landed one instruction past `STRES`, and on the panic
-path the panic was swallowed (`trap` yielded a stale non-Result value).
-Updating `instr.head` fixes both modes at once; the PoC covers success-path
-value integrity and panic-path catching under register pressure.
-
-The `AddInstructionAfter` tail update fixes the symmetric latent flaw
-(insert-after-tail left `instr.tail` stale; a later `AddInstruction` append
-would relink through the stale tail and silently drop the inserted
-instruction — reachable in principle via `AllocStackSlots`'
-insert-after-`last_alloca`, `builder.cpp:108`). Never reproduced; fixed
-preventively for the invariant.
-
-Note for PoC writers, found while verifying: a bare property access used as a
-statement (`q.boom`) is a use-less pure producer and gets removed by DCE — it
-never panics at runtime. Use a call (`q.boom()`) to make a panic real.
-
-<details><summary>Original report (2026-07-06, OPEN)</summary>
-
-**Reproducer (minimal, 1 line — crashes at compile time, no execution needed):**
-
-```orb
-trap new A()
-```
-
-Any variant crashes identically: `err := trap new Error(@x, "y")`,
-parenthesized `trap (new ...)`, inside a function body, with any class.
-`trap` on a plain call (`trap f()`) is fine; `new` without `trap` is fine.
-The combination is what breaks: first observed via
-`err := trap new Pattern("(unclosed")` in a regex test.
-
-```
-Assertion failed: (instr->prev != nullptr), function AddInstructionBefore,
-file basicblock.h, line 131.
-```
-
-**Hypothesis:** the trap lowering inserts its guard instruction *before* the
-first instruction of the trapped expression; the `new` lowering starts a
-sequence whose first instruction is at the head of its basic block
-(`prev == nullptr`), a case `AddInstructionBefore` does not handle.
-*(2026-07-13: hypothesis disproved — right method, wrong caller; see update.)*
-
-</details>
-
----
-
-## IR-003 — Two call results live simultaneously collide in the return register R13
-**Severity:** High (silent miscompile) · **Status:** FIXED (2026-07-17) · **Location:** `orbit/liftoff/ir/linearscan.cpp`, `orbit/liftoff/ir/intervalspiller.{h,cpp}`, `orbit/liftoff/ir/ircontext.cpp` (`CallerSaveSpiller`)
-
-**Fix verified (`poc/ir/ir-003-r13-crosscall.orb` GREEN — full tracker suite
-20/20; tiered battery `ortest/regalloc/01..05` all green, including suite 04
-which isolates this bug: `two_call`=16, `mul_call`=12, `sum_call`=32,
-`three_call`=123).** Resolved by restructuring the allocation pipeline
-(essentially the pre-pass path suggested in the original report):
-
-- **`IRContext::CallerSaveSpiller`** — new pre-pass between the two liveness
-  computations (`ComputeLiveIntervals` → spill pass → `ComputeLiveIntervals` →
-  `LinearScan`, see `compiler.cpp`). It collects every call site
-  (CALL/EXECSUB/NTCALL, caller-clobbered in Orbit's VM) and, for each interval
-  spanning one, materialises the stack save/reload as real IR via
-  `IntervalSpiller::Spill(interval, call_offset)`. After the re-run of liveness,
-  no interval spans a call, and each reload is a **fresh, unpinned SSA value**
-  the allocator assigns normally — two call results never co-reside in R13.
-- **`IntervalSpiller`** — extracted spill mechanism (slot allocation with
-  expiry-driven reuse, SKSTR/SKLDR emission, STGOFF store-to-load forwarding,
-  operand rewrite). Ctor flag `inherit_reg`: `false` in the pre-pass (reloads
-  left unassigned so they get their own intervals/registers — the crux of this
-  fix), `true` inside `LinearScan` (no liveness re-run there, reloads must
-  inherit the home register).
-- **`LinearScan`** hardening found during review: on register contention
-  (`SpillAndAssignRegister`, and the true-overlap path of
-  `AllocateSpecificRegister`) **both** sharers are spilled from
-  `interval.start` — the incoming def writes the register regardless, so a
-  one-sided spill silently clobbers the "stable" value — and the longer-lived
-  of the two stays in `active_` as the register's owner-of-record (freeing at
-  the shorter end would let a future interval claim the register while the
-  survivor's reloads still write it).
-
-A residual limit initially noted here — R13 sat in `free_registers_` (the pool
-was built from `kGeneralPurposeRegistersCount` = 14), so under full pressure an
-ordinary value could receive it and later collide with a pinned call result on
-one instruction — was **also closed (2026-07-17)**: the allocator is now built
-with `kAllocatableRegistersCount` = 13 (`vm.h`; R0–R12, RR excluded — the
-runtime constant stays 14 because GC root scanning and the generator
-`regs_dump` size the register file with it). Companion changes in `LinearScan`:
-out-of-pool pinned registers are claimed directly by `AllocateSpecificRegister`
-(conflict scan first) instead of hitting the logic-error throw; an expiring
-pinned interval no longer leaks RR into the pool (`ExpireOldIntervals`); the
-"all registers busy" test reads `free_registers_.empty()` rather than
-`active_.size() == total_regs_` (active_ also tracks pinned intervals); and
-`SpillAndAssignRegister` picks its victim only among pool-register holders.
-Verified: full battery green plus a targeted stress (pinned RR result held live
-across 16 temporaries exhausting the pool, and two call results with 14 live
-temporaries in between).
-
----
-
-## IR-004 — A derived class resolves its own members through its superclass (wrong `init`, shadowed properties)
-**Severity:** High (silent wrong behaviour) · **Status:** FIXED (2026-07-17) · **Location:** `orbit/orbiter/vm.cpp` (`LoadFromObjectProp`)
-
-**Fix verified (`poc/ir/ir-004-derived-ctor-body.orb` GREEN — full tracker suite
-21/21, `ortest/run.sh` 7/7).** Root cause found by the project author: the
-`type_` field is **overloaded**. For a builtin type object it points at the
-*metatype* (`O_GET_TYPE(String)` → `Type`), but for a user class it points at the
-*superclass* (`O_GET_TYPE(Derived)` → `Base`). `LoadFromObjectProp` resolved a
-type object through `O_GET_TYPE(obj)` first:
-
-```cpp
-const bool obj_is_type = O_IS_OBJECT(obj) && !O_GET_RC(obj).IsInstance();
-const auto *type = obj_is_type ? O_GET_TYPE(obj) : GetTypeInfoFromObject(...);
-```
-
-so `new Derived()` looked up `init` starting at `Base` and got **Base's**
-constructor. The derived constructor never ran at all — which is why its field
-defaults, its explicit assignments and every statement after `super.init(...)`
-appeared to be dead code.
-
-The metatype-first order exists for a reason and was kept: for a builtin like
-`String` it prevents an *instance* method being picked up and applied to the
-non-instance type object. The fix only special-cases classes, where `type_` is an
-inheritance link rather than a metatype link: for a `CLASS` type object (outside a
-`SUPER` lookup) the class's **own** chain is searched first. `TIFindProperty`
-already walks up to the super and on to the metatype, so inherited members still
-resolve normally.
-
-Not limited to constructors: before the fix, *any* member read off a derived
-class type object returned the super's version — `D.who == B.who` evaluated to
-`true` (same Function object) with `who` overridden in `D`; it is `false` now.
-
-<details><summary>Original report (2026-07-17, OPEN)</summary>
-
-The parser *requires* `super.init(...)` to be the first statement of a derived
-class constructor (`parser.h:95`). Everything after it is then silently dead: the
-constructor body simply does not run past that point. No error, no diagnostic.
-
-Consequences, all silent:
-
-- a derived class's own field defaults (`pub var b = 20`) stay `nil`;
-- explicit assignments in the constructor (`self.c = 30`) are lost;
-- any other constructor logic (side effects, validation) is skipped.
-
-```orb
-class Base    { pub var a = 10   pub init() { } }
-class Derived : Base {
-    pub var b = 20
-    pub init() { super.init()   self.b = 99 }   # neither the default nor the assignment lands
-}
-new Derived().b   # -> nil (expected 99)
-```
-
-Storage and slot resolution are **not** at fault: the identical write from an
-ordinary method works (`p.setd()` → `p.d == 7` in the PoC), and the inherited
-field set by the super's constructor is correct.
-
-`EXECSUB` (`vm.cpp:1540`) looks like a proper call: it `PushState()`s, switches
-the context to the super's `Code`, and `goto BEGIN`; the super's `RET` →
-`PopState()` restores the whole `FiberContext` (code object included) plus IP/BP,
-so control *should* resume right after the `EXECSUB`. That points at the IR
-builder not emitting the trailing statements of a derived constructor at all,
-rather than at the VM — worth confirming with an IR/bytecode dump of the derived
-`init` before fixing.
-
-**PoC:** [`poc/ir/ir-004-derived-ctor-body.orb`](poc/ir/ir-004-derived-ctor-body.orb)
-`(confirmed live)` — 3 checks RED, 2 control checks green.
-
-**Fix.** Determine whether the derived-constructor lowering emits the statements
-following the `super.init(...)` call; if it does not, emit them after the
-`EXECSUB` and keep the constructor's own `RET` as the terminator. If it does emit
-them, the return path from `EXECSUB` is not resuming the caller's code object as
-`PopState` suggests, and the VM side needs the fix instead.
-*(2026-07-17: both hypotheses were wrong — the lowering and `EXECSUB`/`PopState`
-are fine. The derived constructor was never invoked in the first place: the
-`init` lookup resolved to the superclass. See the update above.)*
-
-</details>
-
----
-
-## IR-005 — Instantiating a class three levels deep in an inheritance chain hangs
-**Severity:** High (interpreter hang) · **Status:** FIXED (2026-07-22) · **Location:** `LoadFromObjectProp` SUPER branch (`orbit/orbiter/vm.cpp:779`)
-
-**Root cause (confirmed).** `super.m()` resolved the lookup base from the
-*receiver's runtime type* (`GetTypeInfoFromObject(self)` — always the most-derived
-class) rather than from the class that lexically defines the running method. As
-the constructor chain runs, `self`'s type never changes, so `super.init()` inside
-an inherited `init` re-resolved to that same `init`: `B.init` reached during
-`new C()` computed `super` off `C` and got `B` again → unbounded recursion, which
-grew the VMStack without limit (the sample showed the thread permanently inside
-`VMStack::Grow`/`MemoryCopy`, not a C++ loop). Two levels worked only by
-coincidence — the top method's owner equals the receiver type.
-
-**Fix.** In the SUPER branch, walk from the enclosing class instead:
-`type = O_GET_TYPE(func->shared->owner_type)`. The earlier `TIFindProperty`
-cycle-guard hypothesis was wrong (the chain terminates at nullptr). Regression
-guard: `ortest/oop/02_inheritance_resolution.orb` now exercises 3- and 4-level
-chains (fields + `super.who()` method chain).
-
-`A <- B` constructs fine; `A <- B <- C` makes `new C()` spin forever. The hang is
-at **runtime** — compilation completes and statements before the construction run
-and print normally.
-
-```orb
-class A  { pub init() { } }
-class B : A { pub init() { super.init() } }
-class C : B { pub init() { super.init() } }
-
-new B()   # ok
-new C()   # hangs
-```
-
-**Pre-existing**, and independent of IR-004: reproduces identically with the
-`LoadFromObjectProp` fix reverted (verified by stashing it and rebuilding).
-
-**Hypothesis (unverified).** `TIFindProperty` (`oobject.cpp:262`) walks the chain
-with `type = O_GET_TYPE(type)` and has **no cycle guard**. If the metatype root is
-self-referential (`Type`'s type being `Type`, the usual arrangement), then any
-lookup that misses all the way up loops forever. A two-level chain may always find
-its target before reaching the root, while a three-level one does not. Worth
-checking that root link first — a cycle guard there would be a cheap fix if so.
-
-**PoC:** [`poc/ir/ir-005-three-level-chain-hang.orb`](poc/ir/ir-005-three-level-chain-hang.orb)
-`(fixed)` — now terminates and passes; kept in the poc gate as a regression guard.
-
-**Test suite:** `ortest/oop/02_inheritance_resolution.orb` now exercises 3- and
-4-level chains (previously capped at two while this was live).
-
-<details><summary>Original report (2026-07-15, OPEN)</summary>
-
-Every `CALL` result is pinned to the return register R13 and *keeps* R13 as its
-`assigned_reg`. When two call results are bound to locals and stay live together,
-the allocator ends up with **two overlapping intervals both assigned R13** — a
-violation of the core invariant that overlapping intervals never share a
-register. Both are spilled across the intervening call and, at their shared use,
-both reload into R13 back-to-back; the second reload overwrites the first.
-
-Post-linearscan bytecode of `two_call` (`a := id(7); b := id(9); return a + b`):
-
-```
-CALL  R13        # a
-...
-CALL  R13        # b
-SKLDR R13        # reload a into R13
-SKLDR R13        # reload b into R13   <-- overwrites a
-ADD   R0         # R0 = R13 + R13 = b + b
-```
-
-So `a + b` evaluates to `b + b` (7+9 → 18). The reload strategy
-(`load->assigned_reg = instruction->assigned_reg`) faithfully reloads each value
-into its own home register, which is correct *unless* two live values were given
-the same home — which R13 pinning does.
-
-**Scope.** Only triggers when ≥2 call results are **bound and kept live** into a
-later op. Results consumed immediately (pushed as call args, folded once) are
-fine, because they never co-reside in R13 — so `add(add(1,2), add(3,4))` and
-`sq(add(2,3))` are correct. `three_call` (`a*100 + b*10 + c`) happens to pass
-because its arithmetic forces the results out of R13. Present at HEAD,
-independent of the register-leak fix.
-
-**PoC:** [`poc/ir/ir-003-r13-crosscall.orb`](poc/ir/ir-003-r13-crosscall.orb)
-`(confirmed live)` — RED until fixed. Broader tiered coverage lives in
-`ortest/regalloc/*.orb` (suite 04 isolates this; 01–03, 05 stay green), run via
-`ortest/run.sh`.
-
-**Fix (suggested).** Model the call result as an ordinary SSA value instead of
-leaving it pinned to R13. The cleanest form is a dedicated pre-pass after
-`ComputeLiveIntervals` — find calls, materialise the spill store/reload of every
-interval that spans them as real IR, re-run `ComputeLiveIntervals`, then
-allocate — which makes every reloaded value first-class and dissolves the R13
-special case (it also removes the fragile mutate-IR-during-allocation coupling).
-Since the VM clobbers all registers on a call (no callee-saved), spilling every
-spanning value is optimal, not wasteful. *(This is the path that was taken.)*
-
-</details>
-
----
-
-## IR-006 — The call-protocol registers (R10/R11/R12) are pinned on the value's producer, so two such values collide
-**Severity:** High (silent miscompile + interpreter crash) · **Status:** FIXED (2026-07-24) · **Location:** `SetNargs`/`SetRest`/`SetKwargs` (`orbit/liftoff/ir/instruction.h:170-186`), fixed in `IRBuilder::CreateCall` (`orbit/liftoff/ir/irbuilder.cpp`)
-
-Named, rest and keyword arguments reach the callee through fixed registers —
-`kCallNArgsReg = 10`, `kCallRestReg = 11`, `kCallKWArgsReg = 12` — read back by
-`ArgumentBinder::Bind` from `regs.r10/r11/r12`.
-
-`SetRest` (and its siblings) applied the pin to the **producing** instruction:
-
-```cpp
-void SetRest(Instruction *instr) const {
-    instr->assigned_reg = kCallRestReg;   // the producer is homed in R11 for its whole life
-    this->SetOperand(2, instr);
-}
-```
-
-so the value stayed homed in R11 for its entire live range rather than just
-around the call. With two spread calls whose operands are live at the same time,
-**both producers were homed to R11** — two overlapping intervals sharing one
-register, the exact invariant violation of [IR-003](#ir-003--two-call-results-live-simultaneously-collide-in-the-return-register-r13),
-only on R11 instead of RR.
-
-`AllocateSpecificRegister` does handle pins on pool registers (it spills both and
-keeps the longer-lived as owner-of-record, "*from interval.start onward the
-register is shared scratch*"), but that only works when the uses are separated.
-Two long, interleaved live ranges sharing a home register cannot both be correct:
-the reloads overwrite each other.
-
-```orb
-func f(a, ...rest) { return tostr(a) + "|" + tostr(rest) }
-
-x := [1, 2, 3]
-y := [7, 8, 9]
-
-f(x...)   # ok
-f(y...)   # assertion, or silently receives the previous call's rest list
-```
-
-Two symptoms, depending on what the clobbered register held:
-
-- **crash** — a container under construction lived in R11, the call wrote the
-  rest list over it, and `ADDELEM` asserted on a non-object (`vm.cpp`, `assert(O_IS_OBJECT(obj))`);
-- **silent miscompile** — a later call read a stale R11 and received the
-  *previous* call's rest list (`h(args...)` returned `7,99|[8]` instead of `1,99|[2, 3, 4, 5]`).
-
-Confirmed in the IR dump: both list literals were assigned `REG: 11`.
-
-**Fix.** Keep the pin, but shorten its live range: copy the value into the
-protocol register immediately before the call instead of homing the producer
-there. In `IRBuilder::CreateCall` the call is still *detached* at that point
-(`CreateCallDetached` uses `CreateObject`, which does not attach) while
-`CreateMove` attaches immediately, so the moves land right in front of the call:
-
-```cpp
-if (nargs != nullptr)  call->SetNargs(this->builder_.CreateMove(nargs));
-if (rest != nullptr)   call->SetRest(this->builder_.CreateMove(rest));
-if (kwargs != nullptr) call->SetKwargs(this->builder_.CreateMove(kwargs));
-```
-
-The pinned interval now spans only `MOV -> CALL` and cannot overlap another
-call's. R10/R11/R12 stay general-purpose in the allocator's pool, and neither
-LinearScan, the codegen (which only ever emitted `operands[0]` for a call) nor
-the VM needed changing.
-
-```
-before:  NLIST REG:11 · NLIST REG:11 · ... · CALL
-after:   NLIST REG:0  · NLIST REG:2  · ... · MOV REG:11 · CALL · MOV REG:11 · CALL
-```
-
-**PoC:** [`poc/ir/ir-006-spread-reg-collision.orb`](poc/ir/ir-006-spread-reg-collision.orb)
-`(fixed)` — 12 checks; verified red (assertion) before the fix and green after.
-
-**Note.** Found while testing the rest-argument paths of `ArgumentBinder`; no
-suite covered argument passing at the time, so the gate was green with this bug
-live. Call-mechanics coverage now lives in `ortest/calls/`.
-
----

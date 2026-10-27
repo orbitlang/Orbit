@@ -12,6 +12,43 @@ slot, `PutString` relies on `MemoryCopy` returning `dest + size` (verified in
 
 ---
 
+## SBUF-003 — Missing `Reset()` API forces leak-prone usage on error paths
+**Severity:** Info (enabler of SCAN-008) · **Status:** FIXED (2026-06-13) · **Location:** `sbuffer.cpp:99-101` (`StoreBuffer::Clear`)
+
+**Fix verified.** Resolved together with SCAN-008: `StoreBuffer::Clear()` rewinds
+`cursor_ = buffer_` (keeping the allocated capacity, no-op when `buffer_` is
+null), and `NextToken` calls it on entry, so failure paths no longer leave
+partial content for the next token.
+
+<details><summary>Original report</summary>
+
+The only way to "empty" the buffer was `GetBuffer`, which transfers ownership.
+The scanner's failure paths couldn't cheaply discard partial content — the root
+enabler of SCAN-008. The ask was a `Reset()` rewinding `cursor_ = buffer_`.
+
+</details>
+
+---
+
+## SBUF-002 — Signed/unsigned comparison in `Enlarge`
+**Severity:** Info (fragile, not currently exploitable) · **Status:** FIXED (2026-06-15) · **Location:** `sbuffer.cpp` (`Enlarge`)
+
+**Fix verified (built).** The remaining-space computation is now an explicit
+`const size_t available = this->end_ - this->cursor_;` (with a comment noting the
+`cursor_ <= end_` invariant), and the grow test is `available < increase` — no
+implicit `ptrdiff_t`→`size_t` conversion in the comparison.
+
+<details><summary>Original report</summary>
+
+`(this->end_ - this->cursor_) < increase` compared a `ptrdiff_t` against a
+`size_t`; the signed side was converted to unsigned. `cursor_ <= end_` is an
+invariant so the difference was never negative, but any future violation would
+silently skip the grow instead of failing loudly.
+
+</details>
+
+---
+
 ## SBUF-001 — fixed +8 growth → O(n²) for large tokens
 **Severity:** Medium (perf) · **Status:** FIXED (2026-06-15) · **Location:** `sbuffer.cpp` (`Enlarge` + `GetBuffer`)
 
@@ -41,42 +78,5 @@ Every time the buffer filled, capacity grew by exactly 8 bytes and `realloc`
 copied the whole buffer. A large string literal built char-by-char (the common
 path — `TokenizeString` calls `PutChar` per byte) cost O(n²): a 1 MiB literal
 implied ~131k reallocs, each copying up to 1 MiB.
-
-</details>
-
----
-
-## SBUF-002 — Signed/unsigned comparison in `Enlarge`
-**Severity:** Info (fragile, not currently exploitable) · **Status:** FIXED (2026-06-15) · **Location:** `sbuffer.cpp` (`Enlarge`)
-
-**Fix verified (built).** The remaining-space computation is now an explicit
-`const size_t available = this->end_ - this->cursor_;` (with a comment noting the
-`cursor_ <= end_` invariant), and the grow test is `available < increase` — no
-implicit `ptrdiff_t`→`size_t` conversion in the comparison.
-
-<details><summary>Original report</summary>
-
-`(this->end_ - this->cursor_) < increase` compared a `ptrdiff_t` against a
-`size_t`; the signed side was converted to unsigned. `cursor_ <= end_` is an
-invariant so the difference was never negative, but any future violation would
-silently skip the grow instead of failing loudly.
-
-</details>
-
----
-
-## SBUF-003 — Missing `Reset()` API forces leak-prone usage on error paths
-**Severity:** Info (enabler of SCAN-008) · **Status:** FIXED (2026-06-13) · **Location:** `sbuffer.cpp:99-101` (`StoreBuffer::Clear`)
-
-**Fix verified.** Resolved together with SCAN-008: `StoreBuffer::Clear()` rewinds
-`cursor_ = buffer_` (keeping the allocated capacity, no-op when `buffer_` is
-null), and `NextToken` calls it on entry, so failure paths no longer leave
-partial content for the next token.
-
-<details><summary>Original report</summary>
-
-The only way to "empty" the buffer was `GetBuffer`, which transfers ownership.
-The scanner's failure paths couldn't cheaply discard partial content — the root
-enabler of SCAN-008. The ask was a `Reset()` rewinding `cursor_ = buffer_`.
 
 </details>

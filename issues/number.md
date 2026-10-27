@@ -9,6 +9,42 @@ Prefix: `NUM`.
 
 ---
 
+## NUM-002 — No true unsigned 64-bit: `read_u64` / `UIntNew` surface values ≥ 2^63 as negative
+**Severity:** Medium · **Status:** OPEN · **Location:** `orbit/orbiter/datatype/number.cpp:794` (`UIntNew`); observable via `orbit/orbiter/datatype/rawptr.cpp` (`read_u64`)
+
+Orbit's integer `Number` is signed 64-bit. `UIntNew` stores the full bit
+pattern, but there is no representation for a positive value in the range
+`2^63 .. 2^64-1`: such values are interpreted (and printed, compared, and used
+in arithmetic) as their signed two's-complement equivalent.
+
+`RawPtr.read_u64` documents its result as an "unsigned Int", but reading a value
+with the top bit set yields a negative Number:
+
+```orbit
+let p = Rawptr.alloc(8, fill=255)   # buffer = 0xFFFFFFFFFFFFFFFF (SIZE_MAX)
+io.print(p.read_u64().str())        # prints -1, not 18446744073709551615
+```
+
+Consequences:
+- The `read_u64` docstring is misleading — the value is signed.
+- Any native API returning a `size_t` / `uint64_t` in the top half of the range
+  (e.g. `PCRE2_UNSET == SIZE_MAX`) cannot be compared against its documented
+  unsigned constant; callers must know to test against `-1` / `< 0` instead
+  (this is exactly the workaround used in `stdlib/regex/match.orb`).
+- `read_u32`/`read_u16`/`read_u8` are unaffected (they fit in signed 64-bit);
+  only the full-width `u64` (and `UIntNew` of large values) is lossy in
+  interpretation.
+
+**PoC (confirmed live):** the `alloc(8, fill=255)` snippet above; `read_u64()`
+returns `-1`, and `read_u64() == -1` is `true`.
+
+**Fix:** decide the intended semantics. Either (a) document `read_u64` as
+returning a signed 64-bit value and drop the "unsigned" claim (cheap, honest),
+or (b) introduce a real unsigned/bignum path so values ≥ 2^63 round-trip as
+positive (larger change; would also unblock NUM-001's unsigned literals).
+
+---
+
 ## NUM-001 — Integer literals above INT64_MAX are silently clamped
 **Severity:** Medium · **Status:** OPEN · **Location:** `orbit/orbiter/datatype/number.cpp:778` (`IntNew(string, base)`), `:794` (`UIntNew(string, base)`); reached from `orbit/liftoff/parser/parser.cpp:1719`
 
@@ -50,39 +86,3 @@ unsigned path exists, route large hex/`u`-suffixed literals through it — see
 NUM-002). Related: the `U_NUMBER_HEX` path already calls `UIntNew`
 (parser.cpp:1740), but `UIntNew` has the same no-ERANGE-check problem and still
 lands in a signed 64-bit Number (NUM-002).
-
----
-
-## NUM-002 — No true unsigned 64-bit: `read_u64` / `UIntNew` surface values ≥ 2^63 as negative
-**Severity:** Medium · **Status:** OPEN · **Location:** `orbit/orbiter/datatype/number.cpp:794` (`UIntNew`); observable via `orbit/orbiter/datatype/rawptr.cpp` (`read_u64`)
-
-Orbit's integer `Number` is signed 64-bit. `UIntNew` stores the full bit
-pattern, but there is no representation for a positive value in the range
-`2^63 .. 2^64-1`: such values are interpreted (and printed, compared, and used
-in arithmetic) as their signed two's-complement equivalent.
-
-`RawPtr.read_u64` documents its result as an "unsigned Int", but reading a value
-with the top bit set yields a negative Number:
-
-```orbit
-let p = Rawptr.alloc(8, fill=255)   # buffer = 0xFFFFFFFFFFFFFFFF (SIZE_MAX)
-io.print(p.read_u64().str())        # prints -1, not 18446744073709551615
-```
-
-Consequences:
-- The `read_u64` docstring is misleading — the value is signed.
-- Any native API returning a `size_t` / `uint64_t` in the top half of the range
-  (e.g. `PCRE2_UNSET == SIZE_MAX`) cannot be compared against its documented
-  unsigned constant; callers must know to test against `-1` / `< 0` instead
-  (this is exactly the workaround used in `stdlib/regex/match.orb`).
-- `read_u32`/`read_u16`/`read_u8` are unaffected (they fit in signed 64-bit);
-  only the full-width `u64` (and `UIntNew` of large values) is lossy in
-  interpretation.
-
-**PoC (confirmed live):** the `alloc(8, fill=255)` snippet above; `read_u64()`
-returns `-1`, and `read_u64() == -1` is `true`.
-
-**Fix:** decide the intended semantics. Either (a) document `read_u64` as
-returning a signed 64-bit value and drop the "unsigned" claim (cheap, honest),
-or (b) introduce a real unsigned/bignum path so values ≥ 2^63 round-trip as
-positive (larger change; would also unblock NUM-001's unsigned literals).

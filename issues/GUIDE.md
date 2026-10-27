@@ -52,7 +52,13 @@ Every finding gets a **stable ID**: `PREFIX-NNN`.
 
 ## 3. Anatomy of a finding
 
-Each finding is a `##` section. Template for an **open** finding:
+Each finding is a `##` section. Findings are ordered **newest first**: a new
+finding goes right after the file header (§10), above every existing one, so
+the IDs in a file read in descending order. A finding keeps its place when
+its status changes: closing, reopening or a note never moves it. Sections are
+separated by a `---` rule.
+
+Template for an **open** finding:
 
 ```markdown
 ## PREFIX-NNN — Short imperative title of the problem
@@ -259,7 +265,8 @@ coordination. Rules that make that safe:
 
 **Add a finding**
 1. Use the next `PREFIX-NNN` in that file.
-2. Fill the open-finding template (§3); set severity and a real PoC.
+2. Fill the open-finding template (§3) and put it at the top, right after the
+   file header (newest first); set severity and a real PoC.
 3. If the bug has a runnable trigger, add a PoC file `poc/<component>/<id>.orb`
    (or `.cpp` for byte-level) per §11, encoding the expected post-fix behavior.
 4. Bump the file's total (and open) count in the README.
@@ -281,7 +288,7 @@ coordination. Rules that make that safe:
 ## 10. Standard component-file header
 
 Every `<component>.md` starts with the same header block, then a `---` rule,
-then findings. Paste this and fill the placeholders:
+then findings, newest first (§3). Paste this and fill the placeholders:
 
 ```markdown
 # <component> — bug report
