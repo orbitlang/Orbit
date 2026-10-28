@@ -334,6 +334,9 @@ void Orbiter::Scheduler(OSThread *ost) noexcept {
     ost->thread.detach();
 
     this->FreeOSThread(ost);
+
+    if (this->should_exit_ && this->ost_total_ == 0)
+        this->ost_cond_exit_.notify_all();
 }
 
 void Orbiter::FreeOSThread(const OSThread *ost) noexcept {
@@ -558,6 +561,19 @@ bool Orbiter::Finalize() noexcept {
     //      return false;
 
     // fixme: check fiberqueue contents!
+
+    std::unique_lock lock(orbiter_->ost_lock_);
+
+    orbiter_->should_exit_ = true;
+
+    orbiter_->ev_loop_cond_.notify_all();
+    orbiter_->ost_cond_.notify_all();
+
+    orbiter_->ost_cond_exit_.wait(lock, [] {
+        return orbiter_->ost_total_ == 0;
+    });
+
+    lock.unlock();
 
     delete orbiter_;
 

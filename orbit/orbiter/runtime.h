@@ -89,6 +89,7 @@ namespace orbiter {
         std::mutex ev_loop_lock_;
 
         std::condition_variable ost_cond_;
+        std::condition_variable ost_cond_exit_;
         std::condition_variable ev_loop_cond_;
 
         FiberQueue<> fiber_queue_;
