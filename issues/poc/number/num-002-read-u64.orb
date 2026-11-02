@@ -1,0 +1,32 @@
+# PoC NUM-002 — an unsigned 64-bit value at or above 2^63 must read back as
+# itself, not as its signed two's complement. `Rawptr.read_u64` documents an
+# unsigned result, but `UIntNew` stores the bit pattern in a Number that is
+# always read as signed: eight 0xFF bytes read back as -1.
+#
+# A runtime test: prints "ALL TESTS PASSED" only when every check matches.
+# EXPECT: contains: ALL TESTS PASSED
+
+import "io"
+
+var fails = 0
+
+func check(name, got, expected) {
+    if got == expected {
+        io.print("OK   ", name)
+    } else {
+        io.print("FAIL ", name, "-- got:", got, "expected:", expected)
+        fails += 1
+    }
+}
+
+p := Rawptr.alloc(8, fill=255)
+check("control: read_i64 of eight 0xFF bytes", tostr(p.read_i64()), "-1")
+check("read_u64 of eight 0xFF bytes", tostr(p.read_u64()), "18446744073709551615")
+check("read_u64 of eight 0xFF bytes is not -1", p.read_u64() == -1, false)
+p.free()
+
+if fails == 0 {
+    io.print("ALL TESTS PASSED")
+} else {
+    io.print(fails, "TEST(S) FAILED")
+}

@@ -1,0 +1,139 @@
+# Numbers suite 01 -- how 64-bit integers are written, stored and read back.
+#
+# An integer is a SMI or a heap Number holding a sign and a 64-bit magnitude,
+# so every value in -(2^64-1) .. 2^64-1 exists exactly once. Covered: literals
+# at the boundaries in every base and with the `u` suffix, the type (a big
+# value is still a Number), equality and ordering with SMI and heap operands
+# on both sides, truthiness, hashing (dict keys, set members), the %d/%u/%x
+# formats, Decimal conversion, and the Rawptr u64/i64 accessors.
+#
+# Integer results are compared through `tostr`: until the work lands, two big
+# literals compare equal because both are clamped to INT64_MAX (NUM-001).
+#
+# Regression guard for NUM-001 (literals above INT64_MAX clamped) and NUM-002
+# (read_u64 of 2^64-1 returned -1).
+#
+# EXPECT: contains: ALL TESTS PASSED
+
+import "io"
+
+var fails = 0
+
+func check(name, got, expected) {
+    if got == expected {
+        io.print("OK   ", name)
+    } else {
+        io.print("FAIL ", name, "-- got:", got, "expected:", expected)
+        fails += 1
+    }
+}
+
+# `res` is the Result of a `trap`: it must hold an error of kind `want_kind`
+func check_error(name, res, want_kind) {
+    if res {
+        io.print("FAIL ", name, "-- expected an error, got:", res.unwrap())
+        fails += 1
+        return
+    }
+
+    err := res.unwrap_err()
+
+    if err.kind == want_kind {
+        io.print("OK   ", name)
+    } else {
+        io.print("FAIL ", name, "-- got:", err.kind, err.reason, "expected:", want_kind)
+        fails += 1
+    }
+}
+
+MAX := 9223372036854775807      # 2^63 - 1, the largest I64
+TOP := 18446744073709551615     # 2^64 - 1, the largest magnitude
+
+# The error for a value out of range (an operation past +-(2^64-1), or a big
+# value where a smaller integer is needed). Change it here if the kind changes.
+OUT_OF_RANGE := @ValueError
+
+# Literals at the boundaries, with and without `u`, in every base
+check("INT64_MAX", tostr(MAX), "9223372036854775807")
+check("2^63", tostr(9223372036854775808), "9223372036854775808")
+check("2^64-1", tostr(TOP), "18446744073709551615")
+check("0xFFFFFFFFFFFFFFFF", tostr(0xFFFFFFFFFFFFFFFF), "18446744073709551615")
+check("0xFFFFFFFFFFFFFFFFu", tostr(0xFFFFFFFFFFFFFFFFu), "18446744073709551615")
+check("0x8000000000000000", tostr(0x8000000000000000), "9223372036854775808")
+check("0b1 followed by 63 zeros", tostr(0b1000000000000000000000000000000000000000000000000000000000000000), "9223372036854775808")
+check("0o1777777777777777777777", tostr(0o1777777777777777777777), "18446744073709551615")
+check("-9223372036854775808 is INT64_MIN", tostr(-9223372036854775808), "-9223372036854775808")
+check("-0x8000000000000000", tostr(-0x8000000000000000), "-9223372036854775808")
+check("-18446744073709551615", tostr(-18446744073709551615), "-18446744073709551615")
+check("2^61, the first value past the SMI range", tostr(2305843009213693952), "2305843009213693952")
+check("5u", tostr(5u), "5")
+check("5u == 5", 5u == 5, true)
+
+# One integer type: a big value is still a Number
+check("tp_name of 2^64-1", tp_name(TOP), "Number")
+check("2^64-1 is Number", TOP is Number, true)
+check("-(2^64-1) is Number", -TOP is Number, true)
+
+# Equality and comparison, SMI and heap on both sides
+check("0xFFFFFFFFFFFFFFFF == 18446744073709551615", 0xFFFFFFFFFFFFFFFF == 18446744073709551615, true)
+check("2^63 == INT64_MAX", 9223372036854775808 == MAX, false)
+check("2^63 != INT64_MAX", 9223372036854775808 != MAX, true)
+check("2^64-1 == -(2^64-1)", TOP == -TOP, false)
+check("-(2^64-1) == -18446744073709551615", -TOP == -18446744073709551615, true)
+check("2^63 > INT64_MAX", 9223372036854775808 > MAX, true)
+check("INT64_MAX < 2^63", MAX < 9223372036854775808, true)
+check("2^64-1 > 2^63", TOP > 9223372036854775808, true)
+check("-(2^64-1) < -2^63", -TOP < -9223372036854775808, true)
+check("-2^63 - 1 < -2^63", -9223372036854775809 < -9223372036854775808, true)
+check("5 < 2^64-1", 5 < TOP, true)
+check("2^64-1 > 5", TOP > 5, true)
+check("-1 > -(2^64-1)", -1 > -TOP, true)
+check("2^64-1 >= 2^64-1", TOP >= TOP, true)
+check("2^63 <= 2^63", 9223372036854775808 <= 9223372036854775808, true)
+check("2^64-1 is true", TOP ? true : false, true)
+check("-(2^64-1) is true", -TOP ? true : false, true)
+
+# Hashing: big values as dict keys and set members
+d := {}
+d[9223372036854775808] = "2^63"
+d[MAX] = "max"
+d[TOP] = "top"
+check("dict key 2^63", d.get(9223372036854775808), "2^63")
+check("dict key INT64_MAX", d.get(MAX), "max")
+check("dict key 2^64-1", d.get(TOP), "top")
+check("hash of 2^63 is stable", hash(9223372036854775808) == hash(9223372036854775808), true)
+s := {TOP, MAX}
+check("2^64-1 in a set", TOP in s, true)
+check("2^63 not in that set", 9223372036854775808 in s, false)
+
+# Formatting: %d and %u print the value; %x/%X of a negative keep the C bit
+# pattern while it fits in 64 bits
+check("%d of 2^64-1", "%d" % TOP, "18446744073709551615")
+check("%u of 2^64-1", "%u" % TOP, "18446744073709551615")
+check("%x of 2^64-1", "%x" % TOP, "ffffffffffffffff")
+check("%X of 2^63", "%X" % 9223372036854775808, "8000000000000000")
+check("%x of -1 (C bit pattern, as today)", "%x" % -1, "ffffffffffffffff")
+check("%d of -(2^64-1)", "%d" % -TOP, "-18446744073709551615")
+check("%b of 2^63", "%b" % 9223372036854775808, "1000000000000000000000000000000000000000000000000000000000000000")
+check("%o of 2^64-1", "%o" % TOP, "1777777777777777777777")
+
+# Decimal conversion
+check("(2^64-1) * 1.0 is about 1.8e19", TOP * 1.0 > 18446744073709550000.0, true)
+
+# Rawptr: read_u64/write_u64 round trip, and the I64 view of the same bytes
+p := Rawptr.alloc(8)
+p.write_u64(TOP)
+check("read_u64 after write_u64(2^64-1)", tostr(p.read_u64()), "18446744073709551615")
+check("read_i64 of the same bytes", tostr(p.read_i64()), "-1")
+p.write_u64(9223372036854775808)
+check("read_u64 after write_u64(2^63)", tostr(p.read_u64()), "9223372036854775808")
+check("read_i64 of 2^63's bytes", tostr(p.read_i64()), "-9223372036854775808")
+p.write_i64(-1)
+check("read_u64 after write_i64(-1)", tostr(p.read_u64()), "18446744073709551615")
+p.free()
+
+if fails == 0 {
+    io.print("ALL TESTS PASSED")
+} else {
+    io.print(fails, "TEST(S) FAILED")
+}

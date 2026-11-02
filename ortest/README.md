@@ -51,7 +51,9 @@ address parsing, the raw `TCPHandle` and `UDPHandle`, and the stdlib
 `exceptions/` (leaving a try/catch/finally abruptly with break, continue or
 return), `decorators/` (`@[...]` on plain functions and on methods), `when/`
 (module-level `when` blocks: every declaration form a branch may hold, and the
-statements it refuses).
+statements it refuses), `numbers/` (64-bit integers: literals, arithmetic,
+bitwise operators and shifts across the I64/U64 boundaries, values refused
+where a smaller integer is needed, Number methods, `wrapping_*`).
 Add a new subsystem as a new subfolder — the runner picks it up automatically.
 
 A suite that opens sockets binds to `127.0.0.1` port **0** and reads the port

@@ -1,0 +1,47 @@
+# PoC NUM-003 — integer arithmetic past the 64-bit range must not wrap
+# silently. Today a product of two SMIs (at most 2^61-1) is computed on 64
+# bits without an overflow check (`2305843009213693951 * 8 == -8`), and `+`,
+# `-`, `*` on a heap Number overflow I64 (undefined behavior in C++) and wrap
+# (`4611686018427387903 * 4 == -4`, `INT64_MAX + 1 == INT64_MIN`).
+#
+# The expectation follows the integer design chosen for unsigned 64-bit
+# values: a heap Number holds a sign and a 64-bit magnitude, so results up to
+# 2^64-1 in magnitude are exact, and a result beyond that is an error.
+#
+# A runtime test: prints "ALL TESTS PASSED" only when every check matches.
+# EXPECT: contains: ALL TESTS PASSED
+
+import "io"
+
+var fails = 0
+
+func check(name, got, expected) {
+    if got == expected {
+        io.print("OK   ", name)
+    } else {
+        io.print("FAIL ", name, "-- got:", got, "expected:", expected)
+        fails += 1
+    }
+}
+
+max := 9223372036854775807
+min := -max - 1
+
+check("a product of two SMIs past 64 bits", tostr(2305843009213693951 * 8), "18446744073709551608")
+check("a heap product past 64 bits", tostr(4611686018427387903 * 4), "18446744073709551612")
+check("INT64_MAX + 1", tostr(max + 1), "9223372036854775808")
+check("INT64_MAX * 2", tostr(max * 2), "18446744073709551614")
+check("INT64_MIN - 1", tostr(min - 1), "-9223372036854775809")
+check("INT64_MIN * -1", tostr(min * -1), "9223372036854775808")
+
+r := trap (max * 4)
+check("a product past 2^64-1 is an error", r ? "no error" : "error", "error")
+
+r = trap (min * 4)
+check("a product below -(2^64-1) is an error", r ? "no error" : "error", "error")
+
+if fails == 0 {
+    io.print("ALL TESTS PASSED")
+} else {
+    io.print(fails, "TEST(S) FAILED")
+}

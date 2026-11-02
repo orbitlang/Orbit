@@ -1,0 +1,44 @@
+# PoC NUM-004 — integer division `//` must follow one rule whatever the size
+# of its operands. Orbit's `//` truncates towards zero and `%` takes the sign
+# of the dividend (C-style; pinned by ortest/operators/02_basic_ops.orb), and
+# so it does on SMIs. On a heap Number (beyond 2^61-1 in magnitude) `//`
+# rounds towards -infinity instead, while `%` still truncates: the same
+# division gives a different quotient, and `a == (a // b) * b + a % b` no
+# longer holds.
+#
+# A runtime test: prints "ALL TESTS PASSED" only when every check matches.
+# EXPECT: contains: ALL TESTS PASSED
+
+import "io"
+
+var fails = 0
+
+func check(name, got, expected) {
+    if got == expected {
+        io.print("OK   ", name)
+    } else {
+        io.print("FAIL ", name, "-- got:", got, "expected:", expected)
+        fails += 1
+    }
+}
+
+small := -7
+two := 2
+check("control: a SMI quotient truncates", small // two, -3)
+check("control: a SMI remainder has the dividend's sign", small % two, -1)
+
+big := -9223372036854775807
+check("a heap quotient truncates", tostr(big // two), "-4611686018427387903")
+check("a heap remainder has the dividend's sign", big % two, -1)
+check("a == (a // b) * b + a % b on a heap Number", (big // two) * two + big % two == big, true)
+
+neg_three := -3
+pos := 9223372036854775807
+check("a heap quotient by a negative divisor truncates", tostr(pos // neg_three), "-3074457345618258602")
+check("its remainder has the dividend's sign", pos % neg_three, 1)
+
+if fails == 0 {
+    io.print("ALL TESTS PASSED")
+} else {
+    io.print(fails, "TEST(S) FAILED")
+}

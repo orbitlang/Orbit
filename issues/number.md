@@ -1,11 +1,90 @@
 # `number.md` — `orbit/orbiter/datatype/number.cpp` (integer Number: parsing & representation)
 
 Findings for Orbit's integer `Number`: how integer literals are converted from
-their token text, and how 64-bit values are represented. Both findings below are
+their token text, and how 64-bit values are represented. The findings below are
 faces of the same limitation — Orbit's integer `Number` is a **signed 64-bit**
 value, and the string→Number conversions do not handle the top of the range.
 
 Prefix: `NUM`.
+
+---
+
+## NUM-004 — `//` rounds differently on a heap Number than on a SMI
+**Severity:** High (silent wrong result) · **Status:** OPEN · **Location:** `orbit/orbiter/datatype/number.cpp:142` (`NumberIDiv`), against `orbit/orbiter/datatype/oops.cpp:105` (`ObjectDivImpl`, SMI fast path)
+
+Orbit's `//` truncates towards zero and `%` takes the sign of the dividend,
+C-style (pinned by `ortest/operators/02_basic_ops.orb`), and the SMI fast
+path does exactly that (`na / nb`, `na % nb`). `NumberIDiv`, which handles
+any heap operand, adds a correction that rounds the quotient towards -∞
+instead, while `NumberMod` still truncates:
+
+```orbit
+-7 // 2                       # -3 (SMI)
+-9223372036854775807 // 2     # -4611686018427387904, truncation gives ...903
+-9223372036854775807 % 2      # -1, truncating: consistent with -3, not with ...904
+```
+
+The same division gives a different quotient depending on the size of its
+operands (beyond 2^61-1 in magnitude a value is a heap Number), and on heap
+values `a == (a // b) * b + a % b` no longer holds.
+
+```cpp
+// C++ truncates towards zero; adjust towards -∞ when the signs differ and
+// there is a non-zero remainder.
+auto q = a / b;
+const auto r = a % b;
+if (r != 0 && ((r ^ b) < 0))
+    q--;
+```
+
+**Found** while mapping the number code for unsigned 64-bit support
+(NUM-002).
+
+**PoC:** [`poc/number/num-004-idiv-heap.orb`](poc/number/num-004-idiv-heap.orb)
+*(confirmed live: the two SMI controls and the two heap remainders pass, the
+three heap quotient checks fail)*.
+
+**Fix (suggested, not tried):** drop the correction, so `NumberIDiv` truncates
+like the SMI path and `NumberMod`. Part of the NUM-002 work, where `//` and
+`%` move to sign and magnitude anyway.
+
+---
+
+## NUM-003 — Integer overflow wraps silently; a product of two SMIs is not even checked
+**Severity:** High (silent wrong result; undefined behavior in C++) · **Status:** OPEN · **Location:** `orbit/orbiter/datatype/oops.cpp:63` (`ObjectAddSubMul`, SMI fast path), `orbit/orbiter/datatype/number.cpp:73`, `:87`, `:101` (`NumberAdd`, `NumberSub`, `NumberMul`)
+
+Integer arithmetic that leaves the 64-bit range gives a wrong number and no
+error:
+
+```orbit
+2305843009213693951 * 8      # -8 (two SMIs; SMI max is 2^61-1)
+4611686018427387903 * 4      # -4 (a heap Number)
+9223372036854775807 + 1      # -9223372036854775808
+9223372036854775807 * 2      # -2
+```
+
+- The SMI fast path computes `+`, `-` and `*` on `MSize` and hands the result
+  to `IntNew`. Two SMIs (62-bit values, `kSMIBit`) cannot overflow 64 bits
+  when added or subtracted, but their product can, and nothing checks it:
+  the product wraps modulo 2^64 before `IntNew` sees it.
+- On a heap Number, `NumberAdd`/`NumberSub`/`NumberMul` compute `a + b`,
+  `a - b`, `a * b` on `I64`: signed overflow is undefined behavior in C++,
+  and in practice wraps.
+
+**Found** while mapping the number code for unsigned 64-bit support
+(NUM-002).
+
+**PoC:** [`poc/number/num-003-overflow.orb`](poc/number/num-003-overflow.orb)
+*(confirmed live: the eight checks fail)*. Its expectations follow the
+design chosen for NUM-002 — a heap Number holds a sign and a 64-bit
+magnitude, so results up to 2^64-1 in magnitude are exact and anything beyond
+is an error.
+
+**Fix (suggested, not tried):** detect overflow instead of wrapping:
+`__builtin_mul_overflow` on the SMI product, falling back to the heap path;
+heap arithmetic on sign and magnitude with `__builtin_add_overflow` /
+`__builtin_mul_overflow` on `U64`, and an error past `2^64-1` in magnitude.
+Part of the NUM-002 work.
 
 ---
 
@@ -35,8 +114,9 @@ Consequences:
   only the full-width `u64` (and `UIntNew` of large values) is lossy in
   interpretation.
 
-**PoC (confirmed live):** the `alloc(8, fill=255)` snippet above; `read_u64()`
-returns `-1`, and `read_u64() == -1` is `true`.
+**PoC:** [`poc/number/num-002-read-u64.orb`](poc/number/num-002-read-u64.orb)
+*(confirmed live: `read_u64()` of eight 0xFF bytes returns `-1`, and
+`read_u64() == -1` is `true`)*.
 
 **Fix:** decide the intended semantics. Either (a) document `read_u64` as
 returning a signed 64-bit value and drop the "unsigned" claim (cheap, honest),
@@ -74,7 +154,8 @@ Two aggravating factors:
 - No `ERANGE` check means overflow is indistinguishable from a legitimate
   `INT64_MAX` literal.
 
-**PoC (confirmed live against `bin/Orbit`):**
+**PoC:** [`poc/number/num-001-literal-clamp.orb`](poc/number/num-001-literal-clamp.orb)
+*(confirmed live: five of six checks fail)*. The original snippet:
 ```orbit
 import "io"
 io.print(0xFFFFFFFFFFFFFFFF.str())   # prints 9223372036854775807, not 18446744073709551615

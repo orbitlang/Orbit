@@ -1,0 +1,104 @@
+# PoC VM-016 — a native method must keep reading its own arguments after a
+# hook it calls (`equal`, `hash`) has grown the VM stack.
+#
+# CallNative hands a native function `argv`, a pointer into the VM stack. A
+# hook runs on the same stack through EvalSync; when it grows the stack,
+# VMStack::Grow reallocates the buffer and frees the old one, and `argv` keeps
+# pointing into it. `list.contains`, `list.index` and `tuple.count` read
+# `argv[1]` again for the next element: from the second element on they read
+# freed memory.
+#
+# Each case runs in a fiber of its own, so its stack starts small and the
+# first hook grows it; the hook then allocates lists whose arrays are the size
+# of the freed block, so the stale argument reads as one of their numbers.
+# Spawned fibers come from a pool that keeps a grown stack, so a case only
+# fails while its fiber is a fresh one: keep the cases few.
+#
+# A runtime test: prints "ALL TESTS PASSED" only when every check matches.
+# EXPECT: contains: ALL TESTS PASSED
+
+import "io"
+
+var fails = 0
+
+func check(name, got, expected) {
+    if got == expected {
+        io.print("OK   ", name)
+    } else {
+        io.print("FAIL ", name, "-- got:", got, "expected:", expected)
+        fails += 1
+    }
+}
+
+func deep(n) { return n == 0 ? 0 : 1 + deep(n - 1) }
+
+var keep = []
+
+# Grow the stack once per fiber, then reuse the block it left
+func grow_and_churn(state) {
+    if state.grown {
+        return
+    }
+
+    state.grown = true
+    deep(20000)
+
+    loop i := 0; i < 64; i++ {
+        l := []
+        loop j := 0; j < 2040; j++ { l.append(j) }
+        keep.append(l)
+    }
+}
+
+class State {
+    pub var grown = false
+}
+
+class Key {
+    pub var id
+    pub var state
+
+    pub init(id, state) {
+        self.id = id
+        self.state = state
+    }
+
+    pub func equal(other) {
+        grow_and_churn(self.state)
+        return self.id == other.id
+    }
+
+}
+
+func run(ch, body) {
+    r := trap body(new State())
+    v := r ? r.unwrap() : r.unwrap_err().reason
+    ch <- v
+}
+
+func in_fiber(body) {
+    ch := Chan(capacity=1)
+    spawn run(ch, body)
+    return <- ch
+}
+
+func list_contains(st) {
+    return [new Key(1, st), new Key(2, st), new Key(3, st)].contains(new Key(3, st))
+}
+check("list.contains reads its argument after an equal hook grew the stack", in_fiber(list_contains), true)
+
+func list_index(st) {
+    return [new Key(1, st), new Key(2, st), new Key(3, st)].index(new Key(3, st))
+}
+check("list.index reads its argument after an equal hook grew the stack", in_fiber(list_index), 2)
+
+func tuple_count(st) {
+    return (new Key(1, st), new Key(3, st), new Key(3, st)).count(new Key(3, st))
+}
+check("tuple.count reads its argument after an equal hook grew the stack", in_fiber(tuple_count), 2)
+
+if fails == 0 {
+    io.print("ALL TESTS PASSED")
+} else {
+    io.print(fails, "TEST(S) FAILED")
+}

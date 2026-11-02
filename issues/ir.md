@@ -1,10 +1,88 @@
 # ir — bug report
 
 **Component:** `orbit/liftoff/ir` (instruction.h, linearscan.cpp, irbuilder.cpp) · **ID prefix:** `IR`
-**PoCs:** [`poc/ir/`](poc/ir/) · **Last reviewed:** 2026-10-27
+**PoCs:** [`poc/ir/`](poc/ir/) · **Last reviewed:** 2026-10-30
 **Status:** OPEN · PARTIAL · FIXED · WONTFIX — see [GUIDE.md](GUIDE.md).
 
 > Imported 2026-06-15 from `orbit/liftoff/ir/KNOWN_ISSUES.md` (ISSUE-001 → IR-001).
+
+---
+
+## IR-021 — A method called on an integer literal above 0xFFFF aborts the compiler
+**Severity:** High (compile-time abort on valid source) · **Status:** OPEN · **Location:** `orbit/liftoff/ir/irbuilder.cpp:891` (`visitCallPrepend`), `orbit/liftoff/ir/builder.cpp:474` (`Builder::LoadImmediate`)
+
+```orbit
+v := 100000
+v.max(3)          # Assertion failed: (obj->type() == ObjectType::INSTRUCTION), function visitCallPrepend
+(65536).abs()     # same
+(65535).abs()     # fine
+```
+
+`Builder::LoadImmediate` loads a SMI that does not fit in 16 bits as a chain
+of `LDIMM` chunks tied together by a Phi (a same-register constraint, not a
+control-flow join), and returns the Phi. A method call reads its receiver
+from the selector's first operand and asserts that it is a plain
+instruction, so any method called on such a literal — directly, or through a
+variable the IR forwards the literal from, at module level or in a function
+— aborts the compiler. Passing the same value as an argument (`f(100000)`)
+or using it in an expression (`v + 1`) works.
+
+**Found** writing the numbers acceptance suite for unsigned 64-bit support
+(NUM-002): `(0x100000001b3).wrapping_mul(...)` aborted the compiler.
+
+**PoC:** [`poc/ir/ir-021-method-on-wide-immediate.orb`](poc/ir/ir-021-method-on-wide-immediate.orb)
+*(confirmed live: aborts at compile time)*.
+
+**Fix (suggested, verified by probe 2026-11-02, then reverted):** drop the
+assertion; `StackPush` takes the Phi like any other value, and the `PUSH`
+reads the register the chunks fill. With the probe the PoC passes, a
+function mixing `v.max(a) + w.min(a) + (123456).abs()` gives the expected
+values, `ortest` and the PoC gate are unchanged apart from the suites and
+findings already red, and `phi-regalloc.orb` passes. Whether a Phi can reach
+other places that assume an instruction (the same cast exists elsewhere in
+`irbuilder.cpp`) was not audited.
+
+---
+
+## IR-020 — A channel send used as a value compiles to code the VM cannot run
+**Severity:** High (valid source per the grammar aborts the VM; release behavior not tried) · **Status:** OPEN · **Location:** `orbit/liftoff/ir/irbuilder.cpp:754` (`visitBinary`, `CHAN_SEND`), `orbit/liftoff/parser/parser.cpp:1760` (`ParseInfix`)
+
+The grammar makes a send an expression (`channel_send_expr = expression,
+"<-", expression;` in `expression`), and the parser builds it as an infix
+node, but the IR builder emits `CHSND` with `CreateManip`, an instruction
+that defines no result. A statement `ch <- v` is fine; a send whose value is
+used is not:
+
+```orbit
+ch := Chan(capacity=2)
+func f() {
+    x := ch <- 1          # Assertion failed: (false), function eval, file vm.cpp
+}
+f()
+```
+
+The same abort comes from `ch <- r ? a : b`, at module level or in a
+function, because `<-` binds tighter than the ternary: the AST is
+`TERNARY(test: CHAN_SEND(ch, r), a, b)`, so `r` is sent and the send's
+missing value is tested. That line reads naturally as "send `r ? a : b`",
+which is what parenthesizing gives (`ch <- (r ? a : b)` works). The debug VM
+stops on `assert(false)` in the `default:` case of the dispatch switch, an
+opcode it does not know.
+
+**Found** writing VM-016's PoC: `ch <- r ? r.unwrap() : r.unwrap_err().reason`
+in a spawned function aborted before any output; the receiver got the `Result`
+itself.
+
+**PoC:** none yet: the behavior to encode depends on the decision below.
+Reproducers above *(confirmed live: `x := ch <- 1` in a function,
+`ch <- 1 ? 2 : 3` in a function and at module level)*.
+
+**Fix (to decide, not tried):** either a send is a statement only (the parser
+refuses it where a value is needed, and its right-hand side is parsed with the
+lowest precedence, as an assignment's is, so `ch <- r ? a : b` sends the
+ternary), or a send has a value (`CHSND` gets a destination register, e.g. nil
+or `true`, and the precedence question stays). The grammar has to follow
+either way.
 
 ---
 

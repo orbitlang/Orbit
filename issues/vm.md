@@ -1,8 +1,82 @@
 # vm — bug report
 
 **Component:** `orbit/orbiter` (interpreter: trap/panic unwind, register file) · **ID prefix:** `VM`
-**PoCs:** [`poc/vm/`](poc/vm/) · **Last reviewed:** 2026-10-27
+**PoCs:** [`poc/vm/`](poc/vm/) · **Last reviewed:** 2026-10-30
 **Status:** OPEN · PARTIAL · FIXED · WONTFIX — see [GUIDE.md](GUIDE.md).
+
+---
+
+## VM-016 — A native function reads its arguments from a VM stack that a hook it calls can reallocate
+**Severity:** High (use after free: wrong values, wrong types, possible crash) · **Status:** OPEN · **Location:** `orbit/orbiter/vm.cpp:486` (`CallNative`), `orbit/orbiter/vmstack.cpp:52` (`VMStack::Grow`), users such as `orbit/orbiter/datatype/list.cpp:526` (`contains`), `:565` (`count`), `:634` (`index`), `orbit/orbiter/datatype/tuple.cpp:395` (`count`)
+
+`CallNative` passes a native function its arguments as `argv`, a pointer
+into the VM stack:
+
+```cpp
+auto **args = (OObject **) (stack->stack + (regs->SP.reg - offset));
+
+const auto result = func->shared->func(func, args, args[argc], args[argc + 1], argc);
+```
+
+A native that compares, hashes or prints an instance calls the instance's
+hook (`equal`, `compare`, `hash`, `tostr`, `repr`) through
+`Orbiter::EvalSync`, which runs it on the same fiber and the same stack. When
+the hook needs more stack, `VMStack::Grow` reallocates the buffer
+(`allocator.realloc`) and the old one is freed, but the native still holds
+`argv` into it. Every read of `argv` after the first hook is a read of freed
+memory:
+
+```orbit
+func deep(n) { return n == 0 ? 0 : 1 + deep(n - 1) }
+
+class Key {
+    pub var id
+    pub init(id) { self.id = id }
+    pub func equal(other) {
+        deep(20000)                     # grows the stack: argv is left behind
+        # ...allocations that reuse the freed block...
+        return self.id == other.id
+    }
+}
+
+[new Key(1), new Key(2), new Key(3)].contains(new Key(3))
+# AttributeError: 'Number' object has no property 'id'
+```
+
+`list.contains`, `list.count`, `list.index` and `tuple.count` read
+`argv[1]` again for every element, after the previous element's `equal`.
+`dict.get` reads its default (`argv[2]`) after the lookup, which calls
+`hash` and `equal`; it is exposed the same way, though the PoC did not catch
+it reading a reused value. Any other native that reads `argv` after calling
+a hook is too. Nothing goes wrong until the freed block is reused: without
+the allocations in the hook the results are right, which is how it stayed
+unnoticed.
+
+**Found** checking the audit note left with VM-009 (a native's `args` across
+a callback that grows the stack). Confirmed with a probe in `list.contains`:
+`argv` lies inside the stack (16 KiB at `0x74eac10010`) for the first element
+and outside it from the second on, after the first `equal` moved the stack to
+`0x74eb400010` (1.8 MB).
+
+**PoC:** [`poc/vm/native-args-stack-growth.orb`](poc/vm/native-args-stack-growth.orb)
+*(confirmed live: the three checks fail 10 runs out of 10 with "'Number'
+object has no property 'id'"; all pass when the hook does not grow the
+stack, or grows it without reusing the block)*. Each case runs in a spawned
+fiber so that it starts with a small stack; spawned fibers come from a pool
+that keeps a grown stack, so a fourth case, or a case moved after them, may
+not grow its stack at all and pass.
+
+**Fix (suggested, verified by probe 2026-10-30, then reverted):** never hand
+a native a pointer into the VM stack. With `CallNative` copying the
+arguments, and the two slots after them, into a buffer of its own
+(`std::vector<OObject *> args(on_stack, on_stack + argc + 2)` in the probe;
+a small fixed array on the C stack with a heap fallback avoids an allocation
+per call) the PoC passes 3 runs out of 3 and in the other order,
+`ortest` is 34/34, the PoC gate 65/67 with the open VM-010 and VM-015, and
+`phi-regalloc.orb` passes. The values stay reachable for the GC through the
+stack slots, which `realloc` copies, until `CallNative` pops them. A
+stack that never moves (reserved up to its limit and committed on demand)
+would remove this class of bug, VM-009's included, at a higher cost.
 
 ---
 

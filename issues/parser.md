@@ -575,7 +575,20 @@ wrong ranges in diagnostics.
 ---
 
 ## PARSE-010 — Walrus shadowing differs between single and tuple form
-**Severity:** Medium (semantics) · **Status:** OPEN · **Location:** `parser.cpp:2044-2083` (`ParseWalrus`)
+**Severity:** Medium (semantics) · **Status:** FIXED (2026-10-30) · **Location:** `orbit/liftoff/parser/parser.cpp:2344` (`ParseWalrus`, the tuple form)
+
+**Fix verified (live: `x, y := x, 1` in a function returns `(5, 1)` with a
+module `x` of 5, and `x := x` returns 5; the two right-hand-side checks of
+[`poc/parser/parse-027.orb`](poc/parser/parse-027.orb) pass, and with the flag
+set when the tuple is declared, before the value, the tuple case reads `nil`
+again (`(nil, 1)`) and the PoC fails).** Fixed by PARSE-027: the tuple form
+still declares its names before the value, but `ParseWalrus` flags them
+INITIALIZED only after `decl->value` is parsed, and `Lookup` skips a symbol
+without the flag, so the right-hand side resolves to the outer names, as in
+the single form. No PoC of its own: the PARSE-027 PoC covers both forms
+(`x := x + 1`, `a, b := (a + 1, a + 2)`).
+
+<details><summary>Original report</summary>
 
 Tuple form declares the LHS symbols **before** parsing the RHS; single form
 declares the LHS **after**. So in `x := x` the RHS resolves to the outer `x`,
@@ -584,6 +597,8 @@ uninitialized) `x`. One of the two is wrong, presumably the tuple form.
 
 **Fix:** declare tuple symbols after `decl->value` is parsed, like the single
 case.
+
+</details>
 
 ---
 

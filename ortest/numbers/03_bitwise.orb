@@ -1,0 +1,104 @@
+# Numbers suite 03 -- bitwise operators and shifts on 64-bit values.
+#
+# The rule: `<<` multiplies by 2^n and `>>` is floor(a / 2^n) (an arithmetic
+# shift); `&`, `|`, `^`, `~` act on the two's complement of any width
+# (~x == -x - 1). Results are exact while they stay in -(2^64-1) .. 2^64-1;
+# past that they are an error (OUT_OF_RANGE), never bits silently lost. So
+# `1 << 63` is 2^63 (positive) and `1 << 64` is an error. The C behavior on a
+# uint64_t is explicit: `wrapping_shl` (07_wrapping) and `x ^ 0xFFFF...FF` for
+# `~`. A negative shift count stays a RuntimeError.
+#
+# EXPECT: contains: ALL TESTS PASSED
+
+import "io"
+
+var fails = 0
+
+func check(name, got, expected) {
+    if got == expected {
+        io.print("OK   ", name)
+    } else {
+        io.print("FAIL ", name, "-- got:", got, "expected:", expected)
+        fails += 1
+    }
+}
+
+# `res` is the Result of a `trap`: it must hold an error of kind `want_kind`
+func check_error(name, res, want_kind) {
+    if res {
+        io.print("FAIL ", name, "-- expected an error, got:", res.unwrap())
+        fails += 1
+        return
+    }
+
+    err := res.unwrap_err()
+
+    if err.kind == want_kind {
+        io.print("OK   ", name)
+    } else {
+        io.print("FAIL ", name, "-- got:", err.kind, err.reason, "expected:", want_kind)
+        fails += 1
+    }
+}
+
+MAX := 9223372036854775807      # 2^63 - 1, the largest I64
+TOP := 18446744073709551615     # 2^64 - 1, the largest magnitude
+
+# The error for a value out of range (an operation past +-(2^64-1), or a big
+# value where a smaller integer is needed). Change it here if the kind changes.
+OUT_OF_RANGE := @ValueError
+
+# `<<` is a multiplication by 2^n: exact up to 2^64-1, an error past it
+check("1 << 12", tostr(1 << 12), "4096")
+check("1 << 0", tostr(1 << 0), "1")
+check("1 << 63 is 2^63, positive", tostr(1 << 63), "9223372036854775808")
+check("SMI << 3 past the SMI range", tostr(2305843009213693951 << 3), "18446744073709551608")
+check("-1 << 1", tostr(-1 << 1), "-2")
+check("-1 << 63", tostr(-1 << 63), "-9223372036854775808")
+check("0 << 100", tostr(0 << 100), "0")
+check_error("1 << 64 overflows", trap (1 << 64), OUT_OF_RANGE)
+check_error("3 << 63 overflows", trap (3 << 63), OUT_OF_RANGE)
+check_error("2^63 << 1 overflows", trap (9223372036854775808 << 1), OUT_OF_RANGE)
+check_error("2^64-1 << 1 overflows", trap (TOP << 1), OUT_OF_RANGE)
+check_error("-1 << 64 overflows", trap (-1 << 64), OUT_OF_RANGE)
+check_error("1 << 1000 overflows", trap (1 << 1000), OUT_OF_RANGE)
+check_error("a negative shift count", trap (1 << -1), @RuntimeError)
+
+# `>>` is floor(a / 2^n): an arithmetic shift, as today
+check("2^64-1 >> 4", tostr(TOP >> 4), "1152921504606846975")
+check("2^64-1 >> 63", tostr(TOP >> 63), "1")
+check("2^64-1 >> 64", tostr(TOP >> 64), "0")
+check("2^64-1 >> 100", tostr(TOP >> 100), "0")
+check("2^63 >> 1", tostr(9223372036854775808 >> 1), "4611686018427387904")
+check("-(2^64-1) >> 1", tostr(-TOP >> 1), "-9223372036854775808")
+check("-8 >> 1", tostr(-8 >> 1), "-4")
+check("-1 >> 70", tostr(-1 >> 70), "-1")
+check_error("a negative shift count to the right", trap (TOP >> -1), @RuntimeError)
+
+# `&`, `|`, `^`, `~` on the two's complement of any width (~x == -x - 1)
+check("2^64-1 & 0xFF", tostr(TOP & 0xFF), "255")
+check("2^63 & 2^64-1", tostr(9223372036854775808 & TOP), "9223372036854775808")
+check("-1 & 2^64-1", tostr(-1 & TOP), "18446744073709551615")
+check("-1 & 0xFF", tostr(-1 & 0xFF), "255")
+check("2^64-1 & -2", tostr(TOP & -2), "18446744073709551614")
+check_error("-(2^64-1) & -2 overflows (-2^64)", trap (-TOP & -2), OUT_OF_RANGE)
+check("2^63 | 1", tostr(9223372036854775808 | 1), "9223372036854775809")
+check("0 | 2^64-1", tostr(0 | TOP), "18446744073709551615")
+check("-1 | 2^64-1", tostr(-1 | TOP), "-1")
+check("-(2^64-1) | 1", tostr(-TOP | 1), "-18446744073709551615")
+check("2^64-1 ^ 2^64-1", tostr(TOP ^ 0xFFFFFFFFFFFFFFFF), "0")
+check("2^63 ^ 2^64-1", tostr(9223372036854775808 ^ TOP), "9223372036854775807")
+check("5 ^ 2^64-1: the C ~ of a uint64_t", tostr(5 ^ TOP), "18446744073709551610")
+check("-(2^64-1) ^ 2^64-1", tostr(-TOP ^ TOP), "-2")
+check("~0", tostr(~0), "-1")
+check("~5", tostr(~5), "-6")
+check("~INT64_MAX", tostr(~MAX), "-9223372036854775808")
+check("~2^63", tostr(~9223372036854775808), "-9223372036854775809")
+check("~(-(2^64-1))", tostr(~(-TOP)), "18446744073709551614")
+check_error("~(2^64-1) overflows (-2^64)", trap (~TOP), OUT_OF_RANGE)
+
+if fails == 0 {
+    io.print("ALL TESTS PASSED")
+} else {
+    io.print(fails, "TEST(S) FAILED")
+}

@@ -1,0 +1,43 @@
+# PoC OBJ-005 — an error raised by a type's binary operator must reach the
+# program unchanged. Today `Dispatch` takes any `false` from the left
+# operand's operator for "not supported": it tries the right operand's and
+# then raises NotImplementedError over the error already set. A division by
+# zero on a heap Number (beyond 2^61-1) is reported as "operator '%' not
+# supported between 'Number' and 'Number'"; on two SMIs the fast path reports
+# it right.
+#
+# A runtime test: prints "ALL TESTS PASSED" only when every check matches.
+# EXPECT: contains: ALL TESTS PASSED
+
+import "io"
+
+var fails = 0
+
+func check(name, got, expected) {
+    if got == expected {
+        io.print("OK   ", name)
+    } else {
+        io.print("FAIL ", name, "-- got:", got, "expected:", expected)
+        fails += 1
+    }
+}
+
+func kind_of(res) {
+    return res ? "no error" : res.unwrap_err().kind
+}
+
+small := 7
+big := 9223372036854775807
+
+check("control: SMI % 0", kind_of(trap (small % 0)), @RuntimeError)
+check("control: SMI // 0", kind_of(trap (small // 0)), @RuntimeError)
+
+check("heap % 0 is a division by zero", kind_of(trap (big % 0)), @RuntimeError)
+check("heap // 0 is a division by zero", kind_of(trap (big // 0)), @RuntimeError)
+check("heap / 0 is a division by zero", kind_of(trap (big / 0)), @RuntimeError)
+
+if fails == 0 {
+    io.print("ALL TESTS PASSED")
+} else {
+    io.print(fails, "TEST(S) FAILED")
+}

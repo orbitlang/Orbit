@@ -1,0 +1,9 @@
+# Numbers suite 05 -- a decimal literal of 2^64 does not fit in 64 bits and is a compile
+# error, not a value clamped to INT64_MAX (NUM-001).
+#
+# Today the error is reported through the COMP-001 assert in file mode; the
+# message is checked, not the way the process exits.
+#
+# EXPECT: error: integer literal out of range
+
+x := 18446744073709551616

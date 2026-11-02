@@ -1,0 +1,82 @@
+# Numbers suite 08 -- explicit C-style arithmetic modulo 2^64.
+#
+# Plain operators never wrap (02, 03); code that needs uint64_t behavior --
+# hash functions, checksums, PRNGs -- asks for it: wrapping_add, wrapping_sub,
+# wrapping_mul and wrapping_shl return the result modulo 2^64, always in
+# 0 .. 2^64-1, for any operands in range (negative ones included). The last
+# check computes FNV-1a 64 of "hello", whose known value is 0xa430d84680aabd0b.
+#
+# The last step of the work: these methods do not exist yet, so the suite
+# stops at the first call until they do. It also needs IR-021 fixed: a method
+# called on a literal above 0xFFFF (`(0x100000001b3).wrapping_mul(...)`)
+# aborts the compiler today.
+#
+# EXPECT: contains: ALL TESTS PASSED
+
+import "io"
+
+var fails = 0
+
+func check(name, got, expected) {
+    if got == expected {
+        io.print("OK   ", name)
+    } else {
+        io.print("FAIL ", name, "-- got:", got, "expected:", expected)
+        fails += 1
+    }
+}
+
+# `res` is the Result of a `trap`: it must hold an error of kind `want_kind`
+func check_error(name, res, want_kind) {
+    if res {
+        io.print("FAIL ", name, "-- expected an error, got:", res.unwrap())
+        fails += 1
+        return
+    }
+
+    err := res.unwrap_err()
+
+    if err.kind == want_kind {
+        io.print("OK   ", name)
+    } else {
+        io.print("FAIL ", name, "-- got:", err.kind, err.reason, "expected:", want_kind)
+        fails += 1
+    }
+}
+
+MAX := 9223372036854775807      # 2^63 - 1, the largest I64
+TOP := 18446744073709551615     # 2^64 - 1, the largest magnitude
+
+# The error for a value out of range (an operation past +-(2^64-1), or a big
+# value where a smaller integer is needed). Change it here if the kind changes.
+OUT_OF_RANGE := @ValueError
+
+# wrapping_add, wrapping_sub: the result modulo 2^64, in 0 .. 2^64-1
+check("(2^64-1).wrapping_add(1)", tostr(TOP.wrapping_add(1)), "0")
+check("0.wrapping_sub(1)", tostr((0).wrapping_sub(1)), "18446744073709551615")
+check("INT64_MAX.wrapping_add(1)", tostr(MAX.wrapping_add(1)), "9223372036854775808")
+check("-1.wrapping_add(0)", tostr((-1).wrapping_add(0)), "18446744073709551615")
+
+# wrapping_mul
+check("(2^64-1).wrapping_mul(2^64-1)", tostr(TOP.wrapping_mul(TOP)), "1")
+check("0x100000001b3.wrapping_mul(2^64-1)", tostr((0x100000001b3).wrapping_mul(TOP)), "18446742974197923405")
+check("-5.wrapping_mul(3)", tostr((-5).wrapping_mul(3)), "18446744073709551601")
+
+# wrapping_shl: shift and keep the low 64 bits (a count of 64 or more gives 0)
+check("(2^64-1).wrapping_shl(1)", tostr(TOP.wrapping_shl(1)), "18446744073709551614")
+check("1.wrapping_shl(63)", tostr((1).wrapping_shl(63)), "9223372036854775808")
+check("3.wrapping_shl(63)", tostr((3).wrapping_shl(63)), "9223372036854775808")
+check("1.wrapping_shl(64)", tostr((1).wrapping_shl(64)), "0")
+
+# FNV-1a 64 of "hello", the use case: 0xa430d84680aabd0b
+h := 0xcbf29ce484222325
+for c in [104, 101, 108, 108, 111] {
+    h = (h ^ c).wrapping_mul(0x100000001b3)
+}
+check("FNV-1a 64 of hello", tostr(h), "11831194018420276491")
+
+if fails == 0 {
+    io.print("ALL TESTS PASSED")
+} else {
+    io.print(fails, "TEST(S) FAILED")
+}

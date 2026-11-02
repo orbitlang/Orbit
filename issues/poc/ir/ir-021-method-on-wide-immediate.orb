@@ -1,0 +1,43 @@
+# PoC ir-021-method-on-wide-immediate — IR-021: a method called on an integer
+# literal above 0xFFFF that fits in a SMI (or on a variable holding one)
+# aborted the compiler with `Assertion failed: (obj->type() ==
+# ObjectType::INSTRUCTION), function visitCallPrepend`. Builder::LoadImmediate
+# loads such a value in 16-bit LDIMM chunks joined by a Phi, and
+# visitCallPrepend asserted that the receiver is a plain instruction.
+#
+# A runtime test: prints "ALL TESTS PASSED" only when every check matches.
+# EXPECT: contains: ALL TESTS PASSED
+
+import "io"
+
+var fails = 0
+
+func check(name, got, expected) {
+    if got == expected {
+        io.print("OK   ", name)
+    } else {
+        io.print("FAIL ", name, "-- got:", got, "expected:", expected)
+        fails += 1
+    }
+}
+
+check("control: a method on a literal up to 0xFFFF", (65535).max(3), 65535)
+
+check("a method on a literal of 0x10000", (65536).max(3), 65536)
+check("a method on a 40-bit literal", (1099511628211).min(7), 7)
+
+big := 4294967296
+check("a method on a module variable holding a wide literal", big.abs(), 4294967296)
+
+func local_receiver(a) {
+    v := 100000
+    w := 70000
+    return v.max(a) + w.min(a)
+}
+check("methods on local variables holding wide literals", local_receiver(5), 100005)
+
+if fails == 0 {
+    io.print("ALL TESTS PASSED")
+} else {
+    io.print(fails, "TEST(S) FAILED")
+}

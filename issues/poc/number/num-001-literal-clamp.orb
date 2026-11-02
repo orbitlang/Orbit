@@ -1,0 +1,34 @@
+# PoC NUM-001 — an integer literal above INT64_MAX must keep its value.
+# `IntNew(string)`/`UIntNew(string)` call strtol/strtoul without an ERANGE
+# check, so every such literal is clamped to INT64_MAX (and on Windows, where
+# `long` is 32-bit, at 2^31-1).
+#
+# A runtime test: prints "ALL TESTS PASSED" only when every check matches.
+# EXPECT: contains: ALL TESTS PASSED
+
+import "io"
+
+var fails = 0
+
+func check(name, got, expected) {
+    if got == expected {
+        io.print("OK   ", name)
+    } else {
+        io.print("FAIL ", name, "-- got:", got, "expected:", expected)
+        fails += 1
+    }
+}
+
+check("control: INT64_MAX", tostr(9223372036854775807), "9223372036854775807")
+
+check("2^63", tostr(9223372036854775808), "9223372036854775808")
+check("0xFFFFFFFFFFFFFFFF", tostr(0xFFFFFFFFFFFFFFFF), "18446744073709551615")
+check("0xFFFFFFFFFFFFFFFFu", tostr(0xFFFFFFFFFFFFFFFFu), "18446744073709551615")
+check("-0x8000000000000000 is INT64_MIN", tostr(-0x8000000000000000), "-9223372036854775808")
+check("2^63 and INT64_MAX differ", 9223372036854775808 == 9223372036854775807, false)
+
+if fails == 0 {
+    io.print("ALL TESTS PASSED")
+} else {
+    io.print(fails, "TEST(S) FAILED")
+}

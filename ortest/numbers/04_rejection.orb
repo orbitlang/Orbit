@@ -1,0 +1,88 @@
+# Numbers suite 04 -- big values refused where a smaller integer is needed.
+#
+# A value that does not fit what a native needs (an I64 index or size, a U64
+# for write_u64) is an error of kind OUT_OF_RANGE: never clamped, never read
+# as a different number, never reported as a TypeError (it is an integer).
+# Controls check that an index past the end stays an IndexError and a
+# non-integer stays a TypeError.
+#
+# Regression guard for the NumberExtract callers that ignored its result
+# (list.insert, list.remove, the Rawptr writers) and for NUM-001's silent
+# clamp.
+#
+# EXPECT: contains: ALL TESTS PASSED
+
+import "io"
+
+var fails = 0
+
+func check(name, got, expected) {
+    if got == expected {
+        io.print("OK   ", name)
+    } else {
+        io.print("FAIL ", name, "-- got:", got, "expected:", expected)
+        fails += 1
+    }
+}
+
+# `res` is the Result of a `trap`: it must hold an error of kind `want_kind`
+func check_error(name, res, want_kind) {
+    if res {
+        io.print("FAIL ", name, "-- expected an error, got:", res.unwrap())
+        fails += 1
+        return
+    }
+
+    err := res.unwrap_err()
+
+    if err.kind == want_kind {
+        io.print("OK   ", name)
+    } else {
+        io.print("FAIL ", name, "-- got:", err.kind, err.reason, "expected:", want_kind)
+        fails += 1
+    }
+}
+
+MAX := 9223372036854775807      # 2^63 - 1, the largest I64
+TOP := 18446744073709551615     # 2^64 - 1, the largest magnitude
+
+# The error for a value out of range (an operation past +-(2^64-1), or a big
+# value where a smaller integer is needed). Change it here if the kind changes.
+OUT_OF_RANGE := @ValueError
+
+# "no error", or the kind of the error held by a `trap` Result
+func kind_of(res) {
+    return res ? "no error" : res.unwrap_err().kind
+}
+
+
+# A big value where a list index is needed
+l := [1, 2, 3]
+check_error("a list index of 2^63", trap (l[9223372036854775808]), OUT_OF_RANGE)
+check_error("a list index of -2^63 - 1", trap (l[-9223372036854775809]), OUT_OF_RANGE)
+check_error("list.insert at 2^63", trap (l.insert(9223372036854775808, 0)), OUT_OF_RANGE)
+check_error("list.remove at 2^64-1", trap (l.remove(TOP)), OUT_OF_RANGE)
+
+# Controls: the other errors keep their kind
+check_error("an index past the end is still an IndexError", trap (l[5]), @IndexError)
+check_error("a non-integer index is still a TypeError", trap (l["a"]), @TypeError)
+
+# Rawptr: u64 refuses negative values, i64 refuses values past INT64_MAX
+p := Rawptr.alloc(8)
+check_error("write_u64(-1)", trap (p.write_u64(-1)), OUT_OF_RANGE)
+check_error("write_u64(-(2^64-1))", trap (p.write_u64(-TOP)), OUT_OF_RANGE)
+check_error("write_i64(2^63)", trap (p.write_i64(9223372036854775808)), OUT_OF_RANGE)
+check("write_u64(2^64-1) is fine", kind_of(trap (p.write_u64(TOP))), "no error")
+check("write_i64(INT64_MAX) is fine", kind_of(trap (p.write_i64(MAX))), "no error")
+check("write_i64(-2^63) is fine", kind_of(trap (p.write_i64(-9223372036854775808))), "no error")
+p.free()
+check_error("Rawptr.alloc with a size of 2^63", trap (Rawptr.alloc(9223372036854775808)), OUT_OF_RANGE)
+
+# %x/%X/%u of a value below -2^63 has no 64-bit pattern
+check_error("%x of -2^63 - 1", trap ("%x" % -9223372036854775809), OUT_OF_RANGE)
+
+if fails == 0 {
+    io.print("ALL TESTS PASSED")
+} else {
+    io.print(fails, "TEST(S) FAILED")
+}

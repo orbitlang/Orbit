@@ -1,8 +1,55 @@
 # oobject — bug report
 
 **Component:** `orbit/orbiter/datatype/oobject.cpp` (object/type core: `MakeType`, property tables, type lifecycle) · **ID prefix:** `OBJ`
-**PoCs:** [`poc/oobject/`](poc/oobject/) (OBJ-002, OBJ-003, OBJ-004; OBJ-001 has none, see below) · **Last reviewed:** 2026-10-26
+**PoCs:** [`poc/oobject/`](poc/oobject/) (OBJ-002 … OBJ-005; OBJ-001 has none, see below) · **Last reviewed:** 2026-11-02
 **Status:** OPEN · PARTIAL · FIXED · WONTFIX — see [GUIDE.md](GUIDE.md).
+
+---
+
+## OBJ-005 — `Dispatch` replaces an operator's own error with NotImplementedError
+**Severity:** Medium (wrong error kind and message; the real cause is lost) · **Status:** OPEN · **Location:** `orbit/orbiter/datatype/oops.cpp:19` (`Dispatch`)
+
+A type's binary operator (`ops.add`, `ops.mod`, …) returns `false` both when
+it does not handle the operands ("try the other one") and when it handled
+them and raised an error. `Dispatch` treats every `false` as the first case:
+it tries the right operand's operator, then raises NotImplementedError on
+top of the error already set:
+
+```orbit
+big := 9223372036854775807    # a heap Number (beyond 2^61-1)
+big % 0     # NotImplementedError: operator '%' not supported between 'Number' and 'Number'
+big // 0    # same, for '//'
+big / 0     # same, for '/'
+7 % 0       # RuntimeError: division by zero (two SMIs: the fast path, no Dispatch)
+```
+
+`NumberMod`, `NumberIDiv` and `NumberDiv` do set "division by zero"; the
+program never sees it. Every error a type's operator raises meets the same
+fate, so any range or overflow error added to the Number operators would be
+reported as "not supported". `Compare` already guards against this (`if
+(fiber->IsPanicking()) return -1`); `Dispatch` does not.
+
+**Found** writing the numbers acceptance suite for unsigned 64-bit support
+(NUM-002): `TOP % 0` came back as NotImplementedError.
+
+**PoC:** [`poc/oobject/obj-005.orb`](poc/oobject/obj-005.orb) *(confirmed
+live: the two SMI controls pass, the three heap checks fail)*.
+
+**Fix (suggested, verified by probe 2026-11-02, then reverted):** after an
+operator returns `false`, stop when an error is pending:
+
+```cpp
+if (op(left, right, result))
+    return true;
+
+if (orbiter::Fiber::Current()->IsPanicking())
+    return false;
+```
+
+in both branches of `Dispatch`. With the probe the PoC passes, `ortest` is
+unchanged apart from the new `numbers/` suites (red until NUM-002 lands), the
+PoC gate fails only the findings already open, and `phi-regalloc.orb`
+passes.
 
 ---
 

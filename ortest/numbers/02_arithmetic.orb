@@ -1,0 +1,133 @@
+# Numbers suite 02 -- integer arithmetic across the 64-bit boundaries.
+#
+# An integer is a SMI or a heap Number holding a sign and a 64-bit magnitude:
+# every result in -(2^64-1) .. 2^64-1 is exact, whatever the operands' sizes,
+# and a result beyond is an error (OUT_OF_RANGE), never a silent wrap. Covered:
+# `+`, `-`, `*` (SMI x SMI, SMI x heap, heap x heap, on both sides), unary
+# minus, `//` and `%` with every sign combination (truncating, like the SMI
+# path; the identity a == (a // b) * b + a % b), division by zero, `/`.
+#
+# Integer results are compared through `tostr`: equality of big values is
+# itself under test in 01_representation.
+#
+# Regression guard for NUM-003 (overflow wrapped: 2305843009213693951 * 8 was
+# -8, INT64_MAX + 1 was INT64_MIN) and NUM-004 (a heap `//` rounded towards
+# -infinity).
+#
+# EXPECT: contains: ALL TESTS PASSED
+
+import "io"
+
+var fails = 0
+
+func check(name, got, expected) {
+    if got == expected {
+        io.print("OK   ", name)
+    } else {
+        io.print("FAIL ", name, "-- got:", got, "expected:", expected)
+        fails += 1
+    }
+}
+
+# `res` is the Result of a `trap`: it must hold an error of kind `want_kind`
+func check_error(name, res, want_kind) {
+    if res {
+        io.print("FAIL ", name, "-- expected an error, got:", res.unwrap())
+        fails += 1
+        return
+    }
+
+    err := res.unwrap_err()
+
+    if err.kind == want_kind {
+        io.print("OK   ", name)
+    } else {
+        io.print("FAIL ", name, "-- got:", err.kind, err.reason, "expected:", want_kind)
+        fails += 1
+    }
+}
+
+MAX := 9223372036854775807      # 2^63 - 1, the largest I64
+TOP := 18446744073709551615     # 2^64 - 1, the largest magnitude
+
+# The error for a value out of range (an operation past +-(2^64-1), or a big
+# value where a smaller integer is needed). Change it here if the kind changes.
+OUT_OF_RANGE := @ValueError
+
+# Addition and subtraction across INT64_MAX and towards +-(2^64-1)
+check("INT64_MAX + 1", tostr(MAX + 1), "9223372036854775808")
+check("1 + INT64_MAX (SMI on the left)", tostr(1 + MAX), "9223372036854775808")
+check("2^63 + INT64_MAX", tostr(9223372036854775808 + MAX), "18446744073709551615")
+check("2^64-1 - 1", tostr(TOP - 1), "18446744073709551614")
+check("2^64-1 - INT64_MAX", tostr(TOP - MAX), "9223372036854775808")
+check("2^63 - 1", tostr(9223372036854775808 - 1), "9223372036854775807")
+check("-2^63 - 1", tostr(-9223372036854775808 - 1), "-9223372036854775809")
+check("-(2^64-1) + 1", tostr(-TOP + 1), "-18446744073709551614")
+check("2^64-1 + -(2^64-1)", tostr(TOP + -TOP), "0")
+check("-1 + 2^63", tostr(-1 + 9223372036854775808), "9223372036854775807")
+check_error("2^64-1 + 1 overflows", trap (TOP + 1), OUT_OF_RANGE)
+check_error("1 + 2^64-1 overflows", trap (1 + TOP), OUT_OF_RANGE)
+check_error("-(2^64-1) - 1 overflows", trap (-TOP - 1), OUT_OF_RANGE)
+check_error("2^64-1 - -1 overflows", trap (TOP - -1), OUT_OF_RANGE)
+
+# Multiplication: SMI x SMI (both at most 2^61-1) and heap operands
+check("SMI x SMI past 64 bits", tostr(2305843009213693951 * 8), "18446744073709551608")
+check("2^32 x (2^32 - 1), two SMIs", tostr(4294967296 * 4294967295), "18446744069414584320")
+check("heap x SMI past 64 bits", tostr(4611686018427387903 * 4), "18446744073709551612")
+check("INT64_MAX * 2", tostr(MAX * 2), "18446744073709551614")
+check("-2^63 * -1", tostr(-9223372036854775808 * -1), "9223372036854775808")
+check("-(2^64-1) * 1", tostr(-TOP * 1), "-18446744073709551615")
+check_error("2^32 x 2^32 overflows (two SMIs)", trap (4294967296 * 4294967296), OUT_OF_RANGE)
+check_error("-2^32 x 2^32 overflows (two SMIs)", trap (-4294967296 * 4294967296), OUT_OF_RANGE)
+check_error("INT64_MAX * INT64_MAX overflows", trap (MAX * MAX), OUT_OF_RANGE)
+check_error("2^64-1 * 2 overflows", trap (TOP * 2), OUT_OF_RANGE)
+check("2^64-1 * -1", tostr(TOP * -1), "-18446744073709551615")
+
+# Unary minus: the range is symmetric, it never overflows
+check("-(2^64-1)", tostr(-TOP), "-18446744073709551615")
+check("-(-(2^64-1))", tostr(-(-TOP)), "18446744073709551615")
+check("-(2^63)", tostr(-(9223372036854775808)), "-9223372036854775808")
+
+# `//` truncates towards zero and `%` takes the sign of the dividend,
+# as on SMIs (ortest/operators/02); a == (a // b) * b + a % b
+check("TOP // 2", tostr(TOP // 2), "9223372036854775807")
+check("TOP % 2", tostr(TOP % 2), "1")
+check("TOP == (TOP // 2) * 2 + TOP % 2", tostr((TOP // 2) * 2 + TOP % 2), tostr(TOP))
+check("-TOP // 2", tostr(-TOP // 2), "-9223372036854775807")
+check("-TOP % 2", tostr(-TOP % 2), "-1")
+check("-TOP == (-TOP // 2) * 2 + -TOP % 2", tostr((-TOP // 2) * 2 + -TOP % 2), tostr(-TOP))
+check("TOP // -7", tostr(TOP // -7), "-2635249153387078802")
+check("TOP % -7", tostr(TOP % -7), "1")
+check("TOP == (TOP // -7) * -7 + TOP % -7", tostr((TOP // -7) * -7 + TOP % -7), tostr(TOP))
+check("-TOP // -7", tostr(-TOP // -7), "2635249153387078802")
+check("-TOP % -7", tostr(-TOP % -7), "-1")
+check("-TOP == (-TOP // -7) * -7 + -TOP % -7", tostr((-TOP // -7) * -7 + -TOP % -7), tostr(-TOP))
+check("TOP // -3", tostr(TOP // -3), "-6148914691236517205")
+check("TOP % -3", tostr(TOP % -3), "0")
+check("TOP == (TOP // -3) * -3 + TOP % -3", tostr((TOP // -3) * -3 + TOP % -3), tostr(TOP))
+check("9223372036854775808 // MAX", tostr(9223372036854775808 // MAX), "1")
+check("9223372036854775808 % MAX", tostr(9223372036854775808 % MAX), "1")
+check("9223372036854775808 == (9223372036854775808 // MAX) * MAX + 9223372036854775808 % MAX", tostr((9223372036854775808 // MAX) * MAX + 9223372036854775808 % MAX), tostr(9223372036854775808))
+check("TOP // TOP", tostr(TOP // TOP), "1")
+check("TOP % TOP", tostr(TOP % TOP), "0")
+check("TOP == (TOP // TOP) * TOP + TOP % TOP", tostr((TOP // TOP) * TOP + TOP % TOP), tostr(TOP))
+check("5 // TOP", tostr(5 // TOP), "0")
+check("5 % TOP", tostr(5 % TOP), "5")
+check("5 == (5 // TOP) * TOP + 5 % TOP", tostr((5 // TOP) * TOP + 5 % TOP), tostr(5))
+check("-5 // TOP", tostr(-5 // TOP), "0")
+check("-5 % TOP", tostr(-5 % TOP), "-5")
+check("-5 == (-5 // TOP) * TOP + -5 % TOP", tostr((-5 // TOP) * TOP + -5 % TOP), tostr(-5))
+check("-9223372036854775807 // 2", tostr(-9223372036854775807 // 2), "-4611686018427387903")
+check("-9223372036854775807 % 2", tostr(-9223372036854775807 % 2), "-1")
+check("-9223372036854775807 == (-9223372036854775807 // 2) * 2 + -9223372036854775807 % 2", tostr((-9223372036854775807 // 2) * 2 + -9223372036854775807 % 2), tostr(-9223372036854775807))
+check_error("2^64-1 // 0", trap (TOP // 0), @RuntimeError)
+check_error("2^64-1 % 0", trap (TOP % 0), @RuntimeError)
+
+# `/` is true division and gives a Decimal
+check("(2^64-1) / 2 is about 9.2e18", TOP / 2 > 9223372036854775000.0, true)
+
+if fails == 0 {
+    io.print("ALL TESTS PASSED")
+} else {
+    io.print(fails, "TEST(S) FAILED")
+}
