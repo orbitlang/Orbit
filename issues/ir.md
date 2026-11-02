@@ -8,6 +8,60 @@
 
 ---
 
+## IR-022 — A shift by a register count reads the count from the wrong register
+**Severity:** High (silent wrong result) · **Status:** OPEN · **Location:** `orbit/liftoff/codegen.cpp:174` (`SHLR`/`SHRR`), `:69` (`EMIT_DSF`)
+
+Every shift whose count is not a small literal gives a wrong result:
+
+```orbit
+a := 4
+b := 3
+a << b            # 64, not 32
+20 >> b           # 0, not 2
+func shl(x, n) { return x << n }
+shl(1, 2)         # 2, not 4
+shl(4, -1)        # no error; ObjectLShift refuses a negative count, but never sees it
+a << 3            # 32: a literal count is right (SHLI)
+```
+
+The VM decodes `SHLR`/`SHRR` as `OPCODE | 4 DST | 4 SRC | 4 SHIFT_REG`
+(`opcode.h`) and reads the count from `REG_N(FETCH_R_RSRC(instr))`, like
+`AND`/`OR`/`XOR`. Codegen emits them with `EMIT_DSF` and the instruction's
+`flags` (through a cast to `BinaryOpImmInstr`) in that field instead of the
+count's register — and `EMIT_DSF` computes `((flags) << 12) & 0xF`, which is
+always 0. So the count is always read from register 0, whatever it holds at
+that point (a number gives a wrong shift, a function gives "operator '>>' not
+supported between 'Number' and 'Function'"). The other `EMIT_DSF` user (`MOV`,
+`MVN`, `NEG`, `NOT`) passes 0 and is not affected, but the macro is wrong for
+any non-zero flags.
+
+**Found** while checking the OBJ-005 fix with `big << neg`, which returned 0
+with no error.
+
+**PoC:** [`poc/ir/ir-022-shift-by-register.orb`](poc/ir/ir-022-shift-by-register.orb)
+*(confirmed live: stops on the first variable shift with the "not supported"
+error above)*.
+
+**Fix (suggested, verified by probe 2026-11-02, then reverted):** emit the
+register form like the other three-register operators:
+
+```cpp
+case orbiter::OPCode::SHLR:
+case orbiter::OPCode::SHRR:
+    *(orbiter::MachineWord *) m_code = EMIT_DSS(instr->opcode,
+                                                instr->assigned_reg,
+                                                ((Instruction*)instr->operands[0].value)->assigned_reg,
+                                                ((Instruction*)instr->operands[1].value)->assigned_reg);
+    break;
+```
+
+With the probe the PoC passes, `ortest` and the PoC gate are unchanged apart
+from what is already red, and `phi-regalloc.orb` passes. `EMIT_DSF`'s mask
+(`& 0xF` after the shift) should be fixed on its own (`& 0xF000`, or mask
+before shifting).
+
+---
+
 ## IR-021 — A method called on an integer literal above 0xFFFF aborts the compiler
 **Severity:** High (compile-time abort on valid source) · **Status:** OPEN · **Location:** `orbit/liftoff/ir/irbuilder.cpp:891` (`visitCallPrepend`), `orbit/liftoff/ir/builder.cpp:474` (`Builder::LoadImmediate`)
 

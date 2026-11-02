@@ -7,7 +7,32 @@
 ---
 
 ## OBJ-005 — `Dispatch` replaces an operator's own error with NotImplementedError
-**Severity:** Medium (wrong error kind and message; the real cause is lost) · **Status:** OPEN · **Location:** `orbit/orbiter/datatype/oops.cpp:19` (`Dispatch`)
+**Severity:** Medium (wrong error kind and message; the real cause is lost) · **Status:** FIXED (2026-11-02) · **Location:** `orbit/orbiter/datatype/oops.cpp:34`, `:47` (`Dispatch`), `orbit/orbiter/runtime.cpp:610` (`Orbiter::IsPanicking`)
+
+**Fix verified (live: the PoC passes — `big % 0`, `big // 0` and `big / 0`
+on a heap Number report RuntimeError "division by zero"; after a trapped or
+caught operator error nothing stays pending (`panicking()` is false, later
+operations and calls run); `ortest` unchanged apart from the `numbers/`
+suites, red until NUM-002 lands; the PoC gate fails only the findings already
+open; `phi-regalloc.orb` passes; an operator the left operand declines
+without an error still falls back to the right one: `3 * "x"`, `2 + 1.5`).**
+`Dispatch` stops as soon as an operator has raised, after the left operand's
+and again after the right one's, instead of raising NotImplementedError over
+the error:
+
+```cpp
+if (orbiter::Orbiter::IsPanicking(isolate))
+    return false;
+```
+
+The check goes through a new `Orbiter::IsPanicking(isolate)` (the current
+fiber's panic, or the isolate's when there is no fiber), next to the other
+runtime helpers. Checking after the left operator too means the right one is
+never called once an error is pending (with two operands of the same type it
+would be the same function a second time). `Dispatch` also became
+`static`.
+
+<details><summary>Original report</summary>
 
 A type's binary operator (`ops.add`, `ops.mod`, …) returns `false` both when
 it does not handle the operands ("try the other one") and when it handled
@@ -50,6 +75,8 @@ in both branches of `Dispatch`. With the probe the PoC passes, `ortest` is
 unchanged apart from the new `numbers/` suites (red until NUM-002 lands), the
 PoC gate fails only the findings already open, and `phi-regalloc.orb`
 passes.
+
+</details>
 
 ---
 

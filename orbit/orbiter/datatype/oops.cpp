@@ -6,6 +6,7 @@
 #include <cmath>
 
 #include <orbit/orbiter/fiber.h>
+#include <orbit/orbiter/runtime.h>
 
 #include <orbit/orbiter/datatype/decimal.h>
 #include <orbit/orbiter/datatype/error.h>
@@ -16,8 +17,8 @@
 
 using namespace orbiter::datatype;
 
-bool Dispatch(orbiter::Isolate *isolate, const OObject *left, const OObject *right, OObject *&result,
-              const char *op_sym, const size_t offset) noexcept {
+static bool Dispatch(orbiter::Isolate *isolate, const OObject *left, const OObject *right, OObject *&result,
+                     const char *op_sym, const size_t offset) noexcept {
 #define GET_BINARY_OP(s, offset) *((const BinaryFn*)(((unsigned char *) s) + offset))
 
     if (O_IS_OBJECT(left)) {
@@ -30,6 +31,9 @@ bool Dispatch(orbiter::Isolate *isolate, const OObject *left, const OObject *rig
         }
     }
 
+    if (orbiter::Orbiter::IsPanicking(isolate))
+        return false;
+
     if (O_IS_OBJECT(right)) {
         const auto ops = &O_GET_TYPE_OPS(right);
         const auto op = GET_BINARY_OP(ops, offset);
@@ -39,6 +43,9 @@ bool Dispatch(orbiter::Isolate *isolate, const OObject *left, const OObject *rig
                 return true;
         }
     }
+
+    if (orbiter::Orbiter::IsPanicking(isolate))
+        return false;
 
     char lname[24];
     char rname[24];

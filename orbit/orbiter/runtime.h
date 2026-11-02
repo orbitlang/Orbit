@@ -260,6 +260,8 @@ namespace orbiter {
 
         static bool Initialize(const void *config) noexcept;
 
+        static bool IsPanicking(Isolate *isolate) noexcept;
+
         [[nodiscard]] static Fiber *EvalDetached(datatype::Context *context, datatype::Module *module,
                                                  datatype::Code *code) noexcept;
 

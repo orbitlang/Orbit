@@ -607,6 +607,14 @@ bool Orbiter::Initialize(const void *config) noexcept {
     return false;
 }
 
+bool Orbiter::IsPanicking(Isolate *isolate) noexcept {
+    auto *fiber = Fiber::Current();
+    if (fiber != nullptr)
+        return fiber->IsPanicking();
+
+    return isolate->panic.HasPanic();
+}
+
 Fiber *Orbiter::EvalDetached(Context *context, Module *module, Code *code) noexcept {
     const auto *isolate = O_GET_ISOLATE(code);
 

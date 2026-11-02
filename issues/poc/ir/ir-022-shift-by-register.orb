@@ -1,0 +1,48 @@
+# PoC ir-022-shift-by-register — IR-022: a shift whose count is not a small
+# literal (`a << b`, `x >> n` in a function) was encoded with the wrong
+# register: codegen emitted SHLR/SHRR with EMIT_DSF and a `flags` field where
+# the VM reads the count's register, and EMIT_DSF masks that field to zero, so
+# the count was always read from register 0. `4 << b` with b = 3 gave 64, and
+# a negative count raised nothing. Shifts by a literal (SHLI/SHRI) were right.
+#
+# A runtime test: prints "ALL TESTS PASSED" only when every check matches.
+# EXPECT: contains: ALL TESTS PASSED
+
+import "io"
+
+var fails = 0
+
+func check(name, got, expected) {
+    if got == expected {
+        io.print("OK   ", name)
+    } else {
+        io.print("FAIL ", name, "-- got:", got, "expected:", expected)
+        fails += 1
+    }
+}
+
+func shl(x, n) { return x << n }
+func shr(x, n) { return x >> n }
+
+func kind_of(res) {
+    return res ? "no error" : res.unwrap_err().kind
+}
+
+a := 4
+check("control: a shift by a literal", a << 3, 32)
+
+b := 3
+check("4 << b, b = 3", a << b, 32)
+check("20 >> b, b = 3", 20 >> b, 2)
+check("1 << 2 through variables", shl(1, 2), 4)
+check("64 >> 3 through variables", shr(64, 3), 8)
+check("1 << 40 through variables", shl(1, 40), 1099511627776)
+check("-64 >> 3 through variables", shr(-64, 3), -8)
+check("a negative count is an error", kind_of(trap shl(4, -1)), @RuntimeError)
+check("a negative count to the right is an error", kind_of(trap shr(4, -1)), @RuntimeError)
+
+if fails == 0 {
+    io.print("ALL TESTS PASSED")
+} else {
+    io.print(fails, "TEST(S) FAILED")
+}

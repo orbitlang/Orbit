@@ -22,12 +22,12 @@ are resolved.
 | [sbuffer.md](sbuffer.md) | `orbit/liftoff/scanner/sbuffer` | 0/3 |
 | [utf8-stringbuilder.md](utf8-stringbuilder.md) | `orbit/orbiter/datatype/stringbuilder` (UTF-8 codec) | 1/4 |
 | [parser.md](parser.md) | `orbit/liftoff/parser` (parser.cpp, context.h, ast.h) | 11/27 |
-| [ir.md](ir.md) | `orbit/liftoff/ir` (linearscan, intervalspiller, irbuilder, instruction) | 3/21 |
+| [ir.md](ir.md) | `orbit/liftoff/ir` (linearscan, intervalspiller, irbuilder, instruction) | 4/22 |
 | [symtable.md](symtable.md) | `orbit/liftoff/symtable` (scopes, symbol slots, closures) | 0/4 |
 | [compiler.md](compiler.md) | `orbit/liftoff/compiler.cpp` (compile driver) | 1/1 |
 | [ctbuilder.md](ctbuilder.md) | `orbit/orbiter/datatype/ctbuilder.cpp` (class types, blueprint, hook dispatch) | 0/1 |
 | [function.md](function.md) | `orbit/orbiter/datatype/function.cpp` (Function objects, `FuncShared` lifetime) | 0/1 |
-| [oobject.md](oobject.md) | `orbit/orbiter/datatype/oobject.cpp` (object/type core, type lifecycle, type names) | 2/5 |
+| [oobject.md](oobject.md) | `orbit/orbiter/datatype/oobject.cpp` (object/type core, type lifecycle, type names) | 1/5 |
 | [vm.md](vm.md) | `orbit/orbiter` (interpreter: trap unwind, registers, stack) | 4/16 |
 | [number.md](number.md) | `orbit/orbiter/datatype/number.cpp` (integer literals & representation) | 4/4 |
 
@@ -56,6 +56,7 @@ are resolved.
 - ~~**IR-017** — an `if` in a `switch` case aborts the compiler; root cause PARSE-019 (the case's scope ends at its first token)~~ *(FIXED 2026-10-27, the case's scope spans the whole case)*
 - ~~**IR-019** — a block in a `when` branch leaves the IR in the wrong scope: an `if` in a `when` followed by another `if` aborts the compiler~~ *(FIXED 2026-10-27, a `when` branch holds declarations only)*
 - ~~**PARSE-027** — a short declaration that shadows a name (`x := 2` in a function, with a module `x`) is never read: uses and writes reach the outer variable; `:=` of one name in two `when` branches fails with "symbol already exists"~~ *(FIXED 2026-10-27, `ParseWalrus` flags the declared names INITIALIZED once the value is parsed)*
+- **IR-022** — a shift whose count is a register (`a << b`, `x >> n` in a function) reads the count from register 0: `4 << b` with `b = 3` is 64, a negative count raises nothing; codegen emits `SHLR`/`SHRR` with `EMIT_DSF` instead of the count's register; fix verified by probe
 - **IR-021** — a method called on an integer literal above 0xFFFF (`v := 100000; v.max(3)`, `(65536).abs()`) aborts the compiler: the wide immediate is a Phi of LDIMM chunks and `visitCallPrepend` asserts on it; fix verified by probe
 - **NUM-004** — `//` on a heap Number rounds towards -∞ while the SMI path and `%` truncate: `-9223372036854775807 // 2` is `...904` instead of `...903`
 - **NUM-003** — integer overflow wraps silently: `2305843009213693951 * 8 == -8` (the SMI product is not checked), `4611686018427387903 * 4 == -4`, `INT64_MAX + 1 == INT64_MIN` (signed overflow, undefined behavior in C++)
@@ -158,3 +159,5 @@ are resolved.
 - 2026-11-02: `orbit/orbiter/datatype/oops.cpp` (`Dispatch`) — OBJ-005 filed (Medium): an operator that raises an error and returns `false` is taken for "not supported", so `Dispatch` raises NotImplementedError over it (`big % 0` on a heap Number reports "operator '%' not supported" instead of division by zero). New PoC `poc/oobject/obj-005.orb`; fix (stop when an error is pending) verified by probe, reverted. New acceptance suites `ortest/numbers/` for the NUM-002 work (red until it lands). The PoC gate is 64/70.
 - 2026-11-02: `orbit/liftoff/ir/irbuilder.cpp` (`visitCallPrepend`) — IR-021 filed (High): a method called on a SMI literal above 0xFFFF, or on a variable holding one, aborts the compiler (the receiver is the Phi that ties `LoadImmediate`'s LDIMM chunks). New PoC `poc/ir/ir-021-method-on-wide-immediate.orb`; dropping the assertion verified by probe, reverted. The PoC gate is 64/71.
 - 2026-11-02: `issues/poc/number/` — PoC files for NUM-001 (`num-001-literal-clamp.orb`, five of six checks fail) and NUM-002 (`num-002-read-u64.orb`, two of three fail), which only had inline snippets. The PoC gate is 64/73.
+- 2026-11-02: `orbit/orbiter/datatype/oops.cpp` (`Dispatch`) + `orbit/orbiter/runtime.cpp` (`Orbiter::IsPanicking`) — OBJ-005 FIXED: `Dispatch` returns `false` without raising NotImplementedError when an error is pending, checked after the left operand's operator and after the right one's, through a new `Orbiter::IsPanicking`. PoC green; nothing stays pending after a trapped or caught operator error; a declined left operator still falls back to the right one.
+- 2026-11-02: `orbit/liftoff/codegen.cpp` (`SHLR`/`SHRR`) — IR-022 filed (High): a shift by a register count is emitted with `EMIT_DSF` and `flags` where the VM reads the count's register, and `EMIT_DSF` masks that field to 0, so the count comes from register 0 (`4 << b` = 64 for `b = 3`; no error for a negative count). Found checking OBJ-005. New PoC `poc/ir/ir-022-shift-by-register.orb`; `EMIT_DSS` with the count's register verified by probe, reverted. The PoC gate is 65/74.
