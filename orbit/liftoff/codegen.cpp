@@ -65,10 +65,6 @@ using namespace liftoff::ir;
 // Emit Macros with Destination, Source [, and Flags]
 // ============================================================================
 
-// Emit macro with opcode, destination register, source register, and flags
-#define EMIT_DSF(opcode, dst, src, flags) \
-    (((U32)(opcode) << 24) | ((dst) << 20) | ((src) << 16) | (((flags) << 12) & 0xF))
-
 // Emit macro with opcode, destination register, source register, flags and offset
 #define EMIT_DSFO(opcode, dst, src, flags, offset) \
     (((U32)(opcode) << 24) | ((dst) << 20) | ((src) << 16) | ((flags) << 12) | (offset & 0xFFF))
@@ -166,17 +162,12 @@ unsigned char *Codegen::EmitOpcodes(const BasicBlock *block, unsigned char *m_co
             case orbiter::OPCode::AND:
             case orbiter::OPCode::OR:
             case orbiter::OPCode::XOR:
+            case orbiter::OPCode::SHLR:
+            case orbiter::OPCode::SHRR:
                 *(orbiter::MachineWord *) m_code = EMIT_DSS(instr->opcode,
                                                             instr->assigned_reg,
                                                             ((Instruction*)instr->operands[0].value)->assigned_reg,
                                                             ((Instruction*)instr->operands[1].value)->assigned_reg);
-                break;
-            case orbiter::OPCode::SHLR:
-            case orbiter::OPCode::SHRR:
-                *(orbiter::MachineWord *) m_code = EMIT_DSF(instr->opcode,
-                                                            instr->assigned_reg,
-                                                            ((Instruction*)instr->operands[0].value)->assigned_reg,
-                                                            ((ir::BinaryOpImmInstr*) instr)->flags);
                 break;
             case orbiter::OPCode::SHLI:
             case orbiter::OPCode::SHRI:
@@ -198,10 +189,9 @@ unsigned char *Codegen::EmitOpcodes(const BasicBlock *block, unsigned char *m_co
             case orbiter::OPCode::MVN:
             case orbiter::OPCode::NEG:
             case orbiter::OPCode::NOT:
-                *(orbiter::MachineWord *) m_code = EMIT_DSF(instr->opcode,
+                *(orbiter::MachineWord *) m_code = EMIT_DS(instr->opcode,
                                                             instr->assigned_reg,
-                                                            ((Instruction*)instr->operands[0].value)->assigned_reg,
-                                                            0);
+                                                            ((Instruction*)instr->operands[0].value)->assigned_reg);
                 break;
             case orbiter::OPCode::PANIC:
             case orbiter::OPCode::RET:

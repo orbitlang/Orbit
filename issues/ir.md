@@ -9,7 +9,40 @@
 ---
 
 ## IR-022 — A shift by a register count reads the count from the wrong register
-**Severity:** High (silent wrong result) · **Status:** OPEN · **Location:** `orbit/liftoff/codegen.cpp:174` (`SHLR`/`SHRR`), `:69` (`EMIT_DSF`)
+**Severity:** High (silent wrong result) · **Status:** FIXED (2026-11-03) · **Location:** `orbit/liftoff/codegen.cpp:162` (`AND`/`OR`/`XOR`/`SHLR`/`SHRR`), `:188` (`MOV`/`MVN`/`NEG`/`NOT`)
+
+**Fix verified (live: the PoC passes — `4 << b` and `20 >> b` with `b = 3`
+give 32 and 2, shifts through function parameters are right, a negative
+count raises RuntimeError in both directions; `big << neg` on two heap
+Numbers raises RuntimeError and leaves nothing pending; the two
+negative-count checks of `ortest/numbers/03_bitwise.orb` pass; `ortest`
+unchanged apart from the `numbers/` suites, red until NUM-002 lands; the PoC
+gate fails only the findings already open; `phi-regalloc.orb` passes).**
+`SHLR`/`SHRR` now share the `AND`/`OR`/`XOR` case and are emitted with
+`EMIT_DSS`, the count's register in the field the VM reads:
+
+```cpp
+case orbiter::OPCode::AND:
+case orbiter::OPCode::OR:
+case orbiter::OPCode::XOR:
+case orbiter::OPCode::SHLR:
+case orbiter::OPCode::SHRR:
+    *(orbiter::MachineWord *) m_code = EMIT_DSS(instr->opcode,
+                                                instr->assigned_reg,
+                                                ((Instruction*)instr->operands[0].value)->assigned_reg,
+                                                ((Instruction*)instr->operands[1].value)->assigned_reg);
+    break;
+```
+
+`EMIT_DSF`, whose `((flags) << 12) & 0xF` always cleared the field, is gone:
+its last user, `MOV`/`MVN`/`NEG`/`NOT`, passed `flags = 0` to opcodes that
+have no flags (`OPCODE | 4 DST | 4 SRC | 16 RESERVED` in `opcode.h`; the VM
+handlers read only `DST` and `SRC`), and now uses `EMIT_DS`, which encodes
+the same word. Checked live: `-x`, `~x`, `!x`, `!!x` and register copies give
+the expected values in a function and at module level, and the gates are
+unchanged.
+
+<details><summary>Original report</summary>
 
 Every shift whose count is not a small literal gives a wrong result:
 
@@ -59,6 +92,8 @@ With the probe the PoC passes, `ortest` and the PoC gate are unchanged apart
 from what is already red, and `phi-regalloc.orb` passes. `EMIT_DSF`'s mask
 (`& 0xF` after the shift) should be fixed on its own (`& 0xF000`, or mask
 before shifting).
+
+</details>
 
 ---
 
