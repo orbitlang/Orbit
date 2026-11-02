@@ -888,8 +888,6 @@ Instruction *IRBuilder::visitCallPrepend(const parser::Call *node, Instruction *
     if (node->left->node_type == parser::NodeType::SELECTOR) {
         auto *obj = (Instruction *) func->operands[0].value;
 
-        assert(obj->type() == ObjectType::INSTRUCTION);
-
         this->builder_.StackPush(obj);
 
         if (p_arg != nullptr)

@@ -63,7 +63,22 @@ before shifting).
 ---
 
 ## IR-021 — A method called on an integer literal above 0xFFFF aborts the compiler
-**Severity:** High (compile-time abort on valid source) · **Status:** OPEN · **Location:** `orbit/liftoff/ir/irbuilder.cpp:891` (`visitCallPrepend`), `orbit/liftoff/ir/builder.cpp:474` (`Builder::LoadImmediate`)
+**Severity:** High (compile-time abort on valid source) · **Status:** FIXED (2026-11-02) · **Location:** `orbit/liftoff/ir/irbuilder.cpp:888` (`visitCallPrepend`)
+
+**Fix verified (live: the PoC passes — methods on `(65536)`, on a 40-bit
+literal, on a module variable and on local variables holding wide literals;
+`v.max(a) + w.min(a) + (123456).abs()` in a function gives the expected
+values; `ortest/numbers/08_wrapping.orb` now compiles and stops at the
+missing `wrapping_add`, as it should until those methods exist; `ortest`
+unchanged apart from the `numbers/` suites, red until NUM-002 lands; the PoC
+gate fails only the findings already open; `phi-regalloc.orb` passes).** The
+assertion that the receiver is a plain instruction is gone: `StackPush` takes
+the Phi that ties `LoadImmediate`'s LDIMM chunks like any other value, and
+the `PUSH` reads the register the chunks fill. No other assertion of this
+kind is left in the IR builder; the remaining `ObjectType::INSTRUCTION`
+checks in `liftoff/` test the type and branch.
+
+<details><summary>Original report</summary>
 
 ```orbit
 v := 100000
@@ -95,6 +110,8 @@ values, `ortest` and the PoC gate are unchanged apart from the suites and
 findings already red, and `phi-regalloc.orb` passes. Whether a Phi can reach
 other places that assume an instruction (the same cast exists elsewhere in
 `irbuilder.cpp`) was not audited.
+
+</details>
 
 ---
 

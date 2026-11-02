@@ -7,9 +7,7 @@
 # check computes FNV-1a 64 of "hello", whose known value is 0xa430d84680aabd0b.
 #
 # The last step of the work: these methods do not exist yet, so the suite
-# stops at the first call until they do. It also needs IR-021 fixed: a method
-# called on a literal above 0xFFFF (`(0x100000001b3).wrapping_mul(...)`)
-# aborts the compiler today.
+# stops at the first call until they do.
 #
 # EXPECT: contains: ALL TESTS PASSED
 
