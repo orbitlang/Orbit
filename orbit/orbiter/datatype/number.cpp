@@ -156,14 +156,7 @@ static bool NumberIDiv(const OObject *left, const OObject *right, OObject *&resu
         return false;
     }
 
-    // C++ truncates towards zero; adjust towards -∞ when the signs differ and
-    // there is a non-zero remainder.
-    auto q = a / b;
-    const auto r = a % b;
-    if (r != 0 && ((r ^ b) < 0))
-        q--;
-
-    const auto n = IntNew(isolate, q);
+    const auto n = IntNew(isolate, a / b);
     if (!n) return false;
 
     result = (OObject *) n.get();

@@ -9,8 +9,61 @@ Prefix: `NUM`.
 
 ---
 
+## NUM-005 — Comparing two small integers truncates their difference to 32 bits
+**Severity:** High (silent wrong result in every comparison of large values) · **Status:** OPEN · **Location:** `orbit/orbiter/datatype/oops.cpp:373` (`Compare`)
+
+```orbit
+a := 4294967296
+a > 0             # false
+b := 2147483648
+b > 0             # false
+b < 0             # true
+if a > 0 { ... }  # not taken
+```
+
+For two SMIs `Compare` computes the difference into `delta`, declared `auto delta
+= 0`, an `int`, because `CompareFn` reports through an `int &`. Only the low 32 bits
+survive: a difference with those bits clear reads as equal, one with bit 31 set as
+negative. So the result of `<`, `<=`, `>`, `>=` is wrong whenever the two values
+differ by 2^31 or more. Heap Numbers go through `NumberCompare`, which compares
+values, and are right; equality does not use `delta`.
+
+**Found** while verifying the NUM-004 fix: remainder checks using `<` failed on
+remainders that were correct.
+
+**PoC:** [`poc/number/num-005-compare-smi.orb`](poc/number/num-005-compare-smi.orb)
+*(confirmed live: the controls pass, twelve checks fail)*.
+
+**Fix (suggested, verified by probe 2026-11-05, then reverted):** compare instead of
+subtracting:
+
+```cpp
+const auto l = (MSSize) O_FROM_SMI(left);
+const auto r = (MSSize) O_FROM_SMI(right);
+
+delta = l < r ? -1 : (l > r ? 1 : 0);
+```
+
+With the probe the PoC passes and the gates are unchanged.
+
+---
+
 ## NUM-004 — `//` rounds differently on a heap Number than on a SMI
-**Severity:** High (silent wrong result) · **Status:** OPEN · **Location:** `orbit/orbiter/datatype/number.cpp:142` (`NumberIDiv`), against `orbit/orbiter/datatype/oops.cpp:105` (`ObjectDivImpl`, SMI fast path)
+**Severity:** High (silent wrong result) · **Status:** FIXED (2026-11-05) · **Location:** `orbit/orbiter/datatype/number.cpp:142` (`NumberIDiv`)
+
+**Fix verified (live: the PoC passes; it failed on the three heap quotients with
+the correction in place; `//` and `%` of 400 operand pairs, SMI and heap on both
+sides and every sign combination, match an oracle computed apart, except
+`-2^61 // -1`, an overflow of the SMI path recorded in NUM-003; `ortest` and the
+PoC gate are unchanged otherwise).** The correction towards -∞ is gone, so
+`NumberIDiv` truncates like the SMI path and `NumberMod`, and
+`a == (a // b) * b + a % b` holds on heap values:
+
+```cpp
+const auto n = IntNew(isolate, a / b);
+```
+
+<details><summary>Original report</summary>
 
 Orbit's `//` truncates towards zero and `%` takes the sign of the dividend,
 C-style (pinned by `ortest/operators/02_basic_ops.orb`), and the SMI fast
@@ -48,6 +101,8 @@ three heap quotient checks fail)*.
 like the SMI path and `NumberMod`. Part of the NUM-002 work, where `//` and
 `%` move to sign and magnitude anyway.
 
+</details>
+
 ---
 
 ## NUM-003 — Integer overflow wraps silently; a product of two SMIs is not even checked
@@ -61,6 +116,8 @@ error:
 4611686018427387903 * 4      # -4 (a heap Number)
 9223372036854775807 + 1      # -9223372036854775808
 9223372036854775807 * 2      # -2
+-2305843009213693952 // -1   # -2305843009213693952: 2^61 does not fit a SMI
+(-9223372036854775807 - 1) // -1   # INT64_MIN: 2^63 does not fit an I64
 ```
 
 - The SMI fast path computes `+`, `-` and `*` on `MSize` and hands the result
@@ -70,12 +127,16 @@ error:
 - On a heap Number, `NumberAdd`/`NumberSub`/`NumberMul` compute `a + b`,
   `a - b`, `a * b` on `I64`: signed overflow is undefined behavior in C++,
   and in practice wraps.
+- Division has the same overflow at one point: the SMI path stores `na / nb` with
+  `O_TO_SMI` unchecked (`oops.cpp:141`), so `-2^61 // -1` wraps; `NumberIDiv`
+  computes `INT64_MIN / -1`, and `NumberMod` `INT64_MIN % -1`, undefined behavior
+  in C++ that gives INT64_MIN on arm64 and is a SIGFPE on x86.
 
 **Found** while mapping the number code for unsigned 64-bit support
 (NUM-002).
 
 **PoC:** [`poc/number/num-003-overflow.orb`](poc/number/num-003-overflow.orb)
-*(confirmed live: the eight checks fail)*. Its expectations follow the
+*(confirmed live: ten of the eleven checks fail; `INT64_MIN % -1` happens to give 0 on arm64)*. Its expectations follow the
 design chosen for NUM-002 — a heap Number holds a sign and a 64-bit
 magnitude, so results up to 2^64-1 in magnitude are exact and anything beyond
 is an error.
