@@ -13,10 +13,24 @@ namespace orbiter {
 
         datatype::OObject *error;
 
-        PtrSize frame;
+        MSSize frame;
 
         [[nodiscard]] bool ISAborted() const {
             return this->prev != nullptr;
+        }
+
+        void HidePanic() noexcept {
+            if (this->frame < 0)
+                return;
+
+            this->frame = ~this->frame;
+        }
+
+        void ShowPanic() noexcept {
+            if (this->frame >= 0)
+                return;
+
+            this->frame = ~this->frame;
         }
     };
 
@@ -29,7 +43,7 @@ namespace orbiter {
 
         Panic *CreateOOMPanic(const Isolate *isolate, Panic **panic_cache) const;
 
-        void DiscardPanic(Panic **panic_cache) const noexcept;
+        void DiscardPanic(Panic **panic_cache, MSSize base_frame) const noexcept;
 
         void Reset() noexcept;
 

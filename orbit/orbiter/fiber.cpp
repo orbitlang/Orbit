@@ -180,7 +180,7 @@ void Fiber::DiscardPanic() noexcept {
     if (*this->panic.r_current_ == nullptr)
         return;
 
-    this->panic.DiscardPanic(&this->panic_cache);
+    this->panic.DiscardPanic(&this->panic_cache, (MSSize) this->vm.regs.BP.reg);
 }
 
 void Fiber::PopState() noexcept {
@@ -206,5 +206,5 @@ void Fiber::PrepareForEventLoop(const ResumeFn on_resume, datatype::OObject *io_
 
 void Fiber::RaisePanic(datatype::OObject *error) noexcept {
     auto *p = this->panic.CreatePanic(this->isolate, &this->panic_cache, error);
-    p->frame = this->vm.regs.BP.reg;
+    p->frame = (MSSize) this->vm.regs.BP.reg;
 }

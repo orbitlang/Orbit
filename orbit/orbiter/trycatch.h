@@ -15,6 +15,8 @@ namespace orbiter {
         Panic **prev_ = nullptr;
         Panic *caught_error = nullptr;
 
+        MSSize frame = 0;
+
     public:
         explicit TryCatch(Isolate *isolate) {
             this->container_ = &isolate->panic;
@@ -30,6 +32,7 @@ namespace orbiter {
 
             this->prev_ = this->container_->r_current_;
             this->container_->r_current_ = &this->caught_error;
+            this->frame = fiber->vm.regs.BP.reg;
         }
 
         TryCatch() noexcept : TryCatch(Fiber::Current()) {
@@ -45,7 +48,7 @@ namespace orbiter {
 
         ~TryCatch() {
             if (this->container_ != nullptr) {
-                this->container_->DiscardPanic(this->panic_cache_);
+                this->container_->DiscardPanic(this->panic_cache_, this->frame);
 
                 this->container_->r_current_ = this->prev_;
             }

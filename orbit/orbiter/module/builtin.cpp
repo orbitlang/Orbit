@@ -278,7 +278,7 @@ calls will return `false` again.
         file.write(msg)                        // may raise
     }
 )DOC", 0, nullptr, false, false) {
-    return HOObject((OObject *) BOOL_TO_OBOOL(orbiter::Fiber::Current()->IsPanicking()));
+    return HOObject((OObject *) BOOL_TO_OBOOL(orbiter::Fiber::Current()->panic.HasPanic()));
 }
 
 RUNTIME_FUNCTION(builtin_tp_name, tp_name,

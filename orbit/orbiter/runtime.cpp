@@ -774,14 +774,14 @@ void Orbiter::RuntimeDiscardPanic(Isolate *isolate) {
         return;
     }
 
-    isolate->panic.DiscardPanic(&isolate->panic_cache);
+    isolate->panic.DiscardPanic(&isolate->panic_cache, 0);
 }
 
 void Orbiter::RuntimeOOMPanic(Isolate *isolate) noexcept {
     auto *fiber = Fiber::Current();
     if (fiber != nullptr) {
         auto *p = fiber->panic.CreateOOMPanic(isolate, &fiber->panic_cache);
-        p->frame = fiber->vm.regs.BP.reg;
+        p->frame = (MSSize) fiber->vm.regs.BP.reg;
 
         return;
     }

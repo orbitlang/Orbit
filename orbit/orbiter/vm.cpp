@@ -88,7 +88,18 @@ bool ExecDefer(Fiber *fiber) {
         auto *func = defer->func;
 
         if (!defer->func->shared->IsInterpreted()) {
+            auto *pending = fiber->panic.current_;
+
+            if (pending != nullptr)
+                pending->HidePanic();
+
             CallNative(func, regs, stack, defer->argc);
+
+            if (pending != nullptr)
+                pending->ShowPanic();
+
+            if (fiber->panic.current_ != nullptr && fiber->panic.current_ != pending)
+                fiber->panic.current_->frame = (MSSize) regs->BP.reg;
 
             fiber->isolate->dpool_->DeleteDefer(defer);
 
@@ -248,6 +259,9 @@ bool UnwindStack(Fiber *fiber, const PtrSize barrier) {
 
     while (regs->SP.reg > 0) {
         ExecuteCleanupForPC(fiber);
+
+        if (fiber->panic.current_ != nullptr)
+            fiber->panic.current_->frame = (MSSize) fiber->vm.regs.BP.reg;
 
         if (ExecDefer(fiber))
             return true;
@@ -720,7 +734,7 @@ BEGIN:
     if (fiber->context.module != nullptr)
         module_slots = O_SLOT(fiber->context.module, O_GET_TYPE(fiber->context.module));
 
-    if (fiber->panic.current_ != nullptr && fiber->panic.current_->frame == REG_BP)
+    if (fiber->panic.current_ != nullptr && fiber->panic.current_->frame == (MSSize) REG_BP)
         goto ERROR;
 
 CATCH_FINALLY:
@@ -1340,14 +1354,14 @@ CATCH_FINALLY:
                 DISPATCH;
             }
             TARGET_OP(STRES) {
-                if (fiber->panic.current_ == nullptr) {
-                    result = (OObject *) ACCESS_REG_SRC(instr);
-
-                    ACCESS_REG_DST(instr) = (PtrSize) ResultNew(fiber->isolate, result, true).get();
-                } else {
+                if (fiber->IsPanicking()) {
                     result = fiber->GetDiscardPanic().release();
 
                     ACCESS_REG_DST(instr) = (PtrSize) ResultNew(fiber->isolate, result, false).get();
+                } else {
+                    result = (OObject *) ACCESS_REG_SRC(instr);
+
+                    ACCESS_REG_DST(instr) = (PtrSize) ResultNew(fiber->isolate, result, true).get();
                 }
 
                 DISPATCH;
@@ -1729,7 +1743,7 @@ CATCH_FINALLY:
                 }
 
                 result = LoadFromObjectProp(fiber, this_func, obj, flags, offset);
-                if (fiber->panic.current_ != nullptr)
+                if (fiber->IsPanicking())
                     goto ERROR;
 
                 ACCESS_REG_DST(instr) = (PtrSize) result;
@@ -1752,7 +1766,7 @@ CATCH_FINALLY:
                 }
 
                 StoreToObjectProp(fiber, this_func, obj, value, flags, offset);
-                if (fiber->panic.current_ != nullptr)
+                if (fiber->IsPanicking())
                     goto ERROR;
 
                 DISPATCH;
@@ -2093,7 +2107,7 @@ CATCH_FINALLY:
     }
 
 ERROR:
-    if (fiber->panic.current_ != nullptr) {
+    if (fiber->IsPanicking()) {
         auto *except = ExContextGet(fiber->vm.stack.stack, regs->CP.reg);
         if (except != nullptr) {
             if (except->key == regs->BP.reg) {

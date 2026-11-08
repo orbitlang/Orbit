@@ -63,7 +63,7 @@ int orbiter::PanicFormat(const PanicContainer *container, char *out, const size_
 
         cursor += n;
 
-        remaining -=  n;
+        remaining -= n;
 
         p = p->prev;
 
@@ -112,12 +112,12 @@ Panic *PanicContainer::CreateOOMPanic(const Isolate *isolate, Panic **panic_cach
     return panic;
 }
 
-void PanicContainer::DiscardPanic(Panic **panic_cache) const noexcept {
+void PanicContainer::DiscardPanic(Panic **panic_cache, const MSSize base_frame) const noexcept {
     if (*this->r_current_ == nullptr)
         return;
 
     auto *chain = *this->r_current_;
-    while (chain != nullptr) {
+    while (chain != nullptr && chain->frame >= base_frame) {
         chain->error = nullptr;
 
         auto *prev = chain->prev;
@@ -128,7 +128,7 @@ void PanicContainer::DiscardPanic(Panic **panic_cache) const noexcept {
         chain = prev;
     }
 
-    *this->r_current_ = nullptr;
+    *this->r_current_ = chain;
 }
 
 void PanicContainer::Reset() noexcept {
