@@ -1,0 +1,46 @@
+# PoC VM-021 — `sync` on a value that is not an object (a small integer, nil)
+# must raise TypeError. SYNC_ENTER does raise it, but the block's cleanup range
+# starts at the SYNC_ENTER itself: the unwind finds IP inside it and calls
+# MonitorRelease on the value it never acquired, which crashes (EXC_BAD_ACCESS,
+# exit 139) before anything is printed.
+#
+# A runtime test: prints "ALL TESTS PASSED" only when every check matches.
+# EXPECT: contains: ALL TESTS PASSED
+
+import "io"
+
+var fails = 0
+
+func check(name, got, expected) {
+    if got == expected {
+        io.print("OK   ", name)
+    } else {
+        io.print("FAIL ", name, "-- got:", got, "expected:", expected)
+        fails += 1
+    }
+}
+
+func kind_of(res) {
+    return res ? "no error" : res.unwrap_err().kind
+}
+
+var entered = 0
+
+func on(value) {
+    sync value {
+        entered += 1
+    }
+}
+
+check("control: sync on a list", kind_of(trap on([1])), "no error")
+check("sync on a small integer is a TypeError", kind_of(trap on(5)), @TypeError)
+check("sync on nil is a TypeError", kind_of(trap on(nil)), @TypeError)
+check("the refused blocks did not run", entered, 1)
+check("nothing stays pending", panicking(), false)
+check("sync still works afterwards", kind_of(trap on([2])), "no error")
+
+if fails == 0 {
+    io.print("ALL TESTS PASSED")
+} else {
+    io.print(fails, "TEST(S) FAILED")
+}

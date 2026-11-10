@@ -1,12 +1,15 @@
-# PoC VM-017 — `sync` must work on any object. On an instance of a class with
-# fields MonitorAcquire reads a garbage monitor pointer from the object head and
-# the process dies (EXC_BAD_ACCESS in Monitor::Acquire, exit 138 or 139) before
-# printing anything.
+# PoC VM-017 — `sync` must work on any object. The monitor field of an object's
+# head was never initialized: MonitorAcquire read whatever the allocator left
+# there and the process died (EXC_BAD_ACCESS in Monitor::Acquire, exit 138 or
+# 139). Instances come from MakeObject, types (classes included) from MakeType:
+# the last check makes classes at run time, after churning the heap, so that a
+# type lands on memory that was used before.
 #
 # A runtime test: prints "ALL TESTS PASSED" only when every check matches.
 # EXPECT: contains: ALL TESTS PASSED
 
 import "io"
+import "gc"
 
 var fails = 0
 
@@ -57,6 +60,32 @@ sync i {
 }
 check("sync on an instance with init", entered, 4)
 check("its fields are intact", (i.a, i.b), (1, 2))
+
+func churn() {
+    l := []
+    loop i := 0; i < 2000; i++ {
+        o := [i, i, i, i, i, i, i, i, i, i, i, i, i, i, i, i, i, i, i, i, i, i, i, i]
+        sync o {
+            l.append(o)
+        }
+    }
+}
+func make_class() {
+    class Made {
+        pub var v = 0
+    }
+    return Made
+}
+var classes = 0
+loop round := 0; round < 20; round++ {
+    churn()
+    gc.collect()
+    made := make_class()
+    sync made {
+        classes += 1
+    }
+}
+check("sync on classes made at run time", classes, 20)
 
 if fails == 0 {
     io.print("ALL TESTS PASSED")

@@ -6,6 +6,42 @@
 
 ---
 
+## VM-021 — `sync` on a value that is not an object crashes instead of raising
+**Severity:** High (crash; on an object whose acquire fails, a release of a monitor it does not hold) · **Status:** OPEN · **Location:** `orbit/liftoff/codegen.cpp:501` (the cleanup entry's `m_start`), `orbit/orbiter/vm.cpp` (`SYNC_ENTER`, `ExecuteCleanupForPC`)
+
+```orbit
+func on(value) {
+    sync value { }
+}
+trap on(5)       # EXC_BAD_ACCESS in MonitorRelease, exit 139
+trap on(nil)     # same
+```
+
+`SYNC_ENTER` refuses a value that is not an object with a TypeError, as it should.
+The unwind then runs the block's cleanup: the entry's range starts at the
+`SYNC_ENTER` instruction itself (`m_start = start->instr_offset * 4`), and IP is
+still on it, so `MonitorRelease` is called on the value that was never acquired
+(`5` as a pointer: address `0x25`). The same happens whenever `SYNC_ENTER` fails on
+an object (allocation failure, or a contended monitor inside a synchronous call):
+the cleanup releases a monitor the fiber does not hold, possibly another fiber's.
+
+**Found** while verifying the VM-017 fix: `sync` on a small integer and on nil.
+
+**PoC:** [`poc/vm/sync-non-object.orb`](poc/vm/sync-non-object.orb) *(confirmed
+live: the control passes, then the crash)*.
+
+**Fix (suggested, verified by probe 2026-11-10, then reverted):** start the range
+after the `SYNC_ENTER`, which only has to be covered once it has succeeded:
+
+```cpp
+cursor->m_start = code->m_code + ((entry.start->instr_offset + 1) * 4);
+```
+
+With the probe the PoC passes, `sync 5` at module level reports "TypeError: 'Number'
+object cannot be used as a sync object" and exits 1, and the gates are unchanged.
+
+---
+
 ## VM-020 — A monitor stays held when a panic from a callee leaves its `sync` block
 **Severity:** High (any other fiber syncing on the object blocks forever) · **Status:** OPEN · **Location:** `orbit/orbiter/vm.cpp` (`UnwindStack`, `ExecuteCleanupForPC`)
 
@@ -106,7 +142,29 @@ unwinding, re-reading the next context, which may belong to the same frame.
 ---
 
 ## VM-017 — `sync` crashes: an object's monitor field is never initialized
-**Severity:** High (crash on valid source) · **Status:** OPEN · **Location:** `orbit/orbiter/datatype/oobject.h:544` (`MakeObject`)
+**Severity:** High (crash on valid source) · **Status:** FIXED (2026-11-10) · **Location:** `orbit/orbiter/datatype/oobject.h:553` (`MakeObject`), `orbit/orbiter/datatype/oobject.cpp:164` (`MakeType`)
+
+**Fix verified (live: the PoC passes 5 runs of 5 and 100 runs of 100 with 8 in
+parallel, including its last check, 20 classes made at run time after churning and
+collecting the heap; `sync` holds on 23 kinds of object — lists, strings, dicts,
+sets, tuples, bytes, decimals, heap Numbers, functions, closures, modules, atoms,
+results, channels, errors, generators, instances with fields, `init` and a
+superclass, built-in types, classes and traits — 20 fresh processes each; `ortest`
+unchanged apart from the `numbers/` suites, red until NUM-002 lands; the PoC gate
+fails only the findings already open; every `stdlib` module imports;
+`phi-regalloc.orb` passes).** Both places that create an object head now clear its
+monitor: `MakeObject` for instances, `MakeType` for types, which it allocates with
+`gc->AllocObject` directly:
+
+```cpp
+O_GET_HEAD(ret).mon_ = nullptr;   // MakeObject
+O_GET_HEAD(ti).mon_ = nullptr;    // MakeType
+```
+
+`sync` on a value that is not an object still crashes: that is VM-021, a separate
+defect in the block's cleanup range.
+
+<details><summary>Original report</summary>
 
 `MakeObject` sets `type_` and the reference count but not `mon_`, so
 `MonitorAcquire` reads whatever the allocator left there and, unless that is
@@ -138,6 +196,8 @@ O_GET_MON(ret).store(nullptr, std::memory_order_relaxed);
 With the probe the PoC passes 5 of 5 and the gates are unchanged. `oobject.cpp:143`
 allocates TypeInfos without `MakeObject`; a type used as a `sync` object was not
 checked.
+
+</details>
 
 ---
 

@@ -28,7 +28,7 @@ are resolved.
 | [ctbuilder.md](ctbuilder.md) | `orbit/orbiter/datatype/ctbuilder.cpp` (class types, blueprint, hook dispatch) | 0/1 |
 | [function.md](function.md) | `orbit/orbiter/datatype/function.cpp` (Function objects, `FuncShared` lifetime) | 0/1 |
 | [oobject.md](oobject.md) | `orbit/orbiter/datatype/oobject.cpp` (object/type core, type lifecycle, type names) | 2/6 |
-| [vm.md](vm.md) | `orbit/orbiter` (interpreter: trap unwind, registers, stack) | 7/20 |
+| [vm.md](vm.md) | `orbit/orbiter` (interpreter: trap unwind, registers, stack) | 7/21 |
 | [number.md](number.md) | `orbit/orbiter/datatype/number.cpp` (integer literals & representation) | 4/5 |
 
 ## Top priorities (High severity, quick wins)
@@ -61,7 +61,8 @@ are resolved.
 - **NUM-005** — comparing two small integers truncates their difference to 32 bits: `2^32 > 0` is false, `2^31 < 0` is true, an `if` on a large value is not taken; fix verified by probe
 - ~~**NUM-004** — `//` on a heap Number rounds towards -∞ while the SMI path and `%` truncate: `-9223372036854775807 // 2` is `...904` instead of `...903`~~ *(FIXED 2026-11-05, `NumberIDiv` truncates like the SMI path)*
 - **NUM-003** — integer overflow wraps silently: `2305843009213693951 * 8 == -8` (the SMI product is not checked), `4611686018427387903 * 4 == -4`, `INT64_MAX + 1 == INT64_MIN` (signed overflow, undefined behavior in C++)
-- **VM-017** — `sync` crashes: `MakeObject` never initializes an object's monitor field, so `MonitorAcquire` calls `Acquire` on garbage; one-line fix verified by probe
+- ~~**VM-017** — `sync` crashes: the monitor field of an object's head is never initialized, so `MonitorAcquire` calls `Acquire` on garbage~~ *(FIXED 2026-11-10, `MakeObject` and `MakeType` clear it)*
+- **VM-021** — `sync` on a value that is not an object (`sync 5`, `sync nil`) crashes: the cleanup range starts at `SYNC_ENTER`, so its failure releases a monitor never acquired; fix verified by probe
 - **VM-018** — after a panic from a callee, a `try` with a `finally` alone or with spent handlers resumes after the call: the rest of the block runs
 - **VM-019** — a `finally` entered by a panic stops at its first native call: the pending panic reads as that call's failure
 - **VM-020** — a monitor stays held when a panic from a callee leaves its `sync` block: other fibers block forever
@@ -172,3 +173,4 @@ are resolved.
 - 2026-11-05: `orbit/orbiter/datatype/number.cpp` (`NumberIDiv`) — NUM-004 FIXED: the correction towards -infinity is gone, `//` truncates on heap values like on SMIs; checked against an oracle on 400 operand pairs. Filed on the way: NUM-005 (High): `Compare` subtracts two SMIs into an `int`, so `2^32 > 0` is false; new PoC `poc/number/num-005-compare-smi.orb`, fix verified by probe, reverted. NUM-003 extended with the division overflows (`-2^61 // -1`, `INT64_MIN // -1`, undefined behavior).
 - 2026-11-05: `orbit/orbiter/vm.cpp`, `fiber.h`, `panic.cpp` — VM-015 reviewed again with the four changes applied: still OPEN. A `trap` or `catch` inside a deferred call discards the outer panic (`STRES` tests `current_`, `DiscardPanic` empties the chain), and a native deferred call that runs a hook fails. PoC grown to 42 checks; the rest of the fix verified by probe and mutation-tested, recorded in the finding. VM-019 widened: a call to an Orbit function in a `finally` is lost too, depending on its argument count.
 - 2026-11-08: `orbit/orbiter/vm.cpp`, `fiber.h`, `panic.h`, `panic.cpp`, `module/builtin.cpp` — VM-015 FIXED: `panic->frame` (now signed) moves to the frame being unwound before its defers; `IsPanicking()` is `frame >= BP`; a native deferred call runs with the panic hidden (`~frame`); `DiscardPanic` stops at the frames below; `STRES` asks `IsPanicking()`; `panicking()` reports `HasPanic()`. PoC 43/43 (300 parallel runs), 47 further adversarial cases hold, gates unchanged. A native deferred call on a normal return crashed in one intermediate version; the PoC now has a control for it.
+- 2026-11-10: `orbit/orbiter/datatype/oobject.h` (`MakeObject`), `oobject.cpp` (`MakeType`) — VM-017 FIXED: both places that create an object head clear its monitor field. `sync` holds on 23 kinds of object (20 fresh processes each) and on classes made at run time after churning the heap; the PoC gained that case and passes 100 parallel runs. Filed on the way: VM-021 (High): `sync` on a small integer or nil crashes, the cleanup range starts at the failing `SYNC_ENTER`; new PoC `poc/vm/sync-non-object.orb`, fix verified by probe.
