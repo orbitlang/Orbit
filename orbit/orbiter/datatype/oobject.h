@@ -548,8 +548,9 @@ namespace orbiter::datatype {
         if (ret == nullptr)
             return nullptr;
 
-        O_GET_HEAD(ret).type_ = O_INCREF(type);
         O_UNSAFE_GET_RC(ret) |= RefCount::kIsInstanceMask;
+        O_GET_HEAD(ret).type_ = O_INCREF(type);
+        O_GET_HEAD(ret).mon_ = nullptr;
 
         return (T *) ret;
     }
@@ -593,7 +594,7 @@ namespace orbiter::datatype {
      * @return Pointer to the newly created object, or nullptr if allocation failed.
      */
     template<typename T>
-    T *MakeObject(Isolate *isolate, InstanceType type, U16 overalloc) {
+    T *MakeObject(Isolate *isolate, InstanceType type, const U16 overalloc) {
         return MakeObject<T>(isolate->primitive[(int) type], overalloc);
     }
 

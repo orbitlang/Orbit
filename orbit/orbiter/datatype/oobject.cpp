@@ -161,6 +161,7 @@ HOType orbiter::datatype::MakeType(Isolate *isolate, TypeInfo *super, const char
     }
 
     O_GET_HEAD(ti).type_ = nullptr;
+    O_GET_HEAD(ti).mon_ = nullptr;
 
     U16 offset = sizeof(OObject);
     if (super != nullptr) {
