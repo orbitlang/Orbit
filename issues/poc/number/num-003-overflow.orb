@@ -34,6 +34,12 @@ check("INT64_MAX * 2", tostr(max * 2), "18446744073709551614")
 check("INT64_MIN - 1", tostr(min - 1), "-9223372036854775809")
 check("INT64_MIN * -1", tostr(min * -1), "9223372036854775808")
 
+smi_min := -2305843009213693952
+minus_one := -1
+check("-2^61 // -1, past the SMI range", tostr(smi_min // minus_one), "2305843009213693952")
+check("INT64_MIN // -1", tostr(min // minus_one), "9223372036854775808")
+check("INT64_MIN % -1", tostr(min % minus_one), "0")
+
 r := trap (max * 4)
 check("a product past 2^64-1 is an error", r ? "no error" : "error", "error")
 

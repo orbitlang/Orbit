@@ -1,0 +1,63 @@
+# PoC VM-020 — a monitor must be released when a panic from a callee leaves its
+# `sync` block. ExecuteCleanupForPC finds the block by IP, but UnwindStack has
+# already moved IP to the frame's m_end, and fiber->context still holds the
+# callee's code, so the cleanup entry never matches and the monitor stays held:
+# any other fiber that syncs on the object blocks forever. A panic raised in the
+# `sync` block's own frame is released.
+#
+# The check gives the other fiber time to enter, rather than waiting on it: a
+# blocked fiber must not hang the suite.
+#
+# EXPECT: contains: ALL TESTS PASSED
+
+import "io"
+import "chrono"
+
+var fails = 0
+
+func check(name, got, expected) {
+    if got == expected {
+        io.print("OK   ", name)
+    } else {
+        io.print("FAIL ", name, "-- got:", got, "expected:", expected)
+        fails += 1
+    }
+}
+
+func fail() { panic Error(@Deep, "deep") }
+
+var entered = 0
+
+func enter(obj) {
+    sync obj {
+        entered += 1
+    }
+}
+
+own := [1]
+func same_frame() {
+    sync own {
+        panic Error(@Own, "own")
+    }
+}
+trap same_frame()
+spawn enter(own)
+chrono.sleep(100)
+check("control: released after a panic in its own frame", entered, 1)
+
+other := [2]
+func from_callee() {
+    sync other {
+        fail()
+    }
+}
+trap from_callee()
+spawn enter(other)
+chrono.sleep(100)
+check("released after a panic from a callee", entered, 2)
+
+if fails == 0 {
+    io.print("ALL TESTS PASSED")
+} else {
+    io.print(fails, "TEST(S) FAILED")
+}

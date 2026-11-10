@@ -2,19 +2,16 @@
 # same as on a normal return, and the panic must then go on to the handler
 # that catches it.
 #
-# Today a deferred call run by UnwindStack is lost in three ways:
+# Before the fix a deferred call run by UnwindStack was lost in three ways: the
+# pending panic made its first native call read as a failure; with a panic from
+# a callee its frame landed on `panic->frame` and it never ran; and it returned
+# into its caller with the callee's code, aborting on an unknown opcode.
 #
-#   - its first call of a native function (or any other check of a pending
-#     panic) sees the panic being unwound and takes it for a new failure, so
-#     the deferred function stops there;
-#   - when the panic came from a callee, the deferred function's frame lands
-#     on the BP the callee had, which is `panic->frame`, so it is taken for
-#     the panicking frame and never runs;
-#   - when the deferred function does run after a callee's frame was unwound,
-#     it returns into the caller's frame with the callee's code (UnwindStack
-#     moves to the caller without restoring the fiber context): the VM
-#     executes from a wrong address and aborts on an unknown opcode. The last
-#     check is that case; until it is fixed the file aborts there.
+# Setting the panic aside for the deferred call must not hide it from anything
+# else: frames below the panic still see it (the code after a `try` that did not
+# catch it stays skipped, and a hook's panic reaches the native that called the
+# hook), a callee of the deferred function may have defers of its own, and
+# `panicking()` is true inside a deferred call, as its documentation shows.
 #
 # Control: a deferred call on a normal return, and a deferred function that
 # makes no call, run by a panic raised in its own frame.
@@ -49,6 +46,14 @@ func returns() {
 log = []
 returns()
 check("control: a defer runs on a normal return", log, ["returns"])
+
+func native_on_return() {
+    defer log.append("native")
+    return 1
+}
+log = []
+native_on_return()
+check("control: a native defer runs on a normal return", log, ["native"])
 
 func own_frame_no_call() {
     defer bump()
@@ -120,6 +125,223 @@ func callee_with_args() {
 count = 0
 trap callee_with_args()
 check("a defer reached after a callee's frame is unwound returns to its caller", count, 1)
+
+func kind_of(res) {
+    return res ? "no error" : res.unwrap_err().kind
+}
+
+func only_finally() {
+    try {
+        fail()
+    } finally {
+        mark("finally")
+    }
+    mark("after")
+}
+log = []
+check("the panic from a callee stays after a finally", kind_of(trap only_finally()), @Deep)
+check("the code after that try does not run", log, ["finally"])
+
+func other_kind() {
+    try {
+        fail()
+    } catch @Other {
+        mark("wrong catch")
+    }
+    mark("after")
+}
+log = []
+check("a catch of another kind lets the panic through", kind_of(trap other_kind()), @Deep)
+check("the code after that try does not run", log, [])
+
+func defer_and_finally() {
+    defer mark("defer")
+    try {
+        fail()
+    } finally {
+        mark("finally")
+    }
+    mark("after")
+}
+log = []
+trap defer_and_finally()
+check("a finally, then the defer, and nothing else", log, ["finally", "defer"])
+
+func nested_try() {
+    try {
+        try {
+            fail()
+        } finally {
+            mark("inner finally")
+        }
+        mark("between")
+    } catch {
+        mark("outer catch")
+    }
+    mark("after")
+}
+log = []
+check("the outer catch of the same frame takes the panic", kind_of(trap nested_try()), "no error")
+check("in the right order", log, ["inner finally", "outer catch", "after"])
+
+class StrHook {
+    pub func str() { panic Error(@Hook, "in str") }
+}
+class EqualHook {
+    pub func equal(other) { fail() }
+}
+class CompareHook {
+    pub func compare(other) { panic Error(@Hook, "in compare") }
+}
+check("a str hook's panic reaches the caller", kind_of(trap tostr(new StrHook())), @Hook)
+check("an equal hook's panic reaches the caller", kind_of(trap [new EqualHook()].contains(new EqualHook())), @Deep)
+check("a compare hook's panic reaches the caller", kind_of(trap (new CompareHook() < new CompareHook())), @Hook)
+
+func with_own_defer() {
+    defer mark("inner defer")
+    mark("inner body")
+    return 7
+}
+func deferred_calls_defer() {
+    log.append(with_own_defer())
+    mark("rest")
+}
+func calls_it() {
+    defer deferred_calls_defer()
+    fail()
+}
+log = []
+check("the panic survives a defer inside the deferred call", kind_of(trap calls_it()), @Deep)
+check("the deferred function runs to its end", log, ["inner body", "inner defer", 7, "rest"])
+
+func note_panicking() { log.append(panicking()) }
+func panics_with_note() {
+    defer note_panicking()
+    fail()
+}
+func returns_with_note() {
+    defer note_panicking()
+    return 1
+}
+log = []
+trap panics_with_note()
+returns_with_note()
+check("panicking() in a deferred call", log, [true, false])
+check("panicking() after the trap", panicking(), false)
+
+func raises_in_defer() {
+    panic Error(@InDefer, "in defer")
+}
+func second_panic() {
+    defer mark("runs after it")
+    defer raises_in_defer()
+    fail()
+}
+log = []
+check("a panic in a deferred call replaces the first", kind_of(trap second_panic()), @InDefer)
+check("the remaining defers still run", log, ["runs after it"])
+check("nothing stays pending", panicking(), false)
+
+func returns_one() { return 1 }
+func trap_ok_in_defer() {
+    r := trap returns_one()
+    mark(r ? "ok" : "error")
+}
+func defer_with_trap() {
+    defer trap_ok_in_defer()
+    fail()
+}
+log = []
+check("a trap that succeeds in a deferred call keeps the panic", kind_of(trap defer_with_trap()), @Deep)
+check("and sees its own result", log, ["ok"])
+
+func inner_fail() { panic Error(@Inner, "inner") }
+func trap_err_in_defer() {
+    r := trap inner_fail()
+    mark(r.unwrap_err().kind)
+    mark(panicking())
+}
+func defer_with_failing_trap() {
+    defer trap_err_in_defer()
+    fail()
+}
+log = []
+check("a trap that fails in a deferred call keeps the outer panic", kind_of(trap defer_with_failing_trap()), @Deep)
+check("and sees only its own error", log, [@Inner, true])
+
+func catch_in_defer() {
+    try {
+        inner_fail()
+    } catch e {
+        mark(e.kind)
+    }
+    mark("rest")
+}
+func defer_with_catch() {
+    defer catch_in_defer()
+    fail()
+}
+log = []
+check("a catch in a deferred call keeps the outer panic", kind_of(trap defer_with_catch()), @Deep)
+check("and the deferred function goes on", log, [@Inner, "rest"])
+
+func catch_own_in_defer() {
+    try {
+        panic Error(@Own, "own")
+    } catch e {
+        mark(e.kind)
+    }
+}
+func defer_same_frame() {
+    defer catch_own_in_defer()
+    panic Error(@First, "first")
+}
+log = []
+check("the panic instruction is not run a second time", kind_of(trap defer_same_frame()), @First)
+check("after a catch in the deferred call", log, [@Own])
+check("nothing stays pending after the trap", panicking(), false)
+
+class Keyed {
+    pub func hash() { return 1 }
+    pub func equal(other) { return true }
+}
+var table = {}
+func native_defer_with_hook() {
+    defer table.set(new Keyed(), 1)
+    fail()
+}
+check("a native deferred call that runs a hook keeps the panic", kind_of(trap native_defer_with_hook()), @Deep)
+check("and does its work", table.length(), 1)
+
+func raises_in_hook_defer() {
+    defer mark("after the hook failed")
+    defer table.set(new Raising(), 1)
+    fail()
+}
+class Raising {
+    pub func hash() { panic Error(@Hook, "in hash") }
+}
+log = []
+trap raises_in_hook_defer()
+check("the defers after a failing native one still run", log, ["after the hook failed"])
+
+func raises_in_str_defer() {
+    defer mark("after the str hook failed")
+    defer tostr(new StrHook())
+    fail()
+}
+log = []
+check("a hook's panic in a native deferred call replaces the first", kind_of(trap raises_in_str_defer()), @Hook)
+check("and the next deferred call still runs", log, ["after the str hook failed"])
+
+func notify(ch) { ch <- "sent" }
+func worker(ch) {
+    defer notify(ch)
+    fail()
+}
+ch := Chan(capacity=1)
+spawn worker(ch)
+check("a deferred send runs in a fiber that panics", <- ch, "sent")
 
 if fails == 0 {
     io.print("ALL TESTS PASSED")

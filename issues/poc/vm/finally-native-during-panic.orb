@@ -1,0 +1,90 @@
+# PoC VM-019 — a `finally` entered by a panic must run to its end. The panic is
+# still pending while the block runs, so its first direct native call reads as a
+# failure of that call and the rest of the block is skipped: a `finally` that
+# closes a file or appends to a list does nothing.
+#
+# A runtime test: prints "ALL TESTS PASSED" only when every check matches.
+# EXPECT: contains: ALL TESTS PASSED
+
+import "io"
+
+var fails = 0
+
+func check(name, got, expected) {
+    if got == expected {
+        io.print("OK   ", name)
+    } else {
+        io.print("FAIL ", name, "-- got:", got, "expected:", expected)
+        fails += 1
+    }
+}
+
+var log = []
+var count = 0
+
+func kind_of(res) {
+    return res ? "no error" : res.unwrap_err().kind
+}
+
+func same_frame() {
+    try {
+        panic Error(@Own, "own")
+    } finally {
+        log.append("first")
+        count += 1
+        log.append("second")
+    }
+}
+check("the panic goes through", kind_of(trap same_frame()), @Own)
+check("a native call in the finally runs", log, ["first", "second"])
+check("the statements after it run", count, 1)
+
+func fail() { panic Error(@Deep, "deep") }
+
+func from_callee() {
+    try {
+        fail()
+    } finally {
+        log.append("callee")
+        count += 1
+    }
+}
+log = []
+count = 0
+check("the panic from a callee goes through", kind_of(trap from_callee()), @Deep)
+check("a native call in that finally runs", log, ["callee"])
+check("the statements after it run", count, 1)
+
+# A call to an Orbit function in the block is lost too, depending on the count of
+# its arguments: `panic->frame` is still the callee's BP, so a frame landing on it
+# is taken for the panicking one, and one below it sees the panic as its own.
+func tidy() { log.append("tidy") }
+func no_args() { fail() }
+func calls_tidy_after_no_args() {
+    try {
+        no_args()
+    } finally {
+        tidy()
+    }
+}
+log = []
+trap calls_tidy_after_no_args()
+check("a function in a finally, same argument count as the callee", log, ["tidy"])
+
+func three_args(a, b, c) { fail() }
+func calls_tidy_after_three_args() {
+    try {
+        three_args(1, 2, 3)
+    } finally {
+        tidy()
+    }
+}
+log = []
+trap calls_tidy_after_three_args()
+check("a function in a finally, fewer arguments than the callee", log, ["tidy"])
+
+if fails == 0 {
+    io.print("ALL TESTS PASSED")
+} else {
+    io.print(fails, "TEST(S) FAILED")
+}

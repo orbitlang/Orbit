@@ -1,8 +1,143 @@
 # vm — bug report
 
 **Component:** `orbit/orbiter` (interpreter: trap/panic unwind, register file) · **ID prefix:** `VM`
-**PoCs:** [`poc/vm/`](poc/vm/) · **Last reviewed:** 2026-10-30
+**PoCs:** [`poc/vm/`](poc/vm/) · **Last reviewed:** 2026-11-05
 **Status:** OPEN · PARTIAL · FIXED · WONTFIX — see [GUIDE.md](GUIDE.md).
+
+---
+
+## VM-020 — A monitor stays held when a panic from a callee leaves its `sync` block
+**Severity:** High (any other fiber syncing on the object blocks forever) · **Status:** OPEN · **Location:** `orbit/orbiter/vm.cpp` (`UnwindStack`, `ExecuteCleanupForPC`)
+
+```orbit
+func fail() { panic Error(@Deep, "x") }
+func from_callee() {
+    sync obj {
+        fail()
+    }
+}
+trap from_callee()
+# obj's monitor is still held: another fiber's `sync obj` never enters
+```
+
+`ExecuteCleanupForPC` finds the `sync` block to release by IP, in the current
+code's cleanup table. A panic raised in the block's own frame finds it. One from
+a callee does not: when `UnwindStack` moves to the caller it sets IP to the
+caller's `m_end`, outside every range, and `fiber->context` still holds the
+callee's code, so the wrong table is searched as well.
+
+**Found** while verifying a fix for VM-015. Same behavior with the VM at HEAD.
+
+**PoC:** [`poc/vm/sync-released-on-panic.orb`](poc/vm/sync-released-on-panic.orb)
+*(confirmed live once VM-017 is out of the way: the same-frame control passes,
+the callee check fails; until then the file crashes on VM-017)*.
+
+**Fix (suggested, not tried):** when moving to the caller, restore its
+`FiberContext` and run its cleanup against the IP saved by the call, before
+moving IP to `m_end`.
+
+---
+
+## VM-019 — A `finally` entered by a panic stops at its first native call
+**Severity:** High (cleanup silently skipped) · **Status:** OPEN · **Location:** `orbit/orbiter/vm.cpp` (`ERROR:`, the `finally` branch; the pending-panic check after a call)
+
+```orbit
+try {
+    panic Error(@Own, "own")
+} finally {
+    log.append("first")     # the pending panic reads as a failure of this call
+    count += 1              # never runs
+}
+```
+
+The panic is still pending while the block runs, so the check after a native call
+takes it for a failure of that call and the rest of the block is skipped. A call
+to an Orbit function in the block is lost too, depending on its argument count:
+`panic->frame` is still the callee's BP, so a frame landing exactly on it is taken
+for the panicking one at `BEGIN`, and one below it sees the panic as its own. This
+is VM-015's first cause, in a `finally`: setting the panic aside for the block
+needs a state of its own, because the block runs in the frame the panic belongs to.
+
+**Found** while verifying a fix for VM-015. Same behavior with the VM at HEAD.
+
+**PoC:** [`poc/vm/finally-native-during-panic.orb`](poc/vm/finally-native-during-panic.orb)
+*(confirmed live: six of eight checks fail)*.
+
+**Fix (suggested, not tried):** a flag on the panic, set on entering the `finally`
+and cleared by its `TEND`, which `IsPanicking` honors. `TEND` has to recognize its
+own context (a nested `try` in the block ends with a `TEND` too), and returning
+into the frame from a call in the block must not resume the unwind at `BEGIN`.
+
+---
+
+## VM-018 — After a panic from a callee, a `try` without a live catch resumes after the call
+**Severity:** High (statements run that the panic should have skipped) · **Status:** OPEN · **Location:** `orbit/orbiter/vm.cpp` (`UnwindStack`, the handler branch)
+
+```orbit
+try {
+    fail()
+    rest += 1      # runs
+} finally { ... }
+
+try {
+    fail()
+} catch {
+    fail()
+    rest += 1      # runs
+}
+```
+
+`UnwindStack` treats any context of the frame as a handler. It sets IP only when
+`catch_off` is live: with a `finally` alone, or with a context whose handlers are
+spent, it returns `true` with IP still on the instruction after the call. The
+`ERROR:` path handles the same cases, one per offset, and releases an exhausted
+context; this branch does not. On a build where the pending panic fails every
+native call, the next call hides the defect, so the PoC counts with arithmetic.
+
+**Found** while verifying a fix for VM-015. Same behavior with the VM at HEAD.
+
+**PoC:** [`poc/vm/unwind-consumed-context.orb`](poc/vm/unwind-consumed-context.orb)
+*(confirmed live: two of six checks fail)*.
+
+**Fix (suggested, not tried):** mirror `ERROR:` in that branch: jump to the catch if
+live, else to the `finally` (consuming it), else release the context and go on
+unwinding, re-reading the next context, which may belong to the same frame.
+
+---
+
+## VM-017 — `sync` crashes: an object's monitor field is never initialized
+**Severity:** High (crash on valid source) · **Status:** OPEN · **Location:** `orbit/orbiter/datatype/oobject.h:544` (`MakeObject`)
+
+`MakeObject` sets `type_` and the reference count but not `mon_`, so
+`MonitorAcquire` reads whatever the allocator left there and, unless that is
+zero, calls `Acquire` on a garbage pointer (`this=0x500000000`, `this=0x269`:
+EXC_BAD_ACCESS, exit 138 or 139, with the buffered output lost). Nothing else
+writes the field, so whether `sync` survives depends on the block the object got:
+a list or an empty class often does, an instance with fields does not.
+
+```orbit
+class Field {
+    pub var v = 0
+}
+f := new Field()
+sync f { }         # crash
+```
+
+**Found** while verifying a fix for VM-015. Same behavior with the VM at HEAD. No
+suite exercised `sync`.
+
+**PoC:** [`poc/vm/sync-instance-with-fields.orb`](poc/vm/sync-instance-with-fields.orb)
+*(confirmed live: the two controls pass, then the crash)*.
+
+**Fix (suggested, verified by probe 2026-11-05, then reverted):** in `MakeObject`:
+
+```cpp
+O_GET_MON(ret).store(nullptr, std::memory_order_relaxed);
+```
+
+With the probe the PoC passes 5 of 5 and the gates are unchanged. `oobject.cpp:143`
+allocates TypeInfos without `MakeObject`; a type used as a `sync` object was not
+checked.
 
 ---
 
@@ -81,7 +216,42 @@ would remove this class of bug, VM-009's included, at a higher cost.
 ---
 
 ## VM-015 — A deferred call is lost when a panic unwinds its frame, and can resume its caller with the wrong code
-**Severity:** High (cleanup silently skipped; the VM executes from a wrong address) · **Status:** OPEN · **Location:** `orbit/orbiter/vm.cpp:244` (`UnwindStack`), `:79` (`ExecDefer`), `:723` (the `panic->frame` check at `BEGIN`), `:1127` and every other pending-panic check; `orbit/orbiter/fiber.cpp:209` (`RaisePanic`)
+**Severity:** High (cleanup silently skipped; the VM executes from a wrong address) · **Status:** FIXED (2026-11-08) · **Location:** `orbit/orbiter/vm.cpp:79` (`ExecDefer`), `:255` (`UnwindStack`), `:734` (`BEGIN`), `STRES`; `orbit/orbiter/fiber.h` (`IsPanicking`); `orbit/orbiter/panic.h`, `panic.cpp` (`HidePanic`/`ShowPanic`, `DiscardPanic`); `orbit/orbiter/module/builtin.cpp` (`panicking`)
+
+**Fix verified (live: the PoC passes 43 of 43 checks, and 300 runs of it with 8 in
+parallel all exit 0; the 47 further cases written to break it (27 in the first
+review, 20 in the second) hold — deferred calls
+that sleep, block on a channel, get preempted, consume a generator, run the GC,
+`trap` or `catch` errors of their own, call functions with defers, run natives
+that call hooks, raise a panic of their own; hooks with defers; defers at module
+level; a stack overflow running a defer in each of 599,183 frames, 100 runs in
+parallel; the code after a `try` that does not catch stays skipped, and a hook's
+panic reaches its caller; `ortest` unchanged apart from the `numbers/` suites, red
+until NUM-002 lands; the PoC gate fails only the findings already open; every
+`stdlib` module imports; `phi-regalloc.orb` passes).** A panic is set aside while a
+deferred call runs, and stays visible to the frames it belongs to:
+
+- `panic->frame` is a signed `MSSize`. `UnwindStack` moves it to the frame being
+  unwound before running that frame's defers, so the deferred call and everything
+  it calls sit above it.
+- `IsPanicking()` is `HasPanic() && frame >= BP`: frames at or below the panic see
+  it (`TEND` re-raises, `EvalSync` reports a failing hook), frames above do not (a
+  deferred function's calls, natives, property loads run normally). `BEGIN` keeps
+  the exact `frame == BP` test that resumes the unwind once a deferred call
+  returns. `panicking()` reports `HasPanic()`, so it is true inside a deferred call.
+- A native deferred call runs at the unwound frame's own BP, so the panic is hidden
+  for it: `HidePanic()` stores `~frame` (negative, frame 0 included) and
+  `ShowPanic()` restores it. A panic the native raises gets the unwound frame.
+- `DiscardPanic` takes a base frame and discards only the panics from that frame up,
+  so a `trap` or `catch` inside a deferred call takes its own error and leaves the
+  outer panic pending (a hidden panic, negative, is never discarded). `STRES` asks
+  `IsPanicking()`, so a `trap` that succeeds inside a deferred call returns ok.
+
+Point 3 of the report (the caller resuming with the callee's code) no longer runs
+any code: a deferred call returning into a frame being unwound goes straight to
+`ERROR` at `BEGIN`. The stale `FiberContext` it leaves is part of VM-020.
+
+<details><summary>Original report and the reviews of earlier attempts</summary>
 
 A `defer` must run however its frame is left. On a normal return it does;
 when a panic unwinds the frame, `UnwindStack` pops the deferred call and
@@ -146,8 +316,91 @@ and `BEGIN` entering the caller's BP with an IP 61,300 bytes before the code
 it runs (point 3).
 
 **PoC:** [`poc/vm/defer-during-unwind.orb`](poc/vm/defer-during-unwind.orb)
-*(confirmed live: the two controls pass, six checks fail, and the file aborts
-on the last check, point 3)*.
+*(confirmed live on the VM before any fix: the two controls pass, six checks fail,
+and the file aborts at point 3; extended 2026-11-05 to 42 checks with the cases
+below)*.
+
+**A fix reviewed, not accepted (2026-11-05).** `ExecDefer` moved `panic->frame` to
+the frame being unwound and `IsPanicking()` became `HasPanic() && frame == BP`.
+That fixes the three points above, but a panic raised in a deeper frame is now
+invisible to every frame below it, so 10 of the 28 checks fail:
+
+- `TEND` does not re-raise: the code after a `try` that did not catch the panic
+  runs, and an outer `catch` of the same frame is missed;
+- `EvalSync` reports success after a panicking hook: `str`, `equal` and `compare`
+  hooks surface as a TypeError ("returned non-string") instead of their error;
+- `ExecDefer` also moves the frame on a normal return inside the deferred call, so
+  a deferred function that calls a function with a defer stops there;
+- `panicking()` is false inside a deferred call, against its documentation.
+
+The same approach passes all 28 checks and leaves the gates unchanged (probe,
+then reverted) with four changes: `frame >= BP` in `IsPanicking` (frames below the
+panic see it, deferred calls above the moved frame do not); the original
+`frame == BP` test at `BEGIN`, since a handler found below must not jump to
+`ERROR`; `frame` moved in `UnwindStack` right before `ExecDefer`, not inside it; and
+`panicking()` on `panic.HasPanic()`. Point 3 stays as it is there (the context is
+not restored), harmless on these paths because `BEGIN` goes straight to `ERROR`,
+but see VM-020.
+
+**Second review (2026-11-05), those four changes applied: still OPEN.** They hold
+under sleep, a blocking channel, preemption, a generator and `gc.collect()` inside a
+deferred call, a hook with a defer, module-level defers, and a stack overflow with
+a defer in each of 599,183 frames. What remains is a deferred call doing what a
+function normally does while the outer panic is set aside:
+
+- a `trap` that succeeds in a deferred call returns an error and discards the outer
+  panic: `STRES` tests `panic.current_ == nullptr`. The outer `trap` sees `ok`;
+- a `trap` or a `catch` that takes an error raised in the deferred call discards the
+  outer panic too: `DiscardPanic` empties the whole chain. If the panic was raised in
+  the frame itself, that frame then resumes on its `panic` instruction, with a stale
+  register ("panic expect type 'Error'");
+- a native deferred call runs with `frame == BP`, so the panic is visible to it: one
+  that runs a hook (`defer table.set(key, 1)`) fails and does nothing.
+
+**Fix (suggested, verified by probe 2026-11-05, then reverted), on top of those
+four changes:**
+
+```cpp
+// panic.h, Panic: a pending panic set aside for a native deferred call
+bool hidden;   // false in CreatePanic and CreateOOMPanic
+
+// panic.cpp: only what belongs to the frames from min_frame up
+void PanicContainer::DiscardPanic(Panic **panic_cache, const PtrSize min_frame) const noexcept {
+    ...
+    while (chain != nullptr && chain->frame >= min_frame) { ... }
+
+    *this->r_current_ = chain;
+}
+
+// fiber.cpp, Fiber::DiscardPanic
+this->panic.DiscardPanic(&this->panic_cache, this->vm.regs.BP.reg);
+
+// fiber.h, IsPanicking
+const auto *current = *this->panic.r_current_;
+
+return current != nullptr && !current->hidden && current->frame >= vm.regs.BP.reg;
+
+// vm.cpp, STRES
+if (!fiber->IsPanicking()) {
+
+// vm.cpp, ExecDefer, the native branch
+auto *pending = fiber->panic.current_;
+if (pending != nullptr)
+    pending->hidden = true;
+
+CallNative(func, regs, stack, defer->argc);
+
+if (pending != nullptr)
+    pending->hidden = false;
+
+if (fiber->panic.current_ != pending)
+    fiber->panic.current_->frame = regs->BP.reg;
+```
+
+With the probe the PoC passes all 42 checks (200 runs, 8 in parallel, exit 0), the
+gates are unchanged and every `stdlib` module imports. Each part is needed: taking
+out any one of the `STRES` test, `min_frame`, `hidden` and the `frame` update makes
+the PoC fail.
 
 **Fix (suggested, not tried):** the three points need one design: an
 unwinding that a deferred call can interrupt and resume.
@@ -168,6 +421,8 @@ unwinding that a deferred call can interrupt and resume.
   deferred function then has to be chained onto it (`CreatePanic` links
   `prev`, printed as "while handling"), and the detached chain has to stay
   reachable by the GC.
+
+</details>
 
 ---
 

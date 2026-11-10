@@ -1,0 +1,46 @@
+# PoC OBJ-006 — an error raised by a `hash` hook must reach the program. Hash()
+# takes HASH_ERROR for "unhashable" and raises TypeError over the error already
+# pending, the same shape as OBJ-005 in Dispatch; the hash hook's comment in
+# ctbuilder.cpp expects the pending error to survive.
+#
+# A runtime test: prints "ALL TESTS PASSED" only when every check matches.
+# EXPECT: contains: ALL TESTS PASSED
+
+import "io"
+
+var fails = 0
+
+func check(name, got, expected) {
+    if got == expected {
+        io.print("OK   ", name)
+    } else {
+        io.print("FAIL ", name, "-- got:", got, "expected:", expected)
+        fails += 1
+    }
+}
+
+func kind_of(res) {
+    return res ? "no error" : res.unwrap_err().kind
+}
+
+class Raises {
+    pub func hash() { panic Error(@Hook, "in hash") }
+}
+class NotInt {
+    pub func hash() { return "x" }
+}
+
+func store(key) {
+    d := {}
+    d[key] = 1
+}
+
+check("control: a list is unhashable", kind_of(trap store([1])), @TypeError)
+check("control: a hook returning a non-integer", kind_of(trap store(new NotInt())), @TypeError)
+check("a hash hook's panic reaches the caller", kind_of(trap store(new Raises())), @Hook)
+
+if fails == 0 {
+    io.print("ALL TESTS PASSED")
+} else {
+    io.print(fails, "TEST(S) FAILED")
+}

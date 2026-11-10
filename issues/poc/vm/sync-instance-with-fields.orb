@@ -1,0 +1,65 @@
+# PoC VM-017 — `sync` must work on any object. On an instance of a class with
+# fields MonitorAcquire reads a garbage monitor pointer from the object head and
+# the process dies (EXC_BAD_ACCESS in Monitor::Acquire, exit 138 or 139) before
+# printing anything.
+#
+# A runtime test: prints "ALL TESTS PASSED" only when every check matches.
+# EXPECT: contains: ALL TESTS PASSED
+
+import "io"
+
+var fails = 0
+
+func check(name, got, expected) {
+    if got == expected {
+        io.print("OK   ", name)
+    } else {
+        io.print("FAIL ", name, "-- got:", got, "expected:", expected)
+        fails += 1
+    }
+}
+
+var entered = 0
+
+l := [1]
+sync l {
+    entered += 1
+}
+check("control: sync on a list", entered, 1)
+
+class Empty { }
+e := new Empty()
+sync e {
+    entered += 1
+}
+check("control: sync on an empty class", entered, 2)
+
+class Field {
+    pub var v = 0
+}
+f := new Field()
+sync f {
+    entered += 1
+}
+check("sync on an instance with a field", entered, 3)
+
+class Init {
+    pub var a
+    pub var b
+    pub init(a, b) {
+        self.a = a
+        self.b = b
+    }
+}
+i := new Init(1, 2)
+sync i {
+    entered += 1
+}
+check("sync on an instance with init", entered, 4)
+check("its fields are intact", (i.a, i.b), (1, 2))
+
+if fails == 0 {
+    io.print("ALL TESTS PASSED")
+} else {
+    io.print(fails, "TEST(S) FAILED")
+}

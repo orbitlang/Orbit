@@ -1,0 +1,66 @@
+# PoC VM-018 — once a panic from a callee reaches a frame with a `try`, execution
+# must go to its handler, never back to the statement after the call.
+# UnwindStack treats any context of the frame as a handler: it sets IP only for
+# a catch. With a finally alone, or a context whose handlers are already spent
+# (the panic comes from inside the catch body), IP stays after the call, and the
+# rest of the block runs. The checks use a counter, not a call, because on a
+# build where the pending panic fails every native call that hides the defect.
+#
+# A runtime test: prints "ALL TESTS PASSED" only when every check matches.
+# EXPECT: contains: ALL TESTS PASSED
+
+import "io"
+
+var fails = 0
+
+func check(name, got, expected) {
+    if got == expected {
+        io.print("OK   ", name)
+    } else {
+        io.print("FAIL ", name, "-- got:", got, "expected:", expected)
+        fails += 1
+    }
+}
+
+func kind_of(res) {
+    return res ? "no error" : res.unwrap_err().kind
+}
+
+var rest = 0
+var handler = 0
+
+func fail() { panic Error(@Deep, "deep") }
+
+func finally_only() {
+    try {
+        fail()
+        rest += 1
+    } finally {
+        handler += 1
+    }
+}
+check("control: the panic goes through", kind_of(trap finally_only()), @Deep)
+check("the rest of a try with a finally alone does not run", rest, 0)
+check("the finally runs once", handler, 1)
+
+rest = 0
+handler = 0
+
+func inside_catch() {
+    try {
+        fail()
+    } catch {
+        handler += 1
+        fail()
+        rest += 1
+    }
+}
+check("control: the second panic goes through", kind_of(trap inside_catch()), @Deep)
+check("the rest of the catch body does not run", rest, 0)
+check("the catch runs once", handler, 1)
+
+if fails == 0 {
+    io.print("ALL TESTS PASSED")
+} else {
+    io.print(fails, "TEST(S) FAILED")
+}

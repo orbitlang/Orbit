@@ -1,0 +1,57 @@
+# PoC NUM-005 — ordering two small integers must not depend on the low 32 bits of
+# their difference. Compare computes `O_FROM_SMI(left) - O_FROM_SMI(right)` into
+# an `int`, so a difference of 2^32 reads as 0 and one of 2^31 as negative:
+# `2^32 > 0` is false and `2^31 < 0` is true. A heap Number goes through
+# NumberCompare, which compares values, and is right.
+#
+# A runtime test: prints "ALL TESTS PASSED" only when every check matches.
+# EXPECT: contains: ALL TESTS PASSED
+
+import "io"
+
+var fails = 0
+
+func check(name, got, expected) {
+    if got == expected {
+        io.print("OK   ", name)
+    } else {
+        io.print("FAIL ", name, "-- got:", got, "expected:", expected)
+        fails += 1
+    }
+}
+
+zero := 0
+two31 := 2147483648
+two32 := 4294967296
+smi_max := 2305843009213693951
+smi_min := -2305843009213693952
+
+check("control: 5 > 0", 5 > zero, true)
+check("control: a difference below 2^31", 2147483647 > zero, true)
+check("control: a heap Number > 0", 2305843009213693952 > zero, true)
+
+check("2^31 > 0", two31 > zero, true)
+check("2^31 < 0", two31 < zero, false)
+check("0 < 2^31", zero < two31, true)
+check("2^32 > 0", two32 > zero, true)
+check("2^32 >= 0", two32 >= zero, true)
+check("0 < 2^32", zero < two32, true)
+check("0 >= 2^32", zero >= two32, false)
+check("2^32 + 1 > 1", 4294967297 > 1, true)
+check("SMI max > 0", smi_max > zero, true)
+check("SMI max < 0", smi_max < zero, false)
+check("SMI min < 0", smi_min < zero, true)
+check("SMI min < SMI max", smi_min < smi_max, true)
+check("SMI max > SMI min", smi_max > smi_min, true)
+
+var taken = 0
+if two32 > zero {
+    taken = 1
+}
+check("an if on a large value", taken, 1)
+
+if fails == 0 {
+    io.print("ALL TESTS PASSED")
+} else {
+    io.print(fails, "TEST(S) FAILED")
+}

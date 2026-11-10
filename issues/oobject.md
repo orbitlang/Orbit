@@ -1,8 +1,26 @@
 # oobject — bug report
 
 **Component:** `orbit/orbiter/datatype/oobject.cpp` (object/type core: `MakeType`, property tables, type lifecycle) · **ID prefix:** `OBJ`
-**PoCs:** [`poc/oobject/`](poc/oobject/) (OBJ-002 … OBJ-005; OBJ-001 has none, see below) · **Last reviewed:** 2026-11-02
+**PoCs:** [`poc/oobject/`](poc/oobject/) (OBJ-002 … OBJ-006; OBJ-001 has none, see below) · **Last reviewed:** 2026-11-05
 **Status:** OPEN · PARTIAL · FIXED · WONTFIX — see [GUIDE.md](GUIDE.md).
+
+---
+
+## OBJ-006 — `Hash` replaces a `hash` hook's error with "unhashable"
+**Severity:** Medium (wrong error kind and message; the real cause is lost) · **Status:** OPEN · **Location:** `orbit/orbiter/datatype/oops.cpp` (`Hash`)
+
+`Hash` takes `HASH_ERROR` for "unhashable" and raises a TypeError over the error
+already pending, so `d[key] = 1` with a `hash` hook that panics reports
+"unhashable type". It is the shape of OBJ-005, and the comment in the hook's
+wrapper (`ctbuilder.cpp`) expects the pending error to survive.
+
+**Found** while verifying a fix for VM-015. Same behavior with the VM at HEAD.
+
+**PoC:** [`poc/oobject/obj-006.orb`](poc/oobject/obj-006.orb) *(confirmed live: the
+two controls pass, the hook check fails)*.
+
+**Fix (suggested, not tried):** raise the TypeError only when no error is pending
+(`Orbiter::IsPanicking`).
 
 ---
 
