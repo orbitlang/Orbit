@@ -190,8 +190,8 @@ unsigned char *Codegen::EmitOpcodes(const BasicBlock *block, unsigned char *m_co
             case orbiter::OPCode::NEG:
             case orbiter::OPCode::NOT:
                 *(orbiter::MachineWord *) m_code = EMIT_DS(instr->opcode,
-                                                            instr->assigned_reg,
-                                                            ((Instruction*)instr->operands[0].value)->assigned_reg);
+                                                           instr->assigned_reg,
+                                                           ((Instruction*)instr->operands[0].value)->assigned_reg);
                 break;
             case orbiter::OPCode::PANIC:
             case orbiter::OPCode::RET:
@@ -498,7 +498,7 @@ void Codegen::ExportCleanupTable(const orbiter::datatype::HCode &code) {
 
     auto *cursor = buffer;
     for (const auto entry: this->ir_->cleanup_entries_) {
-        cursor->m_start = code->m_code + (entry.start->instr_offset * 4);
+        cursor->m_start = code->m_code + ((entry.start->instr_offset + 1) * 4);
         cursor->m_end = code->m_code + (entry.end->instr_offset * 4);
 
         cursor->type = entry.type;
