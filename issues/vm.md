@@ -1,13 +1,219 @@
 # vm — bug report
 
 **Component:** `orbit/orbiter` (interpreter: trap/panic unwind, register file) · **ID prefix:** `VM`
-**PoCs:** [`poc/vm/`](poc/vm/) · **Last reviewed:** 2026-11-05
+**PoCs:** [`poc/vm/`](poc/vm/) · **Last reviewed:** 2026-11-19
 **Status:** OPEN · PARTIAL · FIXED · WONTFIX — see [GUIDE.md](GUIDE.md).
 
 ---
 
+## VM-024 — A `return` out of a `sync` block inside a `try` keeps the monitor held
+**Severity:** High (any other fiber syncing on the object blocks forever) · **Status:** OPEN · **Location:** `orbit/liftoff/ir/irbuilder.cpp:1463` (`visitReturn`), `orbit/liftoff/ir/builder.cpp:263` (`CreateReturn`)
+
+```orbit
+func get() {
+    try {
+        sync obj {
+            return 1
+        }
+    } catch {
+    }
+}
+get()
+# obj's monitor is still held
+```
+
+Outside a `try`, a `return` reaches `RET` with IP inside the block's cleanup range,
+and `Return` releases the monitor. Inside a `try`, `CreateReturn` turns it into a
+pending return and jumps to the end of the `try`; `TEND` runs the `RET` later, from
+outside the range of every block the `return` left, and no `SYNC_EXIT` was emitted
+for them: `break` and `continue` get theirs from `PutSyncExit`, a `return` does not.
+The same through a `finally`, and through two `try`s. A `try` inside the block is
+fine: its `TEND` is still inside the block's range.
+
+**Found** while verifying a fix for VM-020. Same behavior with the VM at HEAD.
+
+**PoC:** [`poc/vm/sync-return-in-try.orb`](poc/vm/sync-return-in-try.orb) *(confirmed
+live: the three controls pass, the three cases keep the monitor)*.
+
+**Fix (suggested, verified by probe 2026-11-19, then reverted):** release the blocks
+between the `return` and the innermost `try` before the pending jump, as `break`
+does, after the value is computed:
+
+```cpp
+Instruction *IRBuilder::visitReturn(const parser::Unary *unary) {
+    auto *value = unary->value != nullptr ? this->visit(unary->value) : this->builder_.LoadNilValue();
+
+    // A return inside a try becomes a pending return, run by TEND outside the sync blocks it leaves
+    const auto *tcf = this->builder_.context->GetActiveContextIf(JBlockType::TCF);
+    if (tcf != nullptr)
+        this->PutSyncExit(tcf);
+
+    return this->builder_.CreateReturn(value);
+}
+```
+
+With the probe the PoC passes, the value is still returned, and ten shapes of
+`return`, `break` and `continue` out of `sync` and `try` release their monitor once;
+`ortest` unchanged apart from the `numbers/` suites, every `stdlib` module imports,
+`phi-regalloc.orb` passes.
+
+---
+
+## VM-023 — A panic caught inside a `sync` block releases its monitor early, and the block releases it again
+**Severity:** High (the rest of the block runs without the monitor, and the monitor is broken afterwards: the next fiber that leaves it keeps it) · **Status:** FIXED (2026-11-19) · **Location:** `orbit/orbiter/vm.cpp:510` (`ExecuteCleanupForPC`), `orbit/orbiter/vm.cpp:2129` (`ERROR`)
+
+**Fix verified (live: the PoC passes 8 of 8, 5 runs of 5: a panic of the block's own
+frame caught by a `catch` inside it, taken by a `finally` inside it, or raised again
+by the catch, and the control from a callee, all release the monitor once; with the
+filter below removed, the four "released once" checks fail again; no monitor is
+released while unheld in 81 programs, counted with a probe in `Monitor::Release`;
+the gates are those of VM-020).** Resolved by VM-020's fix. `ExecuteCleanupForPC`,
+which `ERROR` runs before it jumps to the handler, leaves alone the blocks that hold
+the handler of the frame's own exception context, and runs once per frame, so the
+unwind after a spent handler does not release the same blocks again:
+
+```cpp
+    const auto *ex_ctx = ExContextGet(vm->stack.stack, vm->regs.CP.reg);
+    if (ex_ctx != nullptr && ex_ctx->key == vm->regs.BP.reg) {
+        ignore = (PtrSize) (context->code->m_code + ex_ctx->catch_off);
+
+        if (ex_ctx->finally_off != 0)
+            ignore = (PtrSize) (context->code->m_code + ex_ctx->finally_off);
+    }
+    ...
+        if (ignore >= (PtrSize) entry->m_start && ignore <= (PtrSize) entry->m_end)
+            continue;
+```
+
+The block's own `SYNC_EXIT`, or the unwind after the handler, then releases it once.
+
+<details><summary>Original report</summary>
+
+```orbit
+func update() {
+    sync obj {
+        try {
+            panic Error(@Bad, "x")
+        } catch {
+        }
+        # obj is no longer held here
+    }   # SYNC_EXIT releases it a second time
+}
+```
+
+When a panic is raised in the frame that holds the handler, `ERROR` runs
+`ExecuteCleanupForPC` before it jumps to the catch or the finally. The cleanup
+releases every `sync` block whose range covers IP, the ones around the `try` too,
+which the handler runs inside: another fiber waiting on the object enters while the
+block is still running (checked live). The block then releases the monitor a second
+time: its `SYNC_EXIT` after a catch; the unwind after a finally, or after a second
+panic raised by the catch (with both handlers spent `ERROR` runs the cleanup, then
+`UnwindStack` runs it again on the same IP). `Monitor::locks` is unsigned: the extra
+release wraps it, so the next fiber that acquires and leaves the monitor finds the
+count above zero and keeps it, and nobody enters again.
+
+A panic from a callee, caught inside the block, is released correctly: there
+`UnwindStack` jumps to the catch without the cleanup.
+
+**Found** while verifying a fix for VM-020. Same behavior with the VM at HEAD.
+
+**PoC:** [`poc/vm/sync-catch-inside.orb`](poc/vm/sync-catch-inside.orb) *(confirmed
+live: the control passes, then each of the three cases releases twice: the
+monitor is free right after, held for good by the next fiber that uses it)*.
+
+**Fix (suggested, verified by probe 2026-11-16, then reverted):** leave alone the
+blocks the handler resumes in. `ExecuteCleanupForPC` takes the address the handler
+resumes at and skips the entries whose range covers it:
+
+```cpp
+void ExecuteCleanupForPC(const Fiber *fiber, const FiberContext *context, PtrSize resume = 0);
+
+        // The handler resumes inside this block: it stays held
+        if (resume >= (PtrSize) entry->m_start && resume < (PtrSize) entry->m_end)
+            continue;
+```
+
+and `ERROR` runs it inside the two branches, with the catch or the finally address,
+and not at all when both are spent (`UnwindStack` does it next):
+
+```cpp
+                if (except->catch_off != 0) {
+                    ExecuteCleanupForPC(fiber, &fiber->context, (PtrSize) code->m_code + except->catch_off);
+                    JMP_TO(except->catch_off);
+                    ...
+                if (except->finally_off != 0) {
+                    ExecuteCleanupForPC(fiber, &fiber->context, (PtrSize) code->m_code + except->finally_off);
+                    JMP_TO(except->finally_off);
+```
+
+With the probe the PoC passes, and so do VM-020's and VM-021's; no monitor is
+released while unheld in 17 further shapes (counted with a probe in
+`Monitor::Release`); the gates are unchanged.
+
+</details>
+
+---
+
+## VM-022 — A fiber waiting on a contended `sync` stays runnable: it spins, queues itself again and again, and corrupts the scheduler's queues
+**Severity:** High (any contended `sync`: a crash in the scheduler, a hang, a fiber entering a held block, a monitor handed to a finished fiber) · **Status:** OPEN · **Location:** `orbit/orbiter/vm.cpp:1991` (`SYNC_ENTER` parks with `YIELDED`), `orbit/orbiter/sync/monitor.cpp:48` (`Monitor::Acquire` queues the fiber), `orbit/orbiter/runtime.cpp:100` (`FindExecutable` hands back the last fiber)
+
+```orbit
+func holder(obj) {
+    sync obj { chrono.sleep(100) }
+}
+spawn holder(obj)
+chrono.sleep(20)
+spawn enter(obj)     # waits: runs again and again instead of sleeping
+```
+
+When the monitor is held, `Monitor::Acquire` puts the fiber on the monitor's queue
+and `SYNC_ENTER` returns with the state `YIELDED`, the state of a preempted fiber.
+The scheduler takes it as one: it runs it again as soon as nothing else is
+runnable (`FindExecutable` returns `last`), or puts it back on a run queue;
+`SYNC_ENTER` runs again and queues the fiber on the monitor once more, 68,900 times
+in 100 ms in one trace. A fiber has one queue link (`fiber->queue`), shared by the
+run queues and the monitor's queue, so every round relinks it. Seen live: a crash
+in `FiberQueue::Steal` (EXC_BAD_ACCESS, from `Orbiter::StealWork`), hangs, the debug
+assertion `count_ == 0` in `~FiberQueue` at exit, a fiber entering a block another
+fiber is still inside, and, after the holder hands the monitor over, the waiter's
+own release handing it to a stale entry of itself, finished: nobody enters again.
+
+**Found** while verifying a fix for VM-020: a check that spawned a fiber on a held
+monitor never ended. Same behavior with the VM at HEAD. The `sync` PoCs of VM-020,
+VM-021 and VM-023 probe a monitor from a hook, where a contended `sync` is refused
+rather than waited for, to stay clear of it.
+
+**PoC:** [`poc/vm/sync-contended-handoff.orb`](poc/vm/sync-contended-handoff.orb)
+*(confirmed live: 0 of 10 runs pass; a crash in the scheduler, a timeout, or failed
+checks)*.
+
+**Fix (direction, not tried):** park the waiting fiber with a state the scheduler
+drops, as it does for `SUSPENDED_IO` and `SUSPENDED_RETRY`, so that the
+`PushFiber` in `Monitor::Release` is its only way back; it then runs `SYNC_ENTER`
+once more and finds the monitor handed to it.
+
+---
+
 ## VM-021 — `sync` on a value that is not an object crashes instead of raising
-**Severity:** High (crash; on an object whose acquire fails, a release of a monitor it does not hold) · **Status:** OPEN · **Location:** `orbit/liftoff/codegen.cpp:501` (the cleanup entry's `m_start`), `orbit/orbiter/vm.cpp` (`SYNC_ENTER`, `ExecuteCleanupForPC`)
+**Severity:** High (crash; on an object whose acquire fails, a release of a monitor it does not hold) · **Status:** FIXED (2026-11-16) · **Location:** `orbit/liftoff/codegen.cpp:501` (the cleanup entry's `m_start`)
+
+**Fix verified (live: the PoC passes, 3 runs of 3, with a new case: a `sync` in a
+hook refused on a monitor another fiber holds leaves that monitor intact; reverting
+the line crashes the PoC (exit 139) and breaks that monitor; an uncaught `sync 5`
+or `sync nil` reports "TypeError: ... cannot be used as a sync target" and exits 1;
+`ortest` unchanged apart from the `numbers/` suites, red until NUM-002 lands; the
+PoC gate fails only the findings already open; every `stdlib` module imports;
+`phi-regalloc.orb` passes).** A block's cleanup range starts after its `SYNC_ENTER`,
+so a `SYNC_ENTER` that fails leaves nothing to release:
+
+```cpp
+cursor->m_start = code->m_code + ((entry.start->instr_offset + 1) * 4);
+```
+
+The example below has an empty block, which `visitSyncBlock` drops altogether: it
+never crashed and raises nothing. The PoC's blocks have a body.
+
+<details><summary>Original report</summary>
 
 ```orbit
 func on(value) {
@@ -40,10 +246,71 @@ cursor->m_start = code->m_code + ((entry.start->instr_offset + 1) * 4);
 With the probe the PoC passes, `sync 5` at module level reports "TypeError: 'Number'
 object cannot be used as a sync object" and exits 1, and the gates are unchanged.
 
+</details>
+
 ---
 
 ## VM-020 — A monitor stays held when a panic from a callee leaves its `sync` block
-**Severity:** High (any other fiber syncing on the object blocks forever) · **Status:** OPEN · **Location:** `orbit/orbiter/vm.cpp` (`UnwindStack`, `ExecuteCleanupForPC`)
+**Severity:** High (any other fiber syncing on the object blocks forever) · **Status:** FIXED (2026-11-19) · **Location:** `orbit/orbiter/vm.cpp:255` (`UnwindStack`), `orbit/orbiter/vm.cpp:510` (`ExecuteCleanupForPC`)
+
+**Fix verified (live: the PoC passes 15 of 15, 5 runs of 5: a panic from a callee,
+two frames down, from nested blocks, in a recursion with a `defer`, caught by a
+`catch` or `finally` inside the block or by a `try` of the same function outside
+it, in a spawned fiber; a block left by a panic caught in a caller (24 caller
+layouts) or by a plain `return` under a caller's `try` or `trap` (24 layouts) is
+released; no monitor is released while unheld in 81 programs, counted with a probe
+in `Monitor::Release`; VM-015's PoC passes 43 of 43; `ortest` unchanged apart from
+the `numbers/` suites, red until NUM-002 lands; the PoC gate fails only the
+findings already open; every `stdlib` module imports; `phi-regalloc.orb` passes).**
+`ExecuteCleanupForPC` takes the `FiberContext` whose cleanup table it searches, runs
+once per frame (it returns when IP is already at the code's `m_end`, and moves IP
+there), and leaves alone the blocks that hold the handler of the frame's own
+exception context, which runs inside them:
+
+```cpp
+void ExecuteCleanupForPC(VMContext *vm, const FiberContext *context) {
+    const auto ip = vm->regs.IP.reg;
+    if (ip >= (PtrSize) context->code->m_end)
+        return;
+
+    vm->regs.IP.reg = (PtrSize) context->code->m_end;
+    ...
+    const auto *ex_ctx = ExContextGet(vm->stack.stack, vm->regs.CP.reg);
+    if (ex_ctx != nullptr && ex_ctx->key == vm->regs.BP.reg) {
+        ignore = (PtrSize) (context->code->m_code + ex_ctx->catch_off);
+
+        if (ex_ctx->finally_off != 0)
+            ignore = (PtrSize) (context->code->m_code + ex_ctx->finally_off);
+    }
+    ...
+        if (ignore >= (PtrSize) entry->m_start && ignore <= (PtrSize) entry->m_end)
+            continue;
+```
+
+`UnwindStack` runs it on the panicking frame, then on each caller right after
+`PopStateNoCtxRestore`, with the IP its call saved, once the root frame of a spawned
+fiber (no code) is ruled out:
+
+```cpp
+    ExecuteCleanupForPC(&fiber->vm, context);
+
+    while (regs->SP.reg > 0) {
+        ...
+        context = p_ctx;
+
+        // This can only occur if the code is executing in a spawned fiber
+        if (context->code == nullptr)
+            return false;
+
+        ExecuteCleanupForPC(&fiber->vm, context);
+```
+
+The same filter in `ERROR` keeps a block held while a `catch` or `finally` of its own
+frame runs inside it, which closes VM-023; IP at `m_end` in each caller closes
+VM-018. A `return` out of a block inside a `try` is VM-024, a separate defect in
+the compiler.
+
+<details><summary>Original report</summary>
 
 ```orbit
 func fail() { panic Error(@Deep, "x") }
@@ -65,12 +332,13 @@ callee's code, so the wrong table is searched as well.
 **Found** while verifying a fix for VM-015. Same behavior with the VM at HEAD.
 
 **PoC:** [`poc/vm/sync-released-on-panic.orb`](poc/vm/sync-released-on-panic.orb)
-*(confirmed live once VM-017 is out of the way: the same-frame control passes,
-the callee check fails; until then the file crashes on VM-017)*.
+*(confirmed live: the same-frame control passes, the callee check fails)*.
 
 **Fix (suggested, not tried):** when moving to the caller, restore its
 `FiberContext` and run its cleanup against the IP saved by the call, before
 moving IP to `m_end`.
+
+</details>
 
 ---
 
@@ -107,7 +375,40 @@ into the frame from a call in the block must not resume the unwind at `BEGIN`.
 ---
 
 ## VM-018 — After a panic from a callee, a `try` without a live catch resumes after the call
-**Severity:** High (statements run that the panic should have skipped) · **Status:** OPEN · **Location:** `orbit/orbiter/vm.cpp` (`UnwindStack`, the handler branch)
+**Severity:** High (statements run that the panic should have skipped) · **Status:** FIXED (2026-11-19) · **Location:** `orbit/orbiter/vm.cpp:255` (`UnwindStack`), `orbit/orbiter/vm.cpp:510` (`ExecuteCleanupForPC`), `orbit/orbiter/vm.cpp:2124` (`ERROR`)
+
+**Fix verified (live: the PoC, grown to 32 checks, passes 5 runs of 5: a `finally`
+alone one and two frames down, with a `defer` in the frame, inside a `try`/`catch`
+of the same frame, a catch whose callee panics again with or without a `finally`
+after it, a `finally` whose callee panics, nested `try`s of one frame whose inner
+catch is spent, a caller's `catch` after the callee's `finally`, and the flow
+without a panic; with IP put back on the return address when the context has no
+live catch, the eight "the rest does not run" checks fail again; the gates are
+those of VM-020).** Resolved by VM-020's fix. `UnwindStack` runs
+`ExecuteCleanupForPC` on each caller it reaches, which moves IP to the frame's
+`m_end`; the handler branch sets IP only for a live catch, so a context with a
+`finally` alone, or with its handlers spent, resumes at `m_end`:
+
+```cpp
+        ExecuteCleanupForPC(&fiber->vm, context);   // IP = m_end
+
+        // Is there at least one exception handler?
+        if (except != nullptr && except->key == regs->BP.reg) {
+            stratum::util::MemoryCopy(&fiber->context.context, context, sizeof(FiberContext));
+
+            if (except->catch_off != 0)
+                regs->IP.reg = (PtrSize) fiber->context.code->m_code + except->catch_off;
+
+            return true;
+        }
+```
+
+The dispatch loop runs no instruction at `m_end` and falls into `ERROR`, which
+treats the context as for a panic raised in the frame: it jumps to the `finally`,
+consuming it, or releases the spent context and goes on unwinding. Its own
+`ExecuteCleanupForPC` returns at once, IP being at `m_end` already.
+
+<details><summary>Original report</summary>
 
 ```orbit
 try {
@@ -138,6 +439,8 @@ native call, the next call hides the defect, so the PoC counts with arithmetic.
 **Fix (suggested, not tried):** mirror `ERROR:` in that branch: jump to the catch if
 live, else to the `finally` (consuming it), else release the context and go on
 unwinding, re-reading the next context, which may belong to the same frame.
+
+</details>
 
 ---
 

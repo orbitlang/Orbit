@@ -4,10 +4,15 @@
 # MonitorRelease on the value it never acquired, which crashes (EXC_BAD_ACCESS,
 # exit 139) before anything is printed.
 #
+# The same release follows any SYNC_ENTER that fails on an object: inside a hook
+# (a synchronous call) a contended monitor is refused rather than waited for,
+# and the cleanup then releases the monitor of the fiber that holds it.
+#
 # A runtime test: prints "ALL TESTS PASSED" only when every check matches.
 # EXPECT: contains: ALL TESTS PASSED
 
 import "io"
+import "chrono"
 
 var fails = 0
 
@@ -38,6 +43,35 @@ check("sync on nil is a TypeError", kind_of(trap on(nil)), @TypeError)
 check("the refused blocks did not run", entered, 1)
 check("nothing stays pending", panicking(), false)
 check("sync still works afterwards", kind_of(trap on([2])), "no error")
+
+held := [3]
+var holder_done = false
+func holder() {
+    sync held {
+        chrono.sleep(100)
+    }
+    holder_done = true
+}
+class SyncsInStr {
+    pub func str() {
+        sync held {
+            return "in"
+        }
+    }
+}
+func enters(obj) {
+    before := entered
+    spawn on(obj)
+    chrono.sleep(50)
+    return entered == before + 1
+}
+spawn holder()
+chrono.sleep(20)
+check("a contended sync in a hook is refused", kind_of(trap tostr(new SyncsInStr())), @RuntimeError)
+chrono.sleep(150)
+check("the holder leaves its block", holder_done, true)
+check("the monitor is free afterwards", enters(held), true)
+check("and still works: the refusal released nothing", enters(held), true)
 
 if fails == 0 {
     io.print("ALL TESTS PASSED")

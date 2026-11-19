@@ -1,0 +1,77 @@
+# PoC VM-022 — a fiber that waits on a contended `sync` must enter once the
+# holder leaves, and the monitor must be free once both have left.
+#
+# SYNC_ENTER parks a fiber that finds the monitor held with the state YIELDED,
+# the state of a preempted fiber: the scheduler puts it back on the run queue,
+# it runs SYNC_ENTER again and enqueues itself on the monitor once more, tens
+# of thousands of times while the holder sleeps. The holder's release hands the
+# monitor to the first entry; the waiter's own release then hands it to one of
+# the stale entries, its own finished fiber, and nobody can enter again.
+#
+# The checks give the fibers time to enter, rather than waiting on them: a
+# blocked fiber must not hang the suite.
+#
+# A runtime test: prints "ALL TESTS PASSED" only when every check matches.
+# EXPECT: contains: ALL TESTS PASSED
+
+import "io"
+import "chrono"
+
+var fails = 0
+
+func check(name, got, expected) {
+    if got == expected {
+        io.print("OK   ", name)
+    } else {
+        io.print("FAIL ", name, "-- got:", got, "expected:", expected)
+        fails += 1
+    }
+}
+
+var entered = 0
+
+func enter(obj) {
+    sync obj {
+        entered += 1
+    }
+}
+
+func holder(obj) {
+    sync obj {
+        chrono.sleep(100)
+    }
+}
+
+free := [1]
+spawn enter(free)
+chrono.sleep(50)
+check("control: an uncontended sync enters", entered, 1)
+
+# One round can be lucky with the scheduler: run a few, each on its own object
+var waited = 0
+var after = 0
+loop i := 0; i < 5; i++ {
+    held := [i]
+    spawn holder(held)
+    chrono.sleep(20)
+
+    before := entered
+    spawn enter(held)
+    chrono.sleep(30)
+    if entered == before { waited += 1 }
+
+    chrono.sleep(200)
+    if entered == before + 1 {
+        spawn enter(held)
+        chrono.sleep(50)
+        if entered == before + 2 { after += 1 }
+    }
+}
+check("the waiting fiber does not enter while the holder is inside", waited, 5)
+check("it enters once the holder leaves, and the monitor is free after", after, 5)
+
+if fails == 0 {
+    io.print("ALL TESTS PASSED")
+} else {
+    io.print(fails, "TEST(S) FAILED")
+}

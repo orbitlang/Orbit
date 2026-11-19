@@ -5,13 +5,27 @@
 # any other fiber that syncs on the object blocks forever. A panic raised in the
 # `sync` block's own frame is released.
 #
-# The check gives the other fiber time to enter, rather than waiting on it: a
-# blocked fiber must not hang the suite.
+# The release must also happen when a `catch` of the same function, outside the
+# block, takes the panic (UnwindStack jumps to it without the cleanup), and must
+# happen once: a frame with a deferred call is entered again by the unwind after
+# that call returns, and a `catch` or `finally` inside the block runs while the
+# block still holds the monitor; a second release leaves the monitor broken for
+# the next fiber that uses it (the second `enters` below). The unwind also
+# reaches the root frame of a spawned fiber, which has no code to clean up.
+#
+# Only a handler of the frame being cleaned up can keep one of its blocks held:
+# the `try` or `trap` of a caller is not inside them, though its catch offset,
+# read against the callee's code, can fall in a block's range. The callers below
+# put their `try` at different offsets so that one of them does, whatever the
+# layout; a `return` out of the block must release it the same way.
+#
+# Another fiber probes each monitor with a `sync` inside a hook, which is refused
+# rather than waited for when the monitor is held: a failing check leaves no
+# fiber blocked behind it.
 #
 # EXPECT: contains: ALL TESTS PASSED
 
 import "io"
-import "chrono"
 
 var fails = 0
 
@@ -25,13 +39,34 @@ func check(name, got, expected) {
 }
 
 func fail() { panic Error(@Deep, "deep") }
+func nothing() { }
 
-var entered = 0
+# A sync in a hook is refused, not waited for, when another fiber holds the
+# monitor: the probing fiber never blocks
+class TryLock {
+    pub var obj
 
-func enter(obj) {
-    sync obj {
-        entered += 1
+    pub init(obj) {
+        self.obj = obj
     }
+
+    pub func str() {
+        sync self.obj {
+            return "in"
+        }
+    }
+}
+
+func try_lock(obj, ch) {
+    r := trap tostr(new TryLock(obj))
+    ch <- (r ? true : false)
+}
+
+# True when another fiber can sync on obj
+func enters(obj) {
+    ch := Chan(capacity=1)
+    spawn try_lock(obj, ch)
+    return <- ch
 }
 
 own := [1]
@@ -41,9 +76,7 @@ func same_frame() {
     }
 }
 trap same_frame()
-spawn enter(own)
-chrono.sleep(100)
-check("control: released after a panic in its own frame", entered, 1)
+check("control: released after a panic in its own frame", enters(own), true)
 
 other := [2]
 func from_callee() {
@@ -52,9 +85,141 @@ func from_callee() {
     }
 }
 trap from_callee()
-spawn enter(other)
-chrono.sleep(100)
-check("released after a panic from a callee", entered, 2)
+check("released after a panic from a callee", enters(other), true)
+
+deep := [3]
+func middle() { fail() }
+func two_frames() {
+    sync deep {
+        middle()
+    }
+}
+trap two_frames()
+check("released after a panic two frames down", enters(deep), true)
+
+outer := [4]
+inner := [5]
+func nested() {
+    sync outer {
+        sync inner {
+            fail()
+        }
+    }
+}
+trap nested()
+check("nested blocks: the outer one is released", enters(outer), true)
+check("nested blocks: the inner one is released", enters(inner), true)
+
+caught := [6]
+func catch_outside() {
+    try {
+        sync caught {
+            fail()
+        }
+    } catch {
+    }
+}
+catch_outside()
+check("released when a catch outside the block takes the panic", enters(caught), true)
+
+rec := [7]
+func recurse(n) {
+    defer nothing()
+    sync rec {
+        if n == 0 {
+            panic Error(@Own, "own")
+        }
+        recurse(n - 1)
+    }
+}
+trap recurse(2)
+check("frames with a deferred call: released", enters(rec), true)
+check("and released once: the monitor still works", enters(rec), true)
+
+inside := [8]
+func catch_inside() {
+    sync inside {
+        try {
+            fail()
+        } catch {
+        }
+    }
+}
+catch_inside()
+check("a catch inside the block: released when the block ends", enters(inside), true)
+check("and released once: the monitor still works", enters(inside), true)
+
+fin := [9]
+func finally_inside() {
+    sync fin {
+        try {
+            fail()
+        } finally {
+            nothing()
+        }
+    }
+}
+trap finally_inside()
+check("a finally inside the block: released", enters(fin), true)
+check("and released once: the monitor still works", enters(fin), true)
+
+spawned := [10]
+func notify(ch) { ch <- "done" }
+func fails_in_fiber(ch) {
+    defer notify(ch)
+    sync spawned {
+        fail()
+    }
+}
+done := Chan(capacity=1)
+spawn fails_in_fiber(done)
+<- done
+check("a spawned fiber that panics in the block: released", enters(spawned), true)
+
+var pad = 0
+
+callee_held := [11]
+func syncs_and_fails() {
+    sync callee_held {
+        pad += 1
+        pad += 1
+        pad += 1
+        fail()
+        pad += 1
+        pad += 1
+        pad += 1
+    }
+}
+func caller_try_0() { try { syncs_and_fails() } catch { } }
+func caller_try_1() { pad += 1; try { syncs_and_fails() } catch { } }
+func caller_try_2() { pad += 1; pad += 1; try { syncs_and_fails() } catch { } }
+func caller_try_3() { pad += 1; pad += 1; pad += 1; try { syncs_and_fails() } catch { } }
+func caller_try_4() { pad += 1; pad += 1; pad += 1; pad += 1; try { syncs_and_fails() } catch { } }
+caller_try_0()
+caller_try_1()
+caller_try_2()
+caller_try_3()
+caller_try_4()
+check("a try in the caller: the callee's block is released", enters(callee_held), true)
+
+returned := [12]
+func returns_in_sync() {
+    sync returned {
+        pad += 1
+        pad += 1
+        pad += 1
+        return 1
+    }
+}
+func returns_under_trap() { r := trap returns_in_sync() }
+func returns_under_try_0() { try { returns_in_sync() } catch { } }
+func returns_under_try_1() { pad += 1; try { returns_in_sync() } catch { } }
+func returns_under_try_2() { pad += 1; pad += 1; try { returns_in_sync() } catch { } }
+returns_under_trap()
+returns_under_try_0()
+returns_under_try_1()
+returns_under_try_2()
+check("a return out of the block, under a caller's try or trap: released", enters(returned), true)
 
 if fails == 0 {
     io.print("ALL TESTS PASSED")

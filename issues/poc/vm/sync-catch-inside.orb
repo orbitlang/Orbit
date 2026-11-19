@@ -1,0 +1,124 @@
+# PoC VM-023 — a panic caught inside a `sync` block must leave the monitor held
+# until the block ends, and the block must release it once.
+#
+# When a panic is raised in the frame that holds the block, the VM runs
+# ExecuteCleanupForPC before it jumps to the catch or the finally. The cleanup
+# releases every `sync` block whose range covers IP, including the ones the
+# handler is inside: the rest of the block runs without the monitor, and its
+# SYNC_EXIT (or the unwind, after a finally or a second panic in the catch)
+# releases it a second time. The count of a monitor is unsigned: the extra
+# release wraps it, and the next fiber that leaves the block keeps the monitor
+# for good.
+#
+# A panic from a callee, caught inside the block, is the control: UnwindStack
+# jumps to the catch without the cleanup.
+#
+# Another fiber probes each monitor with a `sync` inside a hook, which is refused
+# rather than waited for when the monitor is held: a failing check leaves no
+# fiber blocked behind it.
+#
+# EXPECT: contains: ALL TESTS PASSED
+
+import "io"
+
+var fails = 0
+
+func check(name, got, expected) {
+    if got == expected {
+        io.print("OK   ", name)
+    } else {
+        io.print("FAIL ", name, "-- got:", got, "expected:", expected)
+        fails += 1
+    }
+}
+
+func fail() { panic Error(@Deep, "deep") }
+func nothing() { }
+
+# A sync in a hook is refused, not waited for, when another fiber holds the
+# monitor: the probing fiber never blocks
+class TryLock {
+    pub var obj
+
+    pub init(obj) {
+        self.obj = obj
+    }
+
+    pub func str() {
+        sync self.obj {
+            return "in"
+        }
+    }
+}
+
+func try_lock(obj, ch) {
+    r := trap tostr(new TryLock(obj))
+    ch <- (r ? true : false)
+}
+
+# True when another fiber can sync on obj
+func enters(obj) {
+    ch := Chan(capacity=1)
+    spawn try_lock(obj, ch)
+    return <- ch
+}
+
+callee := [1]
+func catch_from_callee() {
+    sync callee {
+        try {
+            fail()
+        } catch {
+        }
+    }
+}
+catch_from_callee()
+check("control: a panic from a callee, caught inside: released", enters(callee), true)
+check("control: and released once", enters(callee), true)
+
+own := [2]
+func catch_own() {
+    sync own {
+        try {
+            panic Error(@Own, "own")
+        } catch {
+        }
+    }
+}
+catch_own()
+check("a panic of the same frame, caught inside: released", enters(own), true)
+check("and released once: the monitor still works", enters(own), true)
+
+fin := [3]
+func finally_own() {
+    sync fin {
+        try {
+            panic Error(@Own, "own")
+        } finally {
+            nothing()
+        }
+    }
+}
+trap finally_own()
+check("a panic of the same frame through a finally inside: released", enters(fin), true)
+check("and released once: the monitor still works", enters(fin), true)
+
+again := [4]
+func panic_in_catch() {
+    sync again {
+        try {
+            panic Error(@Own, "own")
+        } catch {
+            panic Error(@Again, "again")
+        }
+    }
+}
+trap panic_in_catch()
+check("a second panic from the catch inside: released", enters(again), true)
+check("and released once: the monitor still works", enters(again), true)
+
+if fails == 0 {
+    io.print("ALL TESTS PASSED")
+} else {
+    io.print(fails, "TEST(S) FAILED")
+}

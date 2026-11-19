@@ -6,6 +6,11 @@
 # rest of the block runs. The checks use a counter, not a call, because on a
 # build where the pending panic fails every native call that hides the defect.
 #
+# The same holds with the `try` two frames up, a `defer` in its frame, nested
+# `try`s of one frame, a callee panicking inside a `finally` or a spent catch
+# followed by one, and a caller's `catch` taking the panic after the callee's
+# `finally`.
+#
 # A runtime test: prints "ALL TESTS PASSED" only when every check matches.
 # EXPECT: contains: ALL TESTS PASSED
 
@@ -30,6 +35,8 @@ var rest = 0
 var handler = 0
 
 func fail() { panic Error(@Deep, "deep") }
+func middle() { fail() }
+func nothing() { }
 
 func finally_only() {
     try {
@@ -58,6 +65,174 @@ func inside_catch() {
 check("control: the second panic goes through", kind_of(trap inside_catch()), @Deep)
 check("the rest of the catch body does not run", rest, 0)
 check("the catch runs once", handler, 1)
+
+rest = 0
+handler = 0
+
+func nested_spent() {
+    try {
+        try {
+            fail()
+        } catch {
+            handler += 1
+            fail()
+            rest += 1
+        }
+        rest += 1
+    } catch {
+        handler += 10
+    }
+}
+check("nested, inner catch spent: the outer catch takes it", kind_of(trap nested_spent()), "no error")
+check("nested, inner catch spent: the rest does not run", rest, 0)
+check("nested, inner catch spent: each catch runs once", handler, 11)
+
+rest = 0
+handler = 0
+
+func nested_spent_own() {
+    try {
+        try {
+            fail()
+        } catch {
+            handler += 1
+            panic Error(@Own, "own")
+        }
+        rest += 1
+    } catch {
+        handler += 10
+    }
+}
+check("control: nested, the inner catch panics itself", kind_of(trap nested_spent_own()), "no error")
+check("control: nested, the rest does not run", rest, 0)
+check("control: nested, each catch runs once", handler, 11)
+
+rest = 0
+handler = 0
+
+func finally_in_try() {
+    try {
+        try {
+            fail()
+            rest += 1
+        } finally {
+            handler += 1
+        }
+        rest += 1
+    } catch {
+        handler += 10
+    }
+}
+check("a finally alone inside a try: the outer catch takes it", kind_of(trap finally_in_try()), "no error")
+check("a finally alone inside a try: the rest does not run", rest, 0)
+check("a finally alone inside a try: finally and catch run once", handler, 11)
+
+rest = 0
+handler = 0
+
+func finally_two_down() {
+    try {
+        middle()
+        rest += 1
+    } finally {
+        handler += 1
+    }
+    rest += 1
+}
+check("two frames down, a finally alone: the panic goes through", kind_of(trap finally_two_down()), @Deep)
+check("two frames down: the rest does not run", rest, 0)
+check("two frames down: the finally runs once", handler, 1)
+
+rest = 0
+handler = 0
+
+func finally_with_defer() {
+    defer nothing()
+    try {
+        fail()
+        rest += 1
+    } finally {
+        handler += 1
+    }
+    rest += 1
+}
+check("a deferred call in the frame: the panic goes through", kind_of(trap finally_with_defer()), @Deep)
+check("a deferred call in the frame: the rest does not run", rest, 0)
+check("a deferred call in the frame: the finally runs once", handler, 1)
+
+rest = 0
+handler = 0
+
+func catch_then_finally() {
+    try {
+        fail()
+    } catch {
+        handler += 1
+        fail()
+        rest += 1
+    } finally {
+        handler += 10
+    }
+    rest += 1
+}
+check("a spent catch with a finally: the panic goes through", kind_of(trap catch_then_finally()), @Deep)
+check("a spent catch with a finally: the rest does not run", rest, 0)
+check("a spent catch with a finally: each runs once", handler, 11)
+
+rest = 0
+handler = 0
+
+func panic_in_finally() {
+    try {
+        fail()
+    } finally {
+        handler += 1
+        fail()
+        rest += 1
+    }
+    rest += 1
+}
+check("a callee panics in the finally: the panic goes through", kind_of(trap panic_in_finally()), @Deep)
+check("a callee panics in the finally: the rest does not run", rest, 0)
+check("a callee panics in the finally: it runs once", handler, 1)
+
+rest = 0
+handler = 0
+
+func callee_finally() {
+    try {
+        fail()
+    } finally {
+        handler += 1
+    }
+    rest += 1
+}
+func caller_catch() {
+    try {
+        callee_finally()
+        rest += 1
+    } catch {
+        handler += 10
+    }
+}
+check("the caller's catch after the callee's finally takes it", kind_of(trap caller_catch()), "no error")
+check("the caller's catch: the rest does not run", rest, 0)
+check("the caller's catch: finally and catch run once", handler, 11)
+
+handler = 0
+
+func no_panic() {
+    try {
+        nothing()
+    } catch {
+        handler += 100
+    } finally {
+        handler += 1
+    }
+    return 5
+}
+check("control: without a panic the try returns", no_panic(), 5)
+check("control: without a panic only the finally runs", handler, 1)
 
 if fails == 0 {
     io.print("ALL TESTS PASSED")

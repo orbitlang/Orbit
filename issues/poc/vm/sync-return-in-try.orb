@@ -1,0 +1,141 @@
+# PoC VM-024 — a `return` out of a `sync` block must release the monitor when the
+# block is inside a `try`.
+#
+# Outside a `try`, a `return` reaches RET with IP inside the block's cleanup
+# range, and Return releases the monitor. Inside a `try`, CreateReturn turns it
+# into a pending return and jumps to the end of the `try`: no SYNC_EXIT is
+# emitted for the blocks it leaves (a `break` or `continue` gets one from
+# PutSyncExit), and the RET that TEND runs later is outside their range. The
+# monitor stays held.
+#
+# Another fiber probes each monitor with a `sync` inside a hook, which is refused
+# rather than waited for when the monitor is held: a failing check leaves no
+# fiber blocked behind it.
+#
+# EXPECT: contains: ALL TESTS PASSED
+
+import "io"
+
+var fails = 0
+
+func check(name, got, expected) {
+    if got == expected {
+        io.print("OK   ", name)
+    } else {
+        io.print("FAIL ", name, "-- got:", got, "expected:", expected)
+        fails += 1
+    }
+}
+
+# A sync in a hook is refused, not waited for, when another fiber holds the
+# monitor: the probing fiber never blocks
+class TryLock {
+    pub var obj
+
+    pub init(obj) {
+        self.obj = obj
+    }
+
+    pub func str() {
+        sync self.obj {
+            return "in"
+        }
+    }
+}
+
+func try_lock(obj, ch) {
+    r := trap tostr(new TryLock(obj))
+    ch <- (r ? true : false)
+}
+
+# True when another fiber can sync on obj
+func enters(obj) {
+    ch := Chan(capacity=1)
+    spawn try_lock(obj, ch)
+    return <- ch
+}
+
+var count = 0
+
+plain := [1]
+func returns_plain() {
+    sync plain {
+        return 1
+    }
+}
+returns_plain()
+check("control: a return out of the block", enters(plain), true)
+
+around := [2]
+func returns_try_inside() {
+    sync around {
+        try {
+            return 1
+        } catch {
+        }
+    }
+}
+returns_try_inside()
+check("control: a return out of a try inside the block", enters(around), true)
+
+breaks := [3]
+func breaks_in_try() {
+    loop i := 0; i < 3; i++ {
+        try {
+            sync breaks {
+                break
+            }
+        } catch {
+        }
+    }
+}
+breaks_in_try()
+check("control: a break out of the block inside a try", enters(breaks), true)
+
+caught := [4]
+func returns_in_try_catch() {
+    try {
+        sync caught {
+            return 1
+        }
+    } catch {
+    }
+}
+check("the return still returns its value", returns_in_try_catch(), 1)
+check("a return out of the block inside a try/catch: released", enters(caught), true)
+
+fin := [5]
+func returns_in_try_finally() {
+    try {
+        sync fin {
+            return 1
+        }
+    } finally {
+        count += 1
+    }
+}
+returns_in_try_finally()
+check("the finally runs", count, 1)
+check("a return out of the block inside a try/finally: released", enters(fin), true)
+
+nested := [6]
+func returns_nested() {
+    try {
+        try {
+            sync nested {
+                return 1
+            }
+        } finally {
+            count += 1
+        }
+    } catch {
+    }
+}
+returns_nested()
+check("a return through two trys: released", enters(nested), true)
+
+if fails == 0 {
+    io.print("ALL TESTS PASSED")
+} else {
+    io.print(fails, "TEST(S) FAILED")
+}
