@@ -72,7 +72,7 @@ bool ObjectContains(Isolate *isolate, const OObject *container, const OObject *v
 
 void CallNative(Function *func, Registers *regs, const VMStack *stack, U16 argc);
 
-void ExecuteCleanupForPC(const Fiber *fiber);
+void ExecuteCleanupForPC(VMContext *vm, const FiberContext *context);
 
 // EOF ***
 
@@ -257,9 +257,9 @@ bool UnwindStack(Fiber *fiber, const PtrSize barrier) {
     auto *regs = &fiber->vm.regs;
     const auto *except = ExContextGet(fiber->vm.stack.stack, regs->CP.reg);
 
-    while (regs->SP.reg > 0) {
-        ExecuteCleanupForPC(fiber);
+    ExecuteCleanupForPC(&fiber->vm, context);
 
+    while (regs->SP.reg > 0) {
         if (fiber->panic.current_ != nullptr)
             fiber->panic.current_->frame = (MSSize) fiber->vm.regs.BP.reg;
 
@@ -289,6 +289,12 @@ bool UnwindStack(Fiber *fiber, const PtrSize barrier) {
 
         context = p_ctx;
 
+        // This can only occur if the code is executing in a spawned fiber
+        if (context->code == nullptr)
+            return false;
+
+        ExecuteCleanupForPC(&fiber->vm, context);
+
         // Is there at least one exception handler?
         if (except != nullptr && except->key == regs->BP.reg) {
             stratum::util::MemoryCopy(&fiber->context.context, context, sizeof(FiberContext));
@@ -303,12 +309,6 @@ bool UnwindStack(Fiber *fiber, const PtrSize barrier) {
             ((Generator *) context->func)->state = GeneratorState::EXHAUSTED;
             ((Generator *) context->func)->acquired = 0;
         }
-
-        // This can only occur if the code is executing in a spawned fiber
-        if (context->code == nullptr)
-            return false;
-
-        regs->IP.reg = (PtrSize) context->code->m_end;
     }
 
     return false;
@@ -507,23 +507,38 @@ void CallNative(Function *func, Registers *regs, const VMStack *stack, const U16
     regs->SP.reg -= offset;
 }
 
-void ExecuteCleanupForPC(const Fiber *fiber) {
-    const auto count = fiber->context.code->cleanup.length;
+void ExecuteCleanupForPC(VMContext *vm, const FiberContext *context) {
+    const auto ip = vm->regs.IP.reg;
+    if (ip >= (PtrSize) context->code->m_end)
+        return;
+
+    vm->regs.IP.reg = (PtrSize) context->code->m_end;
+
+    const auto count = context->code->cleanup.length;
     if (count == 0)
         return;
 
-    const auto ip = fiber->vm.regs.IP.reg;
+    PtrSize ignore = 0;
 
-    const auto *table = fiber->context.code->cleanup.entries;
+    const auto *ex_ctx = ExContextGet(vm->stack.stack, vm->regs.CP.reg);
+    if (ex_ctx != nullptr && ex_ctx->key == vm->regs.BP.reg) {
+        ignore = (PtrSize) (context->code->m_code + ex_ctx->catch_off);
 
+        if (ex_ctx->finally_off != 0)
+            ignore = (PtrSize) (context->code->m_code + ex_ctx->finally_off);
+    }
+
+    const auto *table = context->code->cleanup.entries;
     for (auto i = count - 1; i >= 0; i--) {
         const auto *entry = table + i;
 
         if (ip < (PtrSize) entry->m_start || ip >= (PtrSize) entry->m_end)
             continue;
 
-        const auto *value = *((OObject **) (fiber->vm.stack.stack + (
-                                                fiber->vm.regs.BP.reg + (entry->slot * sizeof(void *)))));
+        if (ignore >= (PtrSize) entry->m_start && ignore <= (PtrSize) entry->m_end)
+            continue;
+
+        const auto *value = *((OObject **) (vm->stack.stack + (vm->regs.BP.reg + (entry->slot * sizeof(void *)))));
 
         switch (entry->type) {
             case OPCode::SYNC_EXIT:
@@ -551,7 +566,7 @@ void Return(Fiber *fiber, const PtrSize barrier) {
     auto *func = fiber->context.func;
 
     if (regs->BP.reg > 0) {
-        ExecuteCleanupForPC(fiber);
+        ExecuteCleanupForPC(&fiber->vm, &fiber->context);
 
         fiber->PopState();
 
@@ -2111,7 +2126,7 @@ ERROR:
         auto *except = ExContextGet(fiber->vm.stack.stack, regs->CP.reg);
         if (except != nullptr) {
             if (except->key == regs->BP.reg) {
-                ExecuteCleanupForPC(fiber);
+                ExecuteCleanupForPC(&fiber->vm, &fiber->context);
 
                 if (except->catch_off != 0) {
                     JMP_TO(except->catch_off);
