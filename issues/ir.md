@@ -1,10 +1,98 @@
 # ir — bug report
 
 **Component:** `orbit/liftoff/ir` (instruction.h, linearscan.cpp, irbuilder.cpp) · **ID prefix:** `IR`
-**PoCs:** [`poc/ir/`](poc/ir/) · **Last reviewed:** 2026-10-30
+**PoCs:** [`poc/ir/`](poc/ir/) · **Last reviewed:** 2026-11-20
 **Status:** OPEN · PARTIAL · FIXED · WONTFIX — see [GUIDE.md](GUIDE.md).
 
 > Imported 2026-06-15 from `orbit/liftoff/ir/KNOWN_ISSUES.md` (ISSUE-001 → IR-001).
+
+---
+
+## IR-023 — A nested block inside a `sync` leaves the compiler on the wrong scope: the next block aborts the compile
+**Severity:** High (valid source aborts the compiler) · **Status:** FIXED (2026-11-20) · **Location:** `orbit/liftoff/ir/irbuilder.cpp:1604` (`visitSyncBlock`)
+
+**Fix verified (live: the PoC, grown to 12 checks, passes 3 runs of 3: an `if`, a
+loop, a `switch` or a `try` inside a `sync`, followed by an `if`, a loop, or the
+catch or finally of a `try` around it; nested `sync` blocks with branches; a
+generator yielding in a branch of the body; a closure over a variable of the body,
+called inside it or after it; with the fix reverted the three controls compile and
+each of the nine cases, alone, aborts the compile again; a declaration in the body
+shadows an outer variable as in an `if`, the same as before the fix; the VM-024
+cases with a branch inside the block pass; `ortest` unchanged apart from the
+`numbers/` suites, red until NUM-002 lands; the PoC gate fails only the findings
+already open; every `stdlib` module imports; `phi-regalloc.orb` passes).**
+`visitSyncBlock` enters the scope the parser gives the body, as `try` does for
+its blocks, and leaves it before the `SYNC_ENTER` of an empty-after-`yield` block
+is dropped:
+
+```cpp
+        const auto cleanup_index = this->builder_.context->cleanup_entries_.size() - 1;
+
+        // The parser gives the body its own scope: enter it, or a nested block inside leaves the wrong one active
+        if (!this->sym_t_->EnterNestedScope(binary->right->loc.start.offset))
+            throw SymbolTableException();
+
+        this->visit(binary->right);
+
+        this->sym_t_->LeaveNestedScope();
+```
+
+<details><summary>Original report</summary>
+
+```orbit
+func f(x) {
+    try {
+        sync obj {
+            if x {
+                io.print("x")
+            }
+        }
+    } catch {             # Assertion failed: (false), function Generate, file irbuilder.cpp
+    }
+}
+```
+
+The parser gives a `sync` block its own nested scope (`orbit-astdump --scopes`
+shows it), but `visitSyncBlock` visits the body without entering it, unlike
+`if`, loops, `switch` and `try`. A nested block inside the body calls
+`EnterNestedScope` from the enclosing scope; it goes down to the innermost scope
+covering the offset, through the `sync` one, and its `LeaveNestedScope` goes back
+up one level only: the active scope is left on the `sync` block. The next block
+entered from there is not inside it, `EnterNestedScope` fails and the
+`SymbolTableException` stops on the `assert(false)` of `IRBuilder::Generate`.
+
+Any branch or `try` inside the `sync` (an `if`, a loop, a `try`) followed by a
+block outside it aborts: an `if` or loop after the `sync`, the catch or the
+finally of a `try` around it. A `sync` whose body has no nested block compiles,
+and so does one that is the last block of its function.
+
+**Found** while verifying a fix for VM-024 (a `return` inside a branch of a `sync`
+inside a `try`). Same behavior with the compiler at HEAD.
+
+**PoC:** [`poc/ir/ir-023-scope-in-sync.orb`](poc/ir/ir-023-scope-in-sync.orb)
+*(confirmed live: the compile aborts; each function alone, the two controls compile
+and the five cases abort)*.
+
+**Fix (suggested, verified by probe 2026-11-20, then reverted):** enter the block's
+scope around the body, as `try` does:
+
+```cpp
+        const auto cleanup_index = this->builder_.context->cleanup_entries_.size() - 1;
+
+        if (!this->sym_t_->EnterNestedScope(binary->right->loc.start.offset))
+            throw SymbolTableException();
+
+        this->visit(binary->right);
+
+        this->sym_t_->LeaveNestedScope();
+```
+
+With the probe the PoC passes and ten further reproducers compile and print the
+expected values; `ortest` unchanged apart from the `numbers/` suites, the `ir`
+PoCs pass, `phi-regalloc.orb` passes, the `vm` PoCs fail only the findings already
+open.
+
+</details>
 
 ---
 

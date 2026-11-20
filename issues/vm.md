@@ -1,13 +1,55 @@
 # vm — bug report
 
 **Component:** `orbit/orbiter` (interpreter: trap/panic unwind, register file) · **ID prefix:** `VM`
-**PoCs:** [`poc/vm/`](poc/vm/) · **Last reviewed:** 2026-11-19
+**PoCs:** [`poc/vm/`](poc/vm/) · **Last reviewed:** 2026-11-20
 **Status:** OPEN · PARTIAL · FIXED · WONTFIX — see [GUIDE.md](GUIDE.md).
 
 ---
 
 ## VM-024 — A `return` out of a `sync` block inside a `try` keeps the monitor held
-**Severity:** High (any other fiber syncing on the object blocks forever) · **Status:** OPEN · **Location:** `orbit/liftoff/ir/irbuilder.cpp:1463` (`visitReturn`), `orbit/liftoff/ir/builder.cpp:263` (`CreateReturn`)
+**Severity:** High (any other fiber syncing on the object blocks forever) · **Status:** FIXED (2026-11-20) · **Location:** `orbit/liftoff/ir/builder.cpp:263` (`CreateReturn`), `orbit/liftoff/ir/builder.cpp:710` (`PutSyncExit`)
+
+**Fix verified (live: the PoC, grown to 44 checks, passes 5 runs of 5: a `return`
+out of one or two blocks inside a `try`/`catch`, a `try`/`finally` or two `try`s,
+with a block on each side of the `try`, ten times through a `finally`, from a catch,
+a loop or an `if` inside the block; each monitor is probed twice, so a block
+released twice fails; the value, from a constant or a call, is still returned and
+the `finally` runs once per `return`; the controls (a `try` inside the block,
+`break` and `continue` out of it) release once; with the `SYNC_EXIT`s removed 19
+checks fail; `ortest` unchanged apart from the `numbers/` suites, red until NUM-002
+lands; the PoC gate fails only the findings already open; every `stdlib` module
+imports; `phi-regalloc.orb` passes).** `CreateReturn` releases the blocks between
+the `return` and the innermost `try` before it jumps to the `try`'s end, with the
+helper `break` and `continue` use, now in `Builder`:
+
+```cpp
+    if (tcf != nullptr) {
+        auto *ret = this->CreatePendingReturn(s_reg);
+
+        this->PutSyncExit(tcf);
+
+        this->CreateJump(((JBlockBranch *) tcf)->end);
+
+        return ret;
+    }
+```
+
+```cpp
+void Builder::PutSyncExit(const JBlock *block) noexcept {
+    for (auto *cursor = this->context->j_chain; cursor != block; cursor = cursor->prev) {
+        if (cursor->type == JBlockType::SYNC) {
+            ...
+            this->CreateUnaryOp(OPCode::SYNC_EXIT, value);
+        }
+    }
+}
+```
+
+The blocks around the `try` are left alone: `TEND` runs the pending `RET` inside
+their range, and `Return` releases them there. `CreateYield` calls the same helper
+with `nullptr`, releasing every block of the function as before.
+
+<details><summary>Original report</summary>
 
 ```orbit
 func get() {
@@ -56,6 +98,8 @@ With the probe the PoC passes, the value is still returned, and ten shapes of
 `return`, `break` and `continue` out of `sync` and `try` release their monitor once;
 `ortest` unchanged apart from the `numbers/` suites, every `stdlib` module imports,
 `phi-regalloc.orb` passes.
+
+</details>
 
 ---
 

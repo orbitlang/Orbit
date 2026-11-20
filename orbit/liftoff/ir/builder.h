@@ -400,6 +400,8 @@ namespace liftoff::ir {
          * @brief Exits the current compilation context and computing liveness.
          */
         void LeaveContext();
+
+        void PutSyncExit(const JBlock *block) noexcept;
     };
 
     class StackSlotGuard {

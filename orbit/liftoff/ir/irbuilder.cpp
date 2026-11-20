@@ -1210,7 +1210,7 @@ Instruction *IRBuilder::visitJump(const parser::Jump *node) {
     if (b_target == nullptr)
         assert(false); // TODO ERROR
 
-    this->PutSyncExit(b_target);
+    this->builder_.PutSyncExit(b_target);
 
     for (auto cursor = this->builder_.context->j_chain; cursor != b_target; cursor = cursor->prev) {
         if (cursor->type == JBlockType::TCF) {
@@ -1619,7 +1619,12 @@ Instruction *IRBuilder::visitSyncBlock(const parser::Binary *binary) {
 
         const auto cleanup_index = this->builder_.context->cleanup_entries_.size() - 1;
 
+        if (!this->sym_t_->EnterNestedScope(binary->right->loc.start.offset))
+            throw SymbolTableException();
+
         this->visit(binary->right);
+
+        this->sym_t_->LeaveNestedScope();
 
         // This is used when you're after a Yield. Before Yield, the lock is released and reacquired
         // upon function re-entry. If the block is empty, remove the lock acquisition entirely.
@@ -2001,22 +2006,6 @@ void IRBuilder::BuildMethodEmptyBody(const parser::Function *node) {
     auto *error = this->builder_.CreateError(keyInstr, msgInstr, details);
 
     this->builder_.CreateUnaryOp(orbiter::OPCode::PANIC, error);
-}
-
-void IRBuilder::PutSyncExit(const JBlock *block) {
-    const auto *cursor = this->builder_.context->j_chain;
-
-    while (cursor != block) {
-        if (cursor->type == JBlockType::SYNC) {
-            const auto slot = this->builder_.context->GetSlotFromCleanupMatch(((JBlockSync *) cursor)->value);
-
-            const auto value = this->builder_.LoadFromStackOffset(kBaseStackPointerReg, (I16) slot, false);
-
-            this->builder_.CreateUnaryOp(orbiter::OPCode::SYNC_EXIT, value);
-        }
-
-        cursor = cursor->prev;
-    }
 }
 
 void IRBuilder::VisitForInLoop(const parser::Loop *node) {

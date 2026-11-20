@@ -265,6 +265,8 @@ Instruction *Builder::CreateReturn(Instruction *s_reg) {
     if (tcf != nullptr) {
         auto *ret = this->CreatePendingReturn(s_reg);
 
+        this->PutSyncExit(tcf);
+
         this->CreateJump(((JBlockBranch *) tcf)->end);
 
         return ret;
@@ -332,17 +334,7 @@ Instruction *Builder::CreateUnaryOp(const OPCode opcode, const U16 imm, const U8
 Instruction *Builder::CreateYield(Instruction *s_reg) {
     const auto *cursor = this->context->j_chain;
 
-    while (cursor != nullptr) {
-        if (cursor->type == JBlockType::SYNC) {
-            const auto slot = this->context->GetSlotFromCleanupMatch(((JBlockSync *) cursor)->value);
-
-            const auto value = this->LoadFromStackOffset(kBaseStackPointerReg, (I16) slot, false);
-
-            this->CreateUnaryOp(OPCode::SYNC_EXIT, value);
-        }
-
-        cursor = cursor->prev;
-    }
+    this->PutSyncExit(nullptr);
 
     cursor = this->context->j_chain;
     while (cursor != nullptr) {
@@ -713,6 +705,18 @@ void Builder::LeaveContext() {
 
     if (this->context->back != nullptr)
         this->context = this->context->back;
+}
+
+void Builder::PutSyncExit(const JBlock *block) noexcept {
+    for (auto *cursor = this->context->j_chain; cursor != block; cursor = cursor->prev) {
+        if (cursor->type == JBlockType::SYNC) {
+            const auto slot = this->context->GetSlotFromCleanupMatch(((JBlockSync *) cursor)->value);
+
+            const auto value = this->LoadFromStackOffset(kBaseStackPointerReg, (I16) slot, false);
+
+            this->CreateUnaryOp(OPCode::SYNC_EXIT, value);
+        }
+    }
 }
 
 void Builder::ReleaseStackSlots(const U16 slots) const {

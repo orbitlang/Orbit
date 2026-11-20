@@ -8,6 +8,11 @@
 # PutSyncExit), and the RET that TEND runs later is outside their range. The
 # monitor stays held.
 #
+# Only the blocks inside the innermost `try` need one: a block around the `try`
+# still covers its TEND, and the RET releases it there. Releasing it at the
+# `return` as well releases it twice, and the next fiber that leaves it keeps the
+# monitor for good (the second `enters` below).
+#
 # Another fiber probes each monitor with a `sync` inside a hook, which is refused
 # rather than waited for when the monitor is held: a failing check leaves no
 # fiber blocked behind it.
@@ -77,6 +82,22 @@ func returns_try_inside() {
 }
 returns_try_inside()
 check("control: a return out of a try inside the block", enters(around), true)
+check("control: and released once: the monitor still works", enters(around), true)
+
+around_fin := [7]
+var finally_inside = 0
+func returns_try_finally_inside() {
+    sync around_fin {
+        try {
+            return 1
+        } finally {
+            finally_inside += 1
+        }
+    }
+}
+returns_try_finally_inside()
+check("control: a return out of a try/finally inside the block", enters(around_fin), true)
+check("control: and released once: the monitor still works", enters(around_fin), true)
 
 breaks := [3]
 func breaks_in_try() {
@@ -103,6 +124,7 @@ func returns_in_try_catch() {
 }
 check("the return still returns its value", returns_in_try_catch(), 1)
 check("a return out of the block inside a try/catch: released", enters(caught), true)
+check("and released once: the monitor still works", enters(caught), true)
 
 fin := [5]
 func returns_in_try_finally() {
@@ -133,6 +155,152 @@ func returns_nested() {
 }
 returns_nested()
 check("a return through two trys: released", enters(nested), true)
+check("and released once: the monitor still works", enters(nested), true)
+
+outer := [8]
+inner := [9]
+func returns_between() {
+    sync outer {
+        try {
+            sync inner {
+                return 1
+            }
+        } catch {
+        }
+    }
+}
+returns_between()
+check("a block inside the try: released", enters(inner), true)
+check("and released once: the monitor still works", enters(inner), true)
+check("the block around the try: released", enters(outer), true)
+check("and released once: the monitor still works", enters(outer), true)
+
+two_outer := [10]
+two_inner := [11]
+func seven() { return 7 }
+func returns_two_blocks() {
+    try {
+        sync two_outer {
+            sync two_inner {
+                return seven()
+            }
+        }
+    } catch {
+    }
+}
+check("two blocks inside the try: the value of a call is returned", returns_two_blocks(), 7)
+check("two blocks inside the try: the outer one is released", enters(two_outer), true)
+check("and released once: the monitor still works", enters(two_outer), true)
+check("two blocks inside the try: the inner one is released", enters(two_inner), true)
+check("and released once: the monitor still works", enters(two_inner), true)
+
+fin_outer := [12]
+fin_inner := [13]
+var finally_between = 0
+func returns_between_finally() {
+    sync fin_outer {
+        try {
+            sync fin_inner {
+                return 3
+            }
+        } finally {
+            finally_between += 1
+        }
+    }
+}
+check("a block on each side of a try/finally: the value is returned", returns_between_finally(), 3)
+check("a block on each side of a try/finally: the finally runs once", finally_between, 1)
+check("the block around the try/finally: released", enters(fin_outer), true)
+check("and released once: the monitor still works", enters(fin_outer), true)
+check("the block inside the try/finally: released", enters(fin_inner), true)
+check("and released once: the monitor still works", enters(fin_inner), true)
+
+conts := [14]
+func continues_in_try() {
+    n := 0
+    loop i := 0; i < 3; i++ {
+        try {
+            sync conts {
+                n += 1
+                continue
+            }
+        } catch {
+        }
+    }
+    return n
+}
+check("control: a continue out of the block inside a try", continues_in_try(), 3)
+check("control: released", enters(conts), true)
+check("control: and released once", enters(conts), true)
+
+repeated := [15]
+var finally_repeated = 0
+func returns_repeated() {
+    try {
+        sync repeated {
+            return 1
+        }
+    } finally {
+        finally_repeated += 1
+    }
+}
+loop j := 0; j < 10; j++ {
+    returns_repeated()
+}
+check("ten returns out of the block inside a try/finally: the finally runs each time", finally_repeated, 10)
+check("ten returns: released", enters(repeated), true)
+check("and released once: the monitor still works", enters(repeated), true)
+
+in_catch := [16]
+func returns_from_catch() {
+    try {
+        sync in_catch {
+            try {
+                panic Error(@Own, "own")
+            } catch {
+                return 2
+            }
+        }
+    } catch {
+    }
+}
+check("a return from a catch inside the block, inside a try: the value", returns_from_catch(), 2)
+check("a return from a catch inside the block: released", enters(in_catch), true)
+check("and released once: the monitor still works", enters(in_catch), true)
+
+in_loop := [17]
+func returns_from_loop() {
+    try {
+        sync in_loop {
+            loop i := 0; i < 5; i++ {
+                if i == 2 {
+                    return i
+                }
+            }
+        }
+    } catch {
+    }
+}
+check("a return from a loop inside the block, inside a try: the value", returns_from_loop(), 2)
+check("a return from a loop inside the block: released", enters(in_loop), true)
+check("and released once: the monitor still works", enters(in_loop), true)
+
+maybe := [18]
+func returns_if(x) {
+    try {
+        sync maybe {
+            if x {
+                return 1
+            }
+        }
+    } catch {
+    }
+    return 0
+}
+check("a conditional return, taken", returns_if(true), 1)
+check("a conditional return, not taken", returns_if(false), 0)
+check("a conditional return out of the block: released", enters(maybe), true)
+check("and released once: the monitor still works", enters(maybe), true)
 
 if fails == 0 {
     io.print("ALL TESTS PASSED")

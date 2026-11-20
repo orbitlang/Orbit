@@ -132,8 +132,6 @@ namespace liftoff::ir {
 
         void BuildMethodEmptyBody(const parser::Function *node);
 
-        void PutSyncExit(const JBlock *block);
-
         void VisitForInLoop(const parser::Loop *node);
 
     public:
