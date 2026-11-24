@@ -72,8 +72,13 @@ Fiber *FiberQueue<ThreadSafe>::Dequeue() noexcept {
 
         if (this->head_ == nullptr)
             this->tail_ = nullptr;
+        else
+            this->head_->queue.next = nullptr;
 
         this->count_ -= 1;
+
+        ret->queue.next = nullptr;
+        ret->queue.prev = nullptr;
     }
 
     return ret;

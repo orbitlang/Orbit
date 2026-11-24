@@ -63,8 +63,6 @@ void Monitor::Release() {
         return;
     }
 
-    this->lock_id_.store(0, std::memory_order_release);
-
     auto *fiber = this->queue_.Dequeue();
     if (fiber != nullptr) {
         auto *orbiter = Orbiter::GetInstance();
@@ -76,7 +74,8 @@ void Monitor::Release() {
         this->lock_id_.store((uintptr_t) fiber, std::memory_order_release);
 
         orbiter->PushFiber(fiber);
-    }
+    } else
+        this->lock_id_.store(0, std::memory_order_release);
 
     this->SpinUnlock();
 }
