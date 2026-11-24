@@ -2001,7 +2001,7 @@ CATCH_FINALLY:
                         goto ERROR;
                     }
 
-                    fiber->state = FiberState::YIELDED;
+                    fiber->state = FiberState::SUSPENDED_RETRY;
                     return nullptr;
                 }
 
