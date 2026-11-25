@@ -1,8 +1,199 @@
 # vm — bug report
 
 **Component:** `orbit/orbiter` (interpreter: trap/panic unwind, register file) · **ID prefix:** `VM`
-**PoCs:** [`poc/vm/`](poc/vm/) · **Last reviewed:** 2026-11-20
+**PoCs:** [`poc/vm/`](poc/vm/) · **Last reviewed:** 2026-11-24
 **Status:** OPEN · PARTIAL · FIXED · WONTFIX — see [GUIDE.md](GUIDE.md).
+
+---
+
+## VM-026 — `FiberQueue::Dequeue` leaves the new head linked to the fiber it removed: a thief walks past the queue, crashes or loses fibers
+**Severity:** Critical (any program whose fibers run on several threads: a crash in the scheduler, or fibers lost and the program hung) · **Status:** FIXED (2026-11-24) · **Location:** `orbit/orbiter/fqueue.cpp:66` (`FiberQueue::Dequeue`)
+
+**Fix verified (live: the PoC passes 20 runs of 20, where it failed 10 of 10 with
+hangs and crashes in `FiberQueue::Steal`; the program it comes from, 8 fibers that
+only compute, 20 of 20; with `fqueue.cpp` reverted the PoC hangs 10 runs of 10;
+no other code walks the links: every user goes through `Dequeue`, `PushFiber` on a
+whole queue included, and `Relinquish` has no caller; the gates are those of
+VM-025).** `Dequeue` cuts the links when a fiber leaves the queue: the new head no
+longer points at the fiber handed out, and that fiber carries no stale link into
+the next queue, so the walk of `Steal` from `tail_` ends at `head_`:
+
+```cpp
+    auto *ret = this->head_;
+    if (ret != nullptr) {
+        this->head_ = ret->queue.prev;
+
+        if (this->head_ == nullptr)
+            this->tail_ = nullptr;
+        else
+            this->head_->queue.next = nullptr;
+
+        this->count_ -= 1;
+
+        ret->queue.next = nullptr;
+        ret->queue.prev = nullptr;
+    }
+```
+
+The contended `sync` PoCs of VM-022 and VM-025 no longer hang behind it.
+
+<details><summary>Original report</summary>
+
+```orbit
+func work(n, done) {
+    w := 0
+    loop i := 0; i < n * 200; i++ { w = w + 1 }
+    done <- w
+}
+loop r := 0; r < 10; r++ {
+    done := Chan(capacity=8)
+    loop f := 0; f < 8; f++ { spawn work(30, done) }
+    loop f := 0; f < 8; f++ { <- done }      # hangs, or SIGSEGV in FiberQueue::Steal
+}
+```
+
+A `FiberQueue` links its fibers from `tail_` (the newest) to `head_` (the oldest)
+through `queue.next`. `Dequeue` moves `head_` to `ret->queue.prev` but leaves the
+new head's `queue.next` on `ret`, the fiber it hands out, which then runs, or is
+queued elsewhere. `Steal`, which an idle thread runs on another thread's queue,
+walks from `tail_` through `queue.next` until `nullptr`, with no stop at `head_`:
+it goes on into fibers that are not in the queue, through links other threads are
+changing. It counts fibers that are not there, cuts the queue in the wrong place,
+and moves fibers it does not own; when the walk ends early it finds `mid` null and
+writes `mid->queue.prev` (`fqueue.cpp:124`). Seen live: `EXC_BAD_ACCESS` at
+`0x170` in `FiberQueue<true>::Steal` from `StealWork` / `FindExecutable` (three
+crash reports, the same frame), and runs that hang with fibers lost from every
+queue. No `sync`, channel wait or shared variable is needed: fibers that compute
+and send one result each are enough.
+
+**Found** while verifying the fix for VM-022: a stress test of contended `sync`
+hung, and still hung with the `sync` removed. Same behavior with the VM at HEAD.
+The crash in `Steal` listed in VM-022's report has this cause as well.
+
+**PoC:** [`poc/vm/fiber-queue-steal.orb`](poc/vm/fiber-queue-steal.orb) *(confirmed
+live: 10 of 10 runs fail, 8 hang, 2 crash in `Steal`)*.
+
+**Fix (suggested, verified by probe 2026-11-24, then reverted):** cut the links when
+a fiber leaves the queue, so that a walk from `tail_` ends at `head_`:
+
+```cpp
+    auto *ret = this->head_;
+    if (ret != nullptr) {
+        this->head_ = ret->queue.prev;
+
+        if (this->head_ == nullptr)
+            this->tail_ = nullptr;
+        else
+            this->head_->queue.next = nullptr;
+
+        ret->queue.next = nullptr;
+        ret->queue.prev = nullptr;
+
+        this->count_ -= 1;
+    }
+```
+
+With the probe the PoC passes 10 runs of 10, and the program it comes from 20 of
+20 (it failed 10 of 12). `Relinquish` unlinks a fiber without clearing its own
+links either; no caller was seen to depend on them.
+
+</details>
+
+---
+
+## VM-025 — Two fibers can be inside `sync` blocks on the same object: the monitor reads as free while it is handed over
+**Severity:** High (mutual exclusion broken under contention: lost updates, silently) · **Status:** FIXED (2026-11-24) · **Location:** `orbit/orbiter/sync/monitor.cpp:55` (`Monitor::Release`)
+
+**Fix verified (live: the PoC passes 100 runs of 100, where it failed 10 of 10 once
+VM-026 was fixed, losing increments or hanging; 16 fibers running 300 contended
+blocks, preempted while held, end 100 runs of 100 with the exact count and never two
+fibers inside; the VM-022 PoC passes 20 of 20; with `monitor.cpp` reverted the PoC
+fails 10 runs of 10, and VM-026's still passes; `ortest` unchanged apart from the
+`numbers/` suites, red until NUM-002 lands; the PoC gate fails only the findings
+already open; every `stdlib` module imports; `phi-regalloc.orb` passes).** `Release`
+takes the first waiter before it touches `lock_id_`, and stores either that waiter
+or 0: the monitor never reads as free while a fiber waits for it, so the fast path
+of `Acquire` cannot take it during the handover:
+
+```cpp
+    auto *fiber = this->queue_.Dequeue();
+    if (fiber != nullptr) {
+        ...
+        this->lock_id_.store((uintptr_t) fiber, std::memory_order_release);
+
+        orbiter->PushFiber(fiber);
+    } else
+        this->lock_id_.store(0, std::memory_order_release);
+```
+
+A fiber that finds the monitor held goes the slow way, under the spinlock `Release`
+holds, and queues behind the waiter; `locks` is changed only by the owner.
+
+<details><summary>Original report</summary>
+
+```cpp
+void Monitor::Release() {
+    this->SpinLock();
+    this->locks -= 1;
+    ...
+    this->lock_id_.store(0, std::memory_order_release);    // the monitor reads as free
+
+    auto *fiber = this->queue_.Dequeue();
+    if (fiber != nullptr) {
+        ...
+        this->lock_id_.store((uintptr_t) fiber, std::memory_order_release);   // handed to the waiter
+        orbiter->PushFiber(fiber);
+    }
+```
+
+`Release` clears `lock_id_` before it looks at the queue. Between the two stores the
+monitor reads as free, and `Acquire` takes a free monitor with a compare-exchange
+outside the spinlock: a fiber on another thread that runs `SYNC_ENTER` in that
+window gets it. `Release` then overwrites `lock_id_` with the waiter and wakes it;
+the waiter's `SYNC_ENTER` finds its own id and enters as a recursive acquire. Both
+fibers are inside the block, and both bump the unsigned `locks` (the fast path does
+so outside the spinlock).
+
+Live, with 16 fibers each running 300 `sync` blocks preempted while held, 4 runs of
+100 (20 such rounds each) lose an increment. A probe in `Release` (a
+compare-exchange from 0 to the waiter, reporting a failure) catches the race in 2
+single-round runs of 40: one loses an
+increment, the other overlaps without a visible loss; the other 38 have neither.
+When each fiber also works between its blocks, so that entries keep arriving during
+the handover (and with VM-026 fixed by probe, whose hangs come first otherwise), 17
+runs of 20 lose one and 3 hang: a `locks` bumped twice at once can come out wrong,
+and a monitor whose count never returns to 0 stays held. Both go away with the fix
+below.
+
+**Found** while verifying the fix for VM-022, which made contended `sync` reachable:
+before it, a waiting fiber spun and corrupted the run queues first.
+
+**PoC:** [`poc/vm/sync-handoff-race.orb`](poc/vm/sync-handoff-race.orb) *(confirmed
+live, with VM-026 fixed by probe: 7 of 10 runs lose an increment, 3 hang; while
+VM-026 is open its own hangs come first)*.
+
+**Fix (suggested, verified by probe 2026-11-24, then reverted):** look at the queue
+first, and store either the waiter or 0, so the monitor never reads as free while
+someone waits for it:
+
+```cpp
+    auto *fiber = this->queue_.Dequeue();
+    if (fiber == nullptr)
+        this->lock_id_.store(0, std::memory_order_release);
+
+    if (fiber != nullptr) {
+        ...
+        this->lock_id_.store((uintptr_t) fiber, std::memory_order_release);
+        orbiter->PushFiber(fiber);
+    }
+```
+
+A fiber that finds the monitor held then goes the slow way, under the spinlock that
+`Release` holds, and queues behind the waiter. With this probe and VM-026's, the PoC
+passes 10 runs of 10 and the stress test it comes from 20 of 20, with no hang; the
+VM-022 PoC passes 20 of 20.
+
+</details>
 
 ---
 
@@ -199,7 +390,34 @@ released while unheld in 17 further shapes (counted with a probe in
 ---
 
 ## VM-022 — A fiber waiting on a contended `sync` stays runnable: it spins, queues itself again and again, and corrupts the scheduler's queues
-**Severity:** High (any contended `sync`: a crash in the scheduler, a hang, a fiber entering a held block, a monitor handed to a finished fiber) · **Status:** OPEN · **Location:** `orbit/orbiter/vm.cpp:1991` (`SYNC_ENTER` parks with `YIELDED`), `orbit/orbiter/sync/monitor.cpp:48` (`Monitor::Acquire` queues the fiber), `orbit/orbiter/runtime.cpp:100` (`FindExecutable` hands back the last fiber)
+**Severity:** High (any contended `sync`: a crash in the scheduler, a hang, a fiber entering a held block, a monitor handed to a finished fiber) · **Status:** FIXED (2026-11-24) · **Location:** `orbit/orbiter/vm.cpp:2004` (`SYNC_ENTER`)
+
+**Fix verified (live: the PoC passes 10 runs of 10, where it failed 10 of 10 with a
+crash in the scheduler, a timeout or failed checks; with fibers waiting on held
+monitors for about a second, the PoC takes 0.01 s of CPU in 1.6 s; 100 runs of 16
+fibers with 300 contended `sync` blocks each end with no crash and no hang (4 lose
+an increment: VM-025); `ortest` unchanged apart from the `numbers/` suites, red
+until NUM-002 lands; the PoC gate fails only the findings already open; every
+`stdlib` module imports; `phi-regalloc.orb` passes).** `SYNC_ENTER` parks a fiber
+that finds the monitor held as `SUSPENDED_RETRY`, as a blocked channel operation
+does: the scheduler drops it, and the `PushFiber` in `Monitor::Release`, which hands
+it the monitor first, is its only way back. It then runs `SYNC_ENTER` again, finds
+its own id in the monitor and enters:
+
+```cpp
+                if (res == 0) {
+                    ...
+                    fiber->state = FiberState::SUSPENDED_RETRY;
+                    return nullptr;
+                }
+```
+
+The fiber is queued once, on the monitor only. Two defects of their own showed up
+under contention and are fixed apart: the handoff could let a second fiber in
+(VM-025), and the crash in `FiberQueue::Steal` listed below also happened without
+`sync` (VM-026).
+
+<details><summary>Original report</summary>
 
 ```orbit
 func holder(obj) {
@@ -235,6 +453,8 @@ checks)*.
 drops, as it does for `SUSPENDED_IO` and `SUSPENDED_RETRY`, so that the
 `PushFiber` in `Monitor::Release` is its only way back; it then runs `SYNC_ENTER`
 once more and finds the monitor handed to it.
+
+</details>
 
 ---
 

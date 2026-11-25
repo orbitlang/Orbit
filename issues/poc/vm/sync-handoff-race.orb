@@ -1,0 +1,85 @@
+# PoC VM-025 — two fibers must never be inside `sync` blocks on the same object at
+# the same time.
+#
+# Monitor::Release clears lock_id_ before it hands the monitor to the first
+# waiter: for a moment the monitor reads as free. A fiber on another thread that
+# runs SYNC_ENTER then takes it with the lock-free fast path of Monitor::Acquire,
+# and Release, which goes on to store the waiter in lock_id_, wakes the waiter
+# into the block as well. Both are inside: an increment is lost.
+#
+# The race needs a fiber on another thread reaching SYNC_ENTER in a window of a
+# few instructions: each fiber works outside the block between two entries, so
+# entries keep arriving while the monitor is handed over, and the rounds repeat.
+# A round that finds two fibers inside, or a lost increment, fails the check; a
+# clean run is not proof, a failing one is. The race can also leave the
+# monitor's count wrong and the monitor held: the run then hangs.
+#
+# A runtime test: prints "ALL TESTS PASSED" only when every check matches.
+# EXPECT: contains: ALL TESTS PASSED
+
+import "io"
+
+var fails = 0
+
+func check(name, got, expected) {
+    if got == expected {
+        io.print("OK   ", name)
+    } else {
+        io.print("FAIL ", name, "-- got:", got, "expected:", expected)
+        fails += 1
+    }
+}
+
+lock := [0]
+var counter = 0
+var inside = 0
+var overlap = 0
+
+func work(n, done) {
+    loop i := 0; i < n; i++ {
+        w := 0
+        loop j := 0; j < 200; j++ {
+            w = w + 1
+        }
+        sync lock {
+            inside += 1
+            if inside != 1 {
+                overlap += 1
+            }
+            v := counter
+            loop k := 0; k < 50; k++ {
+                v = v + 0
+            }
+            counter = v + 1
+            inside -= 1
+        }
+    }
+    done <- true
+}
+
+func round(fibers, n) {
+    counter = 0
+    overlap = 0
+    done := Chan(capacity=fibers)
+    loop f := 0; f < fibers; f++ {
+        spawn work(n, done)
+    }
+    loop f := 0; f < fibers; f++ {
+        <- done
+    }
+    return counter == fibers * n && overlap == 0
+}
+
+var bad = 0
+loop r := 0; r < 20; r++ {
+    if !round(16, 300) {
+        bad += 1
+    }
+}
+check("rounds with two fibers inside the same monitor", bad, 0)
+
+if fails == 0 {
+    io.print("ALL TESTS PASSED")
+} else {
+    io.print(fails, "TEST(S) FAILED")
+}

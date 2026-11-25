@@ -1,0 +1,71 @@
+# PoC VM-026 — fibers that run on several threads at once must all finish, round
+# after round, without a crash.
+#
+# A FiberQueue links its fibers from tail_ to head_ through queue.next. Dequeue
+# moves head_ to the next fiber but leaves that fiber's queue.next on the one it
+# removed, which by then runs, or waits in another queue. Steal, which another
+# thread runs when it has no work, walks the queue from tail_ through queue.next
+# until it finds nullptr: it goes past head_ into fibers that are not in the
+# queue, and through links other threads are changing. It counts fibers that are
+# not there, cuts the queue in the wrong place, and can find nullptr where it
+# expects the middle of the queue: EXC_BAD_ACCESS in FiberQueue::Steal
+# (fqueue.cpp), or fibers lost from every queue, and the program hangs.
+#
+# No `sync`, no shared variable: each fiber works on its own and sends its
+# result on a channel. The rounds repeat so that the thieves find queues to
+# steal from.
+#
+# A runtime test: prints "ALL TESTS PASSED" only when every check matches.
+# EXPECT: contains: ALL TESTS PASSED
+
+import "io"
+
+var fails = 0
+
+func check(name, got, expected) {
+    if got == expected {
+        io.print("OK   ", name)
+    } else {
+        io.print("FAIL ", name, "-- got:", got, "expected:", expected)
+        fails += 1
+    }
+}
+
+func work(n, done) {
+    w := 0
+    loop i := 0; i < n; i++ {
+        loop j := 0; j < 200; j++ {
+            w = w + 1
+        }
+    }
+    done <- w
+}
+
+func round(fibers, n) {
+    done := Chan(capacity=fibers)
+    loop f := 0; f < fibers; f++ {
+        spawn work(n, done)
+    }
+    total := 0
+    loop f := 0; f < fibers; f++ {
+        total += <- done
+    }
+    return total
+}
+
+var rounds = 0
+var right = 0
+loop r := 0; r < 10; r++ {
+    if round(8, 30) == 8 * 30 * 200 {
+        right += 1
+    }
+    rounds += 1
+}
+check("every round ends", rounds, 10)
+check("every round sums the work of all its fibers", right, 10)
+
+if fails == 0 {
+    io.print("ALL TESTS PASSED")
+} else {
+    io.print(fails, "TEST(S) FAILED")
+}
