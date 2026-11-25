@@ -1670,17 +1670,20 @@ Instruction *IRBuilder::visitTernary(const parser::Ternary *node) {
 }
 
 Instruction *IRBuilder::visitTrap(const parser::Unary *node) {
-    auto *finally_block = this->builder_.CreateBasicBlock();
+    auto *catch_block = this->builder_.CreateBasicBlock();
+    auto *next_block = this->builder_.CreateBasicBlock();
 
     const StackSlotGuard guard(this->builder_, sizeof(orbiter::ExceptionContext) / sizeof(PtrSize));
 
-    this->builder_.SetupTryCatch(nullptr, finally_block, guard.base);
+    this->builder_.SetupTryCatch(catch_block, next_block, guard.base);
 
     auto *value = this->visit(node->value);
 
-    this->builder_.AppendBasicBlock(finally_block);
+    this->builder_.AppendBasicBlock(catch_block);
 
     auto *ret = this->builder_.CreateUnaryOp(orbiter::OPCode::STRES, value);
+
+    this->builder_.AppendBasicBlock(next_block);
 
     this->builder_.CreateUnaryOp(orbiter::OPCode::TEND);
 

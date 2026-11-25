@@ -70,7 +70,7 @@ bool ObjectContains(Isolate *isolate, const OObject *container, const OObject *v
 
 // Internal
 
-void CallNative(Function *func, Registers *regs, const VMStack *stack, U16 argc);
+bool CallNative(Fiber *fiber, Function *func, U16 argc);
 
 void ExecuteCleanupForPC(VMContext *vm, const FiberContext *context);
 
@@ -78,7 +78,6 @@ void ExecuteCleanupForPC(VMContext *vm, const FiberContext *context);
 
 bool ExecDefer(Fiber *fiber) {
     auto *regs = &fiber->vm.regs;
-    const auto *stack = &fiber->vm.stack;
 
     while (true) {
         auto *defer = fiber->defer_stack.Pop(regs->BP.reg);
@@ -90,12 +89,15 @@ bool ExecDefer(Fiber *fiber) {
         if (!defer->func->shared->IsInterpreted()) {
             auto *pending = fiber->panic.current_;
 
-            if (pending != nullptr)
+            // A panic already hidden by a finally stays hidden: it is not this call's to show again
+            const bool hide = pending != nullptr && pending->frame >= 0;
+
+            if (hide)
                 pending->HidePanic();
 
-            CallNative(func, regs, stack, defer->argc);
+            CallNative(fiber, func, defer->argc);
 
-            if (pending != nullptr)
+            if (hide)
                 pending->ShowPanic();
 
             if (fiber->panic.current_ != nullptr && fiber->panic.current_ != pending)
@@ -125,38 +127,6 @@ bool ExecDefer(Fiber *fiber) {
 
         return true;
     }
-}
-
-static bool Call(Fiber *fiber, Function *func, const ArgumentBinder &binder) {
-    auto *regs = &fiber->vm.regs;
-
-    if (!func->shared->IsInterpreted()) {
-        CallNative(func, regs, &fiber->vm.stack, binder.StackArgs());
-
-        return false;
-    }
-
-    if (func->shared->IsAsync()) {
-        const auto size = binder.StackArgsBytes();
-
-        regs->RR.reg = (PtrSize) Orbiter::GetInstance()->EvalAsync(func,
-                                                                   (fiber->vm.stack.stack + regs->SP.reg) - size,
-                                                                   size).get();
-
-        regs->SP.reg -= size;
-
-        return false;
-    }
-
-    if (!fiber->PushState(binder.ArgsBaseSP()))
-        return false;
-
-    // Load new context
-    fiber->SetContext(func);
-
-    regs->BP.reg = regs->SP.reg;
-
-    return true;
 }
 
 bool LoadFromIndex(const Fiber *fiber, OObject *object, const OObject *index, PtrSize &dst) {
@@ -341,9 +311,188 @@ bool VMGetIter(const Fiber *fiber, OObject *object, PtrSize *dst) {
     return false;
 }
 
+static CallResult Call(Fiber *fiber, Function *func, const ArgumentBinder &binder) {
+    auto *regs = &fiber->vm.regs;
+
+    if (!func->shared->IsInterpreted()) {
+        if (CallNative(fiber, func, binder.StackArgs()))
+            return CallResult::DONE;
+
+        return CallResult::ERROR;
+    }
+
+    if (func->shared->IsAsync()) {
+        const auto size = binder.StackArgsBytes();
+
+        regs->RR.reg = (PtrSize) Orbiter::GetInstance()->EvalAsync(func,
+                                                                   (fiber->vm.stack.stack + regs->SP.reg) - size,
+                                                                   size).get();
+
+        regs->SP.reg -= size;
+
+        return CallResult::DONE;
+    }
+
+    if (!fiber->PushState(binder.ArgsBaseSP()))
+        return CallResult::ERROR;
+
+    // Load new context
+    fiber->SetContext(func);
+
+    regs->BP.reg = regs->SP.reg;
+
+    return CallResult::CONTINUE;
+}
+
 // *********************************************************************************************************************
 // EOF
 // *********************************************************************************************************************
+
+bool CallNative(Fiber *fiber, Function *func, const U16 argc) {
+    const auto offset = argc * sizeof(void *);
+    auto **args = (OObject **) (fiber->vm.stack.stack + (fiber->vm.regs.SP.reg - offset));
+
+    const auto last_exc = fiber->panic.current_;
+
+    const auto result = func->shared->func(func, args, args[argc], args[argc + 1], argc);
+
+    fiber->vm.regs.RR.reg = (PtrSize) result.get();
+    fiber->vm.regs.SP.reg -= offset;
+
+    return last_exc == fiber->panic.current_;
+}
+
+bool LoadFromObjectProp(const Fiber *fiber, const Function *func, OObject *obj, const LoadObjectPropFlags flags,
+                        const U16 offset, OObject **out) {
+    const auto *code = fiber->context.code;
+    const auto *key = (ORString *) code->unknown_symbols->objects[offset];
+
+    const bool obj_is_type = O_IS_OBJECT(obj) && !O_GET_RC(obj).IsInstance();
+
+    const auto *type = obj_is_type ? O_GET_TYPE(obj) : GetTypeInfoFromObject(fiber->isolate, obj);
+
+    const TypeInfo *target_type = nullptr;
+    PropertyDescriptor *prop = nullptr;
+
+    if (ENUMBITMASK_ISTRUE(flags, LoadObjectPropFlags::SUPER)) {
+        target_type = GetSuper(type, func->shared->owner_type);
+        while (target_type != nullptr) {
+            prop = TIFindLocalProperty(target_type, (const char *) key->buffer);
+            if (prop != nullptr)
+                break;
+
+            target_type = GetSuper(type, target_type);
+        }
+    } else {
+        if (obj_is_type)
+            prop = TIFindProperty((TypeInfo *) obj, &target_type, (const char *) key->buffer);
+
+        if (prop == nullptr)
+            prop = TIFindProperty(type, &target_type, (const char *) key->buffer);
+    }
+
+    if (prop == nullptr) {
+        char error[24];
+
+        GetTypeName(fiber->isolate, obj, error, sizeof(error));
+
+        ErrorSet(fiber->isolate,
+                 AttributeError::Details[AttributeError::Reason::ID],
+                 nullptr,
+                 AttributeError::Details[AttributeError::Reason::NOT_FOUND],
+                 error,
+                 (const char *) key->buffer);
+
+        return false;
+    }
+
+    if (ENUMBITMASK_ISFALSE(prop->detail, PropertyFlag::IS_PUBLIC) && type->properties.origin != (PtrSize) code) {
+        if (func == nullptr
+            || func->shared->owner_type == nullptr
+            || (ENUMBITMASK_ISFALSE(prop->detail, PropertyFlag::IS_PROTECTED)
+                && !IsTypeExtends(type, func->shared->owner_type))) {
+            ErrorSetWithObjType(fiber->isolate,
+                                AttributeError::Details[AttributeError::Reason::ID],
+                                AttributeError::Details[AttributeError::Reason::PRIVATE_ACCESS],
+                                (const char *) key->buffer, obj);
+
+            return false;
+        }
+    }
+
+    if (ENUMBITMASK_ISTRUE(prop->detail, PropertyFlag::IN_OBJECT)) {
+        const auto *slot = O_SLOT(obj, target_type);
+
+        *out = slot[prop->slot];
+
+        return true;
+    }
+
+    *out = prop->value;
+
+    return true;
+}
+
+bool StoreToObjectProp(const Fiber *fiber, const Function *func, OObject *obj, OObject *value,
+                       const LoadObjectPropFlags flags, const U16 offset) {
+    const auto *code = fiber->context.code;
+    const auto *type = GetTypeInfoFromObject(fiber->isolate, obj);
+
+    const auto *key = (ORString *) code->unknown_symbols->objects[offset];
+    const PropertyDescriptor *prop = nullptr;
+
+    if (ENUMBITMASK_ISTRUE(flags, LoadObjectPropFlags::SUPER))
+        type = O_GET_TYPE(func->shared->owner_type);
+
+    const TypeInfo *target_type = nullptr;
+    prop = TIFindProperty(type, &target_type, (const char *) key->buffer);
+    if (prop == nullptr) {
+        char error[24];
+
+        GetTypeName(fiber->isolate, obj, error, sizeof(error));
+
+        ErrorSet(fiber->isolate,
+                 AttributeError::Details[AttributeError::Reason::ID],
+                 nullptr,
+                 AttributeError::Details[AttributeError::Reason::NOT_FOUND],
+                 error,
+                 (const char *) key->buffer);
+
+        return false;
+    }
+
+    if (ENUMBITMASK_ISFALSE(prop->detail, PropertyFlag::IS_PUBLIC)) {
+        if (func == nullptr
+            || func->shared->owner_type == nullptr
+            || ENUMBITMASK_ISFALSE(prop->detail, PropertyFlag::IS_PROTECTED)
+            || !IsTypeExtends(type, func->shared->owner_type)) {
+            ErrorSetWithObjType(fiber->isolate,
+                                AttributeError::Details[AttributeError::Reason::ID],
+                                AttributeError::Details[AttributeError::Reason::PRIVATE_ACCESS],
+                                (const char *) key->buffer, obj);
+
+            return false;
+        }
+    }
+
+    if (ENUMBITMASK_ISTRUE(prop->detail, PropertyFlag::IS_CONSTANT)) {
+        ErrorSet(fiber->isolate,
+                 AttributeError::Details[AttributeError::Reason::ID],
+                 nullptr,
+                 AttributeError::Details[AttributeError::Reason::CONSTANT_ASSIGN],
+                 (const char *) key->buffer);
+
+        return false;
+    }
+
+    if (ENUMBITMASK_ISTRUE(prop->detail, PropertyFlag::IN_OBJECT)) {
+        auto *slot = O_SLOT(obj, target_type);
+
+        slot[prop->slot] = memory::GC::WriteBarrier(obj, value);
+    }
+
+    return true;
+}
 
 int CallGenerator(Fiber *fiber, Generator *gen, const U16 total_args, const CallMode mode, const bool exhausted_error) {
     auto *regs = &fiber->vm.regs;
@@ -430,83 +579,6 @@ int VMGetIterNext(Fiber *fiber, OObject *object, PtrSize *dst) {
     return (int) CallResult::ERROR;
 }
 
-OObject *LoadFromObjectProp(const Fiber *fiber, const Function *func, OObject *obj, const LoadObjectPropFlags flags,
-                            const U16 offset) {
-    const auto *code = fiber->context.code;
-    const auto *key = (ORString *) code->unknown_symbols->objects[offset];
-
-    const bool obj_is_type = O_IS_OBJECT(obj) && !O_GET_RC(obj).IsInstance();
-
-    const auto *type = obj_is_type ? O_GET_TYPE(obj) : GetTypeInfoFromObject(fiber->isolate, obj);
-
-    const TypeInfo *target_type = nullptr;
-    PropertyDescriptor *prop = nullptr;
-
-    if (ENUMBITMASK_ISTRUE(flags, LoadObjectPropFlags::SUPER)) {
-        target_type = GetSuper(type, func->shared->owner_type);
-        while (target_type != nullptr) {
-            prop = TIFindLocalProperty(target_type, (const char *) key->buffer);
-            if (prop != nullptr)
-                break;
-
-            target_type = GetSuper(type, target_type);
-        }
-    } else {
-        if (obj_is_type)
-            prop = TIFindProperty((TypeInfo *) obj, &target_type, (const char *) key->buffer);
-
-        if (prop == nullptr)
-            prop = TIFindProperty(type, &target_type, (const char *) key->buffer);
-    }
-
-    if (prop == nullptr) {
-        char error[24];
-
-        GetTypeName(fiber->isolate, obj, error, sizeof(error));
-
-        ErrorSet(fiber->isolate,
-                 AttributeError::Details[AttributeError::Reason::ID],
-                 nullptr,
-                 AttributeError::Details[AttributeError::Reason::NOT_FOUND],
-                 error,
-                 (const char *) key->buffer);
-
-        return nullptr;
-    }
-
-    if (ENUMBITMASK_ISFALSE(prop->detail, PropertyFlag::IS_PUBLIC) && type->properties.origin != (PtrSize) code) {
-        if (func == nullptr
-            || func->shared->owner_type == nullptr
-            || (ENUMBITMASK_ISFALSE(prop->detail, PropertyFlag::IS_PROTECTED)
-                && !IsTypeExtends(type, func->shared->owner_type))) {
-            ErrorSetWithObjType(fiber->isolate,
-                                AttributeError::Details[AttributeError::Reason::ID],
-                                AttributeError::Details[AttributeError::Reason::PRIVATE_ACCESS],
-                                (const char *) key->buffer, obj);
-
-            return nullptr;
-        }
-    }
-
-    if (ENUMBITMASK_ISTRUE(prop->detail, PropertyFlag::IN_OBJECT)) {
-        const auto *slot = O_SLOT(obj, target_type);
-
-        return slot[prop->slot];
-    }
-
-    return prop->value;
-}
-
-void CallNative(Function *func, Registers *regs, const VMStack *stack, const U16 argc) {
-    const auto offset = argc * sizeof(void *);
-    auto **args = (OObject **) (stack->stack + (regs->SP.reg - offset));
-
-    const auto result = func->shared->func(func, args, args[argc], args[argc + 1], argc);
-
-    regs->RR.reg = (PtrSize) result.get();
-    regs->SP.reg -= offset;
-}
-
 void ExecuteCleanupForPC(VMContext *vm, const FiberContext *context) {
     const auto ip = vm->regs.IP.reg;
     if (ip >= (PtrSize) context->code->m_end)
@@ -555,6 +627,17 @@ void ReleaseExceptionContext(const Fiber *fiber, Registers *regs) {
     auto *ctx = ExContextGet(fiber->vm.stack.stack, regs->CP.reg);
 
     assert(ctx!=nullptr);
+
+    // The finally of this context hid a panic and is being left another way (a new panic
+    // escaping it, a return or a break): the hidden panic is visible again
+    if (ctx->info.HasHiddenPanic()) {
+        for (auto *panic = fiber->panic.current_; panic != nullptr; panic = panic->prev) {
+            if (panic->frame < 0) {
+                panic->ShowPanic();
+                break;
+            }
+        }
+    }
 
     regs->CP.reg = ctx->info.prev();
 
@@ -617,65 +700,6 @@ void SaveGenerator(Fiber *fiber) {
     }
 
     gen->acquired = 0;
-}
-
-void StoreToObjectProp(const Fiber *fiber, const Function *func, OObject *obj, OObject *value,
-                       const LoadObjectPropFlags flags, const U16 offset) {
-    const auto *code = fiber->context.code;
-    const auto *type = GetTypeInfoFromObject(fiber->isolate, obj);
-
-    const auto *key = (ORString *) code->unknown_symbols->objects[offset];
-    const PropertyDescriptor *prop = nullptr;
-
-    if (ENUMBITMASK_ISTRUE(flags, LoadObjectPropFlags::SUPER))
-        type = O_GET_TYPE(func->shared->owner_type);
-
-    const TypeInfo *target_type = nullptr;
-    prop = TIFindProperty(type, &target_type, (const char *) key->buffer);
-    if (prop == nullptr) {
-        char error[24];
-
-        GetTypeName(fiber->isolate, obj, error, sizeof(error));
-
-        ErrorSet(fiber->isolate,
-                 AttributeError::Details[AttributeError::Reason::ID],
-                 nullptr,
-                 AttributeError::Details[AttributeError::Reason::NOT_FOUND],
-                 error,
-                 (const char *) key->buffer);
-
-        return;
-    }
-
-    if (ENUMBITMASK_ISFALSE(prop->detail, PropertyFlag::IS_PUBLIC)) {
-        if (func == nullptr
-            || func->shared->owner_type == nullptr
-            || ENUMBITMASK_ISFALSE(prop->detail, PropertyFlag::IS_PROTECTED)
-            || !IsTypeExtends(type, func->shared->owner_type)) {
-            ErrorSetWithObjType(fiber->isolate,
-                                AttributeError::Details[AttributeError::Reason::ID],
-                                AttributeError::Details[AttributeError::Reason::PRIVATE_ACCESS],
-                                (const char *) key->buffer, obj);
-
-            return;
-        }
-    }
-
-    if (ENUMBITMASK_ISTRUE(prop->detail, PropertyFlag::IS_CONSTANT)) {
-        ErrorSet(fiber->isolate,
-                 AttributeError::Details[AttributeError::Reason::ID],
-                 nullptr,
-                 AttributeError::Details[AttributeError::Reason::CONSTANT_ASSIGN],
-                 (const char *) key->buffer);
-
-        return;
-    }
-
-    if (ENUMBITMASK_ISTRUE(prop->detail, PropertyFlag::IN_OBJECT)) {
-        auto *slot = O_SLOT(obj, target_type);
-
-        slot[prop->slot] = memory::GC::WriteBarrier(obj, value);
-    }
 }
 
 OObject *orbiter::eval(Fiber *fiber, PtrSize barrier) {
@@ -1122,7 +1146,7 @@ CATCH_FINALLY:
                     goto BEGIN;
                 }
 
-                const auto call_res = binder.Bind(fiber, func, p_count, flags);
+                auto call_res = binder.Bind(fiber, func, p_count, flags);
                 if (call_res == CallResult::ERROR)
                     goto ERROR;
 
@@ -1144,17 +1168,18 @@ CATCH_FINALLY:
                     DISPATCH;
                 }
 
-                if (Call(fiber, func, binder)) {
+                call_res = Call(fiber, func, binder);
+                if (call_res == CallResult::CONTINUE) {
                     CHECK_PREEMPT;
 
                     goto BEGIN;
                 }
 
+                if (call_res == CallResult::ERROR)
+                    goto ERROR;
+
                 if (fiber->state == FiberState::SUSPENDED_IO || fiber->state == FiberState::SUSPENDED_RETRY)
                     return nullptr;
-
-                if (fiber->IsPanicking())
-                    goto ERROR;
 
                 DISPATCH;
             }
@@ -1757,8 +1782,7 @@ CATCH_FINALLY:
                     DISPATCH;
                 }
 
-                result = LoadFromObjectProp(fiber, this_func, obj, flags, offset);
-                if (fiber->IsPanicking())
+                if (!LoadFromObjectProp(fiber, this_func, obj, flags, offset, &result))
                     goto ERROR;
 
                 ACCESS_REG_DST(instr) = (PtrSize) result;
@@ -1780,8 +1804,7 @@ CATCH_FINALLY:
                     DISPATCH;
                 }
 
-                StoreToObjectProp(fiber, this_func, obj, value, flags, offset);
-                if (fiber->IsPanicking())
+                if (!StoreToObjectProp(fiber, this_func, obj, value, flags, offset))
                     goto ERROR;
 
                 DISPATCH;
@@ -2028,6 +2051,11 @@ CATCH_FINALLY:
             TARGET_OP(TEND) {
                 const auto ctx = ExContextGet(fiber->vm.stack.stack, regs->CP.reg);
 
+                if (ctx->info.HasHiddenPanic()) {
+                    fiber->panic.current_->ShowPanic();
+                    ctx->info.ClearHiddenPanic();
+                }
+
                 if (fiber->IsPanicking()) {
                     ReleaseExceptionContext(fiber, regs);
 
@@ -2138,6 +2166,9 @@ ERROR:
                 if (except->finally_off != 0) {
                     JMP_TO(except->finally_off);
                     except->finally_off = 0;
+
+                    fiber->panic.current_->HidePanic();
+                    except->info.MarkHiddenPanic();
 
                     goto CATCH_FINALLY;
                 }

@@ -87,7 +87,8 @@ namespace orbiter {
     };
 
     enum class PendingAction : U8 {
-        NONE,
+        NONE = 0,
+
         BREAK,
         CONTINUE,
         RETURN
