@@ -2152,30 +2152,31 @@ CATCH_FINALLY:
 ERROR:
     if (fiber->IsPanicking()) {
         auto *except = ExContextGet(fiber->vm.stack.stack, regs->CP.reg);
-        if (except != nullptr) {
-            if (except->key == regs->BP.reg) {
-                ExecuteCleanupForPC(&fiber->vm, &fiber->context);
-
-                if (except->catch_off != 0) {
-                    JMP_TO(except->catch_off);
-                    except->catch_off = 0;
-
-                    goto CATCH_FINALLY;
-                }
-
-                if (except->finally_off != 0) {
-                    JMP_TO(except->finally_off);
-                    except->finally_off = 0;
-
-                    fiber->panic.current_->HidePanic();
-                    except->info.MarkHiddenPanic();
-
-                    goto CATCH_FINALLY;
-                }
-
-                // Release the exhausted exception context (both catch and finally consumed)
+        while (except != nullptr && except->key == regs->BP.reg) {
+            if (except->catch_off == 0 && except->finally_off == 0) {
                 ReleaseExceptionContext(fiber, regs);
+
+                except = ExContextGet(fiber->vm.stack.stack, regs->CP.reg);
+
+                continue;
             }
+
+            ExecuteCleanupForPC(&fiber->vm, &fiber->context);
+
+            if (except->catch_off != 0) {
+                JMP_TO(except->catch_off);
+                except->catch_off = 0;
+
+                goto CATCH_FINALLY;
+            }
+            
+            JMP_TO(except->finally_off);
+            except->finally_off = 0;
+
+            fiber->panic.current_->HidePanic();
+            except->info.MarkHiddenPanic();
+
+            goto CATCH_FINALLY;
         }
     }
 
