@@ -1,8 +1,190 @@
 # vm — bug report
 
 **Component:** `orbit/orbiter` (interpreter: trap/panic unwind, register file) · **ID prefix:** `VM`
-**PoCs:** [`poc/vm/`](poc/vm/) · **Last reviewed:** 2026-11-24
+**PoCs:** [`poc/vm/`](poc/vm/) · **Last reviewed:** 2026-11-25
 **Status:** OPEN · PARTIAL · FIXED · WONTFIX — see [GUIDE.md](GUIDE.md).
+
+---
+
+## VM-028 — A panic raised in a `finally` skips the `catch` of an enclosing `try` in the same frame, and escapes every `trap`
+**Severity:** High (a handled panic escapes to the top level) · **Status:** OPEN · **Location:** `orbit/orbiter/vm.cpp:2152` (`ERROR`: the spent context is released, then `UnwindStack`), `orbit/orbiter/fiber.cpp:119` (`PopStateNoCtxRestore` leaves `CP` as is)
+
+```orbit
+func f() {
+    try {
+        try {
+            panic Error(@First, "first")
+        } finally {
+            panic Error(@Second, "second")
+        }
+    } catch {
+        # never runs
+    }
+}
+r := trap f()    # does not catch either: the panic reaches the top level
+```
+
+The second panic reaches `ERROR` with the inner `try` on top of `CP`, its `catch`
+and `finally` both spent. `ERROR` releases that context and goes straight to
+`UnwindStack`, which pops the frame without looking at the other contexts of the
+frame: the enclosing `try`, whose `catch` would take the panic, is skipped. Its
+context is still on top of `CP` once the frame is popped (`PopState` does not
+restore `CP`), so `UnwindStack` compares a context of a dead frame with the BP of
+every caller and never reaches the `trap` below it. The same with the panics
+raised by callees, and from a spent `catch` instead of a `finally`.
+
+**Found** while verifying the fix for VM-019. With the VM at HEAD the first panic
+escapes instead of the second.
+
+**PoC:** [`poc/vm/panic-from-finally.orb`](poc/vm/panic-from-finally.orb) *(confirmed
+live: the first check already lets the panic through the `trap`, and the run ends
+with it)*.
+
+**Fix (suggested, verified by probe 2026-11-25, then reverted):** before the
+handlers of the top context are looked at, release the contexts of this frame whose
+handlers are spent, so that the next one of the same frame gets the panic; the
+cleanup of the `sync` blocks then keeps the ones that hold that context's handler:
+
+```cpp
+ERROR:
+    if (fiber->IsPanicking()) {
+        auto *except = ExContextGet(fiber->vm.stack.stack, regs->CP.reg);
+
+        // A context of this frame whose handlers are spent is released first: the next one
+        // of the same frame may still take the panic
+        while (except != nullptr && except->key == regs->BP.reg && except->catch_off == 0 && except->finally_off == 0) {
+            ReleaseExceptionContext(fiber, regs);
+
+            except = ExContextGet(fiber->vm.stack.stack, regs->CP.reg);
+        }
+
+        if (except != nullptr) {
+            ...
+```
+
+With the probe the PoC passes 15 of 15, 3 runs of 3: an outer `catch` of the same
+frame takes the panic from a `finally` or a spent `catch`, its own or a callee's;
+with an outer `finally` only, the `trap` gets the second panic and nothing stays
+pending; a `sync` around both stays held while the `catch` runs and is released
+once. VM-019's, VM-018's, VM-015's and the `sync` PoCs pass, `ortest` unchanged
+apart from the `numbers/` suites, `phi-regalloc.orb` passes.
+
+---
+
+## VM-027 — A `return` through two `try` blocks runs only the innermost `finally`
+**Severity:** High (cleanup silently skipped) · **Status:** OPEN · **Location:** `orbit/orbiter/vm.cpp:2067` (`TEND`, the RETURN branch)
+
+```orbit
+func f() {
+    try {
+        try {
+            return 7
+        } finally {
+            log.append("inner")
+        }
+    } finally {
+        log.append("outer")      # never runs
+    }
+}
+```
+
+A `return` inside a `try` becomes a pending return, run by the `TEND` of the
+innermost `try` once its `finally` is done. The RETURN branch of `TEND` runs the
+deferred calls and `Return` right away. The branch for `break` and `continue` hands
+the action to the enclosing `try` of the same frame and jumps to its `finally`; the
+RETURN branch does not, so every `finally` beyond the innermost is skipped. The same
+for a `return` from a `catch` with a `finally` around it, through a `try` with only
+a `catch`, and in a loop.
+
+**Found** while verifying the fix for VM-019. Same behavior with the VM at HEAD.
+
+**PoC:** [`poc/vm/return-through-finally.orb`](poc/vm/return-through-finally.orb)
+*(confirmed live: 7 of 25 checks fail)*.
+
+**Fix (suggested, verified by probe 2026-11-25, then reverted):** hand the return to
+the enclosing context of the same frame, as `break` does, when its `finally` has not
+started yet (the IP of this `TEND` is before it). Every `try` has a `finally` block,
+an empty one when none is written, so that context's own `TEND` carries the return
+further out. A `return` from inside a `finally` run by a panic lets the panic go on:
+
+```cpp
+                if (action == PendingAction::RETURN) {
+                    auto *outer = ExContextGet(fiber->vm.stack.stack, ctx->info.prev());
+
+                    if (outer != nullptr && outer->key == regs->BP.reg) {
+                        // The finally of an enclosing try of this frame runs first: its TEND returns
+                        const auto finally = (PtrSize) code->m_code + outer->finally_off;
+
+                        if (outer->finally_off != 0 && regs->IP.reg < finally) {
+                            const auto value = ctx->ret_value;
+
+                            ReleaseExceptionContext(fiber, regs);
+
+                            outer->info.SetAction((U32) PendingAction::RETURN);
+                            outer->ret_value = value;
+
+                            ExecuteCleanupForJump(&fiber->vm, &fiber->context, finally);
+
+                            JMP_TO(outer->finally_off);
+                            goto BEGIN;
+                        }
+
+                        // The return leaves a finally run by a panic: the panic goes on
+                        if (outer->info.HasError()) {
+                            ReleaseExceptionContext(fiber, regs);
+                            ReleaseExceptionContext(fiber, regs);
+
+                            goto ERROR;
+                        }
+                    }
+
+                    if (ExecDefer(fiber))
+                        goto BEGIN;
+                    ...
+```
+
+The `sync` blocks around the inner `try` used to be released by the `RET` that its
+`TEND` ran inside them (VM-024); the jump to the outer `finally` leaves them
+instead, so they are released on the way, and only those the target is not inside:
+the inner `finally` still runs with them held. Next to `ExecuteCleanupForPC`:
+
+```cpp
+// Releases the sync blocks that a jump from IP to target leaves: the ones covering IP, not target
+void ExecuteCleanupForJump(VMContext *vm, const FiberContext *context, const PtrSize target) {
+    const auto ip = vm->regs.IP.reg;
+
+    const auto *table = context->code->cleanup.entries;
+    for (int i = context->code->cleanup.length - 1; i >= 0; i--) {
+        const auto *entry = table + i;
+
+        if (ip < (PtrSize) entry->m_start || ip >= (PtrSize) entry->m_end)
+            continue;
+
+        if (target >= (PtrSize) entry->m_start && target < (PtrSize) entry->m_end)
+            continue;
+
+        const auto *value = *((OObject **) (vm->stack.stack + (vm->regs.BP.reg + (entry->slot * sizeof(void *)))));
+
+        switch (entry->type) {
+            case OPCode::SYNC_EXIT:
+                MonitorRelease(value);
+                break;
+            default:
+                assert(false);
+                break;
+        }
+    }
+}
+```
+
+With the probe the PoC passes 25 of 25, 3 runs of 3: two and three levels, from a
+`catch`, through a `try` with only a `catch`, from inside the outer `finally` (no
+restart, nothing after the `return`), from a `finally` run by a panic, before the
+deferred calls, in a loop; a `sync` between the two `try`s is held in the inner
+`finally` and released, once, before the outer one. Without `ExecuteCleanupForJump`
+VM-024's PoC fails its `return` from a `catch` inside a block. VM-019's and VM-024's
+PoCs pass, `ortest` unchanged apart from the `numbers/` suites, `phi-regalloc.orb`
+passes.
 
 ---
 
@@ -607,7 +789,82 @@ moving IP to `m_end`.
 ---
 
 ## VM-019 — A `finally` entered by a panic stops at its first native call
-**Severity:** High (cleanup silently skipped) · **Status:** OPEN · **Location:** `orbit/orbiter/vm.cpp` (`ERROR:`, the `finally` branch; the pending-panic check after a call)
+**Severity:** High (cleanup silently skipped) · **Status:** FIXED (2026-11-25) · **Location:** `orbit/orbiter/vm.cpp:2153` (`ERROR`, the `finally` branch), `orbit/orbiter/vm.cpp:2052` (`TEND`), `orbit/orbiter/vm.cpp:566` (`ReleaseExceptionContext`), `orbit/orbiter/vm.cpp:79` (`ExecDefer`), `orbit/orbiter/excstack.h:22` (the context's error bit), `orbit/liftoff/ir/irbuilder.cpp:1672` (`visitTrap`)
+
+**Fix verified (live: the PoC, grown to 38 checks, passes 5 runs of 5, where 13 of
+its first 25 failed: native calls, methods, property loads and stores, and calls to
+Orbit functions in a `finally` run by a panic, from the same frame or a callee, and
+the statements after them; a `try` that ends normally inside the block; a second
+panic caught inside the block, raised through a nested `finally`, or escaping it; a
+`return` or `break` out of the block; a function with a native defer called from
+it; a deferred call with a `try`, run by the unwind; the block ends where it should,
+the panic goes on from its `TEND`, and nothing stays pending; each piece reverted
+alone fails the PoC again: `trap` compiled as a `finally` lets every panic through,
+no hiding fails 8 checks, no showing on release 5, `ExecDefer` showing a panic it
+did not hide 1; VM-015's and VM-018's PoCs pass; `ortest` unchanged apart from the
+`numbers/` suites, red until NUM-002 lands; the PoC gate fails only the findings
+already open; every `stdlib` module imports; `phi-regalloc.orb` passes).** While a
+`finally` entered by a panic runs, the panic is hidden: `HidePanic` complements its
+`frame`, so `IsPanicking()` and the frame check at `BEGIN` no longer see it, and the
+block's calls and loads run as in a block entered normally. The context remembers
+it with a bit in `info` (`prev` now shifted by three):
+
+```cpp
+                if (except->finally_off != 0) {
+                    JMP_TO(except->finally_off);
+                    except->finally_off = 0;
+
+                    fiber->panic.current_->HidePanic();
+                    except->info.SetError();
+
+                    goto CATCH_FINALLY;
+                }
+```
+
+The `TEND` of that context, and only that one, shows the panic again and goes on
+unwinding; a `try` nested in the block has no bit and leaves it hidden:
+
+```cpp
+                if (ctx->info.HasError()) {
+                    fiber->panic.current_->ShowPanic();
+                    ctx->info.UnsetError();
+                }
+
+                if (fiber->IsPanicking()) {
+                    ReleaseExceptionContext(fiber, regs);
+
+                    goto ERROR;
+                }
+```
+
+A context with the bit left another way (a second panic escaping the block, a
+`return` or a `break`) shows the hidden panic when it is released, so a `catch` or
+`trap` that takes the newer panic discards both and nothing stays pending; a
+`return` or `break` in the block does not swallow the panic:
+
+```cpp
+    if (ctx->info.HasError()) {
+        for (auto *panic = fiber->panic.current_; panic != nullptr; panic = panic->prev) {
+            if (panic->frame < 0) {
+                panic->ShowPanic();
+                break;
+            }
+        }
+    }
+```
+
+`ExecDefer` hides the pending panic around a native deferred call only when it is
+not hidden already, and shows only what it hid. A `trap` is compiled with a `catch`
+that leads to `STRES` and a `finally` on its `TEND`: `STRES` reads the panic it
+discards, which a hidden one would not show.
+
+Native calls report a failure through the panic they raise (`CallNative` compares
+the current panic before and after the call, and pops its arguments either way), and
+`LDOBJP` / `STOBJP` through the result of the load or store, rather than from
+`IsPanicking()` after the instruction. With the panic hidden the PoC passes either
+way; these keep a failure apart from a panic that was already pending.
+
+<details><summary>Original report</summary>
 
 ```orbit
 try {
@@ -635,6 +892,8 @@ needs a state of its own, because the block runs in the frame the panic belongs 
 and cleared by its `TEND`, which `IsPanicking` honors. `TEND` has to recognize its
 own context (a nested `try` in the block ends with a `TEND` too), and returning
 into the frame from a call in the block must not resume the unwind at `BEGIN`.
+
+</details>
 
 ---
 

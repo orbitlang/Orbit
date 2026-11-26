@@ -3,6 +3,24 @@
 # failure of that call and the rest of the block is skipped: a `finally` that
 # closes a file or appends to a list does nothing.
 #
+# The same holds for every instruction that decides it failed by looking at the
+# pending panic (a property load or store), and for a call to an Orbit function:
+# when it returns into the frame of the `finally`, which is the frame the panic
+# belongs to, the VM must not take the return for the end of a deferred call and
+# resume the unwind before the rest of the block has run.
+#
+# Whatever lets the block run must stop at its end: the panic goes on from the
+# `TEND` of that `finally` and the code after the `try` does not run. It must not
+# leak into a `try` that ends normally inside the block, into a deferred call run
+# by the unwind, or into a `break` through `finally` blocks with no panic at all;
+# and a second panic raised in the block must leave nothing pending once caught.
+#
+# A panic caught inside the block leaves the first one to go on at its end; a
+# panic raised in a nested finally, a `return` or a `break` out of the block, and a
+# native call deferred by a function the block calls leave nothing pending and
+# do not end the block early. A `trap` still catches a panic from a native call in
+# argument position.
+#
 # A runtime test: prints "ALL TESTS PASSED" only when every check matches.
 # EXPECT: contains: ALL TESTS PASSED
 
@@ -82,6 +100,260 @@ func calls_tidy_after_three_args() {
 log = []
 trap calls_tidy_after_three_args()
 check("a function in a finally, fewer arguments than the callee", log, ["tidy"])
+
+# The statements after an Orbit call in the finally run too
+var steps = []
+func step() { steps.append("call") }
+
+func call_then_statement() {
+    try {
+        panic Error(@Own, "own")
+    } finally {
+        step()
+        steps.append("after")
+    }
+}
+steps = []
+check("control: the panic goes through a finally with a call", kind_of(trap call_then_statement()), @Own)
+check("a statement after an Orbit call in the finally runs", steps, ["call", "after"])
+
+func two_calls() {
+    try {
+        panic Error(@Own, "own")
+    } finally {
+        step()
+        step()
+    }
+}
+steps = []
+trap two_calls()
+check("two Orbit calls in the finally both run", steps, ["call", "call"])
+
+func callee_call_then_statement() {
+    try {
+        fail()
+    } finally {
+        step()
+        steps.append("after")
+    }
+}
+steps = []
+trap callee_call_then_statement()
+check("the same, the panic from a callee", steps, ["call", "after"])
+
+func no_panic() {
+    try {
+        steps.append("body")
+    } finally {
+        step()
+        steps.append("after")
+    }
+}
+steps = []
+no_panic()
+check("control: without a panic the finally runs to its end", steps, ["body", "call", "after"])
+
+# A property load or store in the finally is not a failure either
+class Box {
+    pub var v
+
+    pub init() {
+        self.v = 0
+    }
+}
+
+func property_store() {
+    b := new Box()
+    try {
+        panic Error(@Own, "own")
+    } finally {
+        b.v = 5
+        count += 1
+    }
+}
+count = 0
+trap property_store()
+check("a property store in the finally, then a statement", count, 1)
+
+func property_load() {
+    b := new Box()
+    try {
+        panic Error(@Own, "own")
+    } finally {
+        n := b.v
+        count += 1
+    }
+}
+count = 0
+trap property_load()
+check("a property load in the finally, then a statement", count, 1)
+
+func global_native() {
+    try {
+        panic Error(@Own, "own")
+    } finally {
+        t := tostr(41)
+        count += 1
+    }
+}
+count = 0
+trap global_native()
+check("a global native function in the finally, then a statement", count, 1)
+
+# The block ends where it should
+var t = 0
+
+func code_after_the_try() {
+    try {
+        panic Error(@Own, "own")
+    } finally {
+        t = t * 10 + 1
+    }
+    t = t * 10 + 2
+}
+t = 0
+check("the panic goes on after the finally", kind_of(trap code_after_the_try()), @Own)
+check("the code after the try does not run", t, 1)
+
+func try_inside_the_finally() {
+    try {
+        panic Error(@Own, "own")
+    } finally {
+        try {
+            t = t * 10 + 1
+        } catch {
+        }
+        t = t * 10 + 2
+    }
+}
+t = 0
+check("a try that ends normally inside the finally: the panic goes on", kind_of(trap try_inside_the_finally()), @Own)
+check("and the block runs to its end", t, 12)
+
+func has_try() {
+    try {
+        t = t * 10 + 1
+    } finally {
+        t = t * 10 + 2
+    }
+    t = t * 10 + 3
+}
+func defer_with_a_try() {
+    defer has_try()
+    fail()
+}
+t = 0
+check("a deferred call with a try, run by the unwind: the panic goes on", kind_of(trap defer_with_a_try()), @Deep)
+check("and the deferred call runs to its end", t, 123)
+
+func break_through_two() {
+    loop i := 0; i < 3; i++ {
+        try {
+            try {
+                break
+            } finally {
+                t = t * 10 + 1
+            }
+        } finally {
+            t = t * 10 + 2
+        }
+    }
+    t = t * 10 + 3
+}
+t = 0
+check("control: a break through two finally blocks, no panic", kind_of(trap break_through_two()), "no error")
+check("control: both blocks run, then the code after the loop", t, 123)
+
+func second_panic() {
+    try {
+        panic Error(@Own, "own")
+    } finally {
+        panic Error(@Second, "second")
+    }
+}
+trap second_panic()
+check("a second panic in the finally: nothing stays pending once caught", panicking(), false)
+
+func caught_inside_the_finally() {
+    try {
+        panic Error(@Own, "own")
+    } finally {
+        try {
+            panic Error(@Second, "second")
+        } catch {
+            t = t * 10 + 1
+        }
+        t = t * 10 + 2
+    }
+    t = t * 10 + 9
+}
+t = 0
+check("a second panic caught inside the finally: the first goes on", kind_of(trap caught_inside_the_finally()), @Own)
+check("and the block runs to its end, nothing after the try", t, 12)
+check("and nothing stays pending", panicking(), false)
+
+func nested_finally_panic() {
+    try {
+        panic Error(@Own, "own")
+    } finally {
+        try {
+            panic Error(@Second, "second")
+        } finally {
+            t = t * 10 + 1
+        }
+        t = t * 10 + 9
+    }
+}
+t = 0
+trap nested_finally_panic()
+check("a panic through a nested finally: the inner block runs, the rest does not", t, 1)
+check("and nothing stays pending", panicking(), false)
+
+func defers_a_native() {
+    defer log.append("deferred")
+    t = t * 10 + 1
+}
+func calls_a_deferring_function() {
+    try {
+        panic Error(@Own, "own")
+    } finally {
+        defers_a_native()
+        t = t * 10 + 2
+    }
+}
+t = 0
+log = []
+check("a function with a native defer, called from the finally: the panic goes on", kind_of(trap calls_a_deferring_function()), @Own)
+check("and the block runs to its end", t, 12)
+check("and the deferred call ran", log, ["deferred"])
+
+func returns_from_the_finally() {
+    try {
+        panic Error(@Own, "own")
+    } finally {
+        return 5
+    }
+}
+check("a return out of the finally: the panic goes on", kind_of(trap returns_from_the_finally()), @Own)
+check("and nothing stays pending", panicking(), false)
+
+func breaks_out_of_the_finally() {
+    loop i := 0; i < 3; i++ {
+        try {
+            panic Error(@Own, "own")
+        } finally {
+            break
+        }
+    }
+    return 1
+}
+check("a break out of the finally: the panic goes on", kind_of(trap breaks_out_of_the_finally()), @Own)
+check("and nothing stays pending", panicking(), false)
+
+class StrHook {
+    pub func str() { panic Error(@Hook, "in str") }
+}
+check("control: a trap in argument position catches a native's panic", kind_of(trap tostr(new StrHook())), @Hook)
 
 if fails == 0 {
     io.print("ALL TESTS PASSED")

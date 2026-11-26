@@ -1,0 +1,157 @@
+# PoC VM-028 — a panic raised in a `finally` (or in a spent `catch`) must reach the
+# next handler of the same frame, and a `trap` around the call must catch it.
+#
+# ERROR releases the context whose handlers are spent and goes straight to
+# UnwindStack, which leaves the frame without looking at the other contexts of
+# that frame: an enclosing `try` with a live `catch` is skipped. Its context stays
+# on top of CP when the frame is popped (PopState does not restore CP), so
+# UnwindStack compares a context of a dead frame with every caller and never
+# finds the `trap` below it: the panic escapes to the top level.
+#
+# A `sync` block around both `try`s must stay held while the outer `catch` runs,
+# and be released once.
+#
+# A runtime test: prints "ALL TESTS PASSED" only when every check matches.
+# EXPECT: contains: ALL TESTS PASSED
+
+import "io"
+
+var fails = 0
+
+func check(name, got, expected) {
+    if got == expected {
+        io.print("OK   ", name)
+    } else {
+        io.print("FAIL ", name, "-- got:", got, "expected:", expected)
+        fails += 1
+    }
+}
+
+func kind_of(res) {
+    return res ? "no error" : res.unwrap_err().kind
+}
+
+# A sync in a hook is refused, not waited for, when another fiber holds the
+# monitor: the probing fiber never blocks
+class TryLock {
+    pub var obj
+
+    pub init(obj) {
+        self.obj = obj
+    }
+
+    pub func str() {
+        sync self.obj {
+            return "in"
+        }
+    }
+}
+
+func try_lock(obj, ch) {
+    r := trap tostr(new TryLock(obj))
+    ch <- (r ? true : false)
+}
+
+# True when another fiber can sync on obj
+func enters(obj) {
+    ch := Chan(capacity=1)
+    spawn try_lock(obj, ch)
+    return <- ch
+}
+
+func fail() { panic Error(@Deep, "deep") }
+
+var t = 0
+
+func outer_catch() {
+    try {
+        try {
+            panic Error(@First, "first")
+        } finally {
+            panic Error(@Second, "second")
+        }
+    } catch {
+        t = t * 10 + 1
+    }
+    t = t * 10 + 2
+}
+t = 0
+check("the outer catch of the same frame takes the panic from the finally", kind_of(trap outer_catch()), "no error")
+check("the catch runs, then the code after it", t, 12)
+check("nothing pending", panicking(), false)
+
+func outer_catch_callee() {
+    try {
+        try {
+            fail()
+        } finally {
+            fail()
+        }
+    } catch {
+        t = t * 10 + 1
+    }
+    t = t * 10 + 2
+}
+t = 0
+check("the same, the panics from callees", kind_of(trap outer_catch_callee()), "no error")
+check("in order", t, 12)
+
+func spent_catch() {
+    try {
+        try {
+            panic Error(@First, "first")
+        } catch {
+            panic Error(@Second, "second")
+        }
+    } catch {
+        t = t * 10 + 1
+    }
+    t = t * 10 + 2
+}
+t = 0
+check("a panic from a spent catch, outer catch of the same frame", kind_of(trap spent_catch()), "no error")
+check("in order", t, 12)
+
+func escapes() {
+    try {
+        try {
+            panic Error(@First, "first")
+        } finally {
+            panic Error(@Second, "second")
+        }
+    } finally {
+        t = t * 10 + 1
+    }
+}
+t = 0
+check("with an outer finally only: the trap gets the second panic", kind_of(trap escapes()), @Second)
+check("the outer finally runs", t, 1)
+check("nothing pending", panicking(), false)
+
+held := [1]
+var held_in_catch = nil
+func around_sync() {
+    sync held {
+        try {
+            try {
+                panic Error(@First, "first")
+            } finally {
+                panic Error(@Second, "second")
+            }
+        } catch {
+            held_in_catch = !enters(held)
+        }
+    }
+}
+check("a sync around both: handled", kind_of(trap around_sync()), "no error")
+check("the catch runs with the monitor held", held_in_catch, true)
+check("released once afterwards", enters(held), true)
+check("and again", enters(held), true)
+
+check("nothing pending at the end", panicking(), false)
+
+if fails == 0 {
+    io.print("ALL TESTS PASSED")
+} else {
+    io.print(fails, "TEST(S) FAILED")
+}

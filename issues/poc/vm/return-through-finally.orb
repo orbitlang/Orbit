@@ -1,0 +1,250 @@
+# PoC VM-027 — a `return` must run every `finally` it leaves in its function,
+# innermost first, then the deferred calls, then return its value.
+#
+# A `return` inside a `try` becomes a pending return: the `TEND` of the innermost
+# `try` runs it once that `try`'s `finally` is done. Its RETURN branch calls
+# Return right away, where the branch for `break` and `continue` hands the action
+# to the enclosing `try` of the same frame and jumps to its `finally`: every
+# `finally` beyond the innermost is skipped. The same from a `catch`, through a
+# `try` with only a `catch`, and in a loop; a `return` already inside the outer
+# `finally` must not start it again.
+#
+# A `sync` block between two `try`s must stay held while the inner `finally` runs
+# and be released, once, before the outer one: the return leaves it on the way.
+#
+# A runtime test: prints "ALL TESTS PASSED" only when every check matches.
+# EXPECT: contains: ALL TESTS PASSED
+
+import "io"
+
+var fails = 0
+
+func check(name, got, expected) {
+    if got == expected {
+        io.print("OK   ", name)
+    } else {
+        io.print("FAIL ", name, "-- got:", got, "expected:", expected)
+        fails += 1
+    }
+}
+
+func kind_of(res) {
+    return res ? "no error" : res.unwrap_err().kind
+}
+
+# A sync in a hook is refused, not waited for, when another fiber holds the
+# monitor: the probing fiber never blocks
+class TryLock {
+    pub var obj
+
+    pub init(obj) {
+        self.obj = obj
+    }
+
+    pub func str() {
+        sync self.obj {
+            return "in"
+        }
+    }
+}
+
+func try_lock(obj, ch) {
+    r := trap tostr(new TryLock(obj))
+    ch <- (r ? true : false)
+}
+
+# True when another fiber can sync on obj
+func enters(obj) {
+    ch := Chan(capacity=1)
+    spawn try_lock(obj, ch)
+    return <- ch
+}
+
+func fail() { panic Error(@Deep, "deep") }
+
+var log = []
+func mark(t) { log.append(t) }
+func seven() { return 7 }
+
+func two() {
+    try {
+        try {
+            return seven()
+        } finally {
+            mark("inner")
+        }
+    } finally {
+        mark("outer")
+    }
+}
+log = []
+check("return through two finally blocks: the value", two(), 7)
+check("both blocks run, inner first", log, ["inner", "outer"])
+
+func three() {
+    try {
+        try {
+            try {
+                return 3
+            } finally {
+                mark("a")
+            }
+        } finally {
+            mark("b")
+        }
+    } finally {
+        mark("c")
+    }
+}
+log = []
+check("through three: the value", three(), 3)
+check("all three run", log, ["a", "b", "c"])
+
+func from_catch() {
+    try {
+        try {
+            fail()
+        } catch {
+            return 4
+        }
+    } finally {
+        mark("outer")
+    }
+}
+log = []
+check("return from a catch, outer finally: the value", from_catch(), 4)
+check("the outer finally runs", log, ["outer"])
+
+func through_catch_only() {
+    try {
+        try {
+            return 5
+        } catch {
+            mark("never")
+        }
+    } finally {
+        mark("outer")
+    }
+}
+log = []
+check("through a try with only a catch: the value", through_catch_only(), 5)
+check("the outer finally runs", log, ["outer"])
+
+func inside_outer_finally() {
+    try {
+        mark("body")
+    } finally {
+        try {
+            return 6
+        } finally {
+            mark("inner")
+        }
+        mark("never")
+    }
+}
+log = []
+check("return from a try inside the outer finally: the value", inside_outer_finally(), 6)
+check("no restart, nothing after the return", log, ["body", "inner"])
+
+func inside_panic_finally() {
+    try {
+        panic Error(@Own, "own")
+    } finally {
+        try {
+            return 8
+        } finally {
+            mark("inner")
+        }
+        mark("never")
+    }
+}
+log = []
+check("return from a try inside a finally run by a panic: the panic goes on", kind_of(trap inside_panic_finally()), @Own)
+check("the inner finally runs, nothing after", log, ["inner"])
+check("nothing stays pending", panicking(), false)
+
+func with_defer() {
+    defer mark("defer")
+    try {
+        try {
+            return 9
+        } finally {
+            mark("inner")
+        }
+    } finally {
+        mark("outer")
+    }
+}
+log = []
+check("with a defer: the value", with_defer(), 9)
+check("both finally blocks, then the defer", log, ["inner", "outer", "defer"])
+
+func in_loop() {
+    loop i := 0; i < 3; i++ {
+        try {
+            try {
+                if i == 1 {
+                    return i
+                }
+            } finally {
+                mark("inner")
+            }
+        } finally {
+            mark("outer")
+        }
+    }
+    return -1
+}
+log = []
+check("in a loop: the value", in_loop(), 1)
+check("every round runs both, the return round too", log, ["inner", "outer", "inner", "outer"])
+
+func break_two() {
+    loop i := 0; i < 3; i++ {
+        try {
+            try {
+                break
+            } finally {
+                mark("inner")
+            }
+        } finally {
+            mark("outer")
+        }
+    }
+    return 0
+}
+log = []
+check("control: break through two", break_two(), 0)
+check("control: both run", log, ["inner", "outer"])
+
+check("nothing pending at the end", panicking(), false)
+
+# The finally blocks run with the monitors they are inside: the inner one with the
+# block still held, the outer one after the return has left it
+s := [1]
+var inner_saw = nil
+var outer_saw = nil
+func around_sync() {
+    try {
+        sync s {
+            try {
+                return 1
+            } finally {
+                inner_saw = enters(s)
+            }
+        }
+    } finally {
+        outer_saw = enters(s)
+    }
+}
+check("a block between two trys: the value", around_sync(), 1)
+check("the inner finally runs with the monitor held", inner_saw, false)
+check("the outer finally runs with the monitor released", outer_saw, true)
+check("released once: the monitor still works", enters(s), true)
+check("and again", enters(s), true)
+
+if fails == 0 {
+    io.print("ALL TESTS PASSED")
+} else {
+    io.print(fails, "TEST(S) FAILED")
+}
