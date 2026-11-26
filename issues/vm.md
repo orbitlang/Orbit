@@ -1,13 +1,67 @@
 # vm — bug report
 
 **Component:** `orbit/orbiter` (interpreter: trap/panic unwind, register file) · **ID prefix:** `VM`
-**PoCs:** [`poc/vm/`](poc/vm/) · **Last reviewed:** 2026-11-25
+**PoCs:** [`poc/vm/`](poc/vm/) · **Last reviewed:** 2026-11-26
 **Status:** OPEN · PARTIAL · FIXED · WONTFIX — see [GUIDE.md](GUIDE.md).
 
 ---
 
 ## VM-028 — A panic raised in a `finally` skips the `catch` of an enclosing `try` in the same frame, and escapes every `trap`
-**Severity:** High (a handled panic escapes to the top level) · **Status:** OPEN · **Location:** `orbit/orbiter/vm.cpp:2152` (`ERROR`: the spent context is released, then `UnwindStack`), `orbit/orbiter/fiber.cpp:119` (`PopStateNoCtxRestore` leaves `CP` as is)
+**Severity:** High (a handled panic escapes to the top level) · **Status:** FIXED (2026-11-26) · **Location:** `orbit/orbiter/vm.cpp:2152` (`ERROR`)
+
+**Fix verified (live: the PoC passes 15 of 15, 5 runs of 5, where the panic escaped
+its first `trap`: an outer `catch` of the same frame takes a panic raised in a
+`finally` or in a spent `catch`, its own or a callee's; with an outer `finally`
+only, the `trap` gets the second panic and nothing stays pending; a `sync` around
+both `try`s stays held while the `catch` runs and is released once; with `ERROR`
+leaving the frame once the spent context is released, the panic escapes the `trap`
+again; VM-019's, VM-018's, VM-020's and VM-023's PoCs pass; `ortest` unchanged apart
+from the `numbers/` suites, red until NUM-002 lands; the PoC gate fails only the
+findings already open; every `stdlib` module imports; `phi-regalloc.orb` passes).**
+`ERROR` walks the contexts of the frame: a spent one is released and the next one
+is looked at, until one has a live handler or the frame has none left, and only
+then does the unwind leave the frame:
+
+```cpp
+ERROR:
+    if (fiber->IsPanicking()) {
+        auto *except = ExContextGet(fiber->vm.stack.stack, regs->CP.reg);
+        while (except != nullptr && except->key == regs->BP.reg) {
+            if (except->catch_off == 0 && except->finally_off == 0) {
+                // Release the exhausted exception context (both catch and finally consumed)
+                ReleaseExceptionContext(fiber, regs);
+
+                except = ExContextGet(fiber->vm.stack.stack, regs->CP.reg);
+
+                continue;
+            }
+
+            ExecuteCleanupForPC(&fiber->vm, &fiber->context);
+
+            if (except->catch_off != 0) {
+                JMP_TO(except->catch_off);
+                except->catch_off = 0;
+
+                goto CATCH_FINALLY;
+            }
+
+            JMP_TO(except->finally_off);
+            except->finally_off = 0;
+
+            fiber->panic.current_->HidePanic();
+            except->info.MarkHiddenPanic();
+
+            goto CATCH_FINALLY;
+        }
+    }
+```
+
+The cleanup of the `sync` blocks runs once the context that takes the panic is on
+top: `ExecuteCleanupForPC` keeps the blocks holding the handler of the context on
+top of `CP`, and runs once per frame, so run with a spent context on top it would
+release a block the outer handler runs inside.
+
+<details><summary>Original report</summary>
 
 ```orbit
 func f() {
@@ -68,6 +122,8 @@ with an outer `finally` only, the `trap` gets the second panic and nothing stays
 pending; a `sync` around both stays held while the `catch` runs and is released
 once. VM-019's, VM-018's, VM-015's and the `sync` PoCs pass, `ortest` unchanged
 apart from the `numbers/` suites, `phi-regalloc.orb` passes.
+
+</details>
 
 ---
 
